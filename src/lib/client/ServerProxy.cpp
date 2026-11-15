@@ -22,6 +22,12 @@
 
 #include <cstring>
 
+using deskflow::clipboard::ClipboardTransferLog;
+using deskflow::clipboard::describeFormats;
+using deskflow::clipboard::transferChunkCount;
+using deskflow::clipboard::TransferDirection;
+using Clock = ClipboardTransferLog::Clock;
+
 //
 // ServerProxy
 //
@@ -44,6 +50,12 @@ ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue 
   });
   m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
     ClipboardChunk::send(m_stream, e.getDataObject());
+    if (ClipboardChunk::getMark(e.getDataObject()) == ChunkType::DataEnd) {
+      const auto id = ClipboardChunk::getId(e.getDataObject());
+      if (const auto line = m_transferLog.finish(TransferDirection::Sent, id, Clock::now())) {
+        LOG_INFO("%s", line->c_str());
+      }
+    }
   });
 
   // send heartbeat
@@ -59,6 +71,7 @@ ServerProxy::~ServerProxy()
 
 void ServerProxy::resetKeepAliveAlarm()
 {
+  m_lastKeepAlive = Clock::now();
   if (m_keepAliveAlarmTimer != nullptr) {
     m_events->removeHandler(EventTypes::Timer, m_keepAliveAlarmTimer);
     m_events->deleteTimer(m_keepAliveAlarmTimer);
@@ -78,6 +91,8 @@ void ServerProxy::setKeepAliveRate(double rate)
 
 void ServerProxy::handleData()
 {
+  m_lastData = Clock::now();
+
   // handle messages until there are no more.  first read message code.
   uint8_t code[4];
   uint32_t n = m_stream->read(code, 4);
@@ -326,7 +341,16 @@ ServerProxy::ConnectionResult ServerProxy::parseMessage(const uint8_t *code)
 
 void ServerProxy::handleKeepAliveAlarm()
 {
-  LOG_INFO("server is dead");
+  const auto now = Clock::now();
+  const auto since = [&](Clock::time_point from) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(now - from);
+  };
+  LOG_INFO(
+      "%s", deskflow::clipboard::formatKeepAliveTimeout(
+                "server", since(m_lastKeepAlive), since(m_lastData), m_transferLog.describeActive(now)
+            )
+                .c_str()
+  );
   requestDisconnect("server is not responding");
 }
 
@@ -366,6 +390,10 @@ void ServerProxy::onClipboardChanged(ClipboardID id, const IClipboard *clipboard
 {
   std::string data = IClipboard::marshall(clipboard);
   LOG_DEBUG("sending clipboard %d seqnum=%d", id, m_seqNum);
+  m_transferLog.begin(
+      TransferDirection::Sent, id, "server", describeFormats(data), data.size(),
+      transferChunkCount(data.size(), kClipboardChunkSize), false, Clock::now()
+  );
 
   StreamChunker::sendClipboard(data, data.size(), id, m_seqNum, m_events, this);
 }
@@ -541,8 +569,16 @@ void ServerProxy::setClipboard()
   if (r == TransferState::Started) {
     size_t size = ClipboardChunk::getExpectedSize(m_clipboardChunkState);
     LOG_DEBUG("receiving clipboard %d size=%zu", id, size);
+    m_transferLog.begin(TransferDirection::Received, id, "server", {}, size, 0, false, Clock::now());
+  } else if (r == TransferState::InProgress) {
+    m_transferLog.addChunk(TransferDirection::Received, id);
   } else if (r == TransferState::Finished) {
     LOG_DEBUG("received clipboard %d size=%zu", id, m_clipboardDataCached.size());
+    if (const auto line = m_transferLog.finish(
+            TransferDirection::Received, id, Clock::now(), describeFormats(m_clipboardDataCached)
+        )) {
+      LOG_INFO("%s", line->c_str());
+    }
 
     // forward
     Clipboard clipboard;
@@ -553,6 +589,7 @@ void ServerProxy::setClipboard()
 
     LOG_INFO("clipboard was updated");
   } else if (r == TransferState::Error) {
+    m_transferLog.cancel(TransferDirection::Received, id);
     requestDisconnect("invalid clipboard data from server");
   }
 }

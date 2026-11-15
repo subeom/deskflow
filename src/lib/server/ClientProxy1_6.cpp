@@ -13,6 +13,12 @@
 #include "io/IStream.h"
 #include "server/Server.h"
 
+using deskflow::clipboard::ClipboardTransferLog;
+using deskflow::clipboard::describeFormats;
+using deskflow::clipboard::transferChunkCount;
+using deskflow::clipboard::TransferDirection;
+using Clock = ClipboardTransferLog::Clock;
+
 //
 // ClientProxy1_6
 //
@@ -23,6 +29,12 @@ ClientProxy1_6::ClientProxy1_6(const std::string &name, deskflow::IStream *strea
 {
   m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
     ClipboardChunk::send(getStream(), e.getDataObject());
+    if (ClipboardChunk::getMark(e.getDataObject()) == ChunkType::DataEnd) {
+      const auto id = ClipboardChunk::getId(e.getDataObject());
+      if (const auto line = m_transferLog.finish(TransferDirection::Sent, id, Clock::now())) {
+        LOG_INFO("%s", line->c_str());
+      }
+    }
   });
 }
 
@@ -43,6 +55,10 @@ void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
 
     size_t size = data.size();
     LOG_DEBUG("sending clipboard %d to \"%s\"", id, getName().c_str());
+    m_transferLog.begin(
+        TransferDirection::Sent, id, getName(), describeFormats(data), size,
+        transferChunkCount(size, kClipboardChunkSize), false, Clock::now()
+    );
 
     StreamChunker::sendClipboard(data, size, id, 0, m_events, this);
   }
@@ -61,7 +77,15 @@ bool ClientProxy1_6::recvClipboard()
   if (r == TransferState::Started) {
     size_t size = ClipboardChunk::getExpectedSize(m_clipboardChunkState);
     LOG_DEBUG("receiving clipboard %d size=%zu", id, size);
+    m_transferLog.begin(TransferDirection::Received, id, getName(), {}, size, 0, false, Clock::now());
+  } else if (r == TransferState::InProgress) {
+    m_transferLog.addChunk(TransferDirection::Received, id);
   } else if (r == TransferState::Finished) {
+    if (const auto line = m_transferLog.finish(
+            TransferDirection::Received, id, Clock::now(), describeFormats(m_clipboardDataCached)
+        )) {
+      LOG_INFO("%s", line->c_str());
+    }
     LOG(
         (CLOG_DEBUG "received client \"%s\" clipboard %d seqnum=%d, size=%zu", getName().c_str(), id, seq,
          m_clipboardDataCached.size())
@@ -78,8 +102,14 @@ bool ClientProxy1_6::recvClipboard()
     info->m_sequenceNumber = seq;
     m_events->addEvent(Event(EventTypes::ClipboardChanged, getEventTarget(), info));
   } else if (r == TransferState::Error) {
+    m_transferLog.cancel(TransferDirection::Received, id);
     return false;
   }
 
   return true;
+}
+
+std::string ClientProxy1_6::describeClipboardActivity() const
+{
+  return m_transferLog.describeActive(Clock::now());
 }

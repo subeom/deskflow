@@ -12,6 +12,9 @@
 #include "deskflow/ProtocolTypes.h"
 #include "server/ClientProxy.h"
 
+#include <chrono>
+#include <string>
+
 class Event;
 class EventQueueTimer;
 class IEventQueue;
@@ -68,6 +71,9 @@ protected:
   virtual void removeHeartbeatTimer();
   virtual bool recvClipboard();
 
+  //! The clipboard transfers in flight, for the log when the client stops responding
+  virtual std::string describeClipboardActivity() const;
+
 private:
   void disconnect();
   void removeHandlers();
@@ -104,4 +110,5 @@ private:
   IEventQueue *m_events;
   bool m_handshakeInfoReceived = false;
   bool m_handshakeComplete = false;
+  std::chrono::steady_clock::time_point m_lastData = std::chrono::steady_clock::now();
 };

@@ -11,6 +11,7 @@
 #include "base/IEventQueue.h"
 #include "base/Log.h"
 #include "deskflow/AppUtil.h"
+#include "deskflow/ClipboardTransferLog.h"
 #include "deskflow/Computer.h"
 #include "deskflow/DeskflowException.h"
 #include "deskflow/IPlatformComputer.h"
@@ -35,8 +36,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <format>
 
 using namespace deskflow::server;
+using deskflow::clipboard::formatSkipLine;
+using deskflow::clipboard::SkipReason;
 
 //
 // Server
@@ -1464,13 +1468,14 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
 
   std::string data = clipboard.m_clipboard.marshall();
   if (data.size() > m_maximumClipboardSize * 1024) {
-    LOG_WARN("not sending clipboard data, exceeds limit: %i KB", m_maximumClipboardSize);
+    const auto detail = std::format("{} B exceeds the {} KB limit", data.size(), m_maximumClipboardSize);
+    LOG_WARN("%s", formatSkipLine(id, clipboard.m_clipboardOwner, SkipReason::OverSize, detail).c_str());
     return;
   }
 
   // ignore if data hasn't changed
   if (data == clipboard.m_clipboardData) {
-    LOG_DEBUG("ignored computer \"%s\" update of clipboard %d (unchanged)", clipboard.m_clipboardOwner.c_str(), id);
+    LOG_INFO("%s", formatSkipLine(id, clipboard.m_clipboardOwner, SkipReason::IdenticalContent).c_str());
     return;
   }
 

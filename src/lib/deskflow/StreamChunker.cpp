@@ -11,8 +11,6 @@
 #include "base/Log.h"
 #include "deskflow/ClipboardChunk.h"
 
-static const size_t g_chunkSize = 512 * 1024; // 512kb
-
 void StreamChunker::sendClipboard(
     const std::string_view &data, size_t size, ClipboardID id, uint32_t sequence, IEventQueue *events, void *eventTarget
 )
@@ -25,7 +23,7 @@ void StreamChunker::sendClipboard(
 
   // send clipboard chunk with a fixed size
   size_t sentLength = 0;
-  size_t chunkSize = g_chunkSize;
+  size_t chunkSize = kClipboardChunkSize;
 
   while (true) {
     // make sure we don't read too much from the mock data.

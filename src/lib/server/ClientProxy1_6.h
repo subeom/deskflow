@@ -7,6 +7,7 @@
 #pragma once
 
 #include "deskflow/ClipboardChunk.h"
+#include "deskflow/ClipboardTransferLog.h"
 #include "server/ClientProxy1_5.h"
 
 #include <string>
@@ -24,8 +25,12 @@ public:
   void setClipboard(ClipboardID id, const IClipboard *clipboard) override;
   bool recvClipboard() override;
 
+protected:
+  std::string describeClipboardActivity() const override;
+
 private:
   IEventQueue *m_events;
+  deskflow::clipboard::ClipboardTransferLog m_transferLog;
   std::string m_clipboardDataCached;
   ClipboardChunkAssemblyState m_clipboardChunkState;
 };

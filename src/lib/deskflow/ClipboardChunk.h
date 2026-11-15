@@ -41,6 +41,12 @@ public:
 
   static void send(deskflow::IStream *stream, void *data);
 
+  //! The chunk type (ChunkType) of a ClipboardChunk passed as the data of a ClipboardSending event
+  static uint8_t getMark(const void *data);
+
+  //! The clipboard id of a ClipboardChunk passed as the data of a ClipboardSending event
+  static ClipboardID getId(const void *data);
+
   static size_t getExpectedSize(const ClipboardChunkAssemblyState &state)
   {
     return state.expectedSize;

@@ -17,6 +17,7 @@ class ServerProxyTests : public QObject
 private Q_SLOTS:
   void initTestCase();
   void handleKeepAliveAlarm_timeout_queuesDisconnectRequest();
+  void handleKeepAliveAlarm_timeout_logsSilenceAndClipboardTransfer();
   void handleData_incompleteMessage_queuesDisconnectRequest();
   void parseHandshakeMessage_protocolError_queuesRefusalRequest();
   void legacyScroll_preservesDmwmValues();

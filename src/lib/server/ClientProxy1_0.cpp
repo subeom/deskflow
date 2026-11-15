@@ -10,11 +10,13 @@
 
 #include "base/IEventQueue.h"
 #include "base/Log.h"
+#include "deskflow/ClipboardTransferLog.h"
 #include "deskflow/DeskflowException.h"
 #include "deskflow/ProtocolUtil.h"
 #include "io/IStream.h"
 
 #include <cstring>
+#include <format>
 
 //
 // ClientProxy1_0
@@ -107,6 +109,8 @@ void ClientProxy1_0::setHeartbeatRate(double, double alarm)
 
 void ClientProxy1_0::handleData()
 {
+  m_lastData = std::chrono::steady_clock::now();
+
   // handle messages until there are no more.  first read message code.
   uint8_t code[4];
   uint32_t n = getStream()->read(code, 4);
@@ -214,8 +218,18 @@ void ClientProxy1_0::handleWriteError()
 void ClientProxy1_0::handleFlatline()
 {
   // didn't get a heartbeat fast enough.  assume client is dead.
-  LOG_DEBUG("client \"%s\" is dead", getName().c_str());
+  const auto silence =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_lastData);
+  const auto who = std::format("client \"{}\"", getName());
+  LOG_INFO(
+      "%s", deskflow::clipboard::formatKeepAliveTimeout(who, silence, silence, describeClipboardActivity()).c_str()
+  );
   disconnect();
+}
+
+std::string ClientProxy1_0::describeClipboardActivity() const
+{
+  return "none";
 }
 
 bool ClientProxy1_0::getClipboard(ClipboardID id, IClipboard *clipboard) const

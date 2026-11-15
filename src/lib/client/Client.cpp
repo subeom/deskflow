@@ -19,6 +19,7 @@
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
 #include "deskflow/Clipboard.h"
+#include "deskflow/ClipboardTransferLog.h"
 #include "deskflow/Computer.h"
 #include "deskflow/DeskflowException.h"
 #include "deskflow/IPlatformComputer.h"
@@ -36,6 +37,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <format>
 
 //
 // Client
@@ -414,7 +416,11 @@ void Client::sendClipboard(ClipboardID id)
     // marshall the data
     std::string data = clipboard.marshall();
     if (data.size() >= m_maximumClipboardSize * 1024) {
-      LOG_WARN("not sending clipboard data, exceeds limit: %zu KB", m_maximumClipboardSize);
+      const auto detail = std::format("{} B exceeds the {} KB limit", data.size(), m_maximumClipboardSize);
+      LOG_WARN(
+          "%s",
+          deskflow::clipboard::formatSkipLine(id, "server", deskflow::clipboard::SkipReason::OverSize, detail).c_str()
+      );
       return;
     }
 
@@ -425,6 +431,11 @@ void Client::sendClipboard(ClipboardID id)
       m_sentClipboard[id] = true;
       m_dataClipboard[id] = data;
       m_server->onClipboardChanged(id, &clipboard);
+    } else {
+      LOG_INFO(
+          "%s",
+          deskflow::clipboard::formatSkipLine(id, "server", deskflow::clipboard::SkipReason::IdenticalContent).c_str()
+      );
     }
   }
 }

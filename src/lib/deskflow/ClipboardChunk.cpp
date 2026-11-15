@@ -171,6 +171,16 @@ TransferState ClipboardChunk::assemble(
   return Error;
 }
 
+uint8_t ClipboardChunk::getMark(const void *data)
+{
+  return static_cast<uint8_t>(static_cast<const ClipboardChunk *>(data)->m_chunk[5]);
+}
+
+ClipboardID ClipboardChunk::getId(const void *data)
+{
+  return static_cast<ClipboardID>(static_cast<const ClipboardChunk *>(data)->m_chunk[0]);
+}
+
 void ClipboardChunk::send(deskflow::IStream *stream, void *data)
 {
   const auto *clipboardData = static_cast<ClipboardChunk *>(data);

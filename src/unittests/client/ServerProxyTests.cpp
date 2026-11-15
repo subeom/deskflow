@@ -8,12 +8,14 @@
 
 #include "base/Event.h"
 #include "base/IEventQueue.h"
+#include "base/ILogOutputter.h"
 #include "client/Client.h"
 #include "client/ServerProxy.h"
 #include "client/ServerProxy1_9.h"
 #include "common/InputCapabilities.h"
 #include "common/PlatformInfo.h"
 #include "deskflow/AppUtil.h"
+#include "deskflow/Clipboard.h"
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
 #include "io/IStream.h"
@@ -342,6 +344,34 @@ private:
   KeyID m_lastSemanticMediaKey = kKeyNone;
 };
 
+class CapturingOutputter : public ILogOutputter
+{
+public:
+  void open(const QString &) override
+  {
+  }
+
+  void close() override
+  {
+  }
+
+  bool write(LogLevel::Level level, const QString &message) override
+  {
+    if (level == LogLevel::Level::Info) {
+      m_infoLines.append(message);
+    }
+    return false;
+  }
+
+  bool hasInfoLineContaining(const QString &text) const
+  {
+    return std::ranges::any_of(m_infoLines, [&](const QString &line) { return line.contains(text); });
+  }
+
+private:
+  QStringList m_infoLines;
+};
+
 Client *undereferenceableClient()
 {
   // These paths must queue cleanup without calling through to Client.
@@ -387,6 +417,33 @@ void ServerProxyTests::handleKeepAliveAlarm_timeout_queuesDisconnectRequest()
   QVERIFY(request != nullptr);
   QVERIFY(request->kind() == Client::DisconnectRequest::Kind::Disconnect);
   QCOMPARE(QString::fromUtf8(request->message()), QStringLiteral("server is not responding"));
+}
+
+void ServerProxyTests::handleKeepAliveAlarm_timeout_logsSilenceAndClipboardTransfer()
+{
+  CapturingOutputter outputter;
+  m_log.insert(&outputter, true);
+
+  RecordingEventQueue events;
+  FakeStream stream;
+  ServerProxy proxy(undereferenceableClient(), &stream, &events);
+
+  QVERIFY(events.dispatchEvent(Event(EventTypes::Timer, events.timer())));
+  QVERIFY(outputter.hasInfoLineContaining(QStringLiteral("server is dead: no keepalive for ")));
+  QVERIFY(outputter.hasInfoLineContaining(QStringLiteral("clipboard transfer in flight: none")));
+
+  // a clipboard handed to the stream and not yet written is reported as being sent
+  Clipboard clipboard;
+  clipboard.open(0);
+  clipboard.empty();
+  clipboard.add(IClipboard::Format::Text, "hello");
+  clipboard.close();
+  proxy.onClipboardChanged(0, &clipboard);
+
+  QVERIFY(events.dispatchEvent(Event(EventTypes::Timer, events.timer())));
+  QVERIFY(outputter.hasInfoLineContaining(QStringLiteral("clipboard transfer in flight: sending clipboard 0 (17 B")));
+
+  m_log.remove(&outputter);
 }
 
 void ServerProxyTests::handleData_incompleteMessage_queuesDisconnectRequest()

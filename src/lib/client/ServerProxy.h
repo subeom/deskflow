@@ -8,8 +8,11 @@
 
 #pragma once
 
+#include <chrono>
+
 #include "common/Enums.h"
 #include "deskflow/ClipboardChunk.h"
+#include "deskflow/ClipboardTransferLog.h"
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/KeyTypes.h"
 #include "deskflow/OptionTypes.h"
@@ -150,4 +153,7 @@ private:
   IEventQueue *m_events = nullptr;
   std::string m_clipboardDataCached;
   ClipboardChunkAssemblyState m_clipboardChunkState;
+  deskflow::clipboard::ClipboardTransferLog m_transferLog;
+  std::chrono::steady_clock::time_point m_lastData = std::chrono::steady_clock::now();
+  std::chrono::steady_clock::time_point m_lastKeepAlive = std::chrono::steady_clock::now();
 };
