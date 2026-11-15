@@ -12,7 +12,9 @@ class ServerConfigTests : public QObject
   Q_OBJECT
 private Q_SLOTS:
   void initTestCase();
-  void rightCommandAction_hangulAddsOption();
+  void f18Action_hangulAddsOption();
+  void f18Action_passThroughMissingAndInvalidAddNoOption();
+  void legacyRightCommandAction_isIgnored();
   void crossOSScrollOptions_areOptIn();
   void crossOSInvertScope_isOptIn();
   void crossOSSemanticMediaOption_isOptIn();

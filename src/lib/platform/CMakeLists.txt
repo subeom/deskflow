@@ -100,8 +100,6 @@ elseif(APPLE)
     OSXKeyLayoutResource.h
     OSXKeyState.cpp
     OSXKeyState.h
-    OSXModifierState.cpp
-    OSXModifierState.h
     OSXMediaKeySupport.h
     OSXMediaKeySupport.m
     OSXPasteboardPeeker.h

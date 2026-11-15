@@ -527,8 +527,8 @@ void Settings::removeUnknownComputers(const QStringList &knownComputers)
 
 QVariant Settings::computerDefaults(const QString &key)
 {
-  if (key == "rightCommandAction")
-    return QStringLiteral("preserve");
+  if (key == "f18Action")
+    return QStringLiteral("passthrough");
   if (key == "crossOSInvertScope")
     return QStringLiteral("all");
   if (key == "crossOSInvertX" || key == "crossOSInvertY" || key == "crossOSSemanticMedia")

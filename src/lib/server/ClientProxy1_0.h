@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include "common/InputCapabilities.h"
 #include "deskflow/Clipboard.h"
 #include "deskflow/ProtocolTypes.h"
 #include "server/ClientProxy.h"
@@ -61,10 +60,6 @@ protected:
   virtual bool parseMessage(const uint8_t *code);
   virtual bool isHandshakeCompleteReady() const;
   void maybeCompleteHandshake();
-  bool prepareLegacySuperDown(KeyID &key, KeyButton &button);
-  bool prepareLegacySuperRepeat(KeyID key);
-  bool prepareLegacySuperUp(KeyID &key, KeyButton &button);
-  virtual InputPlatform legacyInputPlatform() const;
 
   virtual void resetHeartbeatRate();
   virtual void setHeartbeatRate(double rate, double alarm);
@@ -109,7 +104,4 @@ private:
   IEventQueue *m_events;
   bool m_handshakeInfoReceived = false;
   bool m_handshakeComplete = false;
-  bool m_legacyLeftSuperDown = false;
-  bool m_legacyRightSuperDown = false;
-  bool m_legacySuperWireDown = false;
 };

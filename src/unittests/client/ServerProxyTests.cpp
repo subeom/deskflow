@@ -289,10 +289,9 @@ public:
   {
   }
 
-  InputKeyEvent transformInputKeyForTest(KeyID id, KeyModifierMask mask)
+  bool suppressesKeyRepeatForTest(KeyID id)
   {
-    transformInputKey(id, mask);
-    return {id, mask};
+    return shouldSuppressKeyRepeat(id, 0);
   }
 
   void onOptionsChangedForTest(const OptionsList &options)
@@ -469,7 +468,7 @@ void ServerProxyTests::inputCapabilities_v19_readsSourceAndWritesDestinationCapa
   QCOMPARE(stream.takeOutput(), expected.takeOutput());
 }
 
-void ServerProxyTests::rightCommand_hangulPolicyTransformsSuperR()
+void ServerProxyTests::f18_option_isIgnoredByTheDestination()
 {
   RecordingEventQueue events;
   FakeStream stream;
@@ -485,33 +484,12 @@ void ServerProxyTests::rightCommand_hangulPolicyTransformsSuperR()
   stream.push(std::string(sourceBytes.constData(), static_cast<size_t>(sourceBytes.size())));
   QVERIFY(events.dispatchEvent(Event(EventTypes::StreamInputReady, stream.getEventTarget())));
 
-  proxy.onOptionsChangedForTest({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
-  const auto transformed = proxy.transformInputKeyForTest(kKeySuper_R, KeyModifierSuper);
-  QCOMPARE(transformed.id, kKeyHangul);
-  QCOMPARE(transformed.mask, KeyModifierMask{0});
-}
-
-void ServerProxyTests::rightCommand_missingHangulCapability_preservesLegacy()
-{
-  RecordingEventQueue events;
-  FakeStream stream;
-  TestServerProxy1_9 proxy(
-      undereferenceableClient(), &stream, &events,
-      InputCapabilities{InputPlatform::Windows, kInputCapabilityProtocolV19}
-  );
-
-  FakeStream sourcePacket;
-  ProtocolUtil::writef(
-      &sourcePacket, kMsgDInputCapabilities, static_cast<uint8_t>(InputPlatform::MacOS), kInputCapabilityProtocolV19
-  );
-  const auto sourceBytes = sourcePacket.takeOutput();
-  stream.push(std::string(sourceBytes.constData(), static_cast<size_t>(sourceBytes.size())));
-  QVERIFY(events.dispatchEvent(Event(EventTypes::StreamInputReady, stream.getEventTarget())));
-
-  proxy.onOptionsChangedForTest({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
-  const auto transformed = proxy.transformInputKeyForTest(kKeySuper_R, KeyModifierSuper);
-  QCOMPARE(transformed.id, kKeySuper_L);
-  QCOMPARE(transformed.mask, KeyModifierSuper);
+  // F18 is mapped to Hangul by the source before it writes the key, so the destination never maps it again and
+  // never suppresses a repeat on account of it; Command is the plain Windows key here too
+  proxy.onOptionsChangedForTest({kOptionCrossOSF18Key, static_cast<OptionValue>(F18Action::Hangul)});
+  for (const auto key : {kKeyF18, kKeyHangul, kKeySuper_L, kKeySuper_R}) {
+    QVERIFY(!proxy.suppressesKeyRepeatForTest(key));
+  }
 }
 
 void ServerProxyTests::crossOSScroll_v19TransformsDmwmBeforeDelivery()

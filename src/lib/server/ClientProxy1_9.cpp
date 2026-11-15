@@ -5,6 +5,7 @@
 
 #include "server/ClientProxy1_9.h"
 
+#include "base/Log.h"
 #include "common/PlatformInfo.h"
 #include "deskflow/OptionTypes.h"
 #include "deskflow/ProtocolTypes.h"
@@ -61,68 +62,47 @@ bool ClientProxy1_9::receiveInputCapabilities()
 
 void ClientProxy1_9::keyDown(KeyID id, KeyModifierMask mask, KeyButton button, const std::string &language)
 {
-  if (id == kKeySuper_L) {
-    m_leftSuperDown = true;
-  } else if (id == kKeySuper_R) {
-    m_rightSuperDown = true;
-    m_rightSuperMapped = inputPolicy().mapsRightCommandToHangul();
-  }
-
-  InputKeyEvent key{id, mask};
-  if (!(id == kKeySuper_R && m_rightSuperMapped)) {
-    if (!prepareLegacySuperDown(key.id, button)) {
+  if (id == kKeyF18) {
+    const auto policy = inputPolicy();
+    if (policy.mapsF18ToHangul()) {
+      // a misreported second press of the key that is still held must not toggle the input mode again
+      if (m_f18HangulButtons.insert(button).second) {
+        const auto wire = policy.toWireKey(id, mask);
+        LOG_DEBUG("send F18 as Hangul to \"%s\"", getName().c_str());
+        ClientProxy1_8::keyDown(wire.id, wire.mask, button, language);
+      }
       return;
     }
-    key.mask = modifierMaskForWire(id, mask);
-  } else {
-    key = inputPolicy().toWireKey(id, mask);
   }
-  ProtocolUtil::writef(getStream(), kMsgDKeyDown, key.id, key.mask, button, &language);
+  ClientProxy1_8::keyDown(id, mask, button, language);
 }
 
 void ClientProxy1_9::keyRepeat(
     KeyID id, KeyModifierMask mask, int32_t count, KeyButton button, const std::string &language
 )
 {
-  if ((id == kKeySuper_R && m_rightSuperMapped) || inputPolicy().shouldSynthesizeSemanticMedia(id)) {
+  // the key was sent as Hangul, which must toggle the input mode once however long F18 is held
+  const bool heldAsHangul = id == kKeyF18 && m_f18HangulButtons.contains(button);
+  if (heldAsHangul || inputPolicy().shouldSuppressRepeat(id)) {
     return;
   }
-
-  InputKeyEvent key{id, mask};
-  if (!prepareLegacySuperRepeat(key.id)) {
-    return;
-  }
-  key.mask = modifierMaskForWire(id, key.mask);
-  ProtocolUtil::writef(getStream(), kMsgDKeyRepeat, key.id, key.mask, count, button, &language);
+  ClientProxy1_8::keyRepeat(id, mask, count, button, language);
 }
 
 void ClientProxy1_9::keyUp(KeyID id, KeyModifierMask mask, KeyButton button)
 {
-  InputKeyEvent key{id, mask};
-  const auto wireMask = modifierMaskForWire(id, key.mask);
-  const bool rightWasMapped = m_rightSuperMapped;
-
-  if (id == kKeySuper_L) {
-    m_leftSuperDown = false;
-  } else if (id == kKeySuper_R) {
-    m_rightSuperDown = false;
-    m_rightSuperMapped = false;
+  // the release follows how the press was sent, whatever the options say by now
+  if (id == kKeyF18 && m_f18HangulButtons.erase(button) > 0) {
+    ClientProxy1_8::keyUp(kKeyHangul, mask, button);
+    return;
   }
-
-  if (!(id == kKeySuper_R && rightWasMapped)) {
-    if (!prepareLegacySuperUp(key.id, button)) {
-      return;
-    }
-  }
-
-  ProtocolUtil::writef(getStream(), kMsgDKeyUp, key.id, wireMask, button);
+  ClientProxy1_8::keyUp(id, mask, button);
 }
 
 bool ClientProxy1_9::leave()
 {
-  m_leftSuperDown = false;
-  m_rightSuperDown = false;
-  m_rightSuperMapped = false;
+  // the destination releases every key when the cursor leaves it
+  m_f18HangulButtons.clear();
   return ClientProxy1_8::leave();
 }
 
@@ -141,7 +121,7 @@ void ClientProxy1_9::mouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource sou
 
 void ClientProxy1_9::resetOptions()
 {
-  m_rightCommandAction = RightCommandAction::Preserve;
+  m_f18Action = F18Action::PassThrough;
   m_invertScrollX = false;
   m_invertScrollY = false;
   m_scrollInvertScope = ScrollInvertScope::All;
@@ -152,11 +132,9 @@ void ClientProxy1_9::resetOptions()
 void ClientProxy1_9::setOptions(const OptionsList &options)
 {
   for (size_t i = 0; i + 1 < options.size(); i += 2) {
-    if (options[i] == kOptionCrossOSRightCommand) {
-      const auto value = options[i + 1];
-      m_rightCommandAction = value == static_cast<OptionValue>(RightCommandAction::Hangul)
-                                 ? RightCommandAction::Hangul
-                                 : RightCommandAction::Preserve;
+    if (options[i] == kOptionCrossOSF18Key) {
+      m_f18Action =
+          options[i + 1] == static_cast<OptionValue>(F18Action::Hangul) ? F18Action::Hangul : F18Action::PassThrough;
     } else if (options[i] == kOptionCrossOSInvertScrollX) {
       m_invertScrollX = options[i + 1] != 0;
     } else if (options[i] == kOptionCrossOSInvertScrollY) {
@@ -196,29 +174,16 @@ InputCapabilities ClientProxy1_9::localInputCapabilities() const
   return deskflow::platform::currentInputCapabilities();
 }
 
-InputPlatform ClientProxy1_9::legacyInputPlatform() const
-{
-  return localInputCapabilities().platform;
-}
-
 CrossPlatformInputPolicy ClientProxy1_9::inputPolicy() const
 {
   return {
       localInputCapabilities(), m_destinationInputCapabilities,
       CrossPlatformInputOptions{
-          .rightCommand = m_rightCommandAction,
+          .f18Action = m_f18Action,
           .invertScrollX = m_invertScrollX,
           .invertScrollY = m_invertScrollY,
           .scrollInvertScope = m_scrollInvertScope,
           .semanticMedia = m_semanticMedia
       }
   };
-}
-
-KeyModifierMask ClientProxy1_9::modifierMaskForWire(KeyID id, KeyModifierMask mask) const
-{
-  if (id != kKeySuper_R && m_rightSuperMapped && m_rightSuperDown && !m_leftSuperDown) {
-    mask &= ~KeyModifierSuper;
-  }
-  return mask;
 }

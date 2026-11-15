@@ -51,7 +51,7 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
   ui->comboSuper->setCurrentIndex(m_computer->modifier(static_cast<int>(KeyboardModifier::Super)));
   ui->comboAltGr->setCurrentIndex(m_computer->modifier(static_cast<int>(KeyboardModifier::AltGr)));
 
-  ui->comboRightCommand->setCurrentIndex(static_cast<int>(m_computer->rightCommandAction()));
+  ui->comboF18Key->setCurrentIndex(static_cast<int>(m_computer->f18Action()));
   ui->chkCrossOSInvertX->setChecked(m_computer->crossOSInvertX());
   ui->chkCrossOSInvertY->setChecked(m_computer->crossOSInvertY());
   ui->comboCrossOSInvertScope->setCurrentIndex(static_cast<int>(m_computer->crossOSInvertScope()));
@@ -117,10 +117,9 @@ void ComputerSettingsDialog::accept()
   m_computer->setModifier(KeyboardModifier::Super, ui->comboSuper->currentIndex());
   m_computer->setModifier(KeyboardModifier::AltGr, ui->comboAltGr->currentIndex());
 
-  m_computer->setRightCommandAction(
-      ui->comboRightCommand->currentIndex() == static_cast<int>(RightCommandAction::Hangul)
-          ? RightCommandAction::Hangul
-          : RightCommandAction::Preserve
+  m_computer->setF18Action(
+      ui->comboF18Key->currentIndex() == static_cast<int>(F18Action::Hangul) ? F18Action::Hangul
+                                                                             : F18Action::PassThrough
   );
   m_computer->setCrossOSInvertX(ui->chkCrossOSInvertX->isChecked());
   m_computer->setCrossOSInvertY(ui->chkCrossOSInvertY->isChecked());

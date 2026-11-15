@@ -32,13 +32,6 @@ elseif(APPLE)
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
   )
   create_test(
-    NAME OSXModifierStateTests
-    DEPENDS platform
-    LIBS base arch
-    SOURCE OSXModifierStateTests.cpp
-    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
-  )
-  create_test(
     NAME OSXScrollSourceTests
     DEPENDS platform
     LIBS base arch

@@ -43,26 +43,72 @@ void ServerConfigTests::initTestCase()
   Settings::setSettingsFile(m_settingsFile);
 }
 
-void ServerConfigTests::rightCommandAction_hangulAddsOption()
+void ServerConfigTests::f18Action_hangulAddsOption()
 {
-  const auto key = Settings::Computer::RightCommandAction.arg(QStringLiteral("computerA"));
+  const auto key = Settings::Computer::F18Action.arg(QStringLiteral("computerA"));
   Settings::setValue(key, QStringLiteral("hangul"));
 
   Config config(nullptr);
   QVERIFY(config.addComputer("computerA"));
   const auto *options = config.getOptions("computerA");
   QVERIFY(options != nullptr);
-  auto option = options->find(kOptionCrossOSRightCommand);
+  auto option = options->find(kOptionCrossOSF18Key);
   QVERIFY(option != options->end());
-  QCOMPARE(option->second, static_cast<OptionValue>(RightCommandAction::Hangul));
+  QCOMPARE(option->second, static_cast<OptionValue>(F18Action::Hangul));
 
+  // parsed like the other text settings: trimmed and case-insensitive
+  Settings::setValue(key, QStringLiteral(" HANGUL "));
+  Config padded(nullptr);
+  QVERIFY(padded.addComputer("computerA"));
+  QCOMPARE(padded.getOptions("computerA")->count(kOptionCrossOSF18Key), static_cast<size_t>(1));
+}
+
+void ServerConfigTests::f18Action_passThroughMissingAndInvalidAddNoOption()
+{
+  const auto name = QStringLiteral("computerB");
+  const auto key = Settings::Computer::F18Action.arg(name);
+  const auto f18Options = [&]() {
+    Config config(nullptr);
+    if (!config.addComputer(name.toStdString())) {
+      return static_cast<size_t>(-1);
+    }
+    const auto *options = config.getOptions(name.toStdString());
+    return options == nullptr ? static_cast<size_t>(-1) : options->count(kOptionCrossOSF18Key);
+  };
+
+  // pass through is the default, so it is what an old config without the key gets: no option is sent at all
+  Settings::setValue(key, QVariant());
+  QCOMPARE(f18Options(), static_cast<size_t>(0));
+  Settings::setValue(key, QStringLiteral("passthrough"));
+  QCOMPARE(f18Options(), static_cast<size_t>(0));
   Settings::setValue(key, QStringLiteral("invalid"));
-  Config fallback(nullptr);
-  QVERIFY(fallback.addComputer("computerA"));
-  const auto *fallbackOptions = fallback.getOptions("computerA");
-  QVERIFY(fallbackOptions != nullptr);
-  option = fallbackOptions->find(kOptionCrossOSRightCommand);
-  QVERIFY(option == fallbackOptions->end());
+  QCOMPARE(f18Options(), static_cast<size_t>(0));
+  Settings::setValue(key, QString());
+  QCOMPARE(f18Options(), static_cast<size_t>(0));
+}
+
+void ServerConfigTests::legacyRightCommandAction_isIgnored()
+{
+  // a config written while Right Command could be mapped to Hangul still loads, and Command stays the Windows key:
+  // neither the old value nor anything derived from it reaches the options
+  const auto name = QStringLiteral("computerC");
+  Settings::setValue(QStringLiteral("computer_%1/rightCommandAction").arg(name), QStringLiteral("hangul"));
+  Settings::setValue(Settings::Computer::F18Action.arg(name), QVariant());
+
+  Config config(nullptr);
+  QVERIFY(config.addComputer(name.toStdString()));
+  const auto *options = config.getOptions(name.toStdString());
+  QVERIFY(options != nullptr);
+  QCOMPARE(options->count(kOptionCrossOSF18Key), static_cast<size_t>(0));
+  // "RCPM", the option ID the setting used to produce
+  constexpr OptionID legacyRightCommandOption = ('R' << 24) | ('C' << 16) | ('P' << 8) | 'M';
+  QCOMPARE(options->count(legacyRightCommandOption), static_cast<size_t>(0));
+
+  // the other Cross-OS settings of the same computer are read as before
+  Settings::setValue(Settings::Computer::CrossOSSemanticMedia.arg(name), true);
+  Config withMedia(nullptr);
+  QVERIFY(withMedia.addComputer(name.toStdString()));
+  QCOMPARE(withMedia.getOptions(name.toStdString())->count(kOptionCrossOSSemanticMedia), static_cast<size_t>(1));
 }
 
 void ServerConfigTests::crossOSScrollOptions_areOptIn()
@@ -143,7 +189,7 @@ void ServerConfigTests::crossOSInvertScope_isOptIn()
   Settings::setValue(key, QStringLiteral("mouseWheelOnly"));
   QCOMPARE(scopeOption().value_or(-1), static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly));
 
-  // parsed like rightCommandAction: trimmed and case-insensitive
+  // parsed like f18Action: trimmed and case-insensitive
   Settings::setValue(key, QStringLiteral(" MouseWheelONLY "));
   QCOMPARE(scopeOption().value_or(-1), static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly));
 }

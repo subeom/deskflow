@@ -21,8 +21,7 @@ private Q_SLOTS:
   void parseHandshakeMessage_protocolError_queuesRefusalRequest();
   void legacyScroll_preservesDmwmValues();
   void inputCapabilities_v19_readsSourceAndWritesDestinationCapabilities();
-  void rightCommand_hangulPolicyTransformsSuperR();
-  void rightCommand_missingHangulCapability_preservesLegacy();
+  void f18_option_isIgnoredByTheDestination();
   void crossOSScroll_v19TransformsDmwmBeforeDelivery();
   void crossOSScroll_mouseWheelOnlyScopeFailsClosedForPlainDmwm();
   void semanticMedia_v19HandlesOnlyEligibleKeys();

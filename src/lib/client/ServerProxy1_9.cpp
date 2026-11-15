@@ -52,18 +52,12 @@ bool ServerProxy1_9::receiveInputCapabilities()
 
 void ServerProxy1_9::onOptionsChanged(const OptionsList &options)
 {
-  m_rightCommandAction = RightCommandAction::Preserve;
   m_invertScrollX = false;
   m_invertScrollY = false;
   m_scrollInvertScope = ScrollInvertScope::All;
   m_semanticMedia = false;
   for (size_t i = 0; i + 1 < options.size(); i += 2) {
-    if (options[i] == kOptionCrossOSRightCommand) {
-      const auto value = options[i + 1];
-      m_rightCommandAction = value == static_cast<OptionValue>(RightCommandAction::Hangul)
-                                 ? RightCommandAction::Hangul
-                                 : RightCommandAction::Preserve;
-    } else if (options[i] == kOptionCrossOSInvertScrollX) {
+    if (options[i] == kOptionCrossOSInvertScrollX) {
       m_invertScrollX = options[i + 1] != 0;
     } else if (options[i] == kOptionCrossOSInvertScrollY) {
       m_invertScrollY = options[i + 1] != 0;
@@ -75,13 +69,6 @@ void ServerProxy1_9::onOptionsChanged(const OptionsList &options)
       m_semanticMedia = options[i + 1] != 0;
     }
   }
-}
-
-void ServerProxy1_9::transformInputKey(KeyID &id, KeyModifierMask &mask)
-{
-  const auto transformed = inputPolicy().toDestinationKey(id, mask);
-  id = transformed.id;
-  mask = transformed.mask;
 }
 
 bool ServerProxy1_9::handleSemanticMediaKey(KeyID id)
@@ -122,7 +109,6 @@ CrossPlatformInputPolicy ServerProxy1_9::inputPolicy() const
   return {
       m_sourceInputCapabilities, localInputCapabilities(),
       CrossPlatformInputOptions{
-          .rightCommand = m_rightCommandAction,
           .invertScrollX = m_invertScrollX,
           .invertScrollY = m_invertScrollY,
           .scrollInvertScope = m_scrollInvertScope,

@@ -34,21 +34,20 @@ class Computer : public ComputerConfig
   {
     return outStream << computer.name() << computer.switchCornerSize() << computer.aliases() << computer.modifiers()
                      << computer.switchCorners() << computer.fixes() << computer.isServer()
-                     << static_cast<quint8>(computer.m_RightCommandAction) << computer.m_CrossOSInvertX
+                     << static_cast<quint8>(computer.m_F18Action) << computer.m_CrossOSInvertX
                      << computer.m_CrossOSInvertY << computer.m_CrossOSSemanticMedia
                      << static_cast<quint8>(computer.m_CrossOSInvertScope);
   }
 
   friend QDataStream &operator>>(QDataStream &inStream, Computer &computer)
   {
-    quint8 rightCommandAction = 0;
+    quint8 f18Action = 0;
     quint8 crossOSInvertScope = 0;
     inStream >> computer.m_Name >> computer.m_SwitchCornerSize >> computer.m_Aliases >> computer.m_Modifiers >>
-        computer.m_SwitchCorners >> computer.m_Fixes >> computer.m_isServer >> rightCommandAction >>
-        computer.m_CrossOSInvertX >> computer.m_CrossOSInvertY >> computer.m_CrossOSSemanticMedia >> crossOSInvertScope;
-    computer.m_RightCommandAction = rightCommandAction == static_cast<quint8>(RightCommandAction::Hangul)
-                                        ? RightCommandAction::Hangul
-                                        : RightCommandAction::Preserve;
+        computer.m_SwitchCorners >> computer.m_Fixes >> computer.m_isServer >> f18Action >> computer.m_CrossOSInvertX >>
+        computer.m_CrossOSInvertY >> computer.m_CrossOSSemanticMedia >> crossOSInvertScope;
+    computer.m_F18Action =
+        f18Action == static_cast<quint8>(F18Action::Hangul) ? F18Action::Hangul : F18Action::PassThrough;
     computer.m_CrossOSInvertScope = crossOSInvertScope == static_cast<quint8>(ScrollInvertScope::MouseWheelOnly)
                                         ? ScrollInvertScope::MouseWheelOnly
                                         : ScrollInvertScope::All;
@@ -103,9 +102,9 @@ public:
   {
     return m_Fixes;
   }
-  [[nodiscard]] RightCommandAction rightCommandAction() const
+  [[nodiscard]] F18Action f18Action() const
   {
-    return m_RightCommandAction;
+    return m_F18Action;
   }
   [[nodiscard]] bool crossOSInvertX() const
   {
@@ -185,9 +184,9 @@ protected:
   {
     return m_Fixes;
   }
-  void setRightCommandAction(const RightCommandAction action)
+  void setF18Action(const F18Action action)
   {
-    m_RightCommandAction = action;
+    m_F18Action = action;
   }
   void setCrossOSInvertX(const bool enabled)
   {
@@ -218,7 +217,7 @@ private:
   QList<bool> m_SwitchCorners = {false, false, false, false};
   int m_SwitchCornerSize = 0;
   QList<bool> m_Fixes{false, false, false, false};
-  RightCommandAction m_RightCommandAction = RightCommandAction::Preserve;
+  F18Action m_F18Action = F18Action::PassThrough;
   bool m_CrossOSInvertX = false;
   bool m_CrossOSInvertY = false;
   ScrollInvertScope m_CrossOSInvertScope = ScrollInvertScope::All;

@@ -26,9 +26,10 @@ using OptionValue = int32_t;
 // for now, options are just pairs of integers
 using OptionsList = std::vector<uint32_t>;
 
-enum class RightCommandAction : uint8_t
+//! What the F18 key does on a Windows destination
+enum class F18Action : uint8_t
 {
-  Preserve = 0,
+  PassThrough = 0,
   Hangul = 1
 };
 
@@ -57,7 +58,7 @@ static const OptionID kOptionModifierMapForAlt = OPTION_CODE("MMFA");
 static const OptionID kOptionModifierMapForAltGr = OPTION_CODE("MMFG");
 static const OptionID kOptionModifierMapForMeta = OPTION_CODE("MMFM");
 static const OptionID kOptionModifierMapForSuper = OPTION_CODE("MMFR");
-static const OptionID kOptionCrossOSRightCommand = OPTION_CODE("RCPM");
+static const OptionID kOptionCrossOSF18Key = OPTION_CODE("HGF8");
 static const OptionID kOptionCrossOSInvertScrollX = OPTION_CODE("CXIX");
 static const OptionID kOptionCrossOSInvertScrollY = OPTION_CODE("CXIY");
 static const OptionID kOptionCrossOSInvertScope = OPTION_CODE("CXIS");

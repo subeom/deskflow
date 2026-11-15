@@ -9,6 +9,8 @@
 #include "deskflow/CrossPlatformInputPolicy.h"
 #include "server/ClientProxy1_8.h"
 
+#include <set>
+
 class ClientProxy1_9 : public ClientProxy1_8
 {
 public:
@@ -34,22 +36,19 @@ protected:
   bool parseMessage(const uint8_t *code) override;
   bool isHandshakeCompleteReady() const override;
   virtual InputCapabilities localInputCapabilities() const;
-  InputPlatform legacyInputPlatform() const override;
 
 private:
   void sendInputCapabilities() const;
   bool receiveInputCapabilities();
   CrossPlatformInputPolicy inputPolicy() const;
-  KeyModifierMask modifierMaskForWire(KeyID id, KeyModifierMask mask) const;
 
   InputCapabilities m_destinationInputCapabilities;
   bool m_receivedInputCapabilities = false;
-  RightCommandAction m_rightCommandAction = RightCommandAction::Preserve;
+  F18Action m_f18Action = F18Action::PassThrough;
   bool m_invertScrollX = false;
   bool m_invertScrollY = false;
   ScrollInvertScope m_scrollInvertScope = ScrollInvertScope::All;
   bool m_semanticMedia = false;
-  bool m_leftSuperDown = false;
-  bool m_rightSuperDown = false;
-  bool m_rightSuperMapped = false;
+  // the F18 presses written as Hangul and not released yet, by the KeyButton the source gave them
+  std::set<KeyButton> m_f18HangulButtons;
 };

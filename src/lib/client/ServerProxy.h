@@ -69,9 +69,6 @@ protected:
   virtual void onOptionsChanged(const OptionsList &)
   {
   }
-  virtual void transformInputKey(KeyID &, KeyModifierMask &)
-  {
-  }
   virtual bool handleSemanticMediaKey(KeyID)
   {
     return false;

@@ -15,7 +15,7 @@
 
 struct CrossPlatformInputOptions
 {
-  RightCommandAction rightCommand = RightCommandAction::Preserve;
+  F18Action f18Action = F18Action::PassThrough;
   bool invertScrollX = false;
   bool invertScrollY = false;
   ScrollInvertScope scrollInvertScope = ScrollInvertScope::All;
@@ -33,10 +33,20 @@ class CrossPlatformInputPolicy
 public:
   CrossPlatformInputPolicy(InputCapabilities source, InputCapabilities destination, CrossPlatformInputOptions options);
 
+  //! The key the source writes to the wire for a key it saw
+  /*!
+  Only F18 is ever replaced, and only where mapsF18ToHangul() says so: it becomes \c kKeyHangul with the modifiers
+  the source reported.  Every other key, Left and Right Command (Super) included, is written as the source saw it.
+  */
   InputKeyEvent toWireKey(KeyID id, KeyModifierMask mask) const;
-  InputKeyEvent toDestinationKey(KeyID id, KeyModifierMask mask) const;
   bool shouldSuppressRepeat(KeyID id) const;
-  bool mapsRightCommandToHangul() const;
+
+  //! Whether F18 is written as the Korean-English (Hangul) key
+  /*!
+  True only for a macOS source and a Windows destination that reported \c kInputCapabilityHangul, and only when the
+  F18 option is set to \c F18Action::Hangul.
+  */
+  bool mapsF18ToHangul() const;
 
   //! Scroll inversion applied by the source computer before it writes the wheel packet
   /*!
@@ -57,7 +67,6 @@ public:
 
 private:
   bool isCrossPlatform() const;
-  bool canMapHangul() const;
   bool canMapScroll() const;
   bool canSynthesizeSemanticMedia() const;
   ScrollDelta invertConfiguredAxes(ScrollDelta delta) const;

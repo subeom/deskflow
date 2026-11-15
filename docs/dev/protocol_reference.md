@@ -273,12 +273,42 @@ Current capability bits:
 - bit 3: destination can apply negotiated cross-platform scroll inversion
 
 The destination advertises bit 1 only if its current key-map inventory can synthesize
-`kKeyHangul` and advertises bits 2 and 3 on Windows. Unknown platforms and missing bits
-always fall back to existing input behavior.
+`kKeyHangul` (on Windows only the Korean keyboard layout provides that key) and advertises bits 2
+and 3 on Windows. Unknown platforms and missing bits always fall back to existing input behavior.
 
 Protocol 1.9 does not change the formats of @ref kMsgDKeyDown, @ref kMsgDKeyRepeat,
 @ref kMsgDKeyUp, or @ref kMsgDMouseWheel. A peer using protocol 1.8 or older never sends or receives
 `DIPC`/`CIPC` and continues to use the existing input packets unchanged.
+
+#### F18 to Hangul Mapping
+
+On a negotiated macOS-to-Windows protocol 1.9 link, the F18 key can be sent as the Korean-English
+(Hangul) key. The option pair is carried by @ref kMsgDSetOptions:
+
+- `HGF8` (`kOptionCrossOSF18Key`): `1` is `F18Action::Hangul`. `0`, an absent option and any other
+  value mean `F18Action::PassThrough`, for which the server sends no option at all.
+
+The mapping is applied by the **source**, in `ClientProxy1_9`, so no new message or capability
+bit is needed and the key messages keep their formats. It applies only when the source is macOS,
+the destination is Windows, the destination reported capability bit 1, and `HGF8` is `1`:
+
+1. A @ref kMsgDKeyDown for `kKeyF18` is written as a @ref kMsgDKeyDown for `kKeyHangul`. The
+   modifier mask and the `KeyButton` of the source's key are kept, because the destination pairs a
+   release with its press by that `KeyButton`.
+2. A @ref kMsgDKeyRepeat for the F18 key is not written, and neither is a second @ref kMsgDKeyDown
+   for a key that is still held, so that holding F18 toggles the input mode once.
+3. The matching @ref kMsgDKeyUp is written as a @ref kMsgDKeyUp for `kKeyHangul` with the same
+   `KeyButton`. The proxy remembers which presses it sent as Hangul, so the release follows how the
+   press was sent even if the options changed meanwhile. That memory is dropped on
+   @ref kMsgCLeave, which makes the destination release every key.
+
+Every other case, including every other key, F13 to F17 and F19 onwards among them, a link below
+1.9, a destination that is not Windows or did not report bit 1, and `HGF8` being absent, writes
+exactly the bytes it wrote before `HGF8` existed. The destination never maps the key itself and
+ignores `HGF8`, so a destination that already advertises bit 1 needs no change.
+
+Command is not touched by protocol 1.9: `kKeySuper_L` and `kKeySuper_R` are written as the source
+saw them. A macOS source reports both Command keys as `kKeySuper_L`, as it did before 1.9.
 
 #### Cross-OS Scroll Inversion Scope
 

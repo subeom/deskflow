@@ -16,31 +16,21 @@ CrossPlatformInputPolicy::CrossPlatformInputPolicy(
 
 InputKeyEvent CrossPlatformInputPolicy::toWireKey(KeyID id, KeyModifierMask mask) const
 {
-  if (id == kKeySuper_R && m_source.platform == InputPlatform::MacOS && !mapsRightCommandToHangul()) {
-    id = kKeySuper_L;
-  }
-  return {id, mask};
-}
-
-InputKeyEvent CrossPlatformInputPolicy::toDestinationKey(KeyID id, KeyModifierMask mask) const
-{
-  if (id == kKeySuper_R && m_source.platform == InputPlatform::MacOS) {
-    if (mapsRightCommandToHangul()) {
-      return {kKeyHangul, mask & ~KeyModifierSuper};
-    }
-    return {kKeySuper_L, mask};
+  if (id == kKeyF18 && mapsF18ToHangul()) {
+    return {kKeyHangul, mask};
   }
   return {id, mask};
 }
 
 bool CrossPlatformInputPolicy::shouldSuppressRepeat(KeyID id) const
 {
-  return (id == kKeySuper_R && mapsRightCommandToHangul()) || shouldSynthesizeSemanticMedia(id);
+  return (id == kKeyF18 && mapsF18ToHangul()) || shouldSynthesizeSemanticMedia(id);
 }
 
-bool CrossPlatformInputPolicy::mapsRightCommandToHangul() const
+bool CrossPlatformInputPolicy::mapsF18ToHangul() const
 {
-  return canMapHangul();
+  return m_options.f18Action == F18Action::Hangul && isCrossPlatform() && m_source.platform == InputPlatform::MacOS &&
+         m_destination.platform == InputPlatform::Windows && (m_destination.capabilities & kInputCapabilityHangul) != 0;
 }
 
 ScrollDelta CrossPlatformInputPolicy::toWireScroll(ScrollDelta delta, ScrollSource source) const
@@ -97,13 +87,6 @@ bool CrossPlatformInputPolicy::isCrossPlatform() const
 {
   return isKnownInputPlatform(m_source.platform) && isKnownInputPlatform(m_destination.platform) &&
          m_source.platform != m_destination.platform;
-}
-
-bool CrossPlatformInputPolicy::canMapHangul() const
-{
-  return m_options.rightCommand == RightCommandAction::Hangul && isCrossPlatform() &&
-         m_source.platform == InputPlatform::MacOS && m_destination.platform == InputPlatform::Windows &&
-         (m_destination.capabilities & kInputCapabilityHangul) != 0;
 }
 
 bool CrossPlatformInputPolicy::canMapScroll() const

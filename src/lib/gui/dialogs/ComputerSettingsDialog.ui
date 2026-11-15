@@ -738,30 +738,30 @@
       <item>
        <widget class="QLabel" name="lblCrossOSInputDescription">
         <property name="text">
-         <string>Applies only when a Mac server controls this Windows computer.</string>
+         <string>Command is always the Windows key. F18 can act as the Korean-English key.</string>
         </property>
        </widget>
       </item>
       <item>
        <layout class="QFormLayout" name="formCrossOSInput">
         <item row="0" column="0">
-         <widget class="QLabel" name="lblRightCommand">
+         <widget class="QLabel" name="lblF18Key">
           <property name="text">
-           <string>Right Command</string>
+           <string>F18 key</string>
           </property>
           <property name="buddy">
-           <cstring>comboRightCommand</cstring>
+           <cstring>comboF18Key</cstring>
           </property>
          </widget>
         </item>
         <item row="0" column="1">
-         <widget class="QComboBox" name="comboRightCommand">
+         <widget class="QComboBox" name="comboF18Key">
           <property name="toolTip">
-           <string>Choose whether Right Command remains the Windows key or becomes the Korean-English Hangul toggle.</string>
+           <string>Command always acts as the Windows key. Choose whether F18 is sent to Windows unchanged or acts as the Korean-English (Hangul) key. The Windows computer must be using a Korean keyboard layout for the Hangul key to work.</string>
           </property>
           <item>
            <property name="text">
-            <string>Preserve as Windows key (default)</string>
+            <string>Pass through (default)</string>
            </property>
           </item>
           <item>
@@ -886,7 +886,7 @@
   <tabstop>btnAddAlias</tabstop>
   <tabstop>listAliases</tabstop>
   <tabstop>btnRemoveAlias</tabstop>
-  <tabstop>comboRightCommand</tabstop>
+  <tabstop>comboF18Key</tabstop>
   <tabstop>chkCrossOSInvertX</tabstop>
   <tabstop>chkCrossOSInvertY</tabstop>
   <tabstop>comboCrossOSInvertScope</tabstop>

@@ -12,12 +12,9 @@ class CrossPlatformInputPolicyTests : public QObject
   Q_OBJECT
 
 private Q_SLOTS:
-  void samePlatform_preservesRightCommand();
-  void unknownPlatform_preservesRightCommand();
-  void disabledOption_preservesRightCommand();
-  void missingHangulCapability_preservesRightCommand();
-  void macToWindows_hangulMapsDestinationKeyAndSuppressesRepeat();
-  void macSource_legacyRightCommandNormalizesToLeft();
+  void f18_matrix_data();
+  void f18_matrix();
+  void f18_defaultsToPassThrough();
   void scrollPolicy_requiresCrossPlatformAndCapabilities();
   void scrollPolicy_preservesNonMacWindowsPairs();
   void scrollPolicy_invertsOnlySelectedAxesAndBoundaries();
@@ -26,4 +23,5 @@ private Q_SLOTS:
   void scrollScope_defaultsToAll();
   void semanticMediaPolicy_requiresMacWindowsCapabilityAndOption();
   void semanticMediaPolicy_supportsOnlyApprovedIds();
+  void crossOSOptionIds_areDistinct();
 };

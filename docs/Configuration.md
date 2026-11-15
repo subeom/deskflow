@@ -174,7 +174,7 @@ Each computer will have a section where its configuration will be stored, if the
 | modifierMeta            | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's meta modifer to different key on this computer|
 | modifierShift           | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's shift modifer to different key on this computer|
 | modifierSuper           | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's super modifer to different key on thist computer|
-| rightCommandAction      | `preserve` or `hangul` | When the source is macOS and the destination supports protocol 1.9 Korean IME input, map Right Command to Hangul instead of preserving it as Super [default: preserve] |
+| f18Action               | `passthrough` or `hangul` | What the F18 key does when this computer is a Windows destination of a macOS server over a protocol 1.9 link: `passthrough` sends F18 unchanged, `hangul` sends the Korean-English (Hangul) key instead. A missing or unrecognised value means `passthrough` [default: passthrough] |
 | crossOSInvertX         | `true` or `false` | Invert horizontal wheel deltas only on a negotiated macOS-to-Windows protocol 1.9 link [default: false] |
 | crossOSInvertY         | `true` or `false` | Invert vertical wheel deltas only on a negotiated macOS-to-Windows protocol 1.9 link [default: false] |
 | crossOSInvertScope     | `all` or `mouseWheelOnly` | Which scroll events `crossOSInvertX` and `crossOSInvertY` apply to: every wheel event (`all`), or only events the macOS server classifies as a mouse wheel, leaving trackpad scrolling unchanged (`mouseWheelOnly`). A missing or unrecognised value means `all` [default: all] |
@@ -187,7 +187,24 @@ Each computer will have a section where its configuration will be stored, if the
 | xtestIsXineramaUnaware | `true` or `false` | This option works around a bug in the XTest extension when used in combination with Xinerama. It affects X11 clients only. Not all versions of the XTest extension are aware of the Xinerama extension. As a result, they do not move the mouse correctly when using multiple Xinerama screens. This option is currently ''true'' by default. If you know your XTest extension is Xinerama aware then set this option to ''false''.|
 | weakX11Focus           | `true` or `false` | This X11 Client will not gain focus until an input event has been processed its any of its screens |
 
-The `rightCommandAction`, `crossOSInvertX`, `crossOSInvertY`, `crossOSInvertScope`, and `crossOSSemanticMedia` values are available in the destination computer's **Cross-OS Input** settings. These options apply only to negotiated macOS-to-Windows protocol 1.9 links. By default (`crossOSInvertScope=all`) scroll inversion applies to every wheel event and does not distinguish mouse from trackpad devices. The destination-local **Client Configuration** inversion and scale remain separate and are applied afterward, so enabling both layers can compound.
+The `f18Action`, `crossOSInvertX`, `crossOSInvertY`, `crossOSInvertScope`, and `crossOSSemanticMedia` values are available in the destination computer's **Cross-OS Input** settings. These options apply only to negotiated macOS-to-Windows protocol 1.9 links. By default (`crossOSInvertScope=all`) scroll inversion applies to every wheel event and does not distinguish mouse from trackpad devices. The destination-local **Client Configuration** inversion and scale remain separate and are applied afterward, so enabling both layers can compound.
+
+#### F18 as the Korean-English key
+
+Command is always the Windows key. The Cross-OS Input settings never change it: Left and Right Command are sent exactly as they were before these settings existed, on every link and whatever the settings are. A `rightCommandAction` value left in the configuration by an earlier test build is ignored.
+
+Setting `f18Action` to `hangul` (**F18 key: Korean-English toggle (Hangul)** in the **Cross-OS Input** settings) makes the macOS server send the Korean-English (Hangul) key to the Windows computer whenever F18 is pressed on the Mac. It takes effect only when all of these hold; in every other case F18, like every other key, is sent unchanged:
+
+- the server is macOS and the destination is Windows
+- the link negotiated protocol 1.9
+- the Windows computer reported that it can type the Hangul key
+- the setting is `hangul` (the default is `passthrough`, for which no option is sent at all)
+
+The Windows computer reports the Hangul key only when its current keyboard layout has one, so **the Windows input language must be Korean** for the toggle to work. The report is made when the connection is made, so connect (or reconnect) after switching the Windows computer to the Korean layout.
+
+The server does the mapping, so the Windows computer needs no setting. The key's press and release stay paired, the modifiers that were held are kept, and holding F18 toggles the input mode once: the repeats of the mapped key are not sent.
+
+Deskflow only sees F18. It does not remap keys itself, and these docs do not cover how to make a key of your keyboard send F18 on macOS.
 
 #### Mouse wheel only scroll inversion
 

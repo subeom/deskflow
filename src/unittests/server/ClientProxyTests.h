@@ -37,12 +37,19 @@ private Q_SLOTS:
   void scrollScope_resetOptions_restoresDestinationInversion();
   void scrollScope_ineligibleLinks_keepLegacyBytes_data();
   void scrollScope_ineligibleLinks_keepLegacyBytes();
-  void rightCommand_hangulPolicy_preservesSuperRAndSuppressesRepeat();
-  void rightCommand_sameOrDisabledPolicy_preservesLegacyLeftSuper();
-  void rightCommand_leftSuperHeld_keepsSuperOnOtherKeys();
-  void rightCommand_v18_preservesLegacyMacWireValue();
-  void rightCommand_v19_preservesLegacyAggregateState();
-  void rightCommand_leave_clearsMappedAndLegacyState();
+  void rightCommand_bytesMatchOriginalServer_data();
+  void rightCommand_bytesMatchOriginalServer();
+  void f18_macToWindows_sendsHangulWithSourceButtonAndModifiers();
+  void f18_heldKey_togglesOnceAndSuppressesRepeat();
+  void f18_release_followsHowThePressWasSent();
+  void f18_leave_forgetsHeldKeys();
+  void f18_ineligibleLinks_passThrough_data();
+  void f18_ineligibleLinks_passThrough();
+  void f18_legacyLinks_passThrough_data();
+  void f18_legacyLinks_passThrough();
+  void f18_otherKeys_passThrough_data();
+  void f18_otherKeys_passThrough();
+  void f18_optionOffInvalidOrReset_passesThrough();
   void semanticMedia_v19EnabledSuppressesRepeat();
   void semanticMedia_v18AndDisabledPreserveWireValues();
 

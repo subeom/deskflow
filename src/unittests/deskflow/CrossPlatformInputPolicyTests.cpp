@@ -11,6 +11,8 @@
 
 #include <array>
 #include <limits>
+#include <set>
+#include <vector>
 
 namespace {
 
@@ -19,92 +21,99 @@ InputCapabilities capabilities(InputPlatform platform, InputCapabilityMask mask 
   return {platform, mask};
 }
 
-CrossPlatformInputOptions hangulOptions()
-{
-  return {.rightCommand = RightCommandAction::Hangul};
-}
+constexpr KeyModifierMask kHeldModifiers = KeyModifierShift | KeyModifierSuper;
+
+// every key that must come out of the policy exactly as it went in, on every link
+constexpr std::array kUnaffectedKeys = {kKeyF1,  kKeyF13,  kKeyF14,     kKeyF15,     kKeyF16,     kKeyF17,
+                                        kKeyF19, kKeyF20,  kKeyF24,     kKeyHangul,  kKeyKana,    kKeyHanja,
+                                        kKeyTab, kKeyNone, kKeyShift_L, kKeySuper_L, kKeySuper_R, KeyID{'a'}};
 
 } // namespace
 
-void CrossPlatformInputPolicyTests::samePlatform_preservesRightCommand()
+void CrossPlatformInputPolicyTests::f18_matrix_data()
 {
-  const CrossPlatformInputPolicy policy(
-      capabilities(InputPlatform::MacOS), capabilities(InputPlatform::MacOS, kInputCapabilityHangul), hangulOptions()
-  );
+  QTest::addColumn<int>("sourcePlatform");
+  QTest::addColumn<int>("destinationPlatform");
+  QTest::addColumn<uint32_t>("destinationCapabilities");
+  QTest::addColumn<int>("action");
+  QTest::addColumn<bool>("maps");
 
-  const auto wire = policy.toWireKey(kKeySuper_R, KeyModifierSuper);
-  QCOMPARE(wire.id, kKeySuper_L);
-  QCOMPARE(wire.mask, KeyModifierSuper);
-  QVERIFY(!policy.mapsRightCommandToHangul());
-  QVERIFY(!policy.shouldSuppressRepeat(kKeySuper_R));
+  constexpr auto mac = static_cast<int>(InputPlatform::MacOS);
+  constexpr auto windows = static_cast<int>(InputPlatform::Windows);
+  constexpr auto linuxPlatform = static_cast<int>(InputPlatform::Linux);
+  constexpr auto other = static_cast<int>(InputPlatform::Other);
+  constexpr auto unknown = static_cast<int>(InputPlatform::Unknown);
+  constexpr uint32_t withHangul = kInputCapabilityProtocolV19 | kInputCapabilityHangul;
+  constexpr uint32_t withoutHangul =
+      kInputCapabilityProtocolV19 | kInputCapabilityCrossOSScroll | kInputCapabilitySemanticMedia;
+  constexpr auto hangul = static_cast<int>(F18Action::Hangul);
+  constexpr auto passThrough = static_cast<int>(F18Action::PassThrough);
+
+  const auto row = [](const char *name, int source, int destination, uint32_t caps, int action, bool maps) {
+    QTest::newRow(name) << source << destination << caps << action << maps;
+  };
+
+  // the one link that maps: macOS source, Windows destination that can type Hangul, option on
+  row("mac to windows, capability, option on", mac, windows, withHangul, hangul, true);
+
+  // each condition on its own switches it off again
+  row("mac to windows, capability, option off", mac, windows, withHangul, passThrough, false);
+  row("mac to windows, other capabilities only", mac, windows, withoutHangul, hangul, false);
+  row("mac to windows, no capabilities", mac, windows, 0, hangul, false);
+  row("mac to mac", mac, mac, withHangul, hangul, false);
+  row("mac to linux", mac, linuxPlatform, withHangul, hangul, false);
+  row("mac to other", mac, other, withHangul, hangul, false);
+  row("mac to unknown", mac, unknown, withHangul, hangul, false);
+  row("unknown to windows", unknown, windows, withHangul, hangul, false);
+  row("windows to windows", windows, windows, withHangul, hangul, false);
+  row("windows to mac", windows, mac, withHangul, hangul, false);
+  row("linux to windows", linuxPlatform, windows, withHangul, hangul, false);
+  row("other to windows", other, windows, withHangul, hangul, false);
 }
 
-void CrossPlatformInputPolicyTests::unknownPlatform_preservesRightCommand()
+void CrossPlatformInputPolicyTests::f18_matrix()
 {
+  QFETCH(int, sourcePlatform);
+  QFETCH(int, destinationPlatform);
+  QFETCH(uint32_t, destinationCapabilities);
+  QFETCH(int, action);
+  QFETCH(bool, maps);
+
   const CrossPlatformInputPolicy policy(
-      capabilities(InputPlatform::Unknown), capabilities(InputPlatform::Windows, kInputCapabilityHangul),
-      hangulOptions()
+      capabilities(static_cast<InputPlatform>(sourcePlatform)),
+      capabilities(static_cast<InputPlatform>(destinationPlatform), destinationCapabilities),
+      {.f18Action = static_cast<F18Action>(action)}
   );
 
-  const auto wire = policy.toWireKey(kKeySuper_R, KeyModifierSuper);
-  QCOMPARE(wire.id, kKeySuper_R);
-  QCOMPARE(wire.mask, KeyModifierSuper);
-  QVERIFY(!policy.mapsRightCommandToHangul());
+  QCOMPARE(policy.mapsF18ToHangul(), maps);
+
+  // F18 becomes Hangul on the one eligible link and keeps the modifiers the source reported
+  const auto f18 = policy.toWireKey(kKeyF18, kHeldModifiers);
+  QCOMPARE(f18.id, maps ? kKeyHangul : kKeyF18);
+  QCOMPARE(f18.mask, kHeldModifiers);
+  QCOMPARE(policy.shouldSuppressRepeat(kKeyF18), maps);
+
+  // every other key, Left and Right Command (Super) included, goes through untouched and keeps its repeat
+  for (const auto key : kUnaffectedKeys) {
+    const auto wire = policy.toWireKey(key, kHeldModifiers);
+    QCOMPARE(wire.id, key);
+    QCOMPARE(wire.mask, kHeldModifiers);
+    QVERIFY(!policy.shouldSuppressRepeat(key));
+  }
 }
 
-void CrossPlatformInputPolicyTests::disabledOption_preservesRightCommand()
+void CrossPlatformInputPolicyTests::f18_defaultsToPassThrough()
 {
+  const CrossPlatformInputOptions defaults;
+  QCOMPARE(static_cast<int>(defaults.f18Action), static_cast<int>(F18Action::PassThrough));
+
+  // a policy built without the option leaves F18 alone even on a link that could map it
   const CrossPlatformInputPolicy policy(
       capabilities(InputPlatform::MacOS), capabilities(InputPlatform::Windows, kInputCapabilityHangul), {}
   );
-
-  const auto wire = policy.toWireKey(kKeySuper_R, KeyModifierSuper);
-  QCOMPARE(wire.id, kKeySuper_L);
-  QCOMPARE(wire.mask, KeyModifierSuper);
-  const auto destination = policy.toDestinationKey(kKeySuper_R, KeyModifierSuper);
-  QCOMPARE(destination.id, kKeySuper_L);
-  QCOMPARE(destination.mask, KeyModifierSuper);
-  QVERIFY(!policy.mapsRightCommandToHangul());
-}
-
-void CrossPlatformInputPolicyTests::missingHangulCapability_preservesRightCommand()
-{
-  const CrossPlatformInputPolicy policy(
-      capabilities(InputPlatform::MacOS), capabilities(InputPlatform::Windows, kInputCapabilityProtocolV19),
-      hangulOptions()
-  );
-
-  const auto wire = policy.toWireKey(kKeySuper_R, KeyModifierSuper);
-  QCOMPARE(wire.id, kKeySuper_L);
-  QCOMPARE(wire.mask, KeyModifierSuper);
-  QVERIFY(!policy.mapsRightCommandToHangul());
-}
-
-void CrossPlatformInputPolicyTests::macToWindows_hangulMapsDestinationKeyAndSuppressesRepeat()
-{
-  const CrossPlatformInputPolicy policy(
-      capabilities(InputPlatform::MacOS), capabilities(InputPlatform::Windows, kInputCapabilityHangul), hangulOptions()
-  );
-
-  const auto wire = policy.toWireKey(kKeySuper_R, KeyModifierSuper);
-  QCOMPARE(wire.id, kKeySuper_R);
-  QCOMPARE(wire.mask, KeyModifierSuper);
-  QVERIFY(policy.shouldSuppressRepeat(kKeySuper_R));
-
-  const auto destination = policy.toDestinationKey(kKeySuper_R, KeyModifierSuper);
-  QCOMPARE(destination.id, kKeyHangul);
-  QCOMPARE(destination.mask, KeyModifierMask{0});
-}
-
-void CrossPlatformInputPolicyTests::macSource_legacyRightCommandNormalizesToLeft()
-{
-  const CrossPlatformInputPolicy policy(
-      capabilities(InputPlatform::MacOS), capabilities(InputPlatform::Linux, kInputCapabilityProtocolV19), {}
-  );
-
-  const auto wire = policy.toWireKey(kKeySuper_R, KeyModifierSuper);
-  QCOMPARE(wire.id, kKeySuper_L);
-  QCOMPARE(wire.mask, KeyModifierSuper);
+  QVERIFY(!policy.mapsF18ToHangul());
+  QCOMPARE(policy.toWireKey(kKeyF18, 0).id, kKeyF18);
+  QVERIFY(!policy.shouldSuppressRepeat(kKeyF18));
 }
 
 void CrossPlatformInputPolicyTests::scrollPolicy_requiresCrossPlatformAndCapabilities()
@@ -335,6 +344,25 @@ void CrossPlatformInputPolicyTests::semanticMediaPolicy_supportsOnlyApprovedIds(
     QVERIFY(!policy.shouldSynthesizeSemanticMedia(key));
     QVERIFY(!policy.shouldSuppressRepeat(key));
   }
+}
+
+void CrossPlatformInputPolicyTests::crossOSOptionIds_areDistinct()
+{
+  // an option ID that collided with another one would make a server or client mistake one setting for the other
+  const std::vector<OptionID> all = {
+      kOptionHalfDuplexCapsLock,    kOptionHalfDuplexNumLock,        kOptionHalfDuplexScrollLock,
+      kOptionModifierMapForShift,   kOptionModifierMapForControl,    kOptionModifierMapForAlt,
+      kOptionModifierMapForAltGr,   kOptionModifierMapForMeta,       kOptionModifierMapForSuper,
+      kOptionCrossOSF18Key,         kOptionCrossOSInvertScrollX,     kOptionCrossOSInvertScrollY,
+      kOptionCrossOSInvertScope,    kOptionCrossOSSemanticMedia,     kOptionHeartbeat,
+      kOptionComputerSwitchCorners, kOptionComputerSwitchCornerSize, kOptionComputerSwitchDelay,
+      kOptionComputerSwitchTwoTap,  kOptionXTestXineramaUnaware,     kOptionComputerX11WeakFocus,
+      kOptionRelativeMouseMoves,    kOptionWin32KeepForeground,      kOptionDefaultLockToComputerState,
+      kOptionDisableLockToComputer, kOptionClipboardSharing,         kOptionClipboardSharingSize,
+  };
+  const std::set<OptionID> distinct(all.begin(), all.end());
+  QCOMPARE(distinct.size(), all.size());
+  QCOMPARE(kOptionCrossOSF18Key, static_cast<OptionID>(('H' << 24) | ('G' << 16) | ('F' << 8) | '8'));
 }
 
 QTEST_MAIN(CrossPlatformInputPolicyTests)

@@ -20,10 +20,7 @@
 #include "server/ClientProxy1_8.h"
 #include "server/ClientProxy1_9.h"
 
-#if defined(__APPLE__)
-#include "platform/OSXModifierState.h"
-#endif
-
+#include <array>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -186,18 +183,22 @@ const KeyButton kButton = 0x1e;
 const int32_t kCount = 3;
 const std::string kLang = "en";
 
-#if defined(__APPLE__)
-const KeyButton kLeftCommandButton = OSXModifierState::leftCommandButton();
-const KeyButton kRightCommandButton = OSXModifierState::rightCommandButton();
-#else
-const KeyButton kLeftCommandButton = kButton;
-const KeyButton kRightCommandButton = kButton;
-#endif
+// KeyButtons are macOS virtual key codes plus one: Left Command, Right Command and F18
+const KeyButton kLeftCommandButton = 0x38;
+const KeyButton kRightCommandButton = 0x37;
+const KeyButton kF18Button = 0x50;
 
 class TestClientProxy1_9 : public ClientProxy1_9
 {
 public:
-  using ClientProxy1_9::ClientProxy1_9;
+  TestClientProxy1_9(
+      const std::string &name, deskflow::IStream *stream, Server *server, IEventQueue *events,
+      InputPlatform sourcePlatform = InputPlatform::MacOS
+  )
+      : ClientProxy1_9(name, stream, server, events),
+        m_sourcePlatform(sourcePlatform)
+  {
+  }
 
   bool parseHandshakeMessageForTest(const uint8_t *code)
   {
@@ -212,8 +213,11 @@ public:
 protected:
   InputCapabilities localInputCapabilities() const override
   {
-    return {InputPlatform::MacOS, kInputCapabilityProtocolV19};
+    return {m_sourcePlatform, kInputCapabilityProtocolV19};
   }
+
+private:
+  InputPlatform m_sourcePlatform;
 };
 
 class RecordingEventQueue : public MockEventQueue
@@ -235,7 +239,8 @@ private:
   int m_readyEvents = 0;
 };
 
-// A protocol 1.9 proxy on a macOS source whose destination has already reported \p destination
+// A protocol 1.9 proxy on a source of the given platform (macOS unless said otherwise) whose destination has
+// already reported \p destination
 struct V19Link
 {
   RecordingEventQueue events;
@@ -243,10 +248,10 @@ struct V19Link
   std::unique_ptr<TestClientProxy1_9> proxy;
   bool destinationParsed = false;
 
-  explicit V19Link(InputCapabilities destination)
+  explicit V19Link(InputCapabilities destination, InputPlatform source = InputPlatform::MacOS)
   {
     auto *server = reinterpret_cast<Server *>(0x1);
-    proxy = std::make_unique<TestClientProxy1_9>("client", stream, server, &events);
+    proxy = std::make_unique<TestClientProxy1_9>("client", stream, server, &events, source);
     (void)stream->take();
 
     CapturingStream packet;
@@ -268,6 +273,82 @@ struct V19Link
 const InputCapabilities kWindowsWithScroll{
     InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilityCrossOSScroll
 };
+
+const InputCapabilities kWindowsWithHangul{
+    InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilityHangul
+};
+
+constexpr OptionValue kHangulAction = static_cast<OptionValue>(F18Action::Hangul);
+
+enum class KeyEvent
+{
+  Down,
+  Repeat,
+  Up
+};
+
+// The message a server wrote for a key event before this feature existed, per negotiated protocol minor.  These
+// formats are frozen: shipped clients parse them byte for byte, and they are spelled out here independently of the
+// proxies so that a change in a proxy cannot move its own expectation.
+QByteArray
+originalKeyBytes(int minor, KeyEvent event, KeyID id, KeyModifierMask mask, KeyButton button, int32_t count = kCount)
+{
+  CapturingStream expected;
+  if (minor == 0) {
+    switch (event) {
+    case KeyEvent::Down:
+      ProtocolUtil::writef(&expected, kMsgDKeyDown1_0, id, mask);
+      break;
+    case KeyEvent::Repeat:
+      ProtocolUtil::writef(&expected, kMsgDKeyRepeat1_0, id, mask, count);
+      break;
+    case KeyEvent::Up:
+      ProtocolUtil::writef(&expected, kMsgDKeyUp1_0, id, mask);
+      break;
+    }
+  } else if (minor < 8) {
+    switch (event) {
+    case KeyEvent::Down:
+      ProtocolUtil::writef(&expected, kMsgDKeyDown1_1, id, mask, button);
+      break;
+    case KeyEvent::Repeat:
+      ProtocolUtil::writef(&expected, kMsgDKeyRepeat1_1, id, mask, count, button);
+      break;
+    case KeyEvent::Up:
+      ProtocolUtil::writef(&expected, kMsgDKeyUp, id, mask, button);
+      break;
+    }
+  } else {
+    switch (event) {
+    case KeyEvent::Down:
+      ProtocolUtil::writef(&expected, kMsgDKeyDown, id, mask, button, &kLang);
+      break;
+    case KeyEvent::Repeat:
+      ProtocolUtil::writef(&expected, kMsgDKeyRepeat, id, mask, count, button, &kLang);
+      break;
+    case KeyEvent::Up:
+      ProtocolUtil::writef(&expected, kMsgDKeyUp, id, mask, button);
+      break;
+    }
+  }
+  return expected.take();
+}
+
+// Feeds one key event to \p proxy
+void sendKeyEvent(ClientProxy &proxy, KeyEvent event, KeyID id, KeyModifierMask mask, KeyButton button)
+{
+  switch (event) {
+  case KeyEvent::Down:
+    proxy.keyDown(id, mask, button, kLang);
+    break;
+  case KeyEvent::Repeat:
+    proxy.keyRepeat(id, mask, kCount, button, kLang);
+    break;
+  case KeyEvent::Up:
+    proxy.keyUp(id, mask, button);
+    break;
+  }
+}
 
 QByteArray wheelBytes(int32_t xDelta, int32_t yDelta)
 {
@@ -637,215 +718,339 @@ void ClientProxyTests::scrollScope_ineligibleLinks_keepLegacyBytes()
   }
 }
 
-void ClientProxyTests::rightCommand_hangulPolicy_preservesSuperRAndSuppressesRepeat()
+void ClientProxyTests::rightCommand_bytesMatchOriginalServer_data()
 {
-  RecordingEventQueue events;
-  auto *stream = new CapturingStream;
-  auto *server = reinterpret_cast<Server *>(0x1);
-  TestClientProxy1_9 proxy("client", stream, server, &events);
-  (void)stream->take();
+  QTest::addColumn<int>("minor");
+  QTest::addColumn<int>("destinationPlatform");
+  QTest::addColumn<uint32_t>("destinationCapabilities");
+  QTest::addColumn<bool>("everyOptionOn");
 
-  const InputCapabilities capabilities{InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilityHangul};
-  CapturingStream capabilityPacket;
-  ProtocolUtil::writef(
-      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
-  );
-  stream->pushInput(capabilityPacket.take());
-  stream->read(nullptr, 4);
-  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
+  constexpr auto windows = static_cast<int>(InputPlatform::Windows);
+  constexpr uint32_t everything = kInputCapabilityProtocolV19 | kInputCapabilityHangul | kInputCapabilityCrossOSScroll |
+                                  kInputCapabilitySemanticMedia;
 
-  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
-  (void)stream->take();
-
-  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
-  CapturingStream expectedDown;
-  ProtocolUtil::writef(&expectedDown, kMsgDKeyDown, kKeySuper_R, KeyModifierSuper, kRightCommandButton, &kLang);
-  QCOMPARE(stream->take(), expectedDown.take());
-
-  proxy.keyRepeat(kKeySuper_R, KeyModifierSuper, 3, kRightCommandButton, kLang);
-  QVERIFY(stream->take().isEmpty());
-
-  proxy.keyDown('c', KeyModifierSuper, kButton, kLang);
-  QCOMPARE(stream->take(), "DKDL" + QByteArray::fromHex("0063 0000 001e 00000002") + "en");
-
-  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Preserve)});
-  (void)stream->take();
-  proxy.keyUp(kKeySuper_R, KeyModifierSuper, kRightCommandButton);
-  CapturingStream expectedUp;
-  ProtocolUtil::writef(&expectedUp, kMsgDKeyUp, kKeySuper_R, KeyModifierSuper, kRightCommandButton);
-  QCOMPARE(stream->take(), expectedUp.take());
+  for (const auto minor : {0, 1, 3, 6, 7, 8}) {
+    QTest::addRow("1.%d", minor) << minor << windows << uint32_t{0} << false;
+  }
+  QTest::newRow("1.9, windows with every capability, options off") << 9 << windows << everything << false;
+  QTest::newRow("1.9, windows with every capability, every option on") << 9 << windows << everything << true;
+  QTest::newRow("1.9, windows without capabilities, every option on")
+      << 9 << windows << static_cast<uint32_t>(kInputCapabilityProtocolV19) << true;
+  QTest::newRow("1.9, macOS destination, every option on")
+      << 9 << static_cast<int>(InputPlatform::MacOS) << everything << true;
+  QTest::newRow("1.9, linux destination, every option on")
+      << 9 << static_cast<int>(InputPlatform::Linux) << everything << true;
+  QTest::newRow("1.9, unknown destination, every option on")
+      << 9 << static_cast<int>(InputPlatform::Unknown) << everything << true;
 }
 
-void ClientProxyTests::rightCommand_sameOrDisabledPolicy_preservesLegacyLeftSuper()
+// Command is the Windows key on every link: whatever Left or Right Command events reach a proxy are written exactly
+// as they were before the cross-OS input feature existed, with no Right-to-Left merging, no state of its own, and no
+// effect of any cross-OS option.
+void ClientProxyTests::rightCommand_bytesMatchOriginalServer()
 {
-  RecordingEventQueue events;
-  auto *stream = new CapturingStream;
-  auto *server = reinterpret_cast<Server *>(0x1);
-  TestClientProxy1_9 proxy("client", stream, server, &events);
+  QFETCH(int, minor);
+  QFETCH(int, destinationPlatform);
+  QFETCH(uint32_t, destinationCapabilities);
+  QFETCH(bool, everyOptionOn);
+
+  std::unique_ptr<ProxyUnderTest> legacy;
+  std::unique_ptr<V19Link> link;
+  ClientProxy *proxy = nullptr;
+  CapturingStream *stream = nullptr;
+  if (minor == 9) {
+    link = std::make_unique<V19Link>(
+        InputCapabilities{static_cast<InputPlatform>(destinationPlatform), destinationCapabilities}
+    );
+    QVERIFY(link->destinationParsed);
+    proxy = link->proxy.get();
+    stream = link->stream;
+    if (everyOptionOn) {
+      proxy->setOptions(
+          {kOptionCrossOSF18Key, kHangulAction, kOptionCrossOSInvertScrollX, 1, kOptionCrossOSInvertScrollY, 1,
+           kOptionCrossOSSemanticMedia, 1}
+      );
+    }
+  } else {
+    legacy = std::make_unique<ProxyUnderTest>(minor);
+    proxy = legacy->proxy.get();
+    stream = legacy->stream;
+  }
   (void)stream->take();
 
-  const InputCapabilities capabilities{InputPlatform::MacOS, kInputCapabilityProtocolV19};
-  CapturingStream capabilityPacket;
-  ProtocolUtil::writef(
-      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
-  );
-  stream->pushInput(capabilityPacket.take());
-  stream->read(nullptr, 4);
-  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
+  struct Step
+  {
+    KeyEvent event;
+    KeyID id;
+    KeyButton button;
+  };
+  // Right Command alone, then both Command keys held in both orders, then Left Command alone
+  const std::array steps = {
+      Step{KeyEvent::Down, kKeySuper_R, kRightCommandButton}, Step{KeyEvent::Repeat, kKeySuper_R, kRightCommandButton},
+      Step{KeyEvent::Up, kKeySuper_R, kRightCommandButton},   Step{KeyEvent::Down, kKeySuper_R, kRightCommandButton},
+      Step{KeyEvent::Down, kKeySuper_L, kLeftCommandButton},  Step{KeyEvent::Repeat, kKeySuper_L, kLeftCommandButton},
+      Step{KeyEvent::Up, kKeySuper_R, kRightCommandButton},   Step{KeyEvent::Up, kKeySuper_L, kLeftCommandButton},
+      Step{KeyEvent::Down, kKeySuper_L, kLeftCommandButton},  Step{KeyEvent::Down, kKeySuper_R, kRightCommandButton},
+      Step{KeyEvent::Up, kKeySuper_L, kLeftCommandButton},    Step{KeyEvent::Up, kKeySuper_R, kRightCommandButton},
+  };
+  for (const auto &step : steps) {
+    sendKeyEvent(*proxy, step.event, step.id, KeyModifierSuper, step.button);
+    QCOMPARE(stream->take(), originalKeyBytes(minor, step.event, step.id, KeyModifierSuper, step.button));
+  }
 
-  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Preserve)});
-  (void)stream->take();
-  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
-  CapturingStream expectedDown;
-  ProtocolUtil::writef(&expectedDown, kMsgDKeyDown, kKeySuper_L, KeyModifierSuper, kLeftCommandButton, &kLang);
-  QCOMPARE(stream->take(), expectedDown.take());
-
-  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
-  (void)stream->take();
-  proxy.keyUp(kKeySuper_R, KeyModifierSuper, kRightCommandButton);
-  CapturingStream expectedUp;
-  ProtocolUtil::writef(&expectedUp, kMsgDKeyUp, kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
-  QCOMPARE(stream->take(), expectedUp.take());
+  // and the keys around them keep their repeat and their modifiers
+  for (const auto event : {KeyEvent::Down, KeyEvent::Repeat, KeyEvent::Up}) {
+    sendKeyEvent(*proxy, event, 'c', KeyModifierSuper, kButton);
+    QCOMPARE(stream->take(), originalKeyBytes(minor, event, 'c', KeyModifierSuper, kButton));
+  }
 }
 
-void ClientProxyTests::rightCommand_leftSuperHeld_keepsSuperOnOtherKeys()
+void ClientProxyTests::f18_macToWindows_sendsHangulWithSourceButtonAndModifiers()
 {
-  RecordingEventQueue events;
-  auto *stream = new CapturingStream;
-  auto *server = reinterpret_cast<Server *>(0x1);
-  TestClientProxy1_9 proxy("client", stream, server, &events);
-  (void)stream->take();
+  V19Link link(kWindowsWithHangul);
+  QVERIFY(link.destinationParsed);
+  link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
+  (void)link.written();
 
-  const InputCapabilities capabilities{InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilityHangul};
-  CapturingStream capabilityPacket;
-  ProtocolUtil::writef(
-      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
-  );
-  stream->pushInput(capabilityPacket.take());
-  stream->read(nullptr, 4);
-  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
-  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
-  (void)stream->take();
+  // the source's KeyButton is what pairs the release with the press on the destination, so it travels unchanged,
+  // and so do the modifiers that were held
+  constexpr KeyModifierMask held = KeyModifierShift | KeyModifierControl;
+  link.proxy->keyDown(kKeyF18, held, kF18Button, kLang);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyHangul, held, kF18Button));
+  link.proxy->keyUp(kKeyF18, held, kF18Button);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyHangul, held, kF18Button));
 
-  proxy.keyDown(kKeySuper_L, KeyModifierSuper, kLeftCommandButton, kLang);
-  CapturingStream expectedLeft;
-  ProtocolUtil::writef(&expectedLeft, kMsgDKeyDown, kKeySuper_L, KeyModifierSuper, kLeftCommandButton, &kLang);
-  QCOMPARE(stream->take(), expectedLeft.take());
-  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
-  (void)stream->take();
-  proxy.keyDown('c', KeyModifierSuper, kButton, kLang);
-  QCOMPARE(stream->take(), "DKDL" + QByteArray::fromHex("0063 0010 001e 00000002") + "en");
-
-  proxy.keyUp(kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
-  (void)stream->take();
-  proxy.keyDown('v', KeyModifierSuper, kButton, kLang);
-  QCOMPARE(stream->take(), "DKDL" + QByteArray::fromHex("0076 0000 001e 00000002") + "en");
+  // a second press is a second toggle
+  link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyHangul, 0, kF18Button));
+  link.proxy->keyUp(kKeyF18, 0, kF18Button);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyHangul, 0, kF18Button));
 }
 
-void ClientProxyTests::rightCommand_v18_preservesLegacyMacWireValue()
+void ClientProxyTests::f18_heldKey_togglesOnceAndSuppressesRepeat()
 {
-  ProxyUnderTest test(8);
-  test.proxy->keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
+  V19Link link(kWindowsWithHangul);
+  QVERIFY(link.destinationParsed);
+  link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
+  (void)link.written();
 
-  const auto expectedKey =
-      deskflow::platform::currentInputPlatform() == InputPlatform::MacOS ? kKeySuper_L : kKeySuper_R;
-  const auto expectedButton = expectedKey == kKeySuper_L ? kLeftCommandButton : kRightCommandButton;
-  CapturingStream expected;
-  ProtocolUtil::writef(&expected, kMsgDKeyDown, expectedKey, KeyModifierSuper, expectedButton, &kLang);
-  QCOMPARE(test.stream->take(), expected.take());
+  link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyHangul, 0, kF18Button));
 
-  test.proxy->keyDown(kKeySuper_L, KeyModifierSuper, kLeftCommandButton, kLang);
-  QVERIFY(test.stream->take().isEmpty());
-  test.proxy->keyUp(kKeySuper_R, KeyModifierSuper, kRightCommandButton);
-  QVERIFY(test.stream->take().isEmpty());
-  test.proxy->keyUp(kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
+  // holding the key repeats it, and a misreported second press of the held key counts as a repeat: none of them
+  // may reach the destination, where each would toggle the input mode again
+  for (int i = 0; i < 3; ++i) {
+    link.proxy->keyRepeat(kKeyF18, 0, kCount, kF18Button, kLang);
+    QVERIFY(link.written().isEmpty());
+  }
+  link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
+  QVERIFY(link.written().isEmpty());
 
-  CapturingStream expectedUp;
-  ProtocolUtil::writef(&expectedUp, kMsgDKeyUp, kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
-  QCOMPARE(test.stream->take(), expectedUp.take());
+  link.proxy->keyUp(kKeyF18, 0, kF18Button);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyHangul, 0, kF18Button));
 }
 
-void ClientProxyTests::rightCommand_v19_preservesLegacyAggregateState()
+void ClientProxyTests::f18_release_followsHowThePressWasSent()
 {
-  RecordingEventQueue events;
-  auto *stream = new CapturingStream;
-  auto *server = reinterpret_cast<Server *>(0x1);
-  TestClientProxy1_9 proxy("client", stream, server, &events);
-  (void)stream->take();
+  // pressed while mapped, released after the option went away: the destination still gets the Hangul release
+  {
+    V19Link link(kWindowsWithHangul);
+    QVERIFY(link.destinationParsed);
+    link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
+    (void)link.written();
+    link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
+    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyHangul, 0, kF18Button));
 
-  const InputCapabilities capabilities{InputPlatform::MacOS, kInputCapabilityProtocolV19};
-  CapturingStream capabilityPacket;
-  ProtocolUtil::writef(
-      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
-  );
-  stream->pushInput(capabilityPacket.take());
-  stream->read(nullptr, 4);
-  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
-  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
-  (void)stream->take();
+    link.proxy->resetOptions();
+    (void)link.written();
+    link.proxy->keyRepeat(kKeyF18, 0, kCount, kF18Button, kLang);
+    QVERIFY(link.written().isEmpty());
+    link.proxy->keyUp(kKeyF18, 0, kF18Button);
+    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyHangul, 0, kF18Button));
 
-  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
-  (void)stream->take();
-  proxy.keyDown(kKeySuper_L, KeyModifierSuper, kLeftCommandButton, kLang);
-  QVERIFY(stream->take().isEmpty());
-  proxy.keyUp(kKeySuper_R, KeyModifierSuper, kRightCommandButton);
-  QVERIFY(stream->take().isEmpty());
-  proxy.keyUp(kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
+    // the next press is a plain F18 again
+    link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
+    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyF18, 0, kF18Button));
+    link.proxy->keyUp(kKeyF18, 0, kF18Button);
+    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyF18, 0, kF18Button));
+  }
 
-  CapturingStream expectedUp;
-  ProtocolUtil::writef(&expectedUp, kMsgDKeyUp, kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
-  QCOMPARE(stream->take(), expectedUp.take());
+  // pressed while passed through, released after the option came: the destination never saw Hangul go down, so it
+  // must not get a Hangul release
+  {
+    V19Link link(kWindowsWithHangul);
+    QVERIFY(link.destinationParsed);
+    link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
+    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyF18, 0, kF18Button));
+
+    link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
+    (void)link.written();
+    link.proxy->keyUp(kKeyF18, 0, kF18Button);
+    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyF18, 0, kF18Button));
+  }
 }
 
-void ClientProxyTests::rightCommand_leave_clearsMappedAndLegacyState()
+void ClientProxyTests::f18_leave_forgetsHeldKeys()
 {
-  RecordingEventQueue events;
-  auto *stream = new CapturingStream;
-  auto *server = reinterpret_cast<Server *>(0x1);
-  TestClientProxy1_9 proxy("client", stream, server, &events);
-  (void)stream->take();
+  V19Link link(kWindowsWithHangul);
+  QVERIFY(link.destinationParsed);
+  link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
+  (void)link.written();
 
-  const InputCapabilities capabilities{InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilityHangul};
-  CapturingStream capabilityPacket;
-  ProtocolUtil::writef(
-      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
+  link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
+  (void)link.written();
+  QVERIFY(link.proxy->leave());
+  (void)link.written();
+  link.proxy->enter(0, 0, 0, 0, false);
+  (void)link.written();
+
+  // the destination released everything when the cursor left, so a late release of the old press is not
+  // translated into a Hangul key-up for a key that is no longer down there
+  link.proxy->keyUp(kKeyF18, 0, kF18Button);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyF18, 0, kF18Button));
+
+  // and the next press maps again
+  link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyHangul, 0, kF18Button));
+}
+
+void ClientProxyTests::f18_ineligibleLinks_passThrough_data()
+{
+  QTest::addColumn<int>("sourcePlatform");
+  QTest::addColumn<int>("destinationPlatform");
+  QTest::addColumn<uint32_t>("destinationCapabilities");
+
+  constexpr uint32_t withHangul = kInputCapabilityProtocolV19 | kInputCapabilityHangul;
+  constexpr uint32_t withoutHangul =
+      kInputCapabilityProtocolV19 | kInputCapabilityCrossOSScroll | kInputCapabilitySemanticMedia;
+
+  const auto row = [](const char *name, InputPlatform source, InputPlatform destination, uint32_t capabilities) {
+    QTest::newRow(name) << static_cast<int>(source) << static_cast<int>(destination) << capabilities;
+  };
+  row("windows destination without the Hangul capability", InputPlatform::MacOS, InputPlatform::Windows, withoutHangul);
+  row("windows destination without any capability", InputPlatform::MacOS, InputPlatform::Windows, 0);
+  row("macOS destination", InputPlatform::MacOS, InputPlatform::MacOS, withHangul);
+  row("linux destination", InputPlatform::MacOS, InputPlatform::Linux, withHangul);
+  row("other destination", InputPlatform::MacOS, InputPlatform::Other, withHangul);
+  row("unknown destination", InputPlatform::MacOS, InputPlatform::Unknown, withHangul);
+  row("windows source", InputPlatform::Windows, InputPlatform::Windows, withHangul);
+  row("linux source", InputPlatform::Linux, InputPlatform::Windows, withHangul);
+  row("unknown source", InputPlatform::Unknown, InputPlatform::Windows, withHangul);
+}
+
+void ClientProxyTests::f18_ineligibleLinks_passThrough()
+{
+  QFETCH(int, sourcePlatform);
+  QFETCH(int, destinationPlatform);
+  QFETCH(uint32_t, destinationCapabilities);
+
+  V19Link link(
+      {static_cast<InputPlatform>(destinationPlatform), destinationCapabilities},
+      static_cast<InputPlatform>(sourcePlatform)
   );
-  stream->pushInput(capabilityPacket.take());
-  stream->read(nullptr, 4);
-  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
-  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
-  (void)stream->take();
+  QVERIFY(link.destinationParsed);
+  link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
+  (void)link.written();
 
-  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
-  (void)stream->take();
-  QVERIFY(proxy.leave());
-  (void)stream->take();
-  proxy.enter(0, 0, 0, 0, false);
-  (void)stream->take();
+  for (const auto event : {KeyEvent::Down, KeyEvent::Repeat, KeyEvent::Up}) {
+    sendKeyEvent(*link.proxy, event, kKeyF18, KeyModifierShift, kF18Button);
+    QCOMPARE(link.written(), originalKeyBytes(9, event, kKeyF18, KeyModifierShift, kF18Button));
+  }
+}
 
-  proxy.keyDown('c', KeyModifierSuper, kButton, kLang);
-  QCOMPARE(stream->take(), "DKDL" + QByteArray::fromHex("0063 0010 001e 00000002") + "en");
+void ClientProxyTests::f18_legacyLinks_passThrough_data()
+{
+  QTest::addColumn<int>("minor");
 
-  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
-  CapturingStream expectedRightDown;
-  ProtocolUtil::writef(&expectedRightDown, kMsgDKeyDown, kKeySuper_R, KeyModifierSuper, kRightCommandButton, &kLang);
-  QCOMPARE(stream->take(), expectedRightDown.take());
+  for (const auto minor : {0, 1, 3, 6, 7, 8}) {
+    QTest::addRow("1.%d", minor) << minor;
+  }
+}
 
-  ProxyUnderTest legacy(8);
-  legacy.proxy->keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
-  (void)legacy.stream->take();
-  QVERIFY(legacy.proxy->leave());
-  (void)legacy.stream->take();
-  legacy.proxy->enter(0, 0, 0, 0, false);
-  (void)legacy.stream->take();
-  legacy.proxy->keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
+void ClientProxyTests::f18_legacyLinks_passThrough()
+{
+  QFETCH(int, minor);
 
-  const auto expectedKey =
-      deskflow::platform::currentInputPlatform() == InputPlatform::MacOS ? kKeySuper_L : kKeySuper_R;
-  const auto expectedButton = expectedKey == kKeySuper_L ? kLeftCommandButton : kRightCommandButton;
-  CapturingStream expected;
-  ProtocolUtil::writef(&expected, kMsgDKeyDown, expectedKey, KeyModifierSuper, expectedButton, &kLang);
-  QCOMPARE(legacy.stream->take(), expected.take());
+  // a link below 1.9 has no capability exchange, so even a configured option cannot change what is written
+  ProxyUnderTest test(minor);
+  test.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
+  (void)test.stream->take();
+
+  for (const auto event : {KeyEvent::Down, KeyEvent::Repeat, KeyEvent::Up}) {
+    sendKeyEvent(*test.proxy, event, kKeyF18, KeyModifierShift, kF18Button);
+    QCOMPARE(test.stream->take(), originalKeyBytes(minor, event, kKeyF18, KeyModifierShift, kF18Button));
+  }
+}
+
+void ClientProxyTests::f18_otherKeys_passThrough_data()
+{
+  QTest::addColumn<KeyID>("key");
+
+  const auto row = [](const char *name, KeyID key) { QTest::newRow(name) << key; };
+  row("F1", kKeyF1);
+  row("F13", kKeyF13);
+  row("F14", kKeyF14);
+  row("F15", kKeyF15);
+  row("F16", kKeyF16);
+  row("F17", kKeyF17);
+  row("F19", kKeyF19);
+  row("F20", kKeyF20);
+  row("F24", kKeyF24);
+  row("Hangul itself", kKeyHangul);
+  row("Kana", kKeyKana);
+  row("Left Command", kKeySuper_L);
+  row("Right Command", kKeySuper_R);
+  row("Shift", kKeyShift_L);
+  row("a", 'a');
+}
+
+void ClientProxyTests::f18_otherKeys_passThrough()
+{
+  QFETCH(KeyID, key);
+
+  V19Link link(kWindowsWithHangul);
+  QVERIFY(link.destinationParsed);
+  link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
+  (void)link.written();
+
+  for (const auto event : {KeyEvent::Down, KeyEvent::Repeat, KeyEvent::Up}) {
+    sendKeyEvent(*link.proxy, event, key, KeyModifierSuper, kButton);
+    QCOMPARE(link.written(), originalKeyBytes(9, event, key, KeyModifierSuper, kButton));
+  }
+}
+
+void ClientProxyTests::f18_optionOffInvalidOrReset_passesThrough()
+{
+  V19Link link(kWindowsWithHangul);
+  QVERIFY(link.destinationParsed);
+
+  const auto expectPassThrough = [&](const char *when) {
+    for (const auto event : {KeyEvent::Down, KeyEvent::Repeat, KeyEvent::Up}) {
+      sendKeyEvent(*link.proxy, event, kKeyF18, 0, kF18Button);
+      QVERIFY2(
+          link.written() == originalKeyBytes(9, event, kKeyF18, 0, kF18Button),
+          qPrintable(QStringLiteral("F18 was not passed through %1").arg(QString::fromUtf8(when)))
+      );
+    }
+  };
+
+  // no option at all is the default
+  expectPassThrough("by default");
+
+  // an explicit pass-through value and a value nobody defined both mean pass through
+  link.proxy->setOptions({kOptionCrossOSF18Key, static_cast<OptionValue>(F18Action::PassThrough)});
+  (void)link.written();
+  expectPassThrough("with the pass-through value");
+  link.proxy->setOptions({kOptionCrossOSF18Key, 7});
+  (void)link.written();
+  expectPassThrough("with an unknown value");
+
+  // and a reset switches a configured mapping off again
+  link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
+  (void)link.written();
+  link.proxy->resetOptions();
+  (void)link.written();
+  expectPassThrough("after the options were reset");
 }
 
 void ClientProxyTests::semanticMedia_v19EnabledSuppressesRepeat()

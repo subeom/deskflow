@@ -49,7 +49,7 @@ void ComputerTests::crossOSSettings_defaultToDisabled()
 
   Computer computer;
   computer.loadSettings(Settings::proxy());
-  QCOMPARE(computer.rightCommandAction(), RightCommandAction::Preserve);
+  QCOMPARE(computer.f18Action(), F18Action::PassThrough);
   QVERIFY(!computer.crossOSInvertX());
   QVERIFY(!computer.crossOSInvertY());
   QCOMPARE(static_cast<int>(computer.crossOSInvertScope()), static_cast<int>(ScrollInvertScope::All));
@@ -59,11 +59,47 @@ void ComputerTests::crossOSSettings_defaultToDisabled()
   QVERIFY(config.addComputer(name.toStdString()));
   const auto *options = config.getOptions(name.toStdString());
   QVERIFY(options != nullptr);
-  QCOMPARE(options->count(kOptionCrossOSRightCommand), static_cast<size_t>(0));
+  QCOMPARE(options->count(kOptionCrossOSF18Key), static_cast<size_t>(0));
   QCOMPARE(options->count(kOptionCrossOSInvertScrollX), static_cast<size_t>(0));
   QCOMPARE(options->count(kOptionCrossOSInvertScrollY), static_cast<size_t>(0));
   QCOMPARE(options->count(kOptionCrossOSInvertScope), static_cast<size_t>(0));
   QCOMPARE(options->count(kOptionCrossOSSemanticMedia), static_cast<size_t>(0));
+}
+
+void ComputerTests::crossOSF18Action_loadsMissingInvalidAndLegacyValuesAsPassThrough()
+{
+  const auto name = QStringLiteral("crossOS-f18-load");
+  const auto key = Settings::Computer::F18Action.arg(name);
+  Settings::proxy().setValue("name", name);
+
+  const auto loadedAction = [&]() {
+    Computer computer;
+    computer.loadSettings(Settings::proxy());
+    return static_cast<int>(computer.f18Action());
+  };
+  constexpr auto passThrough = static_cast<int>(F18Action::PassThrough);
+  constexpr auto hangul = static_cast<int>(F18Action::Hangul);
+
+  // a config written before the setting existed has no key
+  Settings::setValue(key, QVariant());
+  QCOMPARE(loadedAction(), passThrough);
+
+  Settings::setValue(key, QStringLiteral("hangul"));
+  QCOMPARE(loadedAction(), hangul);
+  Settings::setValue(key, QStringLiteral(" Hangul "));
+  QCOMPARE(loadedAction(), hangul);
+
+  Settings::setValue(key, QStringLiteral("passthrough"));
+  QCOMPARE(loadedAction(), passThrough);
+  Settings::setValue(key, QStringLiteral("f19"));
+  QCOMPARE(loadedAction(), passThrough);
+  Settings::setValue(key, QString());
+  QCOMPARE(loadedAction(), passThrough);
+
+  // a config from the build that mapped Right Command still loads, and the old value means nothing now
+  Settings::setValue(key, QVariant());
+  Settings::setValue(QStringLiteral("computer_%1/rightCommandAction").arg(name), QStringLiteral("hangul"));
+  QCOMPARE(loadedAction(), passThrough);
 }
 
 void ComputerTests::crossOSInvertScope_loadsMissingAndInvalidValuesAsAll()
@@ -102,17 +138,22 @@ void ComputerTests::crossOSDialog_saveSerializeAndProduceOptions()
   Computer computer(QStringLiteral("crossOS-ui"));
   ComputerSettingsDialog dialog(nullptr, &computer);
 
-  auto *rightCommand = dialog.findChild<QComboBox *>(QStringLiteral("comboRightCommand"));
+  auto *f18Key = dialog.findChild<QComboBox *>(QStringLiteral("comboF18Key"));
   auto *invertX = dialog.findChild<QCheckBox *>(QStringLiteral("chkCrossOSInvertX"));
   auto *invertY = dialog.findChild<QCheckBox *>(QStringLiteral("chkCrossOSInvertY"));
   auto *invertScope = dialog.findChild<QComboBox *>(QStringLiteral("comboCrossOSInvertScope"));
   auto *semanticMedia = dialog.findChild<QCheckBox *>(QStringLiteral("chkCrossOSSemanticMedia"));
-  QVERIFY(rightCommand != nullptr);
+  QVERIFY(f18Key != nullptr);
   QVERIFY(invertX != nullptr);
   QVERIFY(invertY != nullptr);
   QVERIFY(invertScope != nullptr);
   QVERIFY(semanticMedia != nullptr);
-  QCOMPARE(rightCommand->currentIndex(), 0);
+  // Command is the Windows key and is not a setting: the old Right Command row is gone
+  QVERIFY(dialog.findChild<QComboBox *>(QStringLiteral("comboRightCommand")) == nullptr);
+  QCOMPARE(f18Key->count(), 2);
+  QCOMPARE(f18Key->itemText(0), QStringLiteral("Pass through (default)"));
+  QCOMPARE(f18Key->itemText(1), QStringLiteral("Korean-English toggle (Hangul)"));
+  QCOMPARE(f18Key->currentIndex(), 0);
   QVERIFY(!invertX->isChecked());
   QVERIFY(!invertY->isChecked());
   QCOMPARE(invertScope->count(), 2);
@@ -121,14 +162,14 @@ void ComputerTests::crossOSDialog_saveSerializeAndProduceOptions()
   QCOMPARE(invertScope->currentIndex(), 0);
   QVERIFY(!semanticMedia->isChecked());
 
-  rightCommand->setCurrentIndex(1);
+  f18Key->setCurrentIndex(1);
   invertX->setChecked(true);
   invertY->setChecked(true);
   invertScope->setCurrentIndex(1);
   semanticMedia->setChecked(true);
   dialog.accept();
 
-  QCOMPARE(computer.rightCommandAction(), RightCommandAction::Hangul);
+  QCOMPARE(computer.f18Action(), F18Action::Hangul);
   QVERIFY(computer.crossOSInvertX());
   QVERIFY(computer.crossOSInvertY());
   QCOMPARE(static_cast<int>(computer.crossOSInvertScope()), static_cast<int>(ScrollInvertScope::MouseWheelOnly));
@@ -144,10 +185,7 @@ void ComputerTests::crossOSDialog_saveSerializeAndProduceOptions()
   QCOMPARE(static_cast<int>(copy.crossOSInvertScope()), static_cast<int>(ScrollInvertScope::MouseWheelOnly));
 
   computer.saveSettings(Settings::proxy());
-  QVERIFY(
-      Settings::value(Settings::Computer::RightCommandAction.arg(computer.name())).toString() ==
-      QStringLiteral("hangul")
-  );
+  QCOMPARE(Settings::value(Settings::Computer::F18Action.arg(computer.name())).toString(), QStringLiteral("hangul"));
   QVERIFY(Settings::value(Settings::Computer::CrossOSInvertX.arg(computer.name())).toBool());
   QVERIFY(Settings::value(Settings::Computer::CrossOSInvertY.arg(computer.name())).toBool());
   QCOMPARE(
@@ -161,7 +199,7 @@ void ComputerTests::crossOSDialog_saveSerializeAndProduceOptions()
   QVERIFY(config.addComputer(computer.name().toStdString()));
   const auto *options = config.getOptions(computer.name().toStdString());
   QVERIFY(options != nullptr);
-  QCOMPARE(options->at(kOptionCrossOSRightCommand), static_cast<OptionValue>(RightCommandAction::Hangul));
+  QCOMPARE(options->at(kOptionCrossOSF18Key), static_cast<OptionValue>(F18Action::Hangul));
   QCOMPARE(options->at(kOptionCrossOSInvertScrollX), 1);
   QCOMPARE(options->at(kOptionCrossOSInvertScrollY), 1);
   QCOMPARE(options->at(kOptionCrossOSInvertScope), static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly));

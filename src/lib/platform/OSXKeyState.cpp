@@ -241,11 +241,6 @@ void OSXKeyState::init()
   m_controlRightPressed = false;
   m_altRightPressed = false;
   m_superRightPressed = false;
-  m_sourceSuperState.configure(s_superVK, s_superRightVK);
-  m_sourceSuperState.setDown(s_superVK, CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, s_superVK) != 0);
-  m_sourceSuperState.setDown(
-      s_superRightVK, CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, s_superRightVK) != 0
-  );
 
   // build virtual key map
   for (size_t i = 0; i < sizeof(s_controlKeys) / sizeof(s_controlKeys[0]); ++i) {
@@ -415,15 +410,6 @@ bool OSXKeyState::fakeCtrlAltDel()
 bool OSXKeyState::fakeMediaKey(KeyID id)
 {
   return fakeNativeMediaKey(id);
-}
-
-void OSXKeyState::updateKeyState()
-{
-  KeyState::updateKeyState();
-  m_sourceSuperState.setDown(s_superVK, CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, s_superVK) != 0);
-  m_sourceSuperState.setDown(
-      s_superRightVK, CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, s_superRightVK) != 0
-  );
 }
 
 CGEventFlags OSXKeyState::getModifierStateAsOSXFlags() const
@@ -908,9 +894,7 @@ bool OSXKeyState::mapDeskflowHotKeyToMac(
   return true;
 }
 
-void OSXKeyState::handleModifierKeys(
-    void *target, KeyModifierMask oldMask, KeyModifierMask newMask, uint32_t virtualKey, bool keyDown
-)
+void OSXKeyState::handleModifierKeys(void *target, KeyModifierMask oldMask, KeyModifierMask newMask)
 {
   // compute changed modifiers
   KeyModifierMask changed = (oldMask ^ newMask);
@@ -925,10 +909,7 @@ void OSXKeyState::handleModifierKeys(
   if ((changed & KeyModifierAlt) != 0) {
     handleModifierKey(target, s_altVK, kKeyAlt_L, (newMask & KeyModifierAlt) != 0, newMask);
   }
-  const auto superTransition = m_sourceSuperState.update(virtualKey, keyDown);
-  if (superTransition) {
-    handleModifierKey(target, superTransition->keyCode, superTransition->id, superTransition->down, newMask);
-  } else if (!m_sourceSuperState.handles(virtualKey) && (changed & KeyModifierSuper) != 0) {
+  if ((changed & KeyModifierSuper) != 0) {
     handleModifierKey(target, s_superVK, kKeySuper_L, (newMask & KeyModifierSuper) != 0, newMask);
   }
   if ((changed & KeyModifierCapsLock) != 0) {

@@ -14,6 +14,7 @@ private Q_SLOTS:
   void initTestCase();
   void basicFunctionality();
   void crossOSSettings_defaultToDisabled();
+  void crossOSF18Action_loadsMissingInvalidAndLegacyValuesAsPassThrough();
   void crossOSInvertScope_loadsMissingAndInvalidValuesAsAll();
   void crossOSDialog_saveSerializeAndProduceOptions();
 

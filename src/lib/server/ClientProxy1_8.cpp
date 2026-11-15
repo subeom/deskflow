@@ -32,9 +32,6 @@ void ClientProxy1_8::synchronizeLanguages() const
 
 void ClientProxy1_8::keyDown(KeyID key, KeyModifierMask mask, KeyButton button, const std::string &language)
 {
-  if (!prepareLegacySuperDown(key, button)) {
-    return;
-  }
   LOG_VERBOSE(
       "send key down to \"%s\" id=%d, mask=0x%04x, button=0x%04x, layout=%s", getName().c_str(), key, mask, button,
       language.c_str()
@@ -46,9 +43,6 @@ void ClientProxy1_8::keyRepeat(
     KeyID key, KeyModifierMask mask, int32_t count, KeyButton button, const std::string &language
 )
 {
-  if (!prepareLegacySuperRepeat(key)) {
-    return;
-  }
   LOG_VERBOSE(
       "send key repeat to \"%s\" id=%d, mask=0x%04x, count=%d, button=0x%04x, layout=%s", getName().c_str(), key, mask,
       count, button, language.c_str()

@@ -24,7 +24,6 @@ protected:
   ConnectionResult parseHandshakeMessage(const uint8_t *code) override;
   ConnectionResult parseMessage(const uint8_t *code) override;
   void onOptionsChanged(const OptionsList &options) override;
-  void transformInputKey(KeyID &id, KeyModifierMask &mask) override;
   bool handleSemanticMediaKey(KeyID id) override;
   bool shouldSuppressKeyRepeat(KeyID id, KeyModifierMask mask) const override;
   void transformMouseWheel(int32_t &xDelta, int32_t &yDelta) override;
@@ -40,7 +39,6 @@ private:
 
   Client *m_client = nullptr;
   InputCapabilities m_sourceInputCapabilities;
-  RightCommandAction m_rightCommandAction = RightCommandAction::Preserve;
   bool m_invertScrollX = false;
   bool m_invertScrollY = false;
   ScrollInvertScope m_scrollInvertScope = ScrollInvertScope::All;

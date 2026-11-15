@@ -578,14 +578,12 @@ void ServerProxy::keyDown(uint16_t id, uint16_t mask, uint16_t button, const std
 {
   flushCompressedMouse();
 
-  KeyID id2 = static_cast<KeyID>(id);
-  KeyModifierMask mask2 = static_cast<KeyModifierMask>(mask);
-  if (handleSemanticMediaKey(id2)) {
+  if (handleSemanticMediaKey(static_cast<KeyID>(id))) {
     return;
   }
-  transformInputKey(id2, mask2);
-  id2 = translateKey(id2);
-  mask2 = translateModifierMask(mask2);
+
+  KeyID id2 = translateKey(static_cast<KeyID>(id));
+  KeyModifierMask mask2 = translateModifierMask(static_cast<KeyModifierMask>(mask));
   if (id2 != static_cast<KeyID>(id) || mask2 != static_cast<KeyModifierMask>(mask))
     LOG_VERBOSE("key down translated to id=0x%08x, mask=0x%04x", id2, mask2);
 
@@ -596,14 +594,12 @@ void ServerProxy::keyRepeat(uint16_t id, uint16_t mask, uint16_t count, uint16_t
 {
   flushCompressedMouse();
 
-  KeyID id2 = static_cast<KeyID>(id);
-  KeyModifierMask mask2 = static_cast<KeyModifierMask>(mask);
-  if (shouldSuppressKeyRepeat(id2, mask2)) {
+  if (shouldSuppressKeyRepeat(static_cast<KeyID>(id), static_cast<KeyModifierMask>(mask))) {
     return;
   }
-  transformInputKey(id2, mask2);
-  id2 = translateKey(id2);
-  mask2 = translateModifierMask(mask2);
+
+  KeyID id2 = translateKey(static_cast<KeyID>(id));
+  KeyModifierMask mask2 = translateModifierMask(static_cast<KeyModifierMask>(mask));
   if (id2 != static_cast<KeyID>(id) || mask2 != static_cast<KeyModifierMask>(mask))
     LOG_VERBOSE("key repeat translated to id=0x%08x, mask=0x%04x", id2, mask2);
 
@@ -623,11 +619,8 @@ void ServerProxy::keyUp()
   LOG_VERBOSE("recv key up id=0x%08x, mask=0x%04x, button=0x%04x", id, mask, button);
 
   // translate
-  KeyID id2 = static_cast<KeyID>(id);
-  KeyModifierMask mask2 = static_cast<KeyModifierMask>(mask);
-  transformInputKey(id2, mask2);
-  id2 = translateKey(id2);
-  mask2 = translateModifierMask(mask2);
+  KeyID id2 = translateKey(static_cast<KeyID>(id));
+  KeyModifierMask mask2 = translateModifierMask(static_cast<KeyModifierMask>(mask));
   if (id2 != static_cast<KeyID>(id) || mask2 != static_cast<KeyModifierMask>(mask))
     LOG_VERBOSE("key up translated to id=0x%08x, mask=0x%04x", id2, mask2);
 

@@ -34,11 +34,9 @@ void Computer::loadSettings(QSettingsProxy &settings)
   setModifier(Shift, modifierValueFromString(Settings::value(Settings::Computer::ModifierShift.arg(name)).toString()));
   setModifier(Super, modifierValueFromString(Settings::value(Settings::Computer::ModifierSuper.arg(name)).toString()));
 
-  const auto rightCommandAction =
-      Settings::value(Settings::Computer::RightCommandAction.arg(name)).toString().trimmed();
-  m_RightCommandAction = rightCommandAction.compare(QStringLiteral("hangul"), Qt::CaseInsensitive) == 0
-                             ? RightCommandAction::Hangul
-                             : RightCommandAction::Preserve;
+  const auto f18Action = Settings::value(Settings::Computer::F18Action.arg(name)).toString().trimmed();
+  m_F18Action = f18Action.compare(QStringLiteral("hangul"), Qt::CaseInsensitive) == 0 ? F18Action::Hangul
+                                                                                      : F18Action::PassThrough;
   m_CrossOSInvertX = Settings::value(Settings::Computer::CrossOSInvertX.arg(name)).toBool();
   m_CrossOSInvertY = Settings::value(Settings::Computer::CrossOSInvertY.arg(name)).toBool();
   const auto invertScope = Settings::value(Settings::Computer::CrossOSInvertScope.arg(name)).toString().trimmed();
@@ -81,8 +79,8 @@ void Computer::saveSettings(QSettingsProxy &settings) const
   Settings::setValue(Settings::Computer::HalfDuplexScrollLock.arg(computerName), m_Fixes[static_cast<int>(ScrollLock)]);
   Settings::setValue(Settings::Computer::XtestIsXineramaUnaware.arg(computerName), m_Fixes[static_cast<int>(XTest)]);
   Settings::setValue(
-      Settings::Computer::RightCommandAction.arg(computerName),
-      m_RightCommandAction == RightCommandAction::Hangul ? QStringLiteral("hangul") : QStringLiteral("preserve")
+      Settings::Computer::F18Action.arg(computerName),
+      m_F18Action == F18Action::Hangul ? QStringLiteral("hangul") : QStringLiteral("passthrough")
   );
   Settings::setValue(Settings::Computer::CrossOSInvertX.arg(computerName), m_CrossOSInvertX);
   Settings::setValue(Settings::Computer::CrossOSInvertY.arg(computerName), m_CrossOSInvertY);
@@ -141,7 +139,7 @@ bool Computer::operator==(const Computer &computer) const
 {
   return m_Name == computer.m_Name && m_Aliases == computer.m_Aliases && m_Modifiers == computer.m_Modifiers &&
          m_SwitchCorners == computer.m_SwitchCorners && m_SwitchCornerSize == computer.m_SwitchCornerSize &&
-         m_Fixes == computer.m_Fixes && m_RightCommandAction == computer.m_RightCommandAction &&
+         m_Fixes == computer.m_Fixes && m_F18Action == computer.m_F18Action &&
          m_CrossOSInvertX == computer.m_CrossOSInvertX && m_CrossOSInvertY == computer.m_CrossOSInvertY &&
          m_CrossOSInvertScope == computer.m_CrossOSInvertScope &&
          m_CrossOSSemanticMedia == computer.m_CrossOSSemanticMedia && m_Swapped == computer.m_Swapped &&

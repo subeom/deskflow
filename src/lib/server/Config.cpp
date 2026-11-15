@@ -119,10 +119,9 @@ bool Config::addComputer(const std::string &name)
     superModifier = kModifierNameSuper;
   addOption(name, kOptionModifierMapForSuper, modifierIDValueFromString(superModifier));
 
-  const auto rightCommandAction =
-      Settings::value(Settings::Computer::RightCommandAction.arg(computer)).toString().trimmed();
-  if (rightCommandAction.compare(QStringLiteral("hangul"), Qt::CaseInsensitive) == 0) {
-    addOption(name, kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul));
+  const auto f18Action = Settings::value(Settings::Computer::F18Action.arg(computer)).toString().trimmed();
+  if (f18Action.compare(QStringLiteral("hangul"), Qt::CaseInsensitive) == 0) {
+    addOption(name, kOptionCrossOSF18Key, static_cast<OptionValue>(F18Action::Hangul));
   }
   if (Settings::value(Settings::Computer::CrossOSInvertX.arg(computer)).toBool()) {
     addOption(name, kOptionCrossOSInvertScrollX, 1);
