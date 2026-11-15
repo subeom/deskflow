@@ -41,16 +41,19 @@ Measured with the real classes (`ClipboardSender`, `TCPSocket`, `PacketStreamFil
 reassembly) on loopback through a shaped link (7 ms one way), a 3.1 MB bitmap sent for both ids
 (5.9 MiB on the wire), mouse at 125 Hz and a `CALV` every second in the same stream:
 
-| link | legacy: mouse stall / `CALV` gap | paced: mouse stall / `CALV` gap | transfer time |
+| link | legacy: mouse stall / `CALV` gap | paced: mouse stall / `CALV` gap | transfer time, legacy / paced |
 |---|---|---|---|
-| loopback | 3 ms / 1.0 s | 0.1 ms / 1.0 s | 13 ms, 16 ms |
-| 100 Mbit/s | 533 ms / 1.0 s | 92 ms / 1.0 s | 543 ms, 541 ms |
-| 10 Mbit/s | 5.4 s / 5.4 s | 0.76 s / 1.6 s | 5.42 s, 5.42 s |
-| 4 Mbit/s | 12.7 s / 12.7 s (disconnect) | 1.8 s / 2.6 s | 12.70 s, 12.77 s |
+| loopback | 3 ms / 1.0 s | 5 ms / 1.0 s | 12 ms / 17 ms |
+| 100 Mbit/s | 531 ms / 1.0 s | 93 ms / 1.0 s | 541 ms / 541 ms |
+| 10 Mbit/s | 5.35 s / 5.36 s | 0.76 s / 1.49 s | 5.36 s / 5.36 s |
+| 4 Mbit/s | 12.7 s / 12.7 s (disconnect) | 1.8 s / 2.6 s | 12.71 s / 12.72 s |
+
+With the clipboard sent once for a Windows or macOS peer (see below) the transfer takes half as long and has
+half the bytes: 280 ms at 100 Mbit/s, 2.69 s at 10 Mbit/s and 6.35 s at 4 Mbit/s, with the same stalls.
 
 The stall is now bounded by what the link and the kernel hold ahead of the next input message, not by
 the clipboard size, and the transfer takes as long as before. On a fast link the per chunk hand-over
-costs a few milliseconds (13 to 16 ms on loopback).
+costs a few milliseconds (12 to 17 ms on loopback).
 
 Because the receiver only ever sees the same `start`/`data`/`end` messages with different chunk
 sizes, a receiver needs no change to take a paced stream. That is what lets a Windows build that
