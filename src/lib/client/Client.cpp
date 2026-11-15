@@ -16,6 +16,7 @@
 #include "client/ServerProxy1_8.h"
 #include "client/ServerProxy1_9.h"
 #include "common/NetworkProtocol.h"
+#include "common/PlatformInfo.h"
 #include "common/Settings.h"
 #include "deskflow/Clipboard.h"
 #include "deskflow/Computer.h"
@@ -195,6 +196,15 @@ NetworkAddress Client::getServerAddress() const
 size_t Client::getMaximumClipboardReceiveSizeBytes() const
 {
   return m_maximumClipboardSize * 1024;
+}
+
+InputCapabilities Client::inputCapabilities() const
+{
+  auto capabilities = deskflow::platform::currentInputCapabilities();
+  if (m_computer != nullptr && m_computer->canSynthesizeKey(kKeyHangul)) {
+    capabilities.capabilities |= kInputCapabilityHangul;
+  }
+  return capabilities;
 }
 
 void *Client::getEventTarget() const
@@ -470,6 +480,9 @@ bool Client::setupComputer(int16_t protocolMinor)
   assert(m_server == nullptr);
 
   m_ready = false;
+  if (protocolMinor >= 9) {
+    m_computer->prepareInputCapabilities();
+  }
 
   // only 1.6 and later have a proxy: the clipboard, mouse wheel and key message formats
   // differ below that, and nothing older (synergy 1.4 and earlier) still needs supporting.

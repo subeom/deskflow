@@ -8,6 +8,7 @@
 #pragma once
 
 #include "OSXAutoTypes.h"
+#include "OSXModifierState.h"
 #include "deskflow/KeyState.h"
 
 #include <Carbon/Carbon.h>
@@ -38,7 +39,8 @@ public:
   Determines which modifier keys have changed and updates the modifier
   state and sends key events as appropriate.
   */
-  void handleModifierKeys(void *target, KeyModifierMask oldMask, KeyModifierMask newMask);
+  void
+  handleModifierKeys(void *target, KeyModifierMask oldMask, KeyModifierMask newMask, uint32_t virtualKey, bool keyDown);
 
   //@}
   //! @name accessors
@@ -80,6 +82,7 @@ public:
   // IKeyState overrides
   bool fakeCtrlAltDel() override;
   bool fakeMediaKey(KeyID id) override;
+  void updateKeyState() override;
   KeyModifierMask pollActiveModifiers() const override;
   int32_t pollActiveGroup() const override;
   void pollPressedKeys(KeyButtonSet &pressedKeys) const override;
@@ -168,4 +171,5 @@ private:
   bool m_controlRightPressed;
   bool m_altRightPressed;
   bool m_superRightPressed;
+  OSXModifierState m_sourceSuperState;
 };

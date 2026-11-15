@@ -259,6 +259,38 @@ public:
   }
 };
 
+class TestServerProxy1_9 : public ServerProxy1_9
+{
+public:
+  TestServerProxy1_9(
+      Client *client, deskflow::IStream *stream, IEventQueue *events, InputCapabilities localCapabilities
+  )
+      : ServerProxy1_9(client, stream, events),
+        m_localCapabilities(localCapabilities)
+  {
+  }
+
+  InputKeyEvent transformInputKeyForTest(KeyID id, KeyModifierMask mask)
+  {
+    transformInputKey(id, mask);
+    return {id, mask};
+  }
+
+  void onOptionsChangedForTest(const OptionsList &options)
+  {
+    onOptionsChanged(options);
+  }
+
+protected:
+  InputCapabilities localInputCapabilities() const override
+  {
+    return m_localCapabilities;
+  }
+
+private:
+  InputCapabilities m_localCapabilities;
+};
+
 Client *undereferenceableClient()
 {
   // These paths must queue cleanup without calling through to Client.
@@ -354,7 +386,7 @@ void ServerProxyTests::inputCapabilities_v19_readsSourceAndWritesDestinationCapa
   const auto packet = stream.takeOutput();
   stream.push(std::string(packet.constData(), static_cast<size_t>(packet.size())));
 
-  ServerProxy1_9 proxy(undereferenceableClient(), &stream, &events);
+  TestServerProxy1_9 proxy(undereferenceableClient(), &stream, &events, deskflow::platform::currentInputCapabilities());
   QVERIFY(events.dispatchEvent(Event(EventTypes::StreamInputReady, stream.getEventTarget())));
 
   QCOMPARE(
@@ -368,6 +400,51 @@ void ServerProxyTests::inputCapabilities_v19_readsSourceAndWritesDestinationCapa
       deskflow::platform::currentInputCapabilities().capabilities
   );
   QCOMPARE(stream.takeOutput(), expected.takeOutput());
+}
+
+void ServerProxyTests::rightCommand_hangulPolicyTransformsSuperR()
+{
+  RecordingEventQueue events;
+  FakeStream stream;
+  TestServerProxy1_9 proxy(
+      undereferenceableClient(), &stream, &events, InputCapabilities{InputPlatform::Windows, kInputCapabilityHangul}
+  );
+
+  FakeStream sourcePacket;
+  ProtocolUtil::writef(
+      &sourcePacket, kMsgDInputCapabilities, static_cast<uint8_t>(InputPlatform::MacOS), kInputCapabilityProtocolV19
+  );
+  const auto sourceBytes = sourcePacket.takeOutput();
+  stream.push(std::string(sourceBytes.constData(), static_cast<size_t>(sourceBytes.size())));
+  QVERIFY(events.dispatchEvent(Event(EventTypes::StreamInputReady, stream.getEventTarget())));
+
+  proxy.onOptionsChangedForTest({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
+  const auto transformed = proxy.transformInputKeyForTest(kKeySuper_R, KeyModifierSuper);
+  QCOMPARE(transformed.id, kKeyHangul);
+  QCOMPARE(transformed.mask, KeyModifierMask{0});
+}
+
+void ServerProxyTests::rightCommand_missingHangulCapability_preservesLegacy()
+{
+  RecordingEventQueue events;
+  FakeStream stream;
+  TestServerProxy1_9 proxy(
+      undereferenceableClient(), &stream, &events,
+      InputCapabilities{InputPlatform::Windows, kInputCapabilityProtocolV19}
+  );
+
+  FakeStream sourcePacket;
+  ProtocolUtil::writef(
+      &sourcePacket, kMsgDInputCapabilities, static_cast<uint8_t>(InputPlatform::MacOS), kInputCapabilityProtocolV19
+  );
+  const auto sourceBytes = sourcePacket.takeOutput();
+  stream.push(std::string(sourceBytes.constData(), static_cast<size_t>(sourceBytes.size())));
+  QVERIFY(events.dispatchEvent(Event(EventTypes::StreamInputReady, stream.getEventTarget())));
+
+  proxy.onOptionsChangedForTest({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
+  const auto transformed = proxy.transformInputKeyForTest(kKeySuper_R, KeyModifierSuper);
+  QCOMPARE(transformed.id, kKeySuper_L);
+  QCOMPARE(transformed.mask, KeyModifierSuper);
 }
 
 QTEST_MAIN(ServerProxyTests)

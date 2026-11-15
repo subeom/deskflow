@@ -24,6 +24,13 @@ elseif(APPLE)
     SOURCE OSXKeyStateTests.cpp
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
   )
+  create_test(
+    NAME OSXModifierStateTests
+    DEPENDS platform
+    LIBS base arch
+    SOURCE OSXModifierStateTests.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
+  )
 elseif(UNIX)
   if(LIBEI_FOUND)
     create_test(

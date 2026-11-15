@@ -13,6 +13,7 @@
 #include "base/Event.h"
 #include "base/EventTypes.h"
 #include "common/Enums.h"
+#include "common/InputCapabilities.h"
 #include "deskflow/IClipboard.h"
 #include "net/NetworkAddress.h"
 
@@ -162,6 +163,7 @@ public:
     return m_resolvedAddressesCount;
   }
   size_t getMaximumClipboardReceiveSizeBytes() const;
+  InputCapabilities inputCapabilities() const;
 
   //@}
 

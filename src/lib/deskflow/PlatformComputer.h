@@ -55,6 +55,7 @@ public:
   bool fakeKeyUp(KeyButton button) override;
   void fakeAllKeysUp() override;
   bool fakeCtrlAltDel() override;
+  bool canSynthesizeKey(KeyID id) const override;
   bool isKeyDown(KeyButton) const override;
   KeyModifierMask getActiveModifiers() const override;
   KeyModifierMask pollActiveModifiers() const override;

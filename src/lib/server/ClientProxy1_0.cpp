@@ -10,9 +10,14 @@
 
 #include "base/IEventQueue.h"
 #include "base/Log.h"
+#include "common/PlatformInfo.h"
 #include "deskflow/DeskflowException.h"
 #include "deskflow/ProtocolUtil.h"
 #include "io/IStream.h"
+
+#if defined(__APPLE__)
+#include "platform/OSXModifierState.h"
+#endif
 
 #include <cstring>
 
@@ -275,20 +280,92 @@ void ClientProxy1_0::setClipboardDirty(ClipboardID id, bool dirty)
 
 void ClientProxy1_0::keyDown(KeyID key, KeyModifierMask mask, KeyButton, const std::string &)
 {
+  KeyButton button = 0;
+  if (!prepareLegacySuperDown(key, button)) {
+    return;
+  }
   LOG_VERBOSE("send key down to \"%s\" id=%d, mask=0x%04x", getName().c_str(), key, mask);
   ProtocolUtil::writef(getStream(), kMsgDKeyDown1_0, key, mask);
 }
 
 void ClientProxy1_0::keyRepeat(KeyID key, KeyModifierMask mask, int32_t count, KeyButton, const std::string &)
 {
+  if (!prepareLegacySuperRepeat(key)) {
+    return;
+  }
   LOG_VERBOSE("send key repeat to \"%s\" id=%d, mask=0x%04x, count=%d", getName().c_str(), key, mask, count);
   ProtocolUtil::writef(getStream(), kMsgDKeyRepeat1_0, key, mask, count);
 }
 
 void ClientProxy1_0::keyUp(KeyID key, KeyModifierMask mask, KeyButton)
 {
+  KeyButton button = 0;
+  if (!prepareLegacySuperUp(key, button)) {
+    return;
+  }
   LOG_VERBOSE("send key up to \"%s\" id=%d, mask=0x%04x", getName().c_str(), key, mask);
   ProtocolUtil::writef(getStream(), kMsgDKeyUp1_0, key, mask);
+}
+
+bool ClientProxy1_0::prepareLegacySuperDown(KeyID &key, KeyButton &button)
+{
+  if (legacyInputPlatform() != InputPlatform::MacOS) {
+    return true;
+  }
+
+  if (key == kKeySuper_L) {
+    m_legacyLeftSuperDown = true;
+  } else if (key == kKeySuper_R) {
+    m_legacyRightSuperDown = true;
+  } else {
+    return true;
+  }
+
+  if (!m_legacySuperWireDown) {
+    m_legacySuperWireDown = true;
+    key = kKeySuper_L;
+#if defined(__APPLE__)
+    button = OSXModifierState::leftCommandButton();
+#endif
+    return true;
+  }
+  return false;
+}
+
+bool ClientProxy1_0::prepareLegacySuperRepeat(KeyID key)
+{
+  return legacyInputPlatform() != InputPlatform::MacOS || (key != kKeySuper_L && key != kKeySuper_R);
+}
+
+bool ClientProxy1_0::prepareLegacySuperUp(KeyID &key, KeyButton &button)
+{
+  if (legacyInputPlatform() != InputPlatform::MacOS) {
+    return true;
+  }
+
+  if (key == kKeySuper_L) {
+    m_legacyLeftSuperDown = false;
+  } else if (key == kKeySuper_R) {
+    m_legacyRightSuperDown = false;
+  } else {
+    return true;
+  }
+
+  if (!m_legacySuperWireDown || m_legacyLeftSuperDown || m_legacyRightSuperDown) {
+    return false;
+  }
+
+  m_legacySuperWireDown = false;
+  key = kKeySuper_L;
+#if defined(__APPLE__)
+  button = OSXModifierState::leftCommandButton();
+#endif
+  return true;
+}
+
+InputPlatform ClientProxy1_0::legacyInputPlatform() const
+{
+  return deskflow::platform::currentInputPlatform();
 }
 
 void ClientProxy1_0::mouseDown(ButtonID button)

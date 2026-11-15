@@ -19,6 +19,9 @@ enum class InputPlatform : uint8_t
 using InputCapabilityMask = uint32_t;
 
 inline constexpr InputCapabilityMask kInputCapabilityProtocolV19 = 1u << 0;
+inline constexpr InputCapabilityMask kInputCapabilityHangul = 1u << 1;
+inline constexpr InputCapabilityMask kInputCapabilitySemanticMedia = 1u << 2;
+inline constexpr InputCapabilityMask kInputCapabilityCrossOSScroll = 1u << 3;
 
 struct InputCapabilities
 {

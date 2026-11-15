@@ -58,6 +58,11 @@ bool PlatformComputer::fakeCtrlAltDel()
   return getKeyState()->fakeCtrlAltDel();
 }
 
+bool PlatformComputer::canSynthesizeKey(KeyID id) const
+{
+  return getKeyState()->canSynthesizeKey(id);
+}
+
 bool PlatformComputer::isKeyDown(KeyButton button) const
 {
   return getKeyState()->isKeyDown(button);

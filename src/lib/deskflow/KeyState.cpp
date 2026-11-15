@@ -960,6 +960,16 @@ bool KeyState::fakeMediaKey(KeyID)
   return false;
 }
 
+bool KeyState::canSynthesizeKey(KeyID id) const
+{
+  for (int32_t group = 0, n = m_keyMap.getNumGroups(); group < n; ++group) {
+    if (getButton(id, group) != 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool KeyState::isKeyDown(KeyButton button) const
 {
   return (m_keys[button & kButtonMask] > 0);

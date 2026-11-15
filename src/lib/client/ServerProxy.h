@@ -12,6 +12,7 @@
 #include "deskflow/ClipboardChunk.h"
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/KeyTypes.h"
+#include "deskflow/OptionTypes.h"
 
 class Client;
 class ClientInfo;
@@ -65,6 +66,16 @@ protected:
   virtual ConnectionResult parseMessage(const uint8_t *code);
   void keyDown(uint16_t id, uint16_t mask, uint16_t button, const std::string &lang);
   void keyRepeat(uint16_t id, uint16_t mask, uint16_t count, uint16_t button, const std::string &lang);
+  virtual void onOptionsChanged(const OptionsList &)
+  {
+  }
+  virtual void transformInputKey(KeyID &, KeyModifierMask &)
+  {
+  }
+  virtual bool shouldSuppressKeyRepeat(KeyID, KeyModifierMask) const
+  {
+    return false;
+  }
 
   deskflow::IStream *getStream() const
   {

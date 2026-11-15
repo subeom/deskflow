@@ -6,6 +6,7 @@
 #include "server/ClientProxy1_9.h"
 
 #include "common/PlatformInfo.h"
+#include "deskflow/OptionTypes.h"
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
 
@@ -58,7 +59,112 @@ bool ClientProxy1_9::receiveInputCapabilities()
   return true;
 }
 
+void ClientProxy1_9::keyDown(KeyID id, KeyModifierMask mask, KeyButton button, const std::string &language)
+{
+  if (id == kKeySuper_L) {
+    m_leftSuperDown = true;
+  } else if (id == kKeySuper_R) {
+    m_rightSuperDown = true;
+    m_rightSuperMapped = inputPolicy().mapsRightCommandToHangul();
+  }
+
+  InputKeyEvent key{id, mask};
+  if (!(id == kKeySuper_R && m_rightSuperMapped)) {
+    if (!prepareLegacySuperDown(key.id, button)) {
+      return;
+    }
+    key.mask = modifierMaskForWire(id, mask);
+  } else {
+    key = inputPolicy().toWireKey(id, mask);
+  }
+  ProtocolUtil::writef(getStream(), kMsgDKeyDown, key.id, key.mask, button, &language);
+}
+
+void ClientProxy1_9::keyRepeat(
+    KeyID id, KeyModifierMask mask, int32_t count, KeyButton button, const std::string &language
+)
+{
+  if (id == kKeySuper_R && m_rightSuperMapped) {
+    return;
+  }
+
+  InputKeyEvent key{id, mask};
+  if (!prepareLegacySuperRepeat(key.id)) {
+    return;
+  }
+  key.mask = modifierMaskForWire(id, key.mask);
+  ProtocolUtil::writef(getStream(), kMsgDKeyRepeat, key.id, key.mask, count, button, &language);
+}
+
+void ClientProxy1_9::keyUp(KeyID id, KeyModifierMask mask, KeyButton button)
+{
+  InputKeyEvent key{id, mask};
+  const auto wireMask = modifierMaskForWire(id, key.mask);
+  const bool rightWasMapped = m_rightSuperMapped;
+
+  if (id == kKeySuper_L) {
+    m_leftSuperDown = false;
+  } else if (id == kKeySuper_R) {
+    m_rightSuperDown = false;
+    m_rightSuperMapped = false;
+  }
+
+  if (!(id == kKeySuper_R && rightWasMapped)) {
+    if (!prepareLegacySuperUp(key.id, button)) {
+      return;
+    }
+  }
+
+  ProtocolUtil::writef(getStream(), kMsgDKeyUp, key.id, wireMask, button);
+}
+
+void ClientProxy1_9::resetOptions()
+{
+  m_rightCommandAction = RightCommandAction::Preserve;
+  ClientProxy1_8::resetOptions();
+}
+
+void ClientProxy1_9::setOptions(const OptionsList &options)
+{
+  for (size_t i = 0; i + 1 < options.size(); i += 2) {
+    if (options[i] != kOptionCrossOSRightCommand) {
+      continue;
+    }
+
+    const auto value = options[i + 1];
+    m_rightCommandAction = value == static_cast<OptionValue>(RightCommandAction::Hangul) ? RightCommandAction::Hangul
+                                                                                         : RightCommandAction::Preserve;
+  }
+  ClientProxy1_8::setOptions(options);
+}
+
 bool ClientProxy1_9::isHandshakeCompleteReady() const
 {
   return m_receivedInputCapabilities;
+}
+
+InputCapabilities ClientProxy1_9::localInputCapabilities() const
+{
+  return deskflow::platform::currentInputCapabilities();
+}
+
+InputPlatform ClientProxy1_9::legacyInputPlatform() const
+{
+  return localInputCapabilities().platform;
+}
+
+CrossPlatformInputPolicy ClientProxy1_9::inputPolicy() const
+{
+  return {
+      localInputCapabilities(), m_destinationInputCapabilities,
+      CrossPlatformInputOptions{.rightCommand = m_rightCommandAction}
+  };
+}
+
+KeyModifierMask ClientProxy1_9::modifierMaskForWire(KeyID id, KeyModifierMask mask) const
+{
+  if (id != kKeySuper_R && m_rightSuperMapped && m_rightSuperDown && !m_leftSuperDown) {
+    mask &= ~KeyModifierSuper;
+  }
+  return mask;
 }

@@ -7,6 +7,7 @@
 
 #include "client/ServerProxy1_8.h"
 #include "common/InputCapabilities.h"
+#include "deskflow/CrossPlatformInputPolicy.h"
 
 class ServerProxy1_9 : public ServerProxy1_8
 {
@@ -22,10 +23,17 @@ public:
 protected:
   ConnectionResult parseHandshakeMessage(const uint8_t *code) override;
   ConnectionResult parseMessage(const uint8_t *code) override;
+  void onOptionsChanged(const OptionsList &options) override;
+  void transformInputKey(KeyID &id, KeyModifierMask &mask) override;
+  bool shouldSuppressKeyRepeat(KeyID id, KeyModifierMask mask) const override;
+  virtual InputCapabilities localInputCapabilities() const;
 
 private:
   bool receiveInputCapabilities();
   void sendInputCapabilities() const;
+  CrossPlatformInputPolicy inputPolicy() const;
 
+  Client *m_client = nullptr;
   InputCapabilities m_sourceInputCapabilities;
+  RightCommandAction m_rightCommandAction = RightCommandAction::Preserve;
 };

@@ -20,6 +20,10 @@
 #include "server/ClientProxy1_8.h"
 #include "server/ClientProxy1_9.h"
 
+#if defined(__APPLE__)
+#include "platform/OSXModifierState.h"
+#endif
+
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -182,6 +186,14 @@ const KeyButton kButton = 0x1e;
 const int32_t kCount = 3;
 const std::string kLang = "en";
 
+#if defined(__APPLE__)
+const KeyButton kLeftCommandButton = OSXModifierState::leftCommandButton();
+const KeyButton kRightCommandButton = OSXModifierState::rightCommandButton();
+#else
+const KeyButton kLeftCommandButton = kButton;
+const KeyButton kRightCommandButton = kButton;
+#endif
+
 class TestClientProxy1_9 : public ClientProxy1_9
 {
 public:
@@ -195,6 +207,12 @@ public:
   bool parseMessageForTest(const uint8_t *code)
   {
     return parseMessage(code);
+  }
+
+protected:
+  InputCapabilities localInputCapabilities() const override
+  {
+    return {InputPlatform::MacOS, kInputCapabilityProtocolV19};
   }
 };
 
@@ -399,6 +417,166 @@ void ClientProxyTests::mouseWheel()
   ProxyUnderTest test(minor);
   test.proxy->mouseWheel(120, -120);
   QCOMPARE(test.stream->take(), expected);
+}
+
+void ClientProxyTests::rightCommand_hangulPolicy_preservesSuperRAndSuppressesRepeat()
+{
+  RecordingEventQueue events;
+  auto *stream = new CapturingStream;
+  auto *server = reinterpret_cast<Server *>(0x1);
+  TestClientProxy1_9 proxy("client", stream, server, &events);
+  (void)stream->take();
+
+  const InputCapabilities capabilities{InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilityHangul};
+  CapturingStream capabilityPacket;
+  ProtocolUtil::writef(
+      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
+  );
+  stream->pushInput(capabilityPacket.take());
+  stream->read(nullptr, 4);
+  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
+
+  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
+  (void)stream->take();
+
+  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
+  CapturingStream expectedDown;
+  ProtocolUtil::writef(&expectedDown, kMsgDKeyDown, kKeySuper_R, KeyModifierSuper, kRightCommandButton, &kLang);
+  QCOMPARE(stream->take(), expectedDown.take());
+
+  proxy.keyRepeat(kKeySuper_R, KeyModifierSuper, 3, kRightCommandButton, kLang);
+  QVERIFY(stream->take().isEmpty());
+
+  proxy.keyDown('c', KeyModifierSuper, kButton, kLang);
+  QCOMPARE(stream->take(), "DKDL" + QByteArray::fromHex("0063 0000 001e 00000002") + "en");
+
+  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Preserve)});
+  (void)stream->take();
+  proxy.keyUp(kKeySuper_R, KeyModifierSuper, kRightCommandButton);
+  CapturingStream expectedUp;
+  ProtocolUtil::writef(&expectedUp, kMsgDKeyUp, kKeySuper_R, KeyModifierSuper, kRightCommandButton);
+  QCOMPARE(stream->take(), expectedUp.take());
+}
+
+void ClientProxyTests::rightCommand_sameOrDisabledPolicy_preservesLegacyLeftSuper()
+{
+  RecordingEventQueue events;
+  auto *stream = new CapturingStream;
+  auto *server = reinterpret_cast<Server *>(0x1);
+  TestClientProxy1_9 proxy("client", stream, server, &events);
+  (void)stream->take();
+
+  const InputCapabilities capabilities{InputPlatform::MacOS, kInputCapabilityProtocolV19};
+  CapturingStream capabilityPacket;
+  ProtocolUtil::writef(
+      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
+  );
+  stream->pushInput(capabilityPacket.take());
+  stream->read(nullptr, 4);
+  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
+
+  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Preserve)});
+  (void)stream->take();
+  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
+  CapturingStream expectedDown;
+  ProtocolUtil::writef(&expectedDown, kMsgDKeyDown, kKeySuper_L, KeyModifierSuper, kLeftCommandButton, &kLang);
+  QCOMPARE(stream->take(), expectedDown.take());
+
+  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
+  (void)stream->take();
+  proxy.keyUp(kKeySuper_R, KeyModifierSuper, kRightCommandButton);
+  CapturingStream expectedUp;
+  ProtocolUtil::writef(&expectedUp, kMsgDKeyUp, kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
+  QCOMPARE(stream->take(), expectedUp.take());
+}
+
+void ClientProxyTests::rightCommand_leftSuperHeld_keepsSuperOnOtherKeys()
+{
+  RecordingEventQueue events;
+  auto *stream = new CapturingStream;
+  auto *server = reinterpret_cast<Server *>(0x1);
+  TestClientProxy1_9 proxy("client", stream, server, &events);
+  (void)stream->take();
+
+  const InputCapabilities capabilities{InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilityHangul};
+  CapturingStream capabilityPacket;
+  ProtocolUtil::writef(
+      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
+  );
+  stream->pushInput(capabilityPacket.take());
+  stream->read(nullptr, 4);
+  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
+  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
+  (void)stream->take();
+
+  proxy.keyDown(kKeySuper_L, KeyModifierSuper, kLeftCommandButton, kLang);
+  CapturingStream expectedLeft;
+  ProtocolUtil::writef(&expectedLeft, kMsgDKeyDown, kKeySuper_L, KeyModifierSuper, kLeftCommandButton, &kLang);
+  QCOMPARE(stream->take(), expectedLeft.take());
+  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
+  (void)stream->take();
+  proxy.keyDown('c', KeyModifierSuper, kButton, kLang);
+  QCOMPARE(stream->take(), "DKDL" + QByteArray::fromHex("0063 0010 001e 00000002") + "en");
+
+  proxy.keyUp(kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
+  (void)stream->take();
+  proxy.keyDown('v', KeyModifierSuper, kButton, kLang);
+  QCOMPARE(stream->take(), "DKDL" + QByteArray::fromHex("0076 0000 001e 00000002") + "en");
+}
+
+void ClientProxyTests::rightCommand_v18_preservesLegacyMacWireValue()
+{
+  ProxyUnderTest test(8);
+  test.proxy->keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
+
+  const auto expectedKey =
+      deskflow::platform::currentInputPlatform() == InputPlatform::MacOS ? kKeySuper_L : kKeySuper_R;
+  const auto expectedButton = expectedKey == kKeySuper_L ? kLeftCommandButton : kRightCommandButton;
+  CapturingStream expected;
+  ProtocolUtil::writef(&expected, kMsgDKeyDown, expectedKey, KeyModifierSuper, expectedButton, &kLang);
+  QCOMPARE(test.stream->take(), expected.take());
+
+  test.proxy->keyDown(kKeySuper_L, KeyModifierSuper, kLeftCommandButton, kLang);
+  QVERIFY(test.stream->take().isEmpty());
+  test.proxy->keyUp(kKeySuper_R, KeyModifierSuper, kRightCommandButton);
+  QVERIFY(test.stream->take().isEmpty());
+  test.proxy->keyUp(kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
+
+  CapturingStream expectedUp;
+  ProtocolUtil::writef(&expectedUp, kMsgDKeyUp, kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
+  QCOMPARE(test.stream->take(), expectedUp.take());
+}
+
+void ClientProxyTests::rightCommand_v19_preservesLegacyAggregateState()
+{
+  RecordingEventQueue events;
+  auto *stream = new CapturingStream;
+  auto *server = reinterpret_cast<Server *>(0x1);
+  TestClientProxy1_9 proxy("client", stream, server, &events);
+  (void)stream->take();
+
+  const InputCapabilities capabilities{InputPlatform::MacOS, kInputCapabilityProtocolV19};
+  CapturingStream capabilityPacket;
+  ProtocolUtil::writef(
+      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
+  );
+  stream->pushInput(capabilityPacket.take());
+  stream->read(nullptr, 4);
+  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
+  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
+  (void)stream->take();
+
+  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
+  (void)stream->take();
+  proxy.keyDown(kKeySuper_L, KeyModifierSuper, kLeftCommandButton, kLang);
+  QVERIFY(stream->take().isEmpty());
+  proxy.keyUp(kKeySuper_R, KeyModifierSuper, kRightCommandButton);
+  QVERIFY(stream->take().isEmpty());
+  proxy.keyUp(kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
+
+  CapturingStream expectedUp;
+  ProtocolUtil::writef(&expectedUp, kMsgDKeyUp, kKeySuper_L, KeyModifierSuper, kLeftCommandButton);
+  QCOMPARE(stream->take(), expectedUp.take());
 }
 
 QTEST_MAIN(ClientProxyTests)

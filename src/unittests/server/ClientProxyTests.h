@@ -28,6 +28,11 @@ private Q_SLOTS:
   void inputCapabilities_v19_waitsForCapabilitiesBeforeReady();
   void mouseWheel_data();
   void mouseWheel();
+  void rightCommand_hangulPolicy_preservesSuperRAndSuppressesRepeat();
+  void rightCommand_sameOrDisabledPolicy_preservesLegacyLeftSuper();
+  void rightCommand_leftSuperHeld_keepsSuperOnOtherKeys();
+  void rightCommand_v18_preservesLegacyMacWireValue();
+  void rightCommand_v19_preservesLegacyAggregateState();
 
 private:
   Log m_log;

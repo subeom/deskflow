@@ -20,6 +20,8 @@ private Q_SLOTS:
   void handleData_incompleteMessage_queuesDisconnectRequest();
   void parseHandshakeMessage_protocolError_queuesRefusalRequest();
   void inputCapabilities_v19_readsSourceAndWritesDestinationCapabilities();
+  void rightCommand_hangulPolicyTransformsSuperR();
+  void rightCommand_missingHangulCapability_preservesLegacy();
 
 private:
   Log m_log;

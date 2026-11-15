@@ -129,6 +129,9 @@ public:
   */
   void keyUp(KeyID id, KeyModifierMask, KeyButton);
 
+  void prepareInputCapabilities();
+  bool canSynthesizeKey(KeyID id) const;
+
   //! Notify of mouse press
   /*!
   Synthesize mouse events to generate a press of mouse button \c id.

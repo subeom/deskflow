@@ -242,6 +242,16 @@ void Computer::keyUp(KeyID, KeyModifierMask, KeyButton button)
   m_computer->fakeKeyUp(button);
 }
 
+void Computer::prepareInputCapabilities()
+{
+  m_computer->updateKeyMap();
+}
+
+bool Computer::canSynthesizeKey(KeyID id) const
+{
+  return m_computer->canSynthesizeKey(id);
+}
+
 void Computer::mouseDown(ButtonID button)
 {
   m_computer->fakeMouseButton(button, true);
