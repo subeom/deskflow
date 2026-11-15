@@ -113,6 +113,8 @@ elseif(APPLE)
     OSXScreenSaverControl.h
     OSXScreenSaverUtil.h
     OSXScreenSaverUtil.m
+    OSXScrollSource.cpp
+    OSXScrollSource.h
   )
 elseif(UNIX)
   set(PLATFORM_SOURCES

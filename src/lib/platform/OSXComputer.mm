@@ -1047,11 +1047,32 @@ bool OSXComputer::onMouseButton(bool pressed, uint16_t macButton)
   return true;
 }
 
-bool OSXComputer::onMouseWheel(int32_t xDelta, int32_t yDelta) const
+bool OSXComputer::onMouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource source) const
 {
   LOG_VERBOSE("event: button wheel delta=%+d,%+d", xDelta, yDelta);
-  sendEvent(EventTypes::PrimaryComputerWheel, WheelInfo::alloc(xDelta, yDelta));
+  sendEvent(EventTypes::PrimaryComputerWheel, WheelInfo::alloc(xDelta, yDelta, source));
   return true;
+}
+
+ScrollSource OSXComputer::classifyScrollEvent(CGEventRef event)
+{
+  const auto classification = m_scrollSource.update(event);
+  if (classification.changed) {
+    const char *name = "unknown";
+    if (classification.source == ScrollSource::Mouse) {
+      name = "mouse";
+    } else if (classification.source == ScrollSource::Trackpad) {
+      name = "trackpad";
+    }
+    LOG_DEBUG(
+        "scroll source changed to %s (scrollPhase=%lld momentumPhase=%lld continuous=%lld sourcePid=%lld)", name,
+        static_cast<long long>(classification.fields.scrollPhase),
+        static_cast<long long>(classification.fields.momentumPhase),
+        static_cast<long long>(classification.fields.continuous),
+        static_cast<long long>(classification.fields.sourcePid)
+    );
+  }
+  return classification.source;
 }
 
 void OSXComputer::displayReconfigurationCallback(
@@ -1702,7 +1723,8 @@ CGEventRef OSXComputer::handleCGInputEvent(CGEventTapProxy proxy, CGEventType ty
   case kCGEventScrollWheel:
     computer->onMouseWheel(
         computer->mapScrollWheelToDeskflow(CGEventGetIntegerValueField(event, kCGScrollWheelEventDeltaAxis2)),
-        computer->mapScrollWheelToDeskflow(CGEventGetIntegerValueField(event, kCGScrollWheelEventDeltaAxis1))
+        computer->mapScrollWheelToDeskflow(CGEventGetIntegerValueField(event, kCGScrollWheelEventDeltaAxis1)),
+        computer->classifyScrollEvent(event)
     );
     break;
   case kCGEventKeyDown:

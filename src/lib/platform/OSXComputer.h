@@ -11,6 +11,7 @@
 #include "deskflow/PlatformComputer.h"
 #include "platform/OSXClipboard.h"
 #include "platform/OSXPowerManager.h"
+#include "platform/OSXScrollSource.h"
 
 #include <Carbon/Carbon.h>
 #include <IOKit/IOMessage.h>
@@ -118,7 +119,11 @@ private:
   // event, false if it is a mouseup event.  macButton is the index
   // of the button pressed using the mac button mapping.
   bool onMouseButton(bool pressed, uint16_t macButton);
-  bool onMouseWheel(int32_t xDelta, int32_t yDelta) const;
+  bool onMouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource source = ScrollSource::Unknown) const;
+
+  // classify a scroll wheel event as mouse or trackpad.  logs the raw event fields at
+  // debug level, but only when the classification changes, never for every event.
+  ScrollSource classifyScrollEvent(CGEventRef event);
 
   void constructMouseButtonEventMap();
 
@@ -239,6 +244,10 @@ private:
 
   // mouse event number (needed for macOS 27)
   uint32_t m_mouseEventNumber = 0;
+
+  // remembers the last scroll classification so only a change is logged;
+  // only touched from the event tap callback
+  OSXScrollSource m_scrollSource;
 
   /* FIXME: this data structure is explicitly marked mutable due
      to a need to track the state of buttons since the remote
