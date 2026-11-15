@@ -23,6 +23,8 @@ public:
   void keyDown(KeyID, KeyModifierMask, KeyButton, const std::string &) override;
   void keyRepeat(KeyID, KeyModifierMask, int32_t, KeyButton, const std::string &) override;
   void keyUp(KeyID, KeyModifierMask, KeyButton) override;
+  using ClientProxy1_8::mouseWheel;
+  void mouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource source) override;
   bool leave() override;
   void resetOptions() override;
   void setOptions(const OptionsList &options) override;
@@ -43,6 +45,9 @@ private:
   InputCapabilities m_destinationInputCapabilities;
   bool m_receivedInputCapabilities = false;
   RightCommandAction m_rightCommandAction = RightCommandAction::Preserve;
+  bool m_invertScrollX = false;
+  bool m_invertScrollY = false;
+  ScrollInvertScope m_scrollInvertScope = ScrollInvertScope::All;
   bool m_semanticMedia = false;
   bool m_leftSuperDown = false;
   bool m_rightSuperDown = false;

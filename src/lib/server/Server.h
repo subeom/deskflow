@@ -334,7 +334,7 @@ private:
   void onMouseUp(ButtonID);
   bool onMouseMovePrimary(int32_t x, int32_t y);
   void onMouseMoveSecondary(int32_t dx, int32_t dy);
-  void onMouseWheel(int32_t xDelta, int32_t yDelta);
+  void onMouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource source = ScrollSource::Unknown);
 
   // add client to list and attach event handlers for client
   bool addClient(BaseClientProxy *);

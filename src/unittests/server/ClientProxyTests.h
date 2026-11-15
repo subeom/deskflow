@@ -28,6 +28,15 @@ private Q_SLOTS:
   void inputCapabilities_v19_waitsForCapabilitiesBeforeReady();
   void mouseWheel_data();
   void mouseWheel();
+  void scrollSource_legacyProxiesIgnoreSource_data();
+  void scrollSource_legacyProxiesIgnoreSource();
+  void scrollScope_all_forwardsOptionsAndKeepsLegacyWheelBytes();
+  void scrollScope_mouseWheelOnly_invertsOnlyMouseEvents();
+  void scrollScope_mouseWheelOnly_invertsOnlyConfiguredAxes();
+  void scrollScope_mouseWheelOnly_withholdsInvertOptionsFromDestination();
+  void scrollScope_resetOptions_restoresDestinationInversion();
+  void scrollScope_ineligibleLinks_keepLegacyBytes_data();
+  void scrollScope_ineligibleLinks_keepLegacyBytes();
   void rightCommand_hangulPolicy_preservesSuperRAndSuppressesRepeat();
   void rightCommand_sameOrDisabledPolicy_preservesLegacyLeftSuper();
   void rightCommand_leftSuperHeld_keepsSuperOnOtherKeys();

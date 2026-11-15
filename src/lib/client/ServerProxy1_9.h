@@ -43,5 +43,6 @@ private:
   RightCommandAction m_rightCommandAction = RightCommandAction::Preserve;
   bool m_invertScrollX = false;
   bool m_invertScrollY = false;
+  ScrollInvertScope m_scrollInvertScope = ScrollInvertScope::All;
   bool m_semanticMedia = false;
 };

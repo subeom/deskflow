@@ -547,6 +547,58 @@ void ServerProxyTests::crossOSScroll_v19TransformsDmwmBeforeDelivery()
   QCOMPARE(proxy.lastWheelDelta().y, -120);
 }
 
+void ServerProxyTests::crossOSScroll_mouseWheelOnlyScopeFailsClosedForPlainDmwm()
+{
+  RecordingEventQueue events;
+  FakeStream stream;
+  TestServerProxy1_9 proxy(
+      undereferenceableClient(), &stream, &events,
+      InputCapabilities{InputPlatform::Windows, kInputCapabilityCrossOSScroll}
+  );
+
+  FakeStream sourcePacket;
+  ProtocolUtil::writef(
+      &sourcePacket, kMsgDInputCapabilities, static_cast<uint8_t>(InputPlatform::MacOS), kInputCapabilityProtocolV19
+  );
+  const auto sourceBytes = sourcePacket.takeOutput();
+  stream.push(std::string(sourceBytes.constData(), static_cast<size_t>(sourceBytes.size())));
+  QVERIFY(events.dispatchEvent(Event(EventTypes::StreamInputReady, stream.getEventTarget())));
+
+  FakeStream wheelPacket;
+  ProtocolUtil::writef(&wheelPacket, kMsgDMouseWheel, static_cast<int16_t>(120), static_cast<int16_t>(-120));
+  const auto wheelBytes = wheelPacket.takeOutput();
+  const auto deliverWheel = [&]() {
+    stream.push(std::string(wheelBytes.constData() + 4, static_cast<size_t>(wheelBytes.size() - 4)));
+    return proxy.parseMessageForTest(reinterpret_cast<const uint8_t *>(kMsgDMouseWheel));
+  };
+
+  // A plain DMWM does not say which device produced it.  Under the mouse-wheel-only scope the source already
+  // inverted the events it recognized as a mouse wheel, so the destination must not invert anything again even
+  // if a server (wrongly) also sent the invert flags.
+  const auto wheelOnly = static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly);
+  proxy.onOptionsChangedForTest(
+      {kOptionCrossOSInvertScrollX, 1, kOptionCrossOSInvertScrollY, 1, kOptionCrossOSInvertScope, wheelOnly}
+  );
+  QVERIFY(deliverWheel());
+  QCOMPARE(proxy.lastWheelDelta().x, 120);
+  QCOMPARE(proxy.lastWheelDelta().y, -120);
+
+  // the default scope inverts every packet as before
+  proxy.onOptionsChangedForTest({kOptionCrossOSInvertScrollX, 1, kOptionCrossOSInvertScrollY, 1});
+  QVERIFY(deliverWheel());
+  QCOMPARE(proxy.lastWheelDelta().x, -120);
+  QCOMPARE(proxy.lastWheelDelta().y, 120);
+
+  // and a later options update without the scope drops it again
+  proxy.onOptionsChangedForTest(
+      {kOptionCrossOSInvertScrollX, 1, kOptionCrossOSInvertScrollY, 1, kOptionCrossOSInvertScope, wheelOnly}
+  );
+  proxy.onOptionsChangedForTest({kOptionCrossOSInvertScrollX, 1});
+  QVERIFY(deliverWheel());
+  QCOMPARE(proxy.lastWheelDelta().x, -120);
+  QCOMPARE(proxy.lastWheelDelta().y, -120);
+}
+
 void ServerProxyTests::semanticMedia_v19HandlesOnlyEligibleKeys()
 {
   RecordingEventQueue events;

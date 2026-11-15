@@ -24,6 +24,7 @@ private Q_SLOTS:
   void rightCommand_hangulPolicyTransformsSuperR();
   void rightCommand_missingHangulCapability_preservesLegacy();
   void crossOSScroll_v19TransformsDmwmBeforeDelivery();
+  void crossOSScroll_mouseWheelOnlyScopeFailsClosedForPlainDmwm();
   void semanticMedia_v19HandlesOnlyEligibleKeys();
 
 private:

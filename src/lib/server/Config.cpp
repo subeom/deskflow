@@ -130,6 +130,10 @@ bool Config::addComputer(const std::string &name)
   if (Settings::value(Settings::Computer::CrossOSInvertY.arg(computer)).toBool()) {
     addOption(name, kOptionCrossOSInvertScrollY, 1);
   }
+  const auto invertScope = Settings::value(Settings::Computer::CrossOSInvertScope.arg(computer)).toString().trimmed();
+  if (invertScope.compare(QStringLiteral("mouseWheelOnly"), Qt::CaseInsensitive) == 0) {
+    addOption(name, kOptionCrossOSInvertScope, static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly));
+  }
   if (Settings::value(Settings::Computer::CrossOSSemanticMedia.arg(computer)).toBool()) {
     addOption(name, kOptionCrossOSSemanticMedia, 1);
   }

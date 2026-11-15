@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cmath>
+#include <optional>
 
 class OnlySystemFilter : public InputFilter::Condition
 {
@@ -111,6 +112,40 @@ void ServerConfigTests::crossOSSemanticMediaOption_isOptIn()
   const auto *disabledOptions = disabled.getOptions("mediaComputer");
   QVERIFY(disabledOptions != nullptr);
   QCOMPARE(disabledOptions->count(kOptionCrossOSSemanticMedia), static_cast<size_t>(0));
+}
+
+void ServerConfigTests::crossOSInvertScope_isOptIn()
+{
+  const auto name = QStringLiteral("scopeComputer");
+  const auto key = Settings::Computer::CrossOSInvertScope.arg(name);
+  const auto scopeOption = [&]() {
+    Config config(nullptr);
+    if (!config.addComputer(name.toStdString())) {
+      return std::optional<OptionValue>();
+    }
+    const auto *options = config.getOptions(name.toStdString());
+    if (options == nullptr || !options->contains(kOptionCrossOSInvertScope)) {
+      return std::optional<OptionValue>();
+    }
+    return std::optional<OptionValue>(options->at(kOptionCrossOSInvertScope));
+  };
+
+  // an old config without the key, the default, and anything unrecognized mean "all": no option at all
+  Settings::setValue(key, QVariant());
+  QVERIFY(!scopeOption().has_value());
+  Settings::setValue(key, QStringLiteral("all"));
+  QVERIFY(!scopeOption().has_value());
+  Settings::setValue(key, QStringLiteral("trackpadOnly"));
+  QVERIFY(!scopeOption().has_value());
+  Settings::setValue(key, QString());
+  QVERIFY(!scopeOption().has_value());
+
+  Settings::setValue(key, QStringLiteral("mouseWheelOnly"));
+  QCOMPARE(scopeOption().value_or(-1), static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly));
+
+  // parsed like rightCommandAction: trimmed and case-insensitive
+  Settings::setValue(key, QStringLiteral(" MouseWheelONLY "));
+  QCOMPARE(scopeOption().value_or(-1), static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly));
 }
 
 void ServerConfigTests::neighborPositions_stayHalfOpenAndChain()

@@ -55,6 +55,7 @@ void ServerProxy1_9::onOptionsChanged(const OptionsList &options)
   m_rightCommandAction = RightCommandAction::Preserve;
   m_invertScrollX = false;
   m_invertScrollY = false;
+  m_scrollInvertScope = ScrollInvertScope::All;
   m_semanticMedia = false;
   for (size_t i = 0; i + 1 < options.size(); i += 2) {
     if (options[i] == kOptionCrossOSRightCommand) {
@@ -66,6 +67,10 @@ void ServerProxy1_9::onOptionsChanged(const OptionsList &options)
       m_invertScrollX = options[i + 1] != 0;
     } else if (options[i] == kOptionCrossOSInvertScrollY) {
       m_invertScrollY = options[i + 1] != 0;
+    } else if (options[i] == kOptionCrossOSInvertScope) {
+      m_scrollInvertScope = options[i + 1] == static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly)
+                                ? ScrollInvertScope::MouseWheelOnly
+                                : ScrollInvertScope::All;
     } else if (options[i] == kOptionCrossOSSemanticMedia) {
       m_semanticMedia = options[i + 1] != 0;
     }
@@ -120,6 +125,7 @@ CrossPlatformInputPolicy ServerProxy1_9::inputPolicy() const
           .rightCommand = m_rightCommandAction,
           .invertScrollX = m_invertScrollX,
           .invertScrollY = m_invertScrollY,
+          .scrollInvertScope = m_scrollInvertScope,
           .semanticMedia = m_semanticMedia
       }
   };

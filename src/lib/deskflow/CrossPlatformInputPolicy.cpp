@@ -43,11 +43,27 @@ bool CrossPlatformInputPolicy::mapsRightCommandToHangul() const
   return canMapHangul();
 }
 
-ScrollDelta CrossPlatformInputPolicy::toDestinationScroll(ScrollDelta delta) const
+ScrollDelta CrossPlatformInputPolicy::toWireScroll(ScrollDelta delta, ScrollSource source) const
 {
-  if (!canMapScroll()) {
+  if (m_options.scrollInvertScope != ScrollInvertScope::MouseWheelOnly || !canMapScroll() ||
+      source != ScrollSource::Mouse) {
     return delta;
   }
+  return invertConfiguredAxes(delta);
+}
+
+ScrollDelta CrossPlatformInputPolicy::toDestinationScroll(ScrollDelta delta) const
+{
+  // with MouseWheelOnly the source has already inverted what it recognized as a mouse wheel, and this side
+  // cannot tell a mouse from a trackpad, so it must not invert anything
+  if (!canMapScroll() || m_options.scrollInvertScope == ScrollInvertScope::MouseWheelOnly) {
+    return delta;
+  }
+  return invertConfiguredAxes(delta);
+}
+
+ScrollDelta CrossPlatformInputPolicy::invertConfiguredAxes(ScrollDelta delta) const
+{
   if (m_options.invertScrollX) {
     delta.x = -delta.x;
   }

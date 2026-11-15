@@ -1279,7 +1279,7 @@ void Server::handleMotionSecondaryEvent(const Event &event)
 void Server::handleWheelEvent(const Event &event)
 {
   const auto *info = static_cast<IPlatformComputer::WheelInfo *>(event.getData());
-  onMouseWheel(info->m_xDelta, info->m_yDelta);
+  onMouseWheel(info->m_xDelta, info->m_yDelta, info->m_source);
 }
 
 void Server::handleSwitchWaitTimeout()
@@ -1886,13 +1886,13 @@ void Server::onMouseMoveSecondary(int32_t dx, int32_t dy)
   }
 }
 
-void Server::onMouseWheel(int32_t xDelta, int32_t yDelta)
+void Server::onMouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource source)
 {
   LOG_VERBOSE("onMouseWheel %+d,%+d", xDelta, yDelta);
   assert(m_active != nullptr);
 
   // relay
-  m_active->mouseWheel(xDelta, yDelta);
+  m_active->mouseWheel(xDelta, yDelta, source);
 }
 
 bool Server::addClient(BaseClientProxy *client)

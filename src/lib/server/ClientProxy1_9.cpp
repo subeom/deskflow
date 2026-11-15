@@ -126,9 +126,25 @@ bool ClientProxy1_9::leave()
   return ClientProxy1_8::leave();
 }
 
+void ClientProxy1_9::mouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource source)
+{
+  // The default scope, trackpad and unknown events never reach the policy: they take the legacy path
+  // untouched and the destination applies the inversion itself.
+  if (m_scrollInvertScope != ScrollInvertScope::MouseWheelOnly || source != ScrollSource::Mouse) {
+    ClientProxy1_8::mouseWheel(xDelta, yDelta);
+    return;
+  }
+
+  const auto delta = inputPolicy().toWireScroll({xDelta, yDelta}, source);
+  ClientProxy1_8::mouseWheel(delta.x, delta.y);
+}
+
 void ClientProxy1_9::resetOptions()
 {
   m_rightCommandAction = RightCommandAction::Preserve;
+  m_invertScrollX = false;
+  m_invertScrollY = false;
+  m_scrollInvertScope = ScrollInvertScope::All;
   m_semanticMedia = false;
   ClientProxy1_8::resetOptions();
 }
@@ -141,9 +157,31 @@ void ClientProxy1_9::setOptions(const OptionsList &options)
       m_rightCommandAction = value == static_cast<OptionValue>(RightCommandAction::Hangul)
                                  ? RightCommandAction::Hangul
                                  : RightCommandAction::Preserve;
+    } else if (options[i] == kOptionCrossOSInvertScrollX) {
+      m_invertScrollX = options[i + 1] != 0;
+    } else if (options[i] == kOptionCrossOSInvertScrollY) {
+      m_invertScrollY = options[i + 1] != 0;
+    } else if (options[i] == kOptionCrossOSInvertScope) {
+      m_scrollInvertScope = options[i + 1] == static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly)
+                                ? ScrollInvertScope::MouseWheelOnly
+                                : ScrollInvertScope::All;
     } else if (options[i] == kOptionCrossOSSemanticMedia) {
       m_semanticMedia = options[i + 1] != 0;
     }
+  }
+  // With MouseWheelOnly this source applies the inversion (to mouse wheel events only), so the destination must
+  // not be told to invert: a destination that predates the scope would invert every packet, trackpad included.
+  if (m_scrollInvertScope == ScrollInvertScope::MouseWheelOnly && options.size() % 2 == 0) {
+    OptionsList forwarded;
+    forwarded.reserve(options.size());
+    for (size_t i = 0; i < options.size(); i += 2) {
+      if (options[i] != kOptionCrossOSInvertScrollX && options[i] != kOptionCrossOSInvertScrollY) {
+        forwarded.push_back(options[i]);
+        forwarded.push_back(options[i + 1]);
+      }
+    }
+    ClientProxy1_8::setOptions(forwarded);
+    return;
   }
   ClientProxy1_8::setOptions(options);
 }
@@ -167,7 +205,13 @@ CrossPlatformInputPolicy ClientProxy1_9::inputPolicy() const
 {
   return {
       localInputCapabilities(), m_destinationInputCapabilities,
-      CrossPlatformInputOptions{.rightCommand = m_rightCommandAction, .semanticMedia = m_semanticMedia}
+      CrossPlatformInputOptions{
+          .rightCommand = m_rightCommandAction,
+          .invertScrollX = m_invertScrollX,
+          .invertScrollY = m_invertScrollY,
+          .scrollInvertScope = m_scrollInvertScope,
+          .semanticMedia = m_semanticMedia
+      }
   };
 }
 

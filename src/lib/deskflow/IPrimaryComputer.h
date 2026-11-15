@@ -51,11 +51,12 @@ public:
   class WheelInfo
   {
   public:
-    static WheelInfo *alloc(int32_t xDelta, int32_t yDelta);
+    static WheelInfo *alloc(int32_t xDelta, int32_t yDelta, ScrollSource source = ScrollSource::Unknown);
 
   public:
     int32_t m_xDelta;
     int32_t m_yDelta;
+    ScrollSource m_source;
   };
   //! Hot key event data
   class HotKeyInfo

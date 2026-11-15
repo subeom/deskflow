@@ -14,6 +14,7 @@ private Q_SLOTS:
   void initTestCase();
   void rightCommandAction_hangulAddsOption();
   void crossOSScrollOptions_areOptIn();
+  void crossOSInvertScope_isOptIn();
   void crossOSSemanticMediaOption_isOptIn();
   void neighborPositions_stayHalfOpenAndChain();
   void partialDestinationInterval_clampsInsideEndpoint();

@@ -235,6 +235,56 @@ private:
   int m_readyEvents = 0;
 };
 
+// A protocol 1.9 proxy on a macOS source whose destination has already reported \p destination
+struct V19Link
+{
+  RecordingEventQueue events;
+  CapturingStream *stream = new CapturingStream;
+  std::unique_ptr<TestClientProxy1_9> proxy;
+  bool destinationParsed = false;
+
+  explicit V19Link(InputCapabilities destination)
+  {
+    auto *server = reinterpret_cast<Server *>(0x1);
+    proxy = std::make_unique<TestClientProxy1_9>("client", stream, server, &events);
+    (void)stream->take();
+
+    CapturingStream packet;
+    ProtocolUtil::writef(
+        &packet, kMsgCInputCapabilities, static_cast<uint8_t>(destination.platform), destination.capabilities
+    );
+    stream->pushInput(packet.take());
+    stream->read(nullptr, 4);
+    destinationParsed = proxy->parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities));
+  }
+
+  // what the proxy wrote since the last call
+  QByteArray written() const
+  {
+    return stream->take();
+  }
+};
+
+const InputCapabilities kWindowsWithScroll{
+    InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilityCrossOSScroll
+};
+
+QByteArray wheelBytes(int32_t xDelta, int32_t yDelta)
+{
+  CapturingStream expected;
+  ProtocolUtil::writef(&expected, kMsgDMouseWheel, xDelta, yDelta);
+  return expected.take();
+}
+
+QByteArray optionsBytes(const OptionsList &options)
+{
+  CapturingStream expected;
+  ProtocolUtil::writef(&expected, kMsgDSetOptions, &options);
+  return expected.take();
+}
+
+constexpr OptionValue kMouseWheelOnly = static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly);
+
 } // namespace
 
 void ClientProxyTests::initTestCase()
@@ -417,6 +467,174 @@ void ClientProxyTests::mouseWheel()
   ProxyUnderTest test(minor);
   test.proxy->mouseWheel(120, -120);
   QCOMPARE(test.stream->take(), expected);
+}
+
+void ClientProxyTests::scrollSource_legacyProxiesIgnoreSource_data()
+{
+  QTest::addColumn<int>("minor");
+  QTest::addColumn<QByteArray>("expected");
+
+  // 1.0 only carries the vertical delta; every later proxy carries both
+  QTest::newRow("1.0") << 0 << "DMWM" + QByteArray::fromHex("ff88");
+  const auto expected = "DMWM" + QByteArray::fromHex("0078 ff88");
+  QTest::newRow("1.3") << 3 << expected;
+  QTest::newRow("1.8") << 8 << expected;
+  // a 1.9 proxy that has not seen the destination's capabilities cannot map anything
+  QTest::newRow("1.9 without destination capabilities") << 9 << expected;
+}
+
+void ClientProxyTests::scrollSource_legacyProxiesIgnoreSource()
+{
+  QFETCH(int, minor);
+  QFETCH(QByteArray, expected);
+
+  for (const auto source : {ScrollSource::Unknown, ScrollSource::Mouse, ScrollSource::Trackpad}) {
+    ProxyUnderTest test(minor);
+    test.proxy->mouseWheel(120, -120, source);
+    QCOMPARE(test.stream->take(), expected);
+  }
+}
+
+void ClientProxyTests::scrollScope_all_forwardsOptionsAndKeepsLegacyWheelBytes()
+{
+  V19Link link(kWindowsWithScroll);
+  QVERIFY(link.destinationParsed);
+
+  // the destination keeps inverting in this scope, so the options it needs are forwarded untouched
+  const OptionsList options{kOptionClipboardSharing, 1, kOptionCrossOSInvertScrollX, 1, kOptionCrossOSInvertScrollY, 1};
+  link.proxy->setOptions(options);
+  QCOMPARE(link.written(), optionsBytes(options));
+
+  const auto legacy = "DMWM" + QByteArray::fromHex("0078 ff88");
+  QCOMPARE(wheelBytes(120, -120), legacy);
+  for (const auto source : {ScrollSource::Unknown, ScrollSource::Mouse, ScrollSource::Trackpad}) {
+    link.proxy->mouseWheel(120, -120, source);
+    QCOMPARE(link.written(), legacy);
+  }
+  link.proxy->mouseWheel(120, -120);
+  QCOMPARE(link.written(), legacy);
+}
+
+void ClientProxyTests::scrollScope_mouseWheelOnly_invertsOnlyMouseEvents()
+{
+  V19Link link(kWindowsWithScroll);
+  QVERIFY(link.destinationParsed);
+
+  link.proxy->setOptions(
+      {kOptionCrossOSInvertScrollX, 1, kOptionCrossOSInvertScrollY, 1, kOptionCrossOSInvertScope, kMouseWheelOnly}
+  );
+  (void)link.written();
+
+  link.proxy->mouseWheel(120, -120, ScrollSource::Mouse);
+  QCOMPARE(link.written(), wheelBytes(-120, 120));
+
+  link.proxy->mouseWheel(120, -120, ScrollSource::Trackpad);
+  QCOMPARE(link.written(), wheelBytes(120, -120));
+
+  link.proxy->mouseWheel(120, -120, ScrollSource::Unknown);
+  QCOMPARE(link.written(), wheelBytes(120, -120));
+
+  // a caller that does not know the device (the two argument overload) is never inverted
+  link.proxy->mouseWheel(120, -120);
+  QCOMPARE(link.written(), wheelBytes(120, -120));
+}
+
+void ClientProxyTests::scrollScope_mouseWheelOnly_invertsOnlyConfiguredAxes()
+{
+  V19Link link(kWindowsWithScroll);
+  QVERIFY(link.destinationParsed);
+
+  link.proxy->resetOptions();
+  link.proxy->setOptions({kOptionCrossOSInvertScrollX, 1, kOptionCrossOSInvertScope, kMouseWheelOnly});
+  (void)link.written();
+  link.proxy->mouseWheel(120, -120, ScrollSource::Mouse);
+  QCOMPARE(link.written(), wheelBytes(-120, -120));
+
+  link.proxy->resetOptions();
+  link.proxy->setOptions({kOptionCrossOSInvertScrollY, 1, kOptionCrossOSInvertScope, kMouseWheelOnly});
+  (void)link.written();
+  link.proxy->mouseWheel(120, -120, ScrollSource::Mouse);
+  QCOMPARE(link.written(), wheelBytes(120, 120));
+
+  link.proxy->resetOptions();
+  link.proxy->setOptions({kOptionCrossOSInvertScope, kMouseWheelOnly});
+  (void)link.written();
+  link.proxy->mouseWheel(120, -120, ScrollSource::Mouse);
+  QCOMPARE(link.written(), wheelBytes(120, -120));
+}
+
+void ClientProxyTests::scrollScope_mouseWheelOnly_withholdsInvertOptionsFromDestination()
+{
+  V19Link link(kWindowsWithScroll);
+  QVERIFY(link.destinationParsed);
+
+  // A destination that predates the scope would invert every packet if it were told to, trackpad included,
+  // so the source keeps the invert flags to itself.  Everything else is forwarded in its original order.
+  link.proxy->setOptions({
+      kOptionClipboardSharing,
+      1,
+      kOptionCrossOSInvertScrollX,
+      1,
+      kOptionCrossOSInvertScope,
+      kMouseWheelOnly,
+      kOptionCrossOSInvertScrollY,
+      1,
+      kOptionCrossOSSemanticMedia,
+      1,
+  });
+  const OptionsList forwarded{kOptionClipboardSharing,     1, kOptionCrossOSInvertScope, kMouseWheelOnly,
+                              kOptionCrossOSSemanticMedia, 1};
+  QCOMPARE(link.written(), optionsBytes(forwarded));
+}
+
+void ClientProxyTests::scrollScope_resetOptions_restoresDestinationInversion()
+{
+  V19Link link(kWindowsWithScroll);
+  QVERIFY(link.destinationParsed);
+
+  link.proxy->setOptions(
+      {kOptionCrossOSInvertScrollX, 1, kOptionCrossOSInvertScrollY, 1, kOptionCrossOSInvertScope, kMouseWheelOnly}
+  );
+  link.proxy->resetOptions();
+  (void)link.written();
+
+  // back to the default scope: the flags reach the destination again and the source leaves the wheel alone
+  const OptionsList options{kOptionCrossOSInvertScrollX, 1, kOptionCrossOSInvertScrollY, 1};
+  link.proxy->setOptions(options);
+  QCOMPARE(link.written(), optionsBytes(options));
+  link.proxy->mouseWheel(120, -120, ScrollSource::Mouse);
+  QCOMPARE(link.written(), wheelBytes(120, -120));
+}
+
+void ClientProxyTests::scrollScope_ineligibleLinks_keepLegacyBytes_data()
+{
+  QTest::addColumn<int>("platform");
+  QTest::addColumn<uint32_t>("capabilities");
+
+  constexpr uint32_t withScroll = kInputCapabilityProtocolV19 | kInputCapabilityCrossOSScroll;
+  QTest::newRow("windows without the scroll capability")
+      << static_cast<int>(InputPlatform::Windows) << static_cast<uint32_t>(kInputCapabilityProtocolV19);
+  QTest::newRow("macOS destination") << static_cast<int>(InputPlatform::MacOS) << withScroll;
+  QTest::newRow("linux destination") << static_cast<int>(InputPlatform::Linux) << withScroll;
+  QTest::newRow("unknown destination") << static_cast<int>(InputPlatform::Unknown) << withScroll;
+}
+
+void ClientProxyTests::scrollScope_ineligibleLinks_keepLegacyBytes()
+{
+  QFETCH(int, platform);
+  QFETCH(uint32_t, capabilities);
+
+  V19Link link({static_cast<InputPlatform>(platform), capabilities});
+  QVERIFY(link.destinationParsed);
+
+  link.proxy->setOptions(
+      {kOptionCrossOSInvertScrollX, 1, kOptionCrossOSInvertScrollY, 1, kOptionCrossOSInvertScope, kMouseWheelOnly}
+  );
+  (void)link.written();
+  for (const auto source : {ScrollSource::Unknown, ScrollSource::Mouse, ScrollSource::Trackpad}) {
+    link.proxy->mouseWheel(120, -120, source);
+    QCOMPARE(link.written(), wheelBytes(120, -120));
+  }
 }
 
 void ClientProxyTests::rightCommand_hangulPolicy_preservesSuperRAndSuppressesRepeat()

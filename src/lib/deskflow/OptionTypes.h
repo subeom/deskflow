@@ -32,6 +32,13 @@ enum class RightCommandAction : uint8_t
   Hangul = 1
 };
 
+//! Which scroll events the cross-OS scroll inversion applies to
+enum class ScrollInvertScope : uint8_t
+{
+  All = 0,
+  MouseWheelOnly = 1
+};
+
 // macro for packing 4 character strings into 4 byte integers
 #define OPTION_CODE(_s)                                                                                                \
   (static_cast<uint32_t>(static_cast<unsigned char>(_s[0]) << 24) |                                                    \
@@ -53,6 +60,7 @@ static const OptionID kOptionModifierMapForSuper = OPTION_CODE("MMFR");
 static const OptionID kOptionCrossOSRightCommand = OPTION_CODE("RCPM");
 static const OptionID kOptionCrossOSInvertScrollX = OPTION_CODE("CXIX");
 static const OptionID kOptionCrossOSInvertScrollY = OPTION_CODE("CXIY");
+static const OptionID kOptionCrossOSInvertScope = OPTION_CODE("CXIS");
 static const OptionID kOptionCrossOSSemanticMedia = OPTION_CODE("CSMT");
 static const OptionID kOptionHeartbeat = OPTION_CODE("HART");
 static const OptionID kOptionComputerSwitchCorners = OPTION_CODE("SSCM");

@@ -127,6 +127,18 @@ public:
   */
   virtual void mouseWheel(int32_t xDelta, int32_t yDelta) = 0;
 
+  //! Notify of mouse wheel motion from a known kind of device
+  /*!
+  Same as mouseWheel(int32_t, int32_t) but also reports the kind of device the primary
+  computer classified the event as (\c ScrollSource::Unknown when it cannot tell).  The
+  default implementation ignores \p source and forwards to the two argument overload, so
+  an implementer that does not care about the device behaves exactly as before.
+  */
+  virtual void mouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource)
+  {
+    mouseWheel(xDelta, yDelta);
+  }
+
   //! Notify of screen saver change
   virtual void screensaver(bool activate) = 0;
 
