@@ -17,6 +17,7 @@ private Q_SLOTS:
   void initTestCase();
   void unpaced_enqueuesTheLegacyChunkEventsUnchanged();
   void unpaced_neverTouchesTheSocketOrWaitsForFlush();
+  void unpaced_bytesAreTheOnesTheProtocolHasAlwaysUsed();
   void paced_writesOneDataChunkPerFlush();
   void paced_defaultChunkIs32KiB();
   void paced_streamIsReassembledByTheRealReceiver();

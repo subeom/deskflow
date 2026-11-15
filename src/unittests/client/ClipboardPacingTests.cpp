@@ -283,10 +283,14 @@ void ClipboardPacingTests::handshake_bothSidesAdvertiseTheClipboardCapability()
   QVERIFY(client.proxy->parseHandshakeMessageForTest(kMsgDInputCapabilities));
   const auto cipc = client.stream.takePackets();
   QCOMPARE(cipc.size(), size_t{1});
-  // CIPC, platform, then the mask in network byte order: bit 0 (protocol 1.9) is in the last byte, bits 8 and 9 in the
-  // one before
-  QCOMPARE(static_cast<uint8_t>(cipc.front().at(8)), uint8_t{0x01});
-  QCOMPARE(static_cast<uint8_t>(cipc.front().at(7)), uint8_t{0x03});
+  // the mask is what this computer reports (Windows adds input capabilities) plus the two clipboard bits
+  TestStream expectedCipc;
+  const auto clientLocal = client.client->inputCapabilities();
+  ProtocolUtil::writef(
+      &expectedCipc, kMsgCInputCapabilities, static_cast<uint8_t>(clientLocal.platform),
+      clientLocal.capabilities | kClipboardCapabilityPaced | kClipboardCapabilitySingleId
+  );
+  QCOMPARE(cipc.front(), expectedCipc.packets().front());
 }
 
 void ClipboardPacingTests::serverToClient_notNegotiated_keepsTheLegacyBytes_data()
@@ -710,6 +714,43 @@ void ClipboardPacingTests::mirror_peerWithoutTheCapabilityOrX11Peer_isNotMirrore
     changed += event.getType() == EventTypes::ClipboardChanged ? 1 : 0;
   }
   QCOMPARE(changed, size_t{1});
+}
+
+void ClipboardPacingTests::setClipboardDirty_dropsTheRunningTransferOfThatId()
+{
+  ServerSide server;
+  server.receiveCipc(InputPlatform::Windows, kInputCapabilityProtocolV19);
+  const ClipboardOf clipboard(marshalledText(200 * 1024));
+  server.proxy->setClipboard(0, &clipboard);
+  server.proxy->setClipboard(1, &clipboard);
+  flushEvent(server.events, *server.stream);
+  server.stream->takePackets();
+
+  // the Server says so when this computer took the clipboard itself or copied something new: what is on its way is
+  // stale, and would overwrite what the user just copied there
+  server.proxy->setClipboardDirty(0, false);
+  for (size_t i = 0; i < 20; ++i) {
+    flushEvent(server.events, *server.stream);
+  }
+  QVERIFY(server.stream->takePackets().empty());
+}
+
+void ClipboardPacingTests::clientGrab_fromTheServerDropsTheRunningUpload()
+{
+  ClientSide client;
+  client.receiveDipc(InputPlatform::MacOS, kPeerCapabilities);
+  client.sendClipboard(0, marshalledText(200 * 1024));
+  flushEvent(client.events, client.stream);
+  client.stream.takePackets();
+
+  // the server took the clipboard: the data on its way to it is stale
+  TestStream grab;
+  ProtocolUtil::writef(&grab, kMsgCClipboard, 0, 5);
+  client.deliver(grab.packets());
+  for (size_t i = 0; i < 20; ++i) {
+    flushEvent(client.events, client.stream);
+  }
+  QVERIFY(client.stream.takePackets().empty());
 }
 
 void ClipboardPacingTests::proofOfLife_negotiated_anyReceivedDataResetsTheAlarm()

@@ -25,6 +25,7 @@ public:
 
   void setClipboard(ClipboardID id, const IClipboard *clipboard) override;
   void grabClipboard(ClipboardID id) override;
+  void setClipboardDirty(ClipboardID id, bool dirty) override;
   bool recvClipboard() override;
 
 protected:

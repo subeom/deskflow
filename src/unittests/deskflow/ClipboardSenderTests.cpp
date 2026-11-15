@@ -97,6 +97,34 @@ void ClipboardSenderTests::unpaced_enqueuesTheLegacyChunkEventsUnchanged()
   QCOMPARE(stream.packets(), legacyPackets(data, 0, 7));
 }
 
+// The bytes are spelled out from the protocol (DCLP, id, 4 byte sequence, mark 1/2/3, length prefixed string), not
+// produced by the code under test, so that a change in the serializer cannot move its own expectation.
+void ClipboardSenderTests::unpaced_bytesAreTheOnesTheProtocolHasAlwaysUsed()
+{
+  TestEventQueue events;
+  TestStream stream;
+  int target = 0;
+  const auto data = marshalledText(5); // 17 bytes: one format (Text), 5 bytes of "aaaaa"
+  QCOMPARE(data.size(), size_t{17});
+
+  {
+    ClipboardSender sender(&stream, &events, &target, "peer");
+    sender.send(1, 7, data, false);
+    for (const auto &event : events.addedEvents()) {
+      QVERIFY(events.dispatchEvent(Event(event.getType(), event.getTarget(), event.getDataObject())));
+    }
+  }
+
+  const std::string start(
+      "DCLP\x01\x00\x00\x00\x07\x01\x00\x00\x00\x02"
+      "17",
+      4 + 1 + 4 + 1 + 4 + 2
+  );
+  const std::string chunk = std::string("DCLP\x01\x00\x00\x00\x07\x02\x00\x00\x00\x11", 14) + data;
+  const std::string end("DCLP\x01\x00\x00\x00\x07\x03\x00\x00\x00\x00", 14);
+  QCOMPARE(stream.packets(), std::vector<std::string>({start, chunk, end}));
+}
+
 void ClipboardSenderTests::unpaced_neverTouchesTheSocketOrWaitsForFlush()
 {
   TestEventQueue events;

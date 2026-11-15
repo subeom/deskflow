@@ -70,6 +70,14 @@ void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
   }
 }
 
+void ClientProxy1_6::setClipboardDirty(ClipboardID id, bool dirty)
+{
+  // the Server changes the state when this computer took the clipboard or copied something new, or when another one
+  // did: what is on its way to this computer is stale either way, and would overwrite a newer copy
+  m_sender.cancel(id);
+  ClientProxy1_5::setClipboardDirty(id, dirty);
+}
+
 void ClientProxy1_6::grabClipboard(ClipboardID id)
 {
   // the grab says the data of a running transfer is stale, so it must not follow the grab

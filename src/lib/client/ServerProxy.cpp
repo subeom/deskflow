@@ -606,6 +606,10 @@ void ServerProxy::grabClipboard()
     return;
   }
 
+  // the data of a transfer that is running is stale now
+  m_sender.cancel(id);
+  m_transferLog.cancel(TransferDirection::Received, id);
+
   // forward
   m_client->grabClipboard(id);
 }

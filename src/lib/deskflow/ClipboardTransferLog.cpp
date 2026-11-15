@@ -146,6 +146,12 @@ void ClipboardTransferLog::begin(
   if (id >= kClipboardEnd) {
     return;
   }
+  if (direction == TransferDirection::Received) {
+    // a receiver has one assembly state, so a start chunk ends a transfer of another id that was abandoned
+    for (auto &slot : m_received) {
+      slot.active = false;
+    }
+  }
   slots(direction)[id] = Slot{true, std::string(peer), std::string(formats), bytes, chunks, paced, now};
 }
 

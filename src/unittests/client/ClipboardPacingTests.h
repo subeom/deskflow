@@ -26,6 +26,8 @@ private Q_SLOTS:
   void clientToServer_negotiated_isPaced();
   void clientToServer_pacedStreamIsAcceptedByTheRealClientProxy();
   void grabClipboard_dropsTheRunningTransferOfThatId();
+  void setClipboardDirty_dropsTheRunningTransferOfThatId();
+  void clientGrab_fromTheServerDropsTheRunningUpload();
   void idPolicy_onlyXWindowsStylePeersExchangeTheSelection_data();
   void idPolicy_onlyXWindowsStylePeersExchangeTheSelection();
   void serverToClient_nonX11Peer_getsOnlyClipboardIdZeroData_data();

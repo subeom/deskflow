@@ -140,6 +140,25 @@ void ClipboardTransferLogTests::cancelDropsTheTransfer()
   QVERIFY(!log.finish(TransferDirection::Sent, 0, start + 5ms).has_value());
 }
 
+void ClipboardTransferLogTests::aReceivedTransferEndsTheOneOfTheOtherId()
+{
+  // a receiver has one assembly state: a start chunk of another id means the sender abandoned the transfer before it
+  ClipboardTransferLog log;
+  const auto start = Clock::now();
+  log.begin(TransferDirection::Received, 0, "server", {}, 100, 0, false, start);
+  log.begin(TransferDirection::Received, 1, "server", {}, 200, 0, false, start + 1s);
+
+  QCOMPARE(
+      QString::fromStdString(log.describeActive(start + 2s)),
+      QStringLiteral("receiving clipboard 1 (200 B, 0 chunks so far, 1000 ms ago)")
+  );
+
+  // what is sent is not affected
+  log.begin(TransferDirection::Sent, 0, "server", "Text 1 B", 13, 3, true, start);
+  log.begin(TransferDirection::Received, 0, "server", {}, 100, 0, false, start + 3s);
+  QVERIFY(log.isActive(TransferDirection::Sent));
+}
+
 void ClipboardTransferLogTests::skipLinesNameTheReason()
 {
   QCOMPARE(

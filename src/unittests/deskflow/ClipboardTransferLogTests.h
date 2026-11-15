@@ -18,6 +18,7 @@ private Q_SLOTS:
   void finishWithoutBeginProducesNothing();
   void describeActiveNamesTransfersInFlight();
   void cancelDropsTheTransfer();
+  void aReceivedTransferEndsTheOneOfTheOtherId();
   void skipLinesNameTheReason();
   void keepAliveTimeoutLineReportsSilenceAndTransfer();
   void joinActivityLeavesOutIdleDirections();
