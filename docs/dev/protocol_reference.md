@@ -147,6 +147,7 @@ This table lists all protocol messages in alphabetical order. For a typical sequ
 | [**CBYE**](@ref kMsgCClose) | @ref kMsgCClose | Command | Server→Client | Close connection | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
 | [**CCLP**](@ref kMsgCClipboard) | @ref kMsgCClipboard | Command | Both | Clipboard ownership notification | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
 | [**CIAK**](@ref kMsgCInfoAck) | @ref kMsgCInfoAck | Command | Server→Client | Acknowledge info message | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
+| [**CIPC**](@ref kMsgCInputCapabilities) | @ref kMsgCInputCapabilities | Handshake | Client→Server | Destination input platform and capabilities | [MsgSize](#constraint-protocol-max-message-length) | 1.9+ |
 | [**CINN**](@ref kMsgCEnter) | @ref kMsgCEnter | Command | Server→Client | Enter computer | [MsgSize](#constraint-protocol-max-message-length), [ComputerEntrySync](#constraint-computer-entry-sync) | 1.0+ |
 | [**CNOP**](@ref kMsgCNoop) | @ref kMsgCNoop | Command | Both | No operation | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
 | [**COUT**](@ref kMsgCLeave) | @ref kMsgCLeave | Command | Server→Client | Leave computer | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
@@ -156,6 +157,7 @@ This table lists all protocol messages in alphabetical order. For a typical sequ
 | [**DDRG**](@ref kMsgDDragInfo) | @ref kMsgDDragInfo | Data | Server→Client | Drag file info | [MsgSize](#constraint-protocol-max-message-length), [ListSize](#constraint-max-list) | 1.5+ |
 | [**DFTR**](@ref kMsgDFileTransfer) | @ref kMsgDFileTransfer | Data | Both | File transfer data | [MsgSize](#constraint-protocol-max-message-length) | 1.5+ |
 | [**DINF**](@ref kMsgDInfo) | @ref kMsgDInfo | Data | Client→Server | Computer information | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
+| [**DIPC**](@ref kMsgDInputCapabilities) | @ref kMsgDInputCapabilities | Handshake | Server→Client | Source input platform and capabilities | [MsgSize](#constraint-protocol-max-message-length) | 1.9+ |
 | [**DKDL**](@ref kMsgDKeyDown) | @ref kMsgDKeyDown | Data | Server→Client | Key down with language | [MsgSize](#constraint-protocol-max-message-length), [KeyMap](#constraint-keymap) | 1.8+ |
 | [**DKDN**](@ref kMsgDKeyDown1_1) | @ref kMsgDKeyDown1_1 | Data | Server→Client | Key down | [MsgSize](#constraint-protocol-max-message-length), [KeyMap](#constraint-keymap) | 1.1+ |
 | [**DKDN**](@ref kMsgDKeyDown1_0) | @ref kMsgDKeyDown1_0 | Data | Server→Client | Key down (legacy) | [MsgSize](#constraint-protocol-max-message-length), [KeyMap](#constraint-keymap) | 1.0 |
@@ -188,7 +190,9 @@ This table lists all protocol messages in alphabetical order. For a typical sequ
 
 A typical control flow is as follows:
 1.  **Handshake**: The server and client exchange `Hello` and `HelloBack` messages to agree on a protocol version.
-2.  **Information Exchange**: The server requests client information with `QINF`, and the client responds with `DINF`.
+2.  **Information Exchange**: The server requests client information with `QINF`. For protocol 1.9 it
+    also sends language synchronization and `DIPC`; the client responds with `DINF` and `CIPC`.
+    A 1.9 connection is not ready until both responses have been received.
 3.  **Options**: The server sends `DSOP` to configure client options.
 4.  **Keep-Alive**: The server and client periodically exchange `CALV` messages to maintain the connection.
 5.  **Computer Entry**: The server sends `CINN` to grant control to the client.
@@ -248,6 +252,23 @@ A modifier (modifier mask) represents the state of modifier keys (like Shift, Co
 - The server can command clients to remap modifier keys via the @ref kMsgDSetOptions message
 - The client processes the @ref kMsgDSetOptions message and updates the modifier translation table accordingly
 
+### Input Platform Capability Exchange
+
+Protocol 1.9 adds two handshake messages:
+
+- @ref kMsgDInputCapabilities (`DIPC%1i%4i`) is sent by the source computer to advertise its
+  `InputPlatform` and capability mask.
+- @ref kMsgCInputCapabilities (`CIPC%1i%4i`) is sent by the destination computer in response.
+
+Both messages contain a one-byte platform value (`Unknown`, `Windows`, `macOS`, `Linux`, or
+`Other`) and a four-byte capability mask. They are sent only after both peers negotiate
+protocol 1.9. If the peer reports an unknown platform or lacks the capability, implementations
+must retain the existing input behavior.
+
+Protocol 1.9 does not change the formats of @ref kMsgDKeyDown, @ref kMsgDKeyRepeat,
+@ref kMsgDKeyUp, or @ref kMsgDMouseWheel. A peer using protocol 1.8 or older never sends or receives
+`DIPC`/`CIPC` and continues to use the existing input packets unchanged.
+
 ## Timing and Synchronization
 
 <a id="constraint-keep-alive"></a>
@@ -292,6 +313,7 @@ A modifier (modifier mask) represents the state of modifier keys (like Shift, Co
 | **1.6** | Jan 2014 | Synergy | Clipboard streaming | 1.6+ |
 | **1.7** | Sep 2021 | Synergy | Secure input notifications | 1.7+ |
 | **1.8** | Nov 2021 | Synergy | Language synchronization | 1.8+ |
+| **1.9** | 2026 | Deskflow | Input platform and capability negotiation (@ref kMsgDInputCapabilities, @ref kMsgCInputCapabilities) | 1.9+ |
 
 ### Version Migration Guide
 

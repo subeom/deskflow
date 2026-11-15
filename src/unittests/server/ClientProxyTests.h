@@ -22,6 +22,12 @@ private Q_SLOTS:
   void keyRepeat();
   void keyUp_data();
   void keyUp();
+  void inputCapabilities_v19_sendsSourcePlatformAndCapabilities();
+  void inputCapabilities_v18_doesNotSendCapabilityMessage();
+  void inputCapabilities_v19_parsesDestinationCapabilities();
+  void inputCapabilities_v19_waitsForCapabilitiesBeforeReady();
+  void mouseWheel_data();
+  void mouseWheel();
 
 private:
   Log m_log;

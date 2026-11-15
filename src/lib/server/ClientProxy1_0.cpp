@@ -155,12 +155,28 @@ bool ClientProxy1_0::parseHandshakeMessage(const uint8_t *code)
     // future messages get parsed by parseMessage
     m_parser = &ClientProxy1_0::parseMessage;
     if (recvInfo()) {
-      m_events->addEvent(Event(EventTypes::ClientProxyReady, getEventTarget()));
-      addHeartbeatTimer();
+      m_handshakeInfoReceived = true;
+      maybeCompleteHandshake();
       return true;
     }
   }
   return false;
+}
+
+bool ClientProxy1_0::isHandshakeCompleteReady() const
+{
+  return true;
+}
+
+void ClientProxy1_0::maybeCompleteHandshake()
+{
+  if (m_handshakeComplete || !m_handshakeInfoReceived || !isHandshakeCompleteReady()) {
+    return;
+  }
+
+  m_handshakeComplete = true;
+  m_events->addEvent(Event(EventTypes::ClientProxyReady, getEventTarget()));
+  addHeartbeatTimer();
 }
 
 bool ClientProxy1_0::parseMessage(const uint8_t *code)

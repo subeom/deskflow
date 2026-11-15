@@ -10,8 +10,12 @@
 #include "base/IEventQueue.h"
 #include "client/Client.h"
 #include "client/ServerProxy.h"
+#include "client/ServerProxy1_9.h"
+#include "common/InputCapabilities.h"
+#include "common/PlatformInfo.h"
 #include "deskflow/AppUtil.h"
 #include "deskflow/ProtocolTypes.h"
+#include "deskflow/ProtocolUtil.h"
 #include "io/IStream.h"
 
 #include <QTest>
@@ -79,8 +83,16 @@ public:
     return static_cast<uint32_t>(bytesToRead);
   }
 
-  void write(const void *, uint32_t) override
+  void write(const void *data, uint32_t size) override
   {
+    m_output.append(static_cast<const char *>(data), size);
+  }
+
+  QByteArray takeOutput()
+  {
+    auto output = m_output;
+    m_output.clear();
+    return output;
   }
 
   void flush() override
@@ -118,6 +130,7 @@ public:
 private:
   std::deque<std::string> m_chunks;
   bool m_inputShutdown = false;
+  QByteArray m_output;
 };
 
 class RecordingEventQueue : public IEventQueue
@@ -326,6 +339,35 @@ void ServerProxyTests::parseHandshakeMessage_protocolError_queuesRefusalRequest(
   QVERIFY(request->kind() == Client::DisconnectRequest::Kind::Refuse);
   QVERIFY(request->refusalReason() == deskflow::core::ConnectionRefusal::ProtocolError);
   QCOMPARE(QString::fromUtf8(request->message()), QStringLiteral("server reported a protocol error"));
+}
+
+void ServerProxyTests::inputCapabilities_v19_readsSourceAndWritesDestinationCapabilities()
+{
+  RecordingEventQueue events;
+  FakeStream stream;
+  const InputCapabilities sourceCapabilities{InputPlatform::MacOS, 0x01020304};
+
+  ProtocolUtil::writef(
+      &stream, kMsgDInputCapabilities, static_cast<uint8_t>(sourceCapabilities.platform),
+      static_cast<uint32_t>(sourceCapabilities.capabilities)
+  );
+  const auto packet = stream.takeOutput();
+  stream.push(std::string(packet.constData(), static_cast<size_t>(packet.size())));
+
+  ServerProxy1_9 proxy(undereferenceableClient(), &stream, &events);
+  QVERIFY(events.dispatchEvent(Event(EventTypes::StreamInputReady, stream.getEventTarget())));
+
+  QCOMPARE(
+      static_cast<uint8_t>(proxy.sourceInputCapabilities().platform), static_cast<uint8_t>(sourceCapabilities.platform)
+  );
+  QCOMPARE(proxy.sourceInputCapabilities().capabilities, sourceCapabilities.capabilities);
+
+  FakeStream expected;
+  ProtocolUtil::writef(
+      &expected, kMsgCInputCapabilities, static_cast<uint8_t>(deskflow::platform::currentInputPlatform()),
+      deskflow::platform::currentInputCapabilities().capabilities
+  );
+  QCOMPARE(stream.takeOutput(), expected.takeOutput());
 }
 
 QTEST_MAIN(ServerProxyTests)

@@ -13,6 +13,8 @@ const char *const kMsgHello = "%7s%2i%2i";
 const char *const kMsgHelloArgs = "%2i%2i";
 const char *const kMsgHelloBack = "%7s%2i%2i%s";
 const char *const kMsgHelloBackArgs = "%2i%2i%s";
+const char *const kMsgDInputCapabilities = "DIPC%1i%4i";
+const char *const kMsgCInputCapabilities = "CIPC%1i%4i";
 
 const char *const kMsgCNoop = "CNOP";
 const char *const kMsgCClose = "CBYE";

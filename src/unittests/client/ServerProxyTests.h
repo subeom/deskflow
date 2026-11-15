@@ -19,6 +19,7 @@ private Q_SLOTS:
   void handleKeepAliveAlarm_timeout_queuesDisconnectRequest();
   void handleData_incompleteMessage_queuesDisconnectRequest();
   void parseHandshakeMessage_protocolError_queuesRefusalRequest();
+  void inputCapabilities_v19_readsSourceAndWritesDestinationCapabilities();
 
 private:
   Log m_log;

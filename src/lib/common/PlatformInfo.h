@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include "common/InputCapabilities.h"
+
 #include <QFileInfo>
 #include <QSysInfo>
 
@@ -33,6 +35,25 @@ inline bool isWindows()
 inline bool isMac()
 {
   return QSysInfo::productType() == QStringLiteral("macos");
+}
+
+inline InputPlatform currentInputPlatform()
+{
+  if (isWindows()) {
+    return InputPlatform::Windows;
+  }
+  if (isMac()) {
+    return InputPlatform::MacOS;
+  }
+  if (QSysInfo::kernelType() == QStringLiteral("linux")) {
+    return InputPlatform::Linux;
+  }
+  return InputPlatform::Other;
+}
+
+inline InputCapabilities currentInputCapabilities()
+{
+  return {currentInputPlatform(), kInputCapabilityProtocolV19};
 }
 
 /**

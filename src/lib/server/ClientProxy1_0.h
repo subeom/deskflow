@@ -58,6 +58,8 @@ public:
 protected:
   virtual bool parseHandshakeMessage(const uint8_t *code);
   virtual bool parseMessage(const uint8_t *code);
+  virtual bool isHandshakeCompleteReady() const;
+  void maybeCompleteHandshake();
 
   virtual void resetHeartbeatRate();
   virtual void setHeartbeatRate(double rate, double alarm);
@@ -100,4 +102,6 @@ private:
   EventQueueTimer *m_heartbeatTimer = nullptr;
   MessageParser m_parser = &ClientProxy1_0::parseHandshakeMessage;
   IEventQueue *m_events;
+  bool m_handshakeInfoReceived = false;
+  bool m_handshakeComplete = false;
 };

@@ -45,7 +45,7 @@ static const int16_t kProtocolMajorVersion = 1;
  * @note When incrementing the minor version, the Deskflow application version should also increment
  * @since Protocol version 1.0
  */
-static const int16_t kProtocolMinorVersion = 8;
+static const int16_t kProtocolMinorVersion = 9;
 
 /**
  * @brief Default TCP port for Deskflow connections
@@ -290,6 +290,32 @@ extern const char *const kMsgHelloBack;
  * @since Protocol version 1.0
  */
 extern const char *const kMsgHelloBackArgs;
+
+/**
+ * @brief Source computer input platform and capability information.
+ *
+ * **Direction**: Primary/server -> Secondary/client
+ * **Format**: `"DIPC%1i%4i"`
+ * **Parameters**:
+ * - `$1`: InputPlatform (1 byte)
+ * - `$2`: Input capability mask (4 bytes)
+ *
+ * Sent only after protocol 1.9 has been negotiated.
+ */
+extern const char *const kMsgDInputCapabilities;
+
+/**
+ * @brief Destination computer input platform and capability information.
+ *
+ * **Direction**: Secondary/client -> Primary/server
+ * **Format**: `"CIPC%1i%4i"`
+ * **Parameters**:
+ * - `$1`: InputPlatform (1 byte)
+ * - `$2`: Input capability mask (4 bytes)
+ *
+ * Sent only in response to DIPC after protocol 1.9 has been negotiated.
+ */
+extern const char *const kMsgCInputCapabilities;
 
 /** @} */ // end of protocol_handshake group
 
