@@ -73,6 +73,19 @@
         </property>
        </widget>
       </item>
+      <item>
+       <widget class="QCheckBox" name="chkShareClipboard">
+        <property name="toolTip">
+         <string>Turn this off to keep this computer out of clipboard sharing: its clipboard is not sent to the other computers and theirs is not sent to it.</string>
+        </property>
+        <property name="text">
+         <string>Share clipboard with this computer</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
@@ -867,12 +880,14 @@
  </widget>
  <tabstops>
   <tabstop>lineNameEdit</tabstop>
+  <tabstop>chkShareClipboard</tabstop>
   <tabstop>comboMeta</tabstop>
   <tabstop>comboShift</tabstop>
   <tabstop>comboCtrl</tabstop>
   <tabstop>comboSuper</tabstop>
   <tabstop>comboAltGr</tabstop>
   <tabstop>comboAlt</tabstop>
+  <tabstop>chkShareClipboard</tabstop>
   <tabstop>chkDeadTopLeft</tabstop>
   <tabstop>chkDeadTopRight</tabstop>
   <tabstop>sbSwitchCornerSize</tabstop>

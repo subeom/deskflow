@@ -32,6 +32,7 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
   ui->buttonBox->button(QDialogButtonBox::Cancel)->setFocus();
 
   ui->lineNameEdit->setText(m_computer->name());
+  ui->chkShareClipboard->setChecked(m_computer->shareClipboard());
 
   const auto valNameError = new validators::ValidationError(this, ui->lblNameError);
   const auto valName = new validators::ComputerLineNameValidator(ui->lineNameEdit, valNameError, computers);
@@ -93,6 +94,7 @@ void ComputerSettingsDialog::accept()
   }
 
   m_computer->setName(ui->lineNameEdit->text());
+  m_computer->setShareClipboard(ui->chkShareClipboard->isChecked());
 
   m_computer->aliases().clear();
 

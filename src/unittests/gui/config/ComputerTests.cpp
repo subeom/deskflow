@@ -216,4 +216,73 @@ void ComputerTests::crossOSDialog_saveSerializeAndProduceOptions()
   QVERIFY(!(reloadedAll == computer));
 }
 
+void ComputerTests::shareClipboard_defaultsOnAndAddsNoOption()
+{
+  // a configuration that predates the setting has no key for it: the computer shares its clipboard, as it always did
+  const auto name = QStringLiteral("clipboard-default");
+  Settings::proxy().setValue("name", name);
+
+  Computer computer;
+  computer.loadSettings(Settings::proxy());
+  QVERIFY(computer.shareClipboard());
+
+  deskflow::server::Config config(nullptr);
+  QVERIFY(config.addComputer(name.toStdString()));
+  const auto *options = config.getOptions(name.toStdString());
+  QVERIFY(options != nullptr);
+  QCOMPARE(options->count(kOptionClipboardSharing), static_cast<size_t>(0));
+}
+
+void ComputerTests::shareClipboard_off_isSavedLoadedAndProducesTheOption()
+{
+  const auto name = QStringLiteral("clipboard-off");
+  Settings::setValue(Settings::Computer::ShareClipboard.arg(name), false);
+  Settings::proxy().setValue("name", name);
+
+  Computer computer;
+  computer.loadSettings(Settings::proxy());
+  QVERIFY(!computer.shareClipboard());
+
+  // saving writes it back, and a reload is the same computer
+  computer.saveSettings(Settings::proxy());
+  QVERIFY(!Settings::value(Settings::Computer::ShareClipboard.arg(computer.name())).toBool());
+  Computer reloaded;
+  reloaded.loadSettings(Settings::proxy());
+  QVERIFY(!reloaded.shareClipboard());
+  QVERIFY(reloaded == computer);
+
+  deskflow::server::Config config(nullptr);
+  QVERIFY(config.addComputer(computer.name().toStdString()));
+  const auto *options = config.getOptions(computer.name().toStdString());
+  QVERIFY(options != nullptr);
+  QCOMPARE(options->at(kOptionClipboardSharing), 0);
+}
+
+void ComputerTests::shareClipboard_dialogChecksTheBoxAndSerializes()
+{
+  Computer computer(QStringLiteral("clipboard-ui"));
+  ComputerSettingsDialog dialog(nullptr, &computer);
+  auto *share = dialog.findChild<QCheckBox *>(QStringLiteral("chkShareClipboard"));
+  QVERIFY(share != nullptr);
+  QCOMPARE(share->text(), QStringLiteral("Share clipboard with this computer"));
+  QVERIFY(share->isChecked());
+
+  share->setChecked(false);
+  dialog.accept();
+  QVERIFY(!computer.shareClipboard());
+
+  QByteArray serialized;
+  QDataStream output(&serialized, QIODevice::WriteOnly);
+  output << computer;
+  Computer copy;
+  QDataStream input(&serialized, QIODevice::ReadOnly);
+  input >> copy;
+  QVERIFY(!copy.shareClipboard());
+  QVERIFY(computer == copy);
+
+  // the dialog shows what the computer has
+  ComputerSettingsDialog again(nullptr, &computer);
+  QVERIFY(!again.findChild<QCheckBox *>(QStringLiteral("chkShareClipboard"))->isChecked());
+}
+
 QTEST_MAIN(ComputerTests)

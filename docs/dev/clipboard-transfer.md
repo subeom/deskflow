@@ -109,6 +109,19 @@ stores the data of id 0 from a Windows or macOS client as the selection too (`Cl
 computer entered later still gets its selection. `Client::sendClipboard` returns before reading the local
 clipboard for a skipped id, which also saves the second pasteboard read on the Mac.
 
+## Leaving one computer out
+
+A computer can be set to not share its clipboard (`computer_<name>/shareClipboard`, **Share clipboard with
+this computer** in the computer settings dialog; default on, and a configuration that has no key for it is
+on). The setting is a per computer `CLPS=0` screen option in the server's `Config`. The server leaves such a
+computer out of every clipboard path: a grab by it is ignored and not announced to the others, a clipboard
+it says it changed is not read, it is not told about the grabs of the others, and it is not sent a
+clipboard when the cursor enters it. It is also sent `CLPS=0` (after the global `CLPS`, because a client
+takes the last value), so it stops reading and sending its own clipboard. Nothing changes for a computer
+that shares: its options are exactly the ones it got before. When the primary leaves for a computer that
+does not share, the primary's clipboard is still read, so that the next computer that does share gets
+current data.
+
 ## What an unchanged Windows build (v1.27.0.45) gets
 
 It speaks protocol 1.9 and sends `CIPC` with `Windows` as its platform, so the server paces what it sends to

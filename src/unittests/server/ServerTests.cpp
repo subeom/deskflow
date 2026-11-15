@@ -295,6 +295,19 @@ public:
   void grabClipboard(ClipboardID id) override
   {
     m_dirty[id] = true;
+    ++m_grabs[id];
+  }
+
+  // how many times the Server told this computer that another one took the clipboard
+  int grabs(ClipboardID id) const
+  {
+    return m_grabs[id];
+  }
+
+  // the options the Server last sent, as id and value pairs
+  const OptionsList &options() const
+  {
+    return m_options;
   }
 
   void setClipboardDirty(ClipboardID id, bool dirty) override
@@ -351,8 +364,9 @@ public:
   void resetOptions() override
   {
   }
-  void setOptions(const OptionsList &) override
+  void setOptions(const OptionsList &options) override
   {
+    m_options = options;
   }
   void sendDragInfo(uint32_t, const char *, size_t) override
   {
@@ -369,6 +383,8 @@ public:
   }
 
 private:
+  OptionsList m_options;
+  std::array<int, kClipboardEnd> m_grabs{};
   std::array<Clipboard, kClipboardEnd> m_own;
   std::array<bool, kClipboardEnd> m_dirty{};
   std::array<std::optional<std::string>, kClipboardEnd> m_received;
@@ -388,13 +404,18 @@ struct ClipboardRig
   RecordingClient *b = nullptr;
 
   // \p sizeOption is the clipboard size option the server is configured with, if any
-  explicit ClipboardRig(std::optional<OptionValue> sizeOption = std::nullopt)
+  // \p clipboardOff names the computers that are set to not share their clipboard
+  explicit ClipboardRig(
+      std::optional<OptionValue> sizeOption = std::nullopt, std::initializer_list<const char *> clipboardOff = {}
+  )
   {
     config.addComputer("primary");
     config.addComputer("A");
     config.addComputer("B");
     if (sizeOption)
       config.addOption("", kOptionClipboardSharingSize, *sizeOption);
+    for (const char *name : clipboardOff)
+      config.addOption(name, kOptionClipboardSharing, 0);
 
     platform = new ClipboardPlatform(&events);
     computer = std::make_unique<deskflow::Computer>(platform, &events);
@@ -882,6 +903,102 @@ void ServerTests::clipboardTextOnly_turnedOnLater_stripsWhatIsCached()
 
   QVERIFY(rig.switchTo("B"));
   QCOMPARE(received(rig.b->received(kClipboardClipboard)), bytes(marshalled(30)));
+}
+
+// A computer set to not share its clipboard is left out of every clipboard path of the Server. What the others share
+// among them is not touched.
+void ServerTests::clipboardOffForAComputer_primaryToTheOthers_skipsOnlyThatComputer()
+{
+  ClipboardRig rig(std::nullopt, {"A"});
+  fill(rig.platform->pasteboard, 40, true, false);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  rig.grab(*rig.primary, kClipboardSelection);
+
+  // it is not told about the grab, and it gets no data when the cursor enters it
+  QCOMPARE(rig.a->grabs(kClipboardClipboard), 0);
+  QCOMPARE(rig.a->grabs(kClipboardSelection), 0);
+  QCOMPARE(rig.b->grabs(kClipboardClipboard), 1);
+  QVERIFY(rig.switchTo("A"));
+  QVERIFY(neverReceivedAnything(rig.a->received(kClipboardClipboard)));
+  QVERIFY(neverReceivedAnything(rig.a->received(kClipboardSelection)));
+
+  // the primary's clipboard is still current when the cursor goes on to a computer that shares
+  QVERIFY(rig.switchTo("B"));
+  QCOMPARE(received(rig.b->received(kClipboardClipboard)), bytes(marshalled(40, true, false)));
+}
+
+void ServerTests::clipboardOffForAComputer_whatItCopies_isNeitherSharedNorAnnounced()
+{
+  ClipboardRig rig(std::nullopt, {"A"});
+  fill(rig.a->own(kClipboardClipboard), 30, false, false);
+  rig.grab(*rig.a, kClipboardClipboard);
+  rig.changed(*rig.a, kClipboardClipboard);
+
+  // nobody is told that it took the clipboard, and its data reaches nobody
+  QCOMPARE(rig.b->grabs(kClipboardClipboard), 0);
+  QVERIFY(!rig.platform->received[kClipboardClipboard].has_value());
+  QVERIFY(rig.switchTo("B"));
+  QVERIFY(neverReceivedAnything(rig.b->received(kClipboardClipboard)));
+}
+
+void ServerTests::clipboardOffForAComputer_theOthersStillShareAmongThemselves()
+{
+  ClipboardRig rig(std::nullopt, {"A"});
+  QVERIFY(rig.switchTo("B"));
+  fill(rig.b->own(kClipboardClipboard), 25, true, false);
+  rig.grab(*rig.b, kClipboardClipboard);
+  rig.changed(*rig.b, kClipboardClipboard);
+
+  // the primary gets it when the cursor comes back, and the computer that is left out never does
+  QCOMPARE(rig.a->grabs(kClipboardClipboard), 0);
+  QVERIFY(rig.switchTo("primary"));
+  QCOMPARE(received(rig.platform->received[kClipboardClipboard]), bytes(marshalled(25, true, false)));
+  QVERIFY(rig.switchTo("A"));
+  QVERIFY(neverReceivedAnything(rig.a->received(kClipboardClipboard)));
+}
+
+void ServerTests::clipboardOffForAComputer_isOffForAllComputersWhenNoneIsSetOff()
+{
+  // the default: nothing is left out, and nothing about a computer is sent that was not before
+  ClipboardRig rig;
+  fill(rig.platform->pasteboard, 40, false, false);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QCOMPARE(rig.a->grabs(kClipboardClipboard), 1);
+  QCOMPARE(rig.b->grabs(kClipboardClipboard), 1);
+  QVERIFY(rig.switchTo("A"));
+  QCOMPARE(received(rig.a->received(kClipboardClipboard)), bytes(marshalled(40)));
+}
+
+void ServerTests::clipboardOffForAComputer_isToldWithAnOptionThatWinsOverTheGlobalOne()
+{
+  // the global option comes after the computer's own in what is sent, and the last one a client reads wins
+  auto lastSharing = [](const OptionsList &options) {
+    OptionValue value = -1;
+    for (size_t i = 0; i + 1 < options.size(); i += 2) {
+      if (options[i] == kOptionClipboardSharing)
+        value = static_cast<OptionValue>(options[i + 1]);
+    }
+    return value;
+  };
+
+  OptionsList withOff;
+  OptionsList withoutOff;
+  {
+    ClipboardRig rig(std::nullopt, {"A"});
+    rig.config.addOption("", kOptionClipboardSharing, 1);
+    QVERIFY(rig.server->setConfig(rig.config));
+    withOff = rig.b->options();
+    QCOMPARE(lastSharing(rig.a->options()), 0);
+    QCOMPARE(lastSharing(rig.b->options()), 1);
+  }
+  {
+    ClipboardRig rig;
+    rig.config.addOption("", kOptionClipboardSharing, 1);
+    QVERIFY(rig.server->setConfig(rig.config));
+    withoutOff = rig.b->options();
+  }
+  // a computer that shares is sent exactly what it was before the setting existed
+  QCOMPARE(withOff, withoutOff);
 }
 
 QTEST_MAIN(ServerTests)

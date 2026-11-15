@@ -304,6 +304,10 @@ private:
   // process options from configuration
   void processOptions();
 
+  // whether the clipboard is shared with \p client: not when the computer is set to leave it out
+  bool sharesClipboardWith(const BaseClientProxy *client) const;
+  void logDisabledForComputer(ClipboardID id, const BaseClientProxy *client) const;
+
   // share the whole clipboard, or the text of it only
   void setClipboardTextOnly(bool textOnly);
 

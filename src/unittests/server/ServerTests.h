@@ -45,6 +45,11 @@ private Q_SLOTS:
   void clipboardTextOnly_clientToClient_forwardsNothingElse_data();
   void clipboardTextOnly_clientToClient_forwardsNothingElse();
   void clipboardTextOnly_turnedOnLater_stripsWhatIsCached();
+  void clipboardOffForAComputer_primaryToTheOthers_skipsOnlyThatComputer();
+  void clipboardOffForAComputer_whatItCopies_isNeitherSharedNorAnnounced();
+  void clipboardOffForAComputer_theOthersStillShareAmongThemselves();
+  void clipboardOffForAComputer_isOffForAllComputersWhenNoneIsSetOff();
+  void clipboardOffForAComputer_isToldWithAnOptionThatWinsOverTheGlobalOne();
 
 private:
   Log m_log;

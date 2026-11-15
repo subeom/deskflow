@@ -468,7 +468,7 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
 
     // update the primary client's clipboards if we're leaving the
     // primary computer.
-    if (m_active == m_primaryClient && m_enableClipboard) {
+    if (m_active == m_primaryClient && m_enableClipboard && sharesClipboardWith(m_primaryClient)) {
       for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
         const ClipboardInfo &clipboard = m_clipboards[id];
         if (clipboard.m_clipboardOwner == getName(m_primaryClient)) {
@@ -498,7 +498,7 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
     // enter new computer
     m_active->enter(x, y, m_seqNum, m_primaryClient->getToggleMask(), forScreensaver);
 
-    if (m_enableClipboard) {
+    if (m_enableClipboard && sharesClipboardWith(m_active)) {
       // send the clipboard data to new active computer
       for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
         // Hackity hackity hack
@@ -1086,6 +1086,13 @@ void Server::sendOptions(BaseClientProxy *client) const
     }
   }
 
+  // a client reads the options in order and the last one wins, so what a computer is set to is said last, after the
+  // global option it overrides
+  if (!sharesClipboardWith(client)) {
+    optionsList.push_back(kOptionClipboardSharing);
+    optionsList.push_back(0);
+  }
+
   // send the options
   client->resetOptions();
   client->setOptions(optionsList);
@@ -1143,6 +1150,26 @@ void Server::processOptions()
   m_relativeMoves = newRelativeMoves;
   m_protocol = Settings::networkProtocol();
   setClipboardTextOnly(Settings::value(Settings::Server::ClipboardTextOnly).toBool());
+}
+
+bool Server::sharesClipboardWith(const BaseClientProxy *client) const
+{
+  const auto *options = m_config->getOptions(getName(client));
+  if (options == nullptr) {
+    return true;
+  }
+  const auto option = options->find(kOptionClipboardSharing);
+  return option == options->end() || option->second != 0;
+}
+
+void Server::logDisabledForComputer(ClipboardID id, const BaseClientProxy *client) const
+{
+  // the clipboard and the selection are told apart by id, but are one copy for the user: say it once
+  if (id == kClipboardClipboard) {
+    LOG_INFO("%s", formatSkipLine(id, getName(client), SkipReason::DisabledForComputer).c_str());
+  } else {
+    LOG_DEBUG("%s", formatSkipLine(id, getName(client), SkipReason::DisabledForComputer).c_str());
+  }
 }
 
 void Server::setClipboardTextOnly(bool textOnly)
@@ -1208,6 +1235,12 @@ void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber
   }
   const auto *info = static_cast<const IComputer::ClipboardInfo *>(event.getData());
 
+  // a computer that is set to not share its clipboard takes no part
+  if (!sharesClipboardWith(grabber)) {
+    logDisabledForComputer(info->m_id, grabber);
+    return;
+  }
+
   // ignore grab if sequence number is old.  always allow primary
   // computer to grab.
   ClipboardInfo &clipboard = m_clipboards[info->m_id];
@@ -1237,7 +1270,7 @@ void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber
     BaseClientProxy *client = index->second;
     if (client == grabber) {
       client->setClipboardDirty(info->m_id, false);
-    } else {
+    } else if (sharesClipboardWith(client)) {
       client->grabClipboard(info->m_id);
     }
   }
@@ -1255,6 +1288,10 @@ void Server::handleClipboardChanged(const Event &event, BaseClientProxy *client)
     return;
   }
   const auto *info = static_cast<const IComputer::ClipboardInfo *>(event.getData());
+  if (!sharesClipboardWith(client)) {
+    logDisabledForComputer(info->m_id, client);
+    return;
+  }
   onClipboardChanged(client, info->m_id, info->m_sequenceNumber);
 }
 
@@ -1527,11 +1564,15 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
   // tell all clients except the sender that the clipboard is dirty
   for (ClientList::const_iterator index = m_clients.begin(); index != m_clients.end(); ++index) {
     BaseClientProxy *client = index->second;
-    client->setClipboardDirty(id, client != sender);
+    if (sharesClipboardWith(client)) {
+      client->setClipboardDirty(id, client != sender);
+    }
   }
 
   // send the new clipboard to the active computer
-  m_active->setClipboard(id, &clipboard.m_clipboard);
+  if (sharesClipboardWith(m_active)) {
+    m_active->setClipboard(id, &clipboard.m_clipboard);
+  }
 }
 
 void Server::onScreensaver(bool activated)

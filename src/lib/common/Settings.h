@@ -138,6 +138,7 @@ public:
     inline static const auto ModifierMeta = QStringLiteral("computer_%1/modifierMeta");
     inline static const auto ModifierShift = QStringLiteral("computer_%1/modifierShift");
     inline static const auto ModifierSuper = QStringLiteral("computer_%1/modifierSuper");
+    inline static const auto ShareClipboard = QStringLiteral("computer_%1/shareClipboard");
     inline static const auto F18Action = QStringLiteral("computer_%1/f18Action");
     inline static const auto CrossOSInvertX = QStringLiteral("computer_%1/crossOSInvertX");
     inline static const auto CrossOSInvertY = QStringLiteral("computer_%1/crossOSInvertY");

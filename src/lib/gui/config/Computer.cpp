@@ -44,6 +44,7 @@ void Computer::loadSettings(QSettingsProxy &settings)
                              ? ScrollInvertScope::MouseWheelOnly
                              : ScrollInvertScope::All;
   m_CrossOSSemanticMedia = Settings::value(Settings::Computer::CrossOSSemanticMedia.arg(name)).toBool();
+  m_ShareClipboard = Settings::value(Settings::Computer::ShareClipboard.arg(name)).toBool();
 
   setSwitchCornerSize(Settings::value(Settings::Computer::SwitchCornerSize.arg(name)).toInt());
 
@@ -90,6 +91,7 @@ void Computer::saveSettings(QSettingsProxy &settings) const
                                                                 : QStringLiteral("all")
   );
   Settings::setValue(Settings::Computer::CrossOSSemanticMedia.arg(computerName), m_CrossOSSemanticMedia);
+  Settings::setValue(Settings::Computer::ShareClipboard.arg(computerName), m_ShareClipboard);
   Settings::setValue(Settings::Computer::SwitchCornerSize.arg(computerName), switchCornerSize());
   Settings::setValue(
       Settings::Computer::SwitchCornerTopLeft.arg(computerName), m_SwitchCorners[static_cast<int>(TopLeft)]
@@ -142,6 +144,6 @@ bool Computer::operator==(const Computer &computer) const
          m_Fixes == computer.m_Fixes && m_F18Action == computer.m_F18Action &&
          m_CrossOSInvertX == computer.m_CrossOSInvertX && m_CrossOSInvertY == computer.m_CrossOSInvertY &&
          m_CrossOSInvertScope == computer.m_CrossOSInvertScope &&
-         m_CrossOSSemanticMedia == computer.m_CrossOSSemanticMedia && m_Swapped == computer.m_Swapped &&
-         m_isServer == computer.m_isServer;
+         m_CrossOSSemanticMedia == computer.m_CrossOSSemanticMedia && m_ShareClipboard == computer.m_ShareClipboard &&
+         m_Swapped == computer.m_Swapped && m_isServer == computer.m_isServer;
 }

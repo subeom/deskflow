@@ -17,6 +17,9 @@ private Q_SLOTS:
   void crossOSF18Action_loadsMissingInvalidAndLegacyValuesAsPassThrough();
   void crossOSInvertScope_loadsMissingAndInvalidValuesAsAll();
   void crossOSDialog_saveSerializeAndProduceOptions();
+  void shareClipboard_defaultsOnAndAddsNoOption();
+  void shareClipboard_off_isSavedLoadedAndProducesTheOption();
+  void shareClipboard_dialogChecksTheBoxAndSerializes();
 
 private:
   inline static const QString m_settingsPath = QStringLiteral("tmp/test");

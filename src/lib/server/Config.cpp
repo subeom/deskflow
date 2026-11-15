@@ -120,6 +120,11 @@ bool Config::addComputer(const std::string &name)
     superModifier = kModifierNameSuper;
   addOption(name, kOptionModifierMapForSuper, modifierIDValueFromString(superModifier));
 
+  // nothing is added for the default, so that a computer that shares is configured as it always was
+  if (!Settings::value(Settings::Computer::ShareClipboard.arg(computer)).toBool()) {
+    addOption(name, kOptionClipboardSharing, 0);
+  }
+
   const auto f18Action = Settings::value(Settings::Computer::F18Action.arg(computer)).toString().trimmed();
   if (f18Action.compare(QStringLiteral("hangul"), Qt::CaseInsensitive) == 0) {
     addOption(name, kOptionCrossOSF18Key, static_cast<OptionValue>(F18Action::Hangul));
@@ -660,9 +665,9 @@ void Config::readSectionOptions(ConfigReadContext &s)
 
 void Config::readSectionScreens(ConfigReadContext &s)
 {
-  qWarning(
-  ) << "Your server config has a screen section. Screens have moved to the general config this section will not be "
-       "parsed.";
+  qWarning()
+      << "Your server config has a screen section. Screens have moved to the general config this section will not be "
+         "parsed.";
   std::string line;
   std::string screen;
   while (s.readLine(line)) {
@@ -746,9 +751,9 @@ void Config::readSectionLinks(ConfigReadContext &s)
 
 void Config::readSectionAliases(ConfigReadContext &s)
 {
-  qWarning(
-  ) << "Your server config has an alias section. Alias have moved to the general config this section will no be "
-       "parsed.";
+  qWarning()
+      << "Your server config has an alias section. Alias have moved to the general config this section will no be "
+         "parsed.";
   std::string line;
   while (s.readLine(line)) {
     if (line == "end") {

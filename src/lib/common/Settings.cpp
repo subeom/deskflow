@@ -527,6 +527,9 @@ void Settings::removeUnknownComputers(const QStringList &knownComputers)
 
 QVariant Settings::computerDefaults(const QString &key)
 {
+  // a configuration that predates the setting shares the clipboard with every computer, as it always did
+  if (key == "shareClipboard")
+    return true;
   if (key == "f18Action")
     return QStringLiteral("passthrough");
   if (key == "crossOSInvertScope")

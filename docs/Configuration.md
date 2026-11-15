@@ -175,7 +175,11 @@ What this does not do:
 
 - A client that has no such setting still reads and sends every format of its own clipboard when the whole of it is under the limit, and the server keeps the text. A clipboard whose formats together are over 10 KB (formatted text that is long, for example) is not sent by the client at all, even if its plain text alone would fit.
 - Copying something that is not shared still empties the clipboards of the other computers, as any copy does, so there is nothing to paste there until something that is shared is copied.
-- Sending each clipboard once rather than twice and pacing the transfer are not part of this setting.
+- Sending each clipboard once rather than twice and pacing the transfer are not part of this setting; they are done for every clipboard, see `docs/dev/clipboard-transfer.md`.
+
+#### Leave one computer out of clipboard sharing
+
+Clipboard sharing can be turned off for a single computer, for example one whose clipboard is rewritten by another program all the time (**Share clipboard with this computer** in **Computer settings**, `shareClipboard` in its `[computer_...]` section). The server then does not tell that computer about a copy, does not send it a clipboard, ignores what the computer copies, and tells it to turn its own clipboard sharing off. The other computers keep sharing among themselves. Nothing is sent for a computer that shares (the default), so an existing configuration behaves as before.
 
 ### Computer Settings
 
@@ -194,6 +198,7 @@ Each computer will have a section where its configuration will be stored, if the
 | modifierMeta            | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's meta modifer to different key on this computer|
 | modifierShift           | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's shift modifer to different key on this computer|
 | modifierSuper           | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's super modifer to different key on thist computer|
+| shareClipboard          | `true` or `false` | `false` keeps this computer out of clipboard sharing: its clipboard is not sent to the other computers, theirs is not sent to it, and the server tells it to switch its own clipboard sharing off (`CLPS`), so it does not read its clipboard either. It is **Share clipboard with this computer** in the **Computer settings** dialog. A missing value means `true`, so an existing configuration shares with every computer as before [default: true] |
 | f18Action               | `passthrough` or `hangul` | What the F18 key does when this computer is a Windows destination of a macOS server over a protocol 1.9 link: `passthrough` sends F18 unchanged, `hangul` sends the Korean-English (Hangul) key instead. A missing or unrecognised value means `passthrough` [default: passthrough] |
 | crossOSInvertX         | `true` or `false` | Invert horizontal wheel deltas only on a negotiated macOS-to-Windows protocol 1.9 link [default: false] |
 | crossOSInvertY         | `true` or `false` | Invert vertical wheel deltas only on a negotiated macOS-to-Windows protocol 1.9 link [default: false] |
