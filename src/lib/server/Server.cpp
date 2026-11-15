@@ -24,6 +24,7 @@
 #include "server/ClientProxy.h"
 #include "server/ClientProxyUnknown.h"
 #include "server/PrimaryClient.h"
+#include "server/ServerCursorEdges.h"
 
 #ifdef _WIN32
 #include <algorithm>
@@ -536,11 +537,11 @@ float Server::mapToFraction(const BaseClientProxy *client, Direction dir, int32_
     using enum Direction;
   case Left:
   case Right:
-    return (y - sy + 0.5f) / static_cast<float>(sh);
+    return deskflow::server::getCursorEdgeFraction(y, sy, sh);
 
   case Top:
   case Bottom:
-    return (x - sx + 0.5f) / static_cast<float>(sw);
+    return deskflow::server::getCursorEdgeFraction(x, sx, sw);
 
   case NoDirection:
     assert(0 && "bad direction");

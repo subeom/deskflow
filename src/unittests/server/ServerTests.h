@@ -12,4 +12,6 @@ class ServerTests : public QObject
 private Q_SLOTS:
   void SwitchToComputerInfo_alloc_computer();
   void KeyboardBroadcastInfo_alloc_stateAndComputers();
+  void edgeOvershoot_clampsRouteFraction();
+  void namedTopology_topLeftOvershoot_selectsLeftComputer();
 };

@@ -40,6 +40,8 @@ add_library(server STATIC
   PrimaryClient.h
   Server.cpp
   Server.h
+  ServerCursorEdges.cpp
+  ServerCursorEdges.h
 )
 
 target_link_libraries(server PUBLIC common)
