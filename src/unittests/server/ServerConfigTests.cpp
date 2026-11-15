@@ -7,6 +7,8 @@
 
 #include "ServerConfigTests.h"
 
+#include "common/Settings.h"
+#include "deskflow/CrossPlatformInputPolicy.h"
 #include "server/Config.h"
 
 class OnlySystemFilter : public InputFilter::Condition
@@ -29,6 +31,35 @@ public:
 };
 
 using namespace deskflow::server;
+
+void ServerConfigTests::initTestCase()
+{
+  QVERIFY(m_settingsDir.isValid());
+  m_settingsFile = m_settingsDir.filePath(QStringLiteral("Deskflow.conf"));
+  Settings::setSettingsFile(m_settingsFile);
+}
+
+void ServerConfigTests::rightCommandAction_hangulAddsOption()
+{
+  const auto key = Settings::Computer::RightCommandAction.arg(QStringLiteral("computerA"));
+  Settings::setValue(key, QStringLiteral("hangul"));
+
+  Config config(nullptr);
+  QVERIFY(config.addComputer("computerA"));
+  const auto *options = config.getOptions("computerA");
+  QVERIFY(options != nullptr);
+  auto option = options->find(kOptionCrossOSRightCommand);
+  QVERIFY(option != options->end());
+  QCOMPARE(option->second, static_cast<OptionValue>(RightCommandAction::Hangul));
+
+  Settings::setValue(key, QStringLiteral("invalid"));
+  Config fallback(nullptr);
+  QVERIFY(fallback.addComputer("computerA"));
+  const auto *fallbackOptions = fallback.getOptions("computerA");
+  QVERIFY(fallbackOptions != nullptr);
+  option = fallbackOptions->find(kOptionCrossOSRightCommand);
+  QVERIFY(option == fallbackOptions->end());
+}
 
 void ServerConfigTests::equalityCheck()
 {

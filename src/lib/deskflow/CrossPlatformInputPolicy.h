@@ -8,14 +8,9 @@
 #include "common/Coordinate.h"
 #include "common/InputCapabilities.h"
 #include "deskflow/KeyTypes.h"
+#include "deskflow/OptionTypes.h"
 
 #include <cstdint>
-
-enum class RightCommandAction : uint8_t
-{
-  Preserve = 0,
-  Hangul = 1
-};
 
 struct CrossPlatformInputOptions
 {

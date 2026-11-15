@@ -118,6 +118,12 @@ bool Config::addComputer(const std::string &name)
     superModifier = kModifierNameSuper;
   addOption(name, kOptionModifierMapForSuper, modifierIDValueFromString(superModifier));
 
+  const auto rightCommandAction =
+      Settings::value(Settings::Computer::RightCommandAction.arg(computer)).toString().trimmed();
+  if (rightCommandAction.compare(QStringLiteral("hangul"), Qt::CaseInsensitive) == 0) {
+    addOption(name, kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul));
+  }
+
   return true;
 }
 

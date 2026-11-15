@@ -254,6 +254,9 @@ bool ClientProxy1_0::leave()
 {
   LOG_VERBOSE("send leave to \"%s\"", getName().c_str());
   ProtocolUtil::writef(getStream(), kMsgCLeave);
+  m_legacyLeftSuperDown = false;
+  m_legacyRightSuperDown = false;
+  m_legacySuperWireDown = false;
 
   // we can never prevent the user from leaving
   return true;

@@ -23,6 +23,7 @@ public:
   void keyDown(KeyID, KeyModifierMask, KeyButton, const std::string &) override;
   void keyRepeat(KeyID, KeyModifierMask, int32_t, KeyButton, const std::string &) override;
   void keyUp(KeyID, KeyModifierMask, KeyButton) override;
+  bool leave() override;
   void resetOptions() override;
   void setOptions(const OptionsList &options) override;
 

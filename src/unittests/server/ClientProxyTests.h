@@ -33,6 +33,7 @@ private Q_SLOTS:
   void rightCommand_leftSuperHeld_keepsSuperOnOtherKeys();
   void rightCommand_v18_preservesLegacyMacWireValue();
   void rightCommand_v19_preservesLegacyAggregateState();
+  void rightCommand_leave_clearsMappedAndLegacyState();
 
 private:
   Log m_log;

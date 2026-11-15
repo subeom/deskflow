@@ -579,4 +579,55 @@ void ClientProxyTests::rightCommand_v19_preservesLegacyAggregateState()
   QCOMPARE(stream->take(), expectedUp.take());
 }
 
+void ClientProxyTests::rightCommand_leave_clearsMappedAndLegacyState()
+{
+  RecordingEventQueue events;
+  auto *stream = new CapturingStream;
+  auto *server = reinterpret_cast<Server *>(0x1);
+  TestClientProxy1_9 proxy("client", stream, server, &events);
+  (void)stream->take();
+
+  const InputCapabilities capabilities{InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilityHangul};
+  CapturingStream capabilityPacket;
+  ProtocolUtil::writef(
+      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
+  );
+  stream->pushInput(capabilityPacket.take());
+  stream->read(nullptr, 4);
+  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
+  proxy.setOptions({kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul)});
+  (void)stream->take();
+
+  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
+  (void)stream->take();
+  QVERIFY(proxy.leave());
+  (void)stream->take();
+  proxy.enter(0, 0, 0, 0, false);
+  (void)stream->take();
+
+  proxy.keyDown('c', KeyModifierSuper, kButton, kLang);
+  QCOMPARE(stream->take(), "DKDL" + QByteArray::fromHex("0063 0010 001e 00000002") + "en");
+
+  proxy.keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
+  CapturingStream expectedRightDown;
+  ProtocolUtil::writef(&expectedRightDown, kMsgDKeyDown, kKeySuper_R, KeyModifierSuper, kRightCommandButton, &kLang);
+  QCOMPARE(stream->take(), expectedRightDown.take());
+
+  ProxyUnderTest legacy(8);
+  legacy.proxy->keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
+  (void)legacy.stream->take();
+  QVERIFY(legacy.proxy->leave());
+  (void)legacy.stream->take();
+  legacy.proxy->enter(0, 0, 0, 0, false);
+  (void)legacy.stream->take();
+  legacy.proxy->keyDown(kKeySuper_R, KeyModifierSuper, kRightCommandButton, kLang);
+
+  const auto expectedKey =
+      deskflow::platform::currentInputPlatform() == InputPlatform::MacOS ? kKeySuper_L : kKeySuper_R;
+  const auto expectedButton = expectedKey == kKeySuper_L ? kLeftCommandButton : kRightCommandButton;
+  CapturingStream expected;
+  ProtocolUtil::writef(&expected, kMsgDKeyDown, expectedKey, KeyModifierSuper, expectedButton, &kLang);
+  QCOMPARE(legacy.stream->take(), expected.take());
+}
+
 QTEST_MAIN(ClientProxyTests)

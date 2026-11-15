@@ -26,6 +26,12 @@ using OptionValue = int32_t;
 // for now, options are just pairs of integers
 using OptionsList = std::vector<uint32_t>;
 
+enum class RightCommandAction : uint8_t
+{
+  Preserve = 0,
+  Hangul = 1
+};
+
 // macro for packing 4 character strings into 4 byte integers
 #define OPTION_CODE(_s)                                                                                                \
   (static_cast<uint32_t>(static_cast<unsigned char>(_s[0]) << 24) |                                                    \

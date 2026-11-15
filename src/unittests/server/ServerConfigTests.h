@@ -4,12 +4,15 @@
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
  */
 
+#include <QTemporaryDir>
 #include <QTest>
 
 class ServerConfigTests : public QObject
 {
   Q_OBJECT
 private Q_SLOTS:
+  void initTestCase();
+  void rightCommandAction_hangulAddsOption();
   void equalityCheck();
   void equalityCheck_diff_options();
   void equalityCheck_diff_alias();
@@ -18,4 +21,8 @@ private Q_SLOTS:
   void equalityCheck_diff_neighbours1();
   void equalityCheck_diff_neighbours2();
   void equalityCheck_diff_neighbours3();
+
+private:
+  QTemporaryDir m_settingsDir;
+  QString m_settingsFile;
 };

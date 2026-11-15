@@ -118,6 +118,14 @@ void ClientProxy1_9::keyUp(KeyID id, KeyModifierMask mask, KeyButton button)
   ProtocolUtil::writef(getStream(), kMsgDKeyUp, key.id, wireMask, button);
 }
 
+bool ClientProxy1_9::leave()
+{
+  m_leftSuperDown = false;
+  m_rightSuperDown = false;
+  m_rightSuperMapped = false;
+  return ClientProxy1_8::leave();
+}
+
 void ClientProxy1_9::resetOptions()
 {
   m_rightCommandAction = RightCommandAction::Preserve;
