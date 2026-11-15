@@ -6,32 +6,45 @@
 
 #pragma once
 
+#include "gui/UpdateNetwork.h"
+#include "gui/UpdateRelease.h"
+
 #include <QObject>
 #include <QString>
 
-class QNetworkAccessManager;
-class QNetworkReply;
+#include <memory>
+
+namespace deskflow::gui {
+struct UpdateEnvironment
+{
+  QString platform;
+  QString architecture;
+  bool packageManaged = false;
+};
+} // namespace deskflow::gui
 
 class VersionChecker : public QObject
 {
   Q_OBJECT
 public:
   explicit VersionChecker(QObject *parent = nullptr);
-  void checkLatest() const;
-public Q_SLOTS:
-  void replyFinished(QNetworkReply *reply);
+  VersionChecker(
+      std::unique_ptr<deskflow::gui::IUpdateNetwork> network, deskflow::gui::UpdateEnvironment environment,
+      QObject *parent = nullptr
+  );
+
+  void checkLatest();
+  void cancel();
+  bool isChecking() const;
 Q_SIGNALS:
   void updateFound(const QString &version);
+  void updateError(const QString &message);
 
 private:
-  static int compareVersions(const QString &left, const QString &right);
+  void handleLatestResponse(const deskflow::gui::UpdateNetworkResult &result);
 
-  /**
-   * \brief Converts a string stage to a integer value
-   * \param stage The string containing the stage version
-   * \return An integer representation of the stage, the higher the number the
-   * more recent the version
-   */
-  static int getStageVersion(QString stage);
-  QNetworkAccessManager *m_network = nullptr;
+  std::unique_ptr<deskflow::gui::IUpdateNetwork> m_network;
+  deskflow::gui::UpdateEnvironment m_environment;
+  quint64 m_requestId = 0;
+  bool m_checking = false;
 };
