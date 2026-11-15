@@ -209,6 +209,22 @@ AutoTISInputSourceRef copyKeyboardLayoutForKeyTranslation()
   return keyboardLayout;
 }
 
+// The caller must hold g_tisMutex
+std::string inputSourceId(TISInputSourceRef source)
+{
+  if (!source) {
+    return {};
+  }
+
+  const auto id = static_cast<CFStringRef>(TISGetInputSourceProperty(source, kTISPropertyInputSourceID));
+  char buffer[256] = {};
+  if (!id || !CFStringGetCString(id, buffer, sizeof(buffer), kCFStringEncodingUTF8)) {
+    return {};
+  }
+
+  return buffer;
+}
+
 } // namespace
 
 //
@@ -472,23 +488,52 @@ KeyModifierMask OSXKeyState::pollActiveModifiers() const
 
 int32_t OSXKeyState::pollActiveGroup() const
 {
-  AutoTISInputSourceRef keyboardLayout(nullptr, CFRelease);
-  CFDataRef id = nullptr;
+  // kTISPropertyInputSourceID is a CFString: compare ids by content, never by pointer.
+  // With an input method active (e.g. Korean 2-Set) the current keyboard layout is one
+  // the method brings along ("com.apple.keylayout.2SetHangul") and is not an enabled
+  // group, so fall back to the ASCII capable layout the method types through.
+  std::string layoutId;
   {
     std::lock_guard<std::mutex> lock(g_tisMutex);
-    keyboardLayout = AutoTISInputSourceRef(TISCopyCurrentKeyboardLayoutInputSource(), CFRelease);
-    if (keyboardLayout)
-      id = (CFDataRef)TISGetInputSourceProperty(keyboardLayout.get(), kTISPropertyInputSourceID);
+    AutoTISInputSourceRef keyboardLayout(TISCopyCurrentKeyboardLayoutInputSource(), CFRelease);
+    layoutId = inputSourceId(keyboardLayout.get());
   }
 
-  GroupMap::const_iterator i = m_groupMap.find(id);
-  if (i != m_groupMap.end()) {
-    return i->second;
+  std::string asciiLayoutId;
+  const auto result = m_groupResolver.resolve(layoutId, [&asciiLayoutId] {
+    std::lock_guard<std::mutex> lock(g_tisMutex);
+    AutoTISInputSourceRef asciiLayout(TISCopyCurrentASCIICapableKeyboardLayoutInputSource(), CFRelease);
+    asciiLayoutId = inputSourceId(asciiLayout.get());
+    return asciiLayoutId;
+  });
+
+  using Match = OSXKeyGroupResolver::Match;
+  switch (result.match) {
+  case Match::Exact:
+    break;
+  case Match::AsciiLayout:
+    if (result.firstSighting) {
+      LOG_INFO(
+          "keyboard layout '%s' is not an enabled keyboard group, use group %d ('%s') instead", layoutId.c_str(),
+          result.group, asciiLayoutId.c_str()
+      );
+    } else {
+      LOG_VERBOSE("keyboard layout '%s' resolved to group %d", layoutId.c_str(), result.group);
+    }
+    break;
+  case Match::Previous:
+  case Match::Fallback:
+    if (result.firstSighting) {
+      LOG_WARN(
+          "can't get the active group for keyboard layout '%s', use group %d instead", layoutId.c_str(), result.group
+      );
+    } else {
+      LOG_DEBUG("can't get the active group for keyboard layout '%s', use group %d", layoutId.c_str(), result.group);
+    }
+    break;
   }
 
-  LOG_WARN("can't get the active group, use the first group instead");
-
-  return 0;
+  return result.group;
 }
 
 void OSXKeyState::pollPressedKeys(KeyButtonSet &pressedKeys) const
@@ -510,17 +555,19 @@ void OSXKeyState::getKeyMap(deskflow::KeyMap &keyMap)
   // update keyboard groups
   int32_t numGroups{0};
   if (getGroups(m_groups)) {
-    m_groupMap.clear();
     numGroups = CFArrayGetCount(m_groups.get());
-    for (int32_t g = 0; g < numGroups; ++g) {
-      TISInputSourceRef keyboardLayout = (TISInputSourceRef)CFArrayGetValueAtIndex(m_groups.get(), g);
-      CFDataRef id = nullptr;
-      {
-        std::lock_guard<std::mutex> lock(g_tisMutex);
-        id = (CFDataRef)TISGetInputSourceProperty(keyboardLayout, kTISPropertyInputSourceID);
+    std::vector<OSXKeyGroupResolver::Group> groups;
+    groups.reserve(numGroups);
+    {
+      std::lock_guard<std::mutex> lock(g_tisMutex);
+      for (int32_t g = 0; g < numGroups; ++g) {
+        auto source = (TISInputSourceRef)CFArrayGetValueAtIndex(m_groups.get(), g);
+        groups.push_back(
+            {inputSourceId(source), TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) != nullptr}
+        );
       }
-      m_groupMap[id] = g;
     }
+    m_groupResolver.setGroups(std::move(groups));
   }
 
   uint32_t keyboardType = LMGetKbdType();

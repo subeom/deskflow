@@ -25,6 +25,13 @@ elseif(APPLE)
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
   )
   create_test(
+    NAME OSXKeyGroupResolverTests
+    DEPENDS platform
+    LIBS base arch
+    SOURCE OSXKeyGroupResolverTests.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
+  )
+  create_test(
     NAME OSXKeyStateTests
     DEPENDS platform
     LIBS base arch
