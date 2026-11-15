@@ -54,6 +54,7 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
   ui->comboRightCommand->setCurrentIndex(static_cast<int>(m_computer->rightCommandAction()));
   ui->chkCrossOSInvertX->setChecked(m_computer->crossOSInvertX());
   ui->chkCrossOSInvertY->setChecked(m_computer->crossOSInvertY());
+  ui->comboCrossOSInvertScope->setCurrentIndex(static_cast<int>(m_computer->crossOSInvertScope()));
   ui->chkCrossOSSemanticMedia->setChecked(m_computer->crossOSSemanticMedia());
 
   ui->chkDeadTopLeft->setChecked(m_computer->switchCorner(static_cast<int>(TopLeft)));
@@ -123,6 +124,11 @@ void ComputerSettingsDialog::accept()
   );
   m_computer->setCrossOSInvertX(ui->chkCrossOSInvertX->isChecked());
   m_computer->setCrossOSInvertY(ui->chkCrossOSInvertY->isChecked());
+  m_computer->setCrossOSInvertScope(
+      ui->comboCrossOSInvertScope->currentIndex() == static_cast<int>(ScrollInvertScope::MouseWheelOnly)
+          ? ScrollInvertScope::MouseWheelOnly
+          : ScrollInvertScope::All
+  );
   m_computer->setCrossOSSemanticMedia(ui->chkCrossOSSemanticMedia->isChecked());
 
   m_computer->setSwitchCorner(TopLeft, ui->chkDeadTopLeft->isChecked());

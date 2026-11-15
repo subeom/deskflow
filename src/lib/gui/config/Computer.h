@@ -35,18 +35,23 @@ class Computer : public ComputerConfig
     return outStream << computer.name() << computer.switchCornerSize() << computer.aliases() << computer.modifiers()
                      << computer.switchCorners() << computer.fixes() << computer.isServer()
                      << static_cast<quint8>(computer.m_RightCommandAction) << computer.m_CrossOSInvertX
-                     << computer.m_CrossOSInvertY << computer.m_CrossOSSemanticMedia;
+                     << computer.m_CrossOSInvertY << computer.m_CrossOSSemanticMedia
+                     << static_cast<quint8>(computer.m_CrossOSInvertScope);
   }
 
   friend QDataStream &operator>>(QDataStream &inStream, Computer &computer)
   {
     quint8 rightCommandAction = 0;
+    quint8 crossOSInvertScope = 0;
     inStream >> computer.m_Name >> computer.m_SwitchCornerSize >> computer.m_Aliases >> computer.m_Modifiers >>
         computer.m_SwitchCorners >> computer.m_Fixes >> computer.m_isServer >> rightCommandAction >>
-        computer.m_CrossOSInvertX >> computer.m_CrossOSInvertY >> computer.m_CrossOSSemanticMedia;
+        computer.m_CrossOSInvertX >> computer.m_CrossOSInvertY >> computer.m_CrossOSSemanticMedia >> crossOSInvertScope;
     computer.m_RightCommandAction = rightCommandAction == static_cast<quint8>(RightCommandAction::Hangul)
                                         ? RightCommandAction::Hangul
                                         : RightCommandAction::Preserve;
+    computer.m_CrossOSInvertScope = crossOSInvertScope == static_cast<quint8>(ScrollInvertScope::MouseWheelOnly)
+                                        ? ScrollInvertScope::MouseWheelOnly
+                                        : ScrollInvertScope::All;
     return inStream;
   }
 
@@ -109,6 +114,10 @@ public:
   [[nodiscard]] bool crossOSInvertY() const
   {
     return m_CrossOSInvertY;
+  }
+  [[nodiscard]] ScrollInvertScope crossOSInvertScope() const
+  {
+    return m_CrossOSInvertScope;
   }
   [[nodiscard]] bool crossOSSemanticMedia() const
   {
@@ -188,6 +197,10 @@ protected:
   {
     m_CrossOSInvertY = enabled;
   }
+  void setCrossOSInvertScope(const ScrollInvertScope scope)
+  {
+    m_CrossOSInvertScope = scope;
+  }
   void setCrossOSSemanticMedia(const bool enabled)
   {
     m_CrossOSSemanticMedia = enabled;
@@ -208,6 +221,7 @@ private:
   RightCommandAction m_RightCommandAction = RightCommandAction::Preserve;
   bool m_CrossOSInvertX = false;
   bool m_CrossOSInvertY = false;
+  ScrollInvertScope m_CrossOSInvertScope = ScrollInvertScope::All;
   bool m_CrossOSSemanticMedia = false;
   bool m_Swapped = false;
   bool m_isServer = false;

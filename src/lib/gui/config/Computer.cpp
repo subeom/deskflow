@@ -41,6 +41,10 @@ void Computer::loadSettings(QSettingsProxy &settings)
                              : RightCommandAction::Preserve;
   m_CrossOSInvertX = Settings::value(Settings::Computer::CrossOSInvertX.arg(name)).toBool();
   m_CrossOSInvertY = Settings::value(Settings::Computer::CrossOSInvertY.arg(name)).toBool();
+  const auto invertScope = Settings::value(Settings::Computer::CrossOSInvertScope.arg(name)).toString().trimmed();
+  m_CrossOSInvertScope = invertScope.compare(QStringLiteral("mouseWheelOnly"), Qt::CaseInsensitive) == 0
+                             ? ScrollInvertScope::MouseWheelOnly
+                             : ScrollInvertScope::All;
   m_CrossOSSemanticMedia = Settings::value(Settings::Computer::CrossOSSemanticMedia.arg(name)).toBool();
 
   setSwitchCornerSize(Settings::value(Settings::Computer::SwitchCornerSize.arg(name)).toInt());
@@ -82,6 +86,11 @@ void Computer::saveSettings(QSettingsProxy &settings) const
   );
   Settings::setValue(Settings::Computer::CrossOSInvertX.arg(computerName), m_CrossOSInvertX);
   Settings::setValue(Settings::Computer::CrossOSInvertY.arg(computerName), m_CrossOSInvertY);
+  Settings::setValue(
+      Settings::Computer::CrossOSInvertScope.arg(computerName),
+      m_CrossOSInvertScope == ScrollInvertScope::MouseWheelOnly ? QStringLiteral("mouseWheelOnly")
+                                                                : QStringLiteral("all")
+  );
   Settings::setValue(Settings::Computer::CrossOSSemanticMedia.arg(computerName), m_CrossOSSemanticMedia);
   Settings::setValue(Settings::Computer::SwitchCornerSize.arg(computerName), switchCornerSize());
   Settings::setValue(
@@ -134,6 +143,7 @@ bool Computer::operator==(const Computer &computer) const
          m_SwitchCorners == computer.m_SwitchCorners && m_SwitchCornerSize == computer.m_SwitchCornerSize &&
          m_Fixes == computer.m_Fixes && m_RightCommandAction == computer.m_RightCommandAction &&
          m_CrossOSInvertX == computer.m_CrossOSInvertX && m_CrossOSInvertY == computer.m_CrossOSInvertY &&
+         m_CrossOSInvertScope == computer.m_CrossOSInvertScope &&
          m_CrossOSSemanticMedia == computer.m_CrossOSSemanticMedia && m_Swapped == computer.m_Swapped &&
          m_isServer == computer.m_isServer;
 }
