@@ -403,22 +403,23 @@ received from a client.)
 
 The selection (clipboard id 1, @ref kMsgDClipboard and @ref kMsgCClipboard) only means something on
 X11. Windows and macOS ignore the id when they set a clipboard, so they received the same data twice
-and wrote it to their clipboard twice. A sender now leaves the data of id 1 out when the peer's
-platform (from `DIPC`/`CIPC`) is Windows or macOS:
+and wrote it to their clipboard twice. A sender now leaves out the data **and the grab** of id 1 when
+the computer it is sent to ignores the id:
 
-- **server to client**: the server sends the data of id 0 only to a client that reported `Windows` or
-  `macOS`. It needs no capability bit: those receivers ignore the id, so a client built before this
-  change also takes only id 0. A client that reported `Linux`, `Other` or an unknown platform, and a
-  link that has not completed the 1.9 handshake, get both ids as before;
-- **client to server**: a client leaves the data of id 1 out only when the server reported `Windows` or
-  `macOS` **and** advertised bit 9 (`kClipboardCapabilitySingleId`). A server that advertises it stores
-  the data of id 0 from a Windows or macOS client as the selection too, so the computers that need the
-  selection still get it. A server without the bit (it may serve X11 clients that need id 1) keeps
-  receiving both ids.
-
-The grab message (@ref kMsgCClipboard) is still sent for both ids: it is a few bytes and keeps the
-ownership bookkeeping of the peer exactly as before. Only the data, which is the bytes and the second
-write to the clipboard, is saved.
+- **server to client**: the server sends the data and the grab of id 0 only to a client that reported
+  `Windows` or `macOS` in `CIPC`. It needs no capability bit: those receivers ignore the id, so a client
+  built before this change also takes only id 0. The grab is left out too, because a Windows client empties
+  its clipboard when it is told that another computer took it, whatever the id, and no data of id 1 follows
+  to fill it again. A client that reported `Linux`, `Other` or an unknown platform, and a link that has not
+  completed the 1.9 handshake, get both ids as before;
+- **client to server**: a client leaves the data and the grab of id 1 out only when it is on Windows or
+  macOS itself (the selection of an X11 computer is its own, and the server may pass it on to another one),
+  the server reported `Windows` or `macOS` in `DIPC` **and** advertised bit 9
+  (`kClipboardCapabilitySingleId`). A server that advertises it takes a grab and the data of id 0 from a
+  Windows or macOS client as the same for id 1: it tells itself of the grab of id 1 right after that of id 0,
+  and of the change of id 1 right after that of id 0, so the computers that need the selection still get it,
+  and the grab of an id is always seen before its data. A server without the bit (it may serve X11 clients
+  that need id 1), or one that is on X11 itself, keeps receiving both ids.
 
 ## Timing and Synchronization
 

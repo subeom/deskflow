@@ -378,6 +378,11 @@ void ServerProxy::onInfoChanged()
 
 bool ServerProxy::onGrabClipboard(ClipboardID id)
 {
+  // the server takes the clipboard as the selection too: it is told of one grab
+  if (!sendsClipboardId(id)) {
+    return true;
+  }
+
   LOG_VERBOSE("sending clipboard %d changed", id);
   // the grab says the data of a running upload is stale, so it must not follow the grab
   m_sender.cancel(id);

@@ -109,6 +109,16 @@ public:
       return parseMessage(reinterpret_cast<const uint8_t *>(code)) == ConnectionResult::Okay;
     }
 
+    // what this computer is, so that the tests do not depend on the system they run on
+    InputPlatform platform = InputPlatform::MacOS;
+
+  protected:
+    InputCapabilities localInputCapabilities() const override
+    {
+      return {platform, kInputCapabilityProtocolV19};
+    }
+
+  public:
     bool parseHandshakeMessageForTest(const char *code)
     {
       return parseHandshakeMessage(reinterpret_cast<const uint8_t *>(code)) == ConnectionResult::Okay;
@@ -171,6 +181,20 @@ public:
     bool parseHandshakeMessageForTest(const char *code)
     {
       return parseHandshakeMessage(reinterpret_cast<const uint8_t *>(code));
+    }
+
+    bool parseMessageForTest(const char *code)
+    {
+      return parseMessage(reinterpret_cast<const uint8_t *>(code));
+    }
+
+    // what this computer is, so that the tests do not depend on the system they run on
+    InputPlatform platform = InputPlatform::MacOS;
+
+  protected:
+    InputCapabilities localInputCapabilities() const override
+    {
+      return {platform, kInputCapabilityProtocolV19};
     }
   };
 
@@ -285,10 +309,9 @@ void ClipboardPacingTests::handshake_bothSidesAdvertiseTheClipboardCapability()
   QCOMPARE(cipc.size(), size_t{1});
   // the mask is what this computer reports (Windows adds input capabilities) plus the two clipboard bits
   TestStream expectedCipc;
-  const auto clientLocal = client.client->inputCapabilities();
   ProtocolUtil::writef(
-      &expectedCipc, kMsgCInputCapabilities, static_cast<uint8_t>(clientLocal.platform),
-      clientLocal.capabilities | kClipboardCapabilityPaced | kClipboardCapabilitySingleId
+      &expectedCipc, kMsgCInputCapabilities, static_cast<uint8_t>(InputPlatform::MacOS),
+      kInputCapabilityProtocolV19 | kClipboardCapabilityPaced | kClipboardCapabilitySingleId
   );
   QCOMPARE(cipc.front(), expectedCipc.packets().front());
 }
@@ -567,18 +590,30 @@ void ClipboardPacingTests::serverToClient_x11OrUnknownPeer_getsBothIds()
   QCOMPARE(startedIds(server.stream->takePackets()), std::vector<int>({0, 1}));
 }
 
-void ClipboardPacingTests::serverToClient_nonX11Peer_stillGetsTheGrabOfBothIds()
+// Windows empties its clipboard when it is told that another computer took it, whatever the id. A grab of the
+// selection that no data follows (a highlight on an X11 computer) would empty the one clipboard it has for nothing.
+void ClipboardPacingTests::serverToClient_nonX11Peer_isNotToldAboutTheSelectionGrab()
 {
   ServerSide server;
   server.receiveCipc(InputPlatform::Windows, kInputCapabilityProtocolV19);
 
-  // ownership bookkeeping of the peer must not change: a grab is a few bytes
+  server.proxy->grabClipboard(1);
+  QVERIFY(server.stream->takePackets().empty());
+
+  server.proxy->grabClipboard(0);
+  const auto packets = server.stream->takePackets();
+  QCOMPARE(packets.size(), size_t{1});
+  QCOMPARE(static_cast<uint8_t>(packets[0].at(4)), uint8_t{0});
+}
+
+void ClipboardPacingTests::serverToClient_x11Peer_isToldAboutBothGrabs()
+{
+  ServerSide server;
+  server.receiveCipc(InputPlatform::Linux, kInputCapabilityProtocolV19);
+
   server.proxy->grabClipboard(0);
   server.proxy->grabClipboard(1);
-  const auto packets = server.stream->takePackets();
-  QCOMPARE(packets.size(), size_t{2});
-  QCOMPARE(static_cast<uint8_t>(packets[0].at(4)), uint8_t{0});
-  QCOMPARE(static_cast<uint8_t>(packets[1].at(4)), uint8_t{1});
+  QCOMPARE(server.stream->takePackets().size(), size_t{2});
 }
 
 void ClipboardPacingTests::serverToClient_beforeTheCapabilities_keepsBothIds()
@@ -642,6 +677,38 @@ void ClipboardPacingTests::clientToServer_serverWithoutTheCapabilityOrX11Server_
   QCOMPARE(startedIds(client.stream.takePackets()), std::vector<int>({0, 1}));
 }
 
+void ClipboardPacingTests::clientToServer_singleIdLink_sendsOneGrab()
+{
+  ClientSide client;
+  client.receiveDipc(InputPlatform::MacOS, kSingleIdPeer);
+
+  // the server takes one grab as the clipboard and the selection both
+  QVERIFY(client.proxy->onGrabClipboard(1));
+  QVERIFY(client.stream.takePackets().empty());
+  QVERIFY(client.proxy->onGrabClipboard(0));
+  QCOMPARE(client.stream.takePackets().size(), size_t{1});
+}
+
+// The selection of a computer on X11 is its own, and the server may pass it to another computer on X11
+void ClipboardPacingTests::clientToServer_x11Client_sendsBothIdsAndGrabs()
+{
+  ClientSide client;
+  client.proxy->platform = InputPlatform::Linux;
+  client.receiveDipc(InputPlatform::MacOS, kSingleIdPeer);
+
+  QVERIFY(client.proxy->sendsClipboardId(1));
+  QVERIFY(client.proxy->onGrabClipboard(1));
+  QCOMPARE(client.stream.takePackets().size(), size_t{1});
+
+  const auto marshalled = marshalledText(3000);
+  client.sendClipboard(0, marshalled);
+  client.sendClipboard(1, marshalled);
+  for (size_t i = 0; i < 20; ++i) {
+    flushEvent(client.events, client.stream);
+  }
+  QCOMPARE(startedIds(client.stream.takePackets()), std::vector<int>({0, 1}));
+}
+
 void ClipboardPacingTests::clientToServer_skippedIdIsReportedByTheProxy()
 {
   ClientSide client;
@@ -681,20 +748,60 @@ void ClipboardPacingTests::mirror_nonX11ClientThatSendsOneId_isAlsoTheSelection(
   QCOMPARE(selection.marshall(), marshalled);
 }
 
+// A client that is in the background says that it took the clipboard and sends its data at once, so the server must
+// see the grab of the selection before its data: the grab of an id empties what is stored for it
+void ClipboardPacingTests::mirror_nonX11ClientThatSendsOneId_isGrabbedBeforeItsDataArrives()
+{
+  ClientSide client;
+  client.receiveDipc(InputPlatform::MacOS, kSingleIdPeer);
+  QVERIFY(client.proxy->onGrabClipboard(0));
+  QVERIFY(client.proxy->onGrabClipboard(1));
+  client.sendClipboard(0, marshalledText(2000));
+  for (size_t i = 0; i < 20; ++i) {
+    flushEvent(client.events, client.stream);
+  }
+
+  ServerSide server;
+  server.receiveCipc(InputPlatform::Windows, kSingleIdPeer);
+  for (const auto &packet : client.stream.takePackets()) {
+    server.stream->feed(packet.substr(4));
+    QVERIFY(server.proxy->parseMessageForTest(packet.substr(0, 4).c_str()));
+  }
+
+  std::vector<std::pair<EventTypes, int>> seen;
+  for (const auto &event : server.events.addedEvents()) {
+    if (event.getType() == EventTypes::ClipboardGrabbed || event.getType() == EventTypes::ClipboardChanged) {
+      seen.emplace_back(event.getType(), static_cast<const IComputer::ClipboardInfo *>(event.getData())->m_id);
+    }
+  }
+  using enum EventTypes;
+  const std::vector<std::pair<EventTypes, int>> expected{
+      {ClipboardGrabbed, 0}, {ClipboardGrabbed, 1}, {ClipboardChanged, 0}, {ClipboardChanged, 1}
+  };
+  QVERIFY(seen == expected);
+}
+
 void ClipboardPacingTests::mirror_peerWithoutTheCapabilityOrX11Peer_isNotMirrored_data()
 {
   QTest::addColumn<int>("platform");
   QTest::addColumn<uint>("capabilities");
+  QTest::addColumn<int>("localPlatform");
 
   QTest::newRow("legacy peer sends both ids itself")
-      << static_cast<int>(InputPlatform::Windows) << static_cast<uint>(kInputCapabilityProtocolV19);
-  QTest::newRow("x11 peer") << static_cast<int>(InputPlatform::Linux) << static_cast<uint>(kSingleIdPeer);
+      << static_cast<int>(InputPlatform::Windows) << static_cast<uint>(kInputCapabilityProtocolV19)
+      << static_cast<int>(InputPlatform::MacOS);
+  QTest::newRow("x11 peer") << static_cast<int>(InputPlatform::Linux) << static_cast<uint>(kSingleIdPeer)
+                            << static_cast<int>(InputPlatform::MacOS);
+  // a client that sends both ids to a server that is on X11 itself must not have the clipboard stored as both again
+  QTest::newRow("server on x11") << static_cast<int>(InputPlatform::Windows) << static_cast<uint>(kSingleIdPeer)
+                                 << static_cast<int>(InputPlatform::Linux);
 }
 
 void ClipboardPacingTests::mirror_peerWithoutTheCapabilityOrX11Peer_isNotMirrored()
 {
   QFETCH(int, platform);
   QFETCH(uint, capabilities);
+  QFETCH(int, localPlatform);
 
   const auto marshalled = marshalledText(2000);
   TestStream chunks;
@@ -703,6 +810,7 @@ void ClipboardPacingTests::mirror_peerWithoutTheCapabilityOrX11Peer_isNotMirrore
   ClipboardChunk::write(&chunks, 0, 0, ChunkType::DataEnd, {});
 
   ServerSide server;
+  server.proxy->platform = static_cast<InputPlatform>(localPlatform);
   server.receiveCipc(static_cast<InputPlatform>(platform), capabilities);
   for (const auto &packet : chunks.packets()) {
     server.stream->feed(packet.substr(4));

@@ -51,6 +51,8 @@ protected:
   */
   virtual bool keepsClipboardWhenGrabbed() const;
 
+  void notifyClipboardGrabbed(ClipboardID id, uint32_t sequence) override;
+
 private:
   IEventQueue *m_events;
   deskflow::clipboard::ClipboardTransferLog m_transferLog;

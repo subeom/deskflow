@@ -103,9 +103,12 @@ bool ServerProxy1_9::dataIsProofOfLife() const
 
 bool ServerProxy1_9::sendsClipboardId(ClipboardID id) const
 {
+  // The selection of a computer on X11 is its own, and the server may pass it on to another computer on X11: it is only
+  // left out when both computers are Windows or macOS, where it is the same clipboard that the server stores as both
   return !m_receivedSourceCapabilities ||
          (m_sourceInputCapabilities.capabilities & kClipboardCapabilitySingleId) == 0 ||
-         deskflow::clipboard::exchangesId(m_sourceInputCapabilities.platform, id);
+         deskflow::clipboard::exchangesId(m_sourceInputCapabilities.platform, id) ||
+         deskflow::clipboard::exchangesId(localInputCapabilities().platform, id);
 }
 
 bool ServerProxy1_9::synthesizeSemanticMediaKey(KeyID id)

@@ -182,8 +182,10 @@ bool ClientProxy1_9::sendsClipboardId(ClipboardID id) const
 
 bool ClientProxy1_9::mirrorsSelection() const
 {
+  // the client leaves the selection out only toward a server that is not on X11 either, and from a client that is not
   return m_receivedInputCapabilities && (m_destinationInputCapabilities.capabilities & kClipboardCapabilitySingleId) &&
-         !deskflow::clipboard::exchangesId(m_destinationInputCapabilities.platform, kClipboardSelection);
+         !deskflow::clipboard::exchangesId(m_destinationInputCapabilities.platform, kClipboardSelection) &&
+         !deskflow::clipboard::exchangesId(localInputCapabilities().platform, kClipboardSelection);
 }
 
 bool ClientProxy1_9::keepsClipboardWhenGrabbed() const

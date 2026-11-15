@@ -34,7 +34,11 @@ private Q_SLOTS:
   void serverToClient_nonX11Peer_getsOnlyClipboardIdZeroData();
   void serverToClient_x11OrUnknownPeer_getsBothIds_data();
   void serverToClient_x11OrUnknownPeer_getsBothIds();
-  void serverToClient_nonX11Peer_stillGetsTheGrabOfBothIds();
+  void serverToClient_nonX11Peer_isNotToldAboutTheSelectionGrab();
+  void serverToClient_x11Peer_isToldAboutBothGrabs();
+  void clientToServer_singleIdLink_sendsOneGrab();
+  void clientToServer_x11Client_sendsBothIdsAndGrabs();
+  void mirror_nonX11ClientThatSendsOneId_isGrabbedBeforeItsDataArrives();
   void serverToClient_beforeTheCapabilities_keepsBothIds();
   void clientToServer_nonX11ServerThatMirrors_getsOnlyClipboardIdZeroData();
   void clientToServer_serverWithoutTheCapabilityOrX11Server_getsBothIds_data();

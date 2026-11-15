@@ -460,11 +460,15 @@ bool ClientProxy1_0::recvGrabClipboard()
     return false;
   }
 
-  // notify
-  auto *info = new ClipboardInfo;
-  info->m_id = id;
-  info->m_sequenceNumber = seqNum;
-  m_events->addEvent(Event(EventTypes::ClipboardGrabbed, getEventTarget(), info));
+  notifyClipboardGrabbed(id, seqNum);
 
   return true;
+}
+
+void ClientProxy1_0::notifyClipboardGrabbed(ClipboardID id, uint32_t sequence)
+{
+  auto *info = new ClipboardInfo;
+  info->m_id = id;
+  info->m_sequenceNumber = sequence;
+  m_events->addEvent(Event(EventTypes::ClipboardGrabbed, getEventTarget(), info));
 }

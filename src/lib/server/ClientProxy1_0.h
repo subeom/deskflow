@@ -74,6 +74,9 @@ protected:
   //! The clipboard transfers in flight, for the log when the client stops responding
   virtual std::string describeClipboardActivity() const;
 
+  //! Tells the Server that the client took clipboard \p id
+  virtual void notifyClipboardGrabbed(ClipboardID id, uint32_t sequence);
+
 private:
   void disconnect();
   void removeHandlers();

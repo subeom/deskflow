@@ -97,8 +97,26 @@ void ClientProxy1_6::setClipboardDirty(ClipboardID id, bool dirty)
   ClientProxy1_5::setClipboardDirty(id, dirty);
 }
 
+void ClientProxy1_6::notifyClipboardGrabbed(ClipboardID id, uint32_t sequence)
+{
+  ClientProxy1_5::notifyClipboardGrabbed(id, sequence);
+
+  // a client that sends one clipboard for a Windows or macOS computer says it took the clipboard once: for the
+  // computers that need the selection it took that too, and it is told before the data follows
+  if (id == kClipboardClipboard && mirrorsSelection()) {
+    ClientProxy1_5::notifyClipboardGrabbed(kClipboardSelection, sequence);
+  }
+}
+
 void ClientProxy1_6::grabClipboard(ClipboardID id)
 {
+  // A peer that ignores the id would have its one clipboard emptied (Windows does that to be told to give it up) by a
+  // grab of the selection that no data follows, so it is not told: it keeps what it has.
+  if (!sendsClipboardId(id)) {
+    m_clipboard[id].m_dirty = true;
+    return;
+  }
+
   // the grab says the data of a running transfer is stale, so it must not follow the grab, and the client does not have
   // it
   if (m_sender.cancel(id)) {

@@ -100,13 +100,15 @@ generation that Universal Clipboard advertises).
 
 Data is now left out for id 1 when the peer reported `Windows` or `macOS` in the 1.9 handshake. This
 halves the bytes, the time and the pasteboard writes in the direction where the sender knows the peer.
-An unknown platform keeps today's behaviour. The grab message for id 1 is still sent (a few bytes), so a
-peer that predates this keeps the same ownership bookkeeping; only the data is saved.
+An unknown platform keeps today's behaviour. The grab for id 1 is left out too: Windows empties its one
+clipboard when it is told to give it up (whatever the id), so a grab of the selection that no data follows
+(a highlight on an X11 computer) would empty it for nothing.
 
 The reverse direction needs the receiver to keep the selection working for X11 computers: a client leaves
-the data of id 1 out only toward a server that advertised the single id capability, and such a server
-stores the data of id 0 from a Windows or macOS client as the selection too (`ClientProxy1_6`), so a Linux
-computer entered later still gets its selection. `Client::sendClipboard` returns before reading the local
+the grab and the data of id 1 out only when it is on Windows or macOS itself and the server is too and
+advertised the single id capability. Such a server takes the grab and the data of id 0 as those of id 1 too
+(`ClientProxy1_6`, in the order grab, grab, data, data, so the grab of an id is seen before its data), so a
+Linux computer entered later still gets its selection. `Client::sendClipboard` returns before reading the local
 clipboard for a skipped id, which also saves the second pasteboard read on the Mac.
 
 ## Leaving one computer out
@@ -120,7 +122,9 @@ clipboard when the cursor enters it. It is also sent `CLPS=0` (after the global 
 takes the last value), so it stops reading and sending its own clipboard. Nothing changes for a computer
 that shares: its options are exactly the ones it got before. When the primary leaves for a computer that
 does not share, the primary's clipboard is still read, so that the next computer that does share gets
-current data.
+current data. A primary that does not share stays the owner of the empty clipboards the server starts
+with, and those are not sent to the computers it enters, because a computer that is sent an empty
+clipboard empties its own.
 
 ## Rewrites with the same content, and loops
 

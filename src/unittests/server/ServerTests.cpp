@@ -975,6 +975,26 @@ void ServerTests::clipboardOffForAComputer_whatItCopies_isNeitherSharedNorAnnoun
   QVERIFY(neverReceivedAnything(rig.b->received(kClipboardClipboard)));
 }
 
+// The Server starts with empty clipboards that the primary computer owns, and a primary that does not share is never
+// read, so those would be sent: and a computer that is sent an empty clipboard empties its own
+void ServerTests::clipboardOffForAComputer_aPrimaryThatDoesNotShare_doesNotEmptyTheOthers()
+{
+  ClipboardRig rig(std::nullopt, {"primary"});
+  // a computer that has just connected is sent what the Server has (as the proxy of a client is when it is created)
+  for (ClipboardID id = 0; id < kClipboardEnd; ++id)
+    rig.a->setClipboardDirty(id, true);
+  QVERIFY(rig.switchTo("A"));
+  QVERIFY(!rig.a->received(kClipboardClipboard).has_value());
+  QVERIFY(!rig.a->received(kClipboardSelection).has_value());
+
+  // the others still share among themselves
+  fill(rig.a->own(kClipboardClipboard), 20, false, false);
+  rig.grab(*rig.a, kClipboardClipboard);
+  rig.changed(*rig.a, kClipboardClipboard);
+  QVERIFY(rig.switchTo("B"));
+  QCOMPARE(received(rig.b->received(kClipboardClipboard)), bytes(marshalled(20)));
+}
+
 void ServerTests::clipboardOffForAComputer_theOthersStillShareAmongThemselves()
 {
   ClipboardRig rig(std::nullopt, {"A"});

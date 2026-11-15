@@ -505,6 +505,11 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
         if (m_clipboards[id].m_clipboard.marshall().size() > (m_maximumClipboardSize * 1024)) {
           continue;
         }
+        // The primary computer that does not share its clipboard stays the owner of the empty clipboards the Server
+        // starts with, and sending those would empty the clipboard of every computer the cursor enters
+        if (m_clipboards[id].m_clipboardOwner == getName(m_primaryClient) && !sharesClipboardWith(m_primaryClient)) {
+          continue;
+        }
         m_active->setClipboard(id, &m_clipboards[id].m_clipboard);
         if (m_active == m_primaryClient) {
           m_primaryClipboardWritten[id] = std::chrono::steady_clock::now();

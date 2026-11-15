@@ -58,6 +58,7 @@ private Q_SLOTS:
   void clipboardOffForAComputer_primaryToTheOthers_skipsOnlyThatComputer();
   void clipboardOffForAComputer_whatItCopies_isNeitherSharedNorAnnounced();
   void clipboardOffForAComputer_theOthersStillShareAmongThemselves();
+  void clipboardOffForAComputer_aPrimaryThatDoesNotShare_doesNotEmptyTheOthers();
   void clipboardOffForAComputer_isOffForAllComputersWhenNoneIsSetOff();
   void clipboardOffForAComputer_isToldWithAnOptionThatWinsOverTheGlobalOne();
 
