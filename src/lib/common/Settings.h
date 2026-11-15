@@ -138,6 +138,8 @@ public:
     inline static const auto ModifierShift = QStringLiteral("computer_%1/modifierShift");
     inline static const auto ModifierSuper = QStringLiteral("computer_%1/modifierSuper");
     inline static const auto RightCommandAction = QStringLiteral("computer_%1/rightCommandAction");
+    inline static const auto CrossOSInvertX = QStringLiteral("computer_%1/crossOSInvertX");
+    inline static const auto CrossOSInvertY = QStringLiteral("computer_%1/crossOSInvertY");
     inline static const auto SwitchCornerSize = QStringLiteral("computer_%1/switchCornerSize");
     inline static const auto SwitchCornerTopLeft = QStringLiteral("computer_%1/switchCornerTopLeft");
     inline static const auto SwitchCornerTopRight = QStringLiteral("computer_%1/switchCornerTopRight");

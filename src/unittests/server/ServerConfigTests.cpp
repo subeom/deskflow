@@ -64,6 +64,34 @@ void ServerConfigTests::rightCommandAction_hangulAddsOption()
   QVERIFY(option == fallbackOptions->end());
 }
 
+void ServerConfigTests::crossOSScrollOptions_areOptIn()
+{
+  const auto xKey = Settings::Computer::CrossOSInvertX.arg(QStringLiteral("scrollComputer"));
+  const auto yKey = Settings::Computer::CrossOSInvertY.arg(QStringLiteral("scrollComputer"));
+  Settings::setValue(xKey, true);
+  Settings::setValue(yKey, false);
+
+  Config xOnly(nullptr);
+  QVERIFY(xOnly.addComputer("scrollComputer"));
+  const auto *xOptions = xOnly.getOptions("scrollComputer");
+  QVERIFY(xOptions != nullptr);
+  auto option = xOptions->find(kOptionCrossOSInvertScrollX);
+  QVERIFY(option != xOptions->end());
+  QCOMPARE(option->second, 1);
+  QCOMPARE(xOptions->count(kOptionCrossOSInvertScrollY), static_cast<size_t>(0));
+
+  Settings::setValue(xKey, false);
+  Settings::setValue(yKey, true);
+  Config yOnly(nullptr);
+  QVERIFY(yOnly.addComputer("scrollComputer"));
+  const auto *yOptions = yOnly.getOptions("scrollComputer");
+  QVERIFY(yOptions != nullptr);
+  QCOMPARE(yOptions->count(kOptionCrossOSInvertScrollX), static_cast<size_t>(0));
+  option = yOptions->find(kOptionCrossOSInvertScrollY);
+  QVERIFY(option != yOptions->end());
+  QCOMPARE(option->second, 1);
+}
+
 void ServerConfigTests::neighborPositions_stayHalfOpenAndChain()
 {
   Config config(nullptr);

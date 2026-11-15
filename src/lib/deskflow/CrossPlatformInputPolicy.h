@@ -39,6 +39,7 @@ public:
 private:
   bool isCrossPlatform() const;
   bool canMapHangul() const;
+  bool canMapScroll() const;
 
   InputCapabilities m_source;
   InputCapabilities m_destination;

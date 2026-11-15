@@ -124,6 +124,12 @@ bool Config::addComputer(const std::string &name)
   if (rightCommandAction.compare(QStringLiteral("hangul"), Qt::CaseInsensitive) == 0) {
     addOption(name, kOptionCrossOSRightCommand, static_cast<OptionValue>(RightCommandAction::Hangul));
   }
+  if (Settings::value(Settings::Computer::CrossOSInvertX.arg(computer)).toBool()) {
+    addOption(name, kOptionCrossOSInvertScrollX, 1);
+  }
+  if (Settings::value(Settings::Computer::CrossOSInvertY.arg(computer)).toBool()) {
+    addOption(name, kOptionCrossOSInvertScrollY, 1);
+  }
 
   return true;
 }

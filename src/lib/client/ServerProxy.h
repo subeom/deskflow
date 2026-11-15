@@ -76,6 +76,10 @@ protected:
   {
     return false;
   }
+  virtual void transformMouseWheel(int32_t &, int32_t &)
+  {
+  }
+  virtual void deliverMouseWheel(int32_t xDelta, int32_t yDelta);
 
   deskflow::IStream *getStream() const
   {

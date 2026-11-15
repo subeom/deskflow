@@ -53,14 +53,19 @@ bool ServerProxy1_9::receiveInputCapabilities()
 void ServerProxy1_9::onOptionsChanged(const OptionsList &options)
 {
   m_rightCommandAction = RightCommandAction::Preserve;
+  m_invertScrollX = false;
+  m_invertScrollY = false;
   for (size_t i = 0; i + 1 < options.size(); i += 2) {
-    if (options[i] != kOptionCrossOSRightCommand) {
-      continue;
+    if (options[i] == kOptionCrossOSRightCommand) {
+      const auto value = options[i + 1];
+      m_rightCommandAction = value == static_cast<OptionValue>(RightCommandAction::Hangul)
+                                 ? RightCommandAction::Hangul
+                                 : RightCommandAction::Preserve;
+    } else if (options[i] == kOptionCrossOSInvertScrollX) {
+      m_invertScrollX = options[i + 1] != 0;
+    } else if (options[i] == kOptionCrossOSInvertScrollY) {
+      m_invertScrollY = options[i + 1] != 0;
     }
-
-    const auto value = options[i + 1];
-    m_rightCommandAction = value == static_cast<OptionValue>(RightCommandAction::Hangul) ? RightCommandAction::Hangul
-                                                                                         : RightCommandAction::Preserve;
   }
 }
 
@@ -74,6 +79,13 @@ void ServerProxy1_9::transformInputKey(KeyID &id, KeyModifierMask &mask)
 bool ServerProxy1_9::shouldSuppressKeyRepeat(KeyID id, KeyModifierMask) const
 {
   return inputPolicy().shouldSuppressRepeat(id);
+}
+
+void ServerProxy1_9::transformMouseWheel(int32_t &xDelta, int32_t &yDelta)
+{
+  const auto transformed = inputPolicy().toDestinationScroll({xDelta, yDelta});
+  xDelta = transformed.x;
+  yDelta = transformed.y;
 }
 
 InputCapabilities ServerProxy1_9::localInputCapabilities() const
@@ -91,6 +103,8 @@ CrossPlatformInputPolicy ServerProxy1_9::inputPolicy() const
 {
   return {
       m_sourceInputCapabilities, localInputCapabilities(),
-      CrossPlatformInputOptions{.rightCommand = m_rightCommandAction}
+      CrossPlatformInputOptions{
+          .rightCommand = m_rightCommandAction, .invertScrollX = m_invertScrollX, .invertScrollY = m_invertScrollY
+      }
   };
 }

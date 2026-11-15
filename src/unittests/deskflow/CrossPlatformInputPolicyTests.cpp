@@ -9,6 +9,8 @@
 
 #include <QTest>
 
+#include <limits>
+
 namespace {
 
 InputCapabilities capabilities(InputPlatform platform, InputCapabilityMask mask = 0)
@@ -128,6 +130,52 @@ void CrossPlatformInputPolicyTests::scrollPolicy_requiresCrossPlatformAndCapabil
   const auto crossDelta = cross.toDestinationScroll({120, -120});
   QCOMPARE(crossDelta.x, -120);
   QCOMPARE(crossDelta.y, 120);
+}
+
+void CrossPlatformInputPolicyTests::scrollPolicy_preservesNonMacWindowsPairs()
+{
+  CrossPlatformInputOptions options{.invertScrollX = true, .invertScrollY = true};
+  const ScrollDelta input{120, -120};
+
+  const CrossPlatformInputPolicy macToLinux(
+      capabilities(InputPlatform::MacOS), capabilities(InputPlatform::Linux, kInputCapabilityCrossOSScroll), options
+  );
+  const auto linuxDelta = macToLinux.toDestinationScroll(input);
+  QCOMPARE(linuxDelta.x, input.x);
+  QCOMPARE(linuxDelta.y, input.y);
+
+  const CrossPlatformInputPolicy windowsToMac(
+      capabilities(InputPlatform::Windows), capabilities(InputPlatform::MacOS, kInputCapabilityCrossOSScroll), options
+  );
+  const auto macDelta = windowsToMac.toDestinationScroll(input);
+  QCOMPARE(macDelta.x, input.x);
+  QCOMPARE(macDelta.y, input.y);
+}
+
+void CrossPlatformInputPolicyTests::scrollPolicy_invertsOnlySelectedAxesAndBoundaries()
+{
+  const auto source = capabilities(InputPlatform::MacOS);
+  const auto destination = capabilities(InputPlatform::Windows, kInputCapabilityCrossOSScroll);
+
+  const CrossPlatformInputPolicy xOnly(source, destination, {.invertScrollX = true});
+  const auto xDelta = xOnly.toDestinationScroll({120, -120});
+  QCOMPARE(xDelta.x, -120);
+  QCOMPARE(xDelta.y, -120);
+
+  const CrossPlatformInputPolicy yOnly(source, destination, {.invertScrollY = true});
+  const auto yDelta = yOnly.toDestinationScroll({120, -120});
+  QCOMPARE(yDelta.x, 120);
+  QCOMPARE(yDelta.y, 120);
+
+  const CrossPlatformInputPolicy both(source, destination, {.invertScrollX = true, .invertScrollY = true});
+  const auto zeroDelta = both.toDestinationScroll({0, 0});
+  QCOMPARE(zeroDelta.x, 0);
+  QCOMPARE(zeroDelta.y, 0);
+
+  const auto edgeDelta =
+      both.toDestinationScroll({std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()});
+  QCOMPARE(edgeDelta.x, 32768);
+  QCOMPARE(edgeDelta.y, -32767);
 }
 
 QTEST_MAIN(CrossPlatformInputPolicyTests)

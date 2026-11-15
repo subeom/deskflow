@@ -45,8 +45,7 @@ bool CrossPlatformInputPolicy::mapsRightCommandToHangul() const
 
 ScrollDelta CrossPlatformInputPolicy::toDestinationScroll(ScrollDelta delta) const
 {
-  const auto hasScrollCapability = (m_destination.capabilities & kInputCapabilityCrossOSScroll) != 0;
-  if (!isCrossPlatform() || !hasScrollCapability) {
+  if (!canMapScroll()) {
     return delta;
   }
   if (m_options.invertScrollX) {
@@ -69,4 +68,11 @@ bool CrossPlatformInputPolicy::canMapHangul() const
   return m_options.rightCommand == RightCommandAction::Hangul && isCrossPlatform() &&
          m_source.platform == InputPlatform::MacOS && m_destination.platform == InputPlatform::Windows &&
          (m_destination.capabilities & kInputCapabilityHangul) != 0;
+}
+
+bool CrossPlatformInputPolicy::canMapScroll() const
+{
+  return isCrossPlatform() && m_source.platform == InputPlatform::MacOS &&
+         m_destination.platform == InputPlatform::Windows &&
+         (m_destination.capabilities & kInputCapabilityCrossOSScroll) != 0;
 }

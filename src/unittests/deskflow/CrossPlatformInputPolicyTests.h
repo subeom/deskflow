@@ -19,4 +19,6 @@ private Q_SLOTS:
   void macToWindows_hangulMapsDestinationKeyAndSuppressesRepeat();
   void macSource_legacyRightCommandNormalizesToLeft();
   void scrollPolicy_requiresCrossPlatformAndCapabilities();
+  void scrollPolicy_preservesNonMacWindowsPairs();
+  void scrollPolicy_invertsOnlySelectedAxesAndBoundaries();
 };

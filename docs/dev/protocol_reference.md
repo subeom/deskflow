@@ -269,10 +269,12 @@ Current capability bits:
 
 - bit 0: protocol 1.9 input capability exchange is supported
 - bit 1: destination can synthesize `kKeyHangul`
-- bits 2-3: reserved for semantic media and cross-platform scroll support
+- bit 2: reserved for semantic media support
+- bit 3: destination can apply negotiated cross-platform scroll inversion
 
 The destination advertises bit 1 only if its current key-map inventory can synthesize
-`kKeyHangul`. Unknown platforms and missing bits always fall back to existing input behavior.
+`kKeyHangul` and advertises bit 3 on Windows. Unknown platforms and missing bits always fall
+back to existing input behavior.
 
 Protocol 1.9 does not change the formats of @ref kMsgDKeyDown, @ref kMsgDKeyRepeat,
 @ref kMsgDKeyUp, or @ref kMsgDMouseWheel. A peer using protocol 1.8 or older never sends or receives

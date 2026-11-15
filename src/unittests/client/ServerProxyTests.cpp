@@ -257,6 +257,25 @@ public:
   {
     return parseHandshakeMessage(code) == ConnectionResult::Disconnect;
   }
+
+  bool parseMessageForTest(const uint8_t *code)
+  {
+    return parseMessage(code) == ConnectionResult::Okay;
+  }
+
+  ScrollDelta lastWheelDelta() const
+  {
+    return m_lastWheelDelta;
+  }
+
+protected:
+  void deliverMouseWheel(int32_t xDelta, int32_t yDelta) override
+  {
+    m_lastWheelDelta = {xDelta, yDelta};
+  }
+
+private:
+  ScrollDelta m_lastWheelDelta{0, 0};
 };
 
 class TestServerProxy1_9 : public ServerProxy1_9
@@ -281,14 +300,30 @@ public:
     onOptionsChanged(options);
   }
 
+  bool parseMessageForTest(const uint8_t *code)
+  {
+    return parseMessage(code) == ConnectionResult::Okay;
+  }
+
+  ScrollDelta lastWheelDelta() const
+  {
+    return m_lastWheelDelta;
+  }
+
 protected:
   InputCapabilities localInputCapabilities() const override
   {
     return m_localCapabilities;
   }
 
+  void deliverMouseWheel(int32_t xDelta, int32_t yDelta) override
+  {
+    m_lastWheelDelta = {xDelta, yDelta};
+  }
+
 private:
   InputCapabilities m_localCapabilities;
+  ScrollDelta m_lastWheelDelta{0, 0};
 };
 
 Client *undereferenceableClient()
@@ -373,6 +408,21 @@ void ServerProxyTests::parseHandshakeMessage_protocolError_queuesRefusalRequest(
   QCOMPARE(QString::fromUtf8(request->message()), QStringLiteral("server reported a protocol error"));
 }
 
+void ServerProxyTests::legacyScroll_preservesDmwmValues()
+{
+  RecordingEventQueue events;
+  FakeStream stream;
+  TestServerProxy proxy(undereferenceableClient(), &stream, &events);
+
+  FakeStream wheelPacket;
+  ProtocolUtil::writef(&wheelPacket, kMsgDMouseWheel, static_cast<int16_t>(120), static_cast<int16_t>(-120));
+  const auto wheelBytes = wheelPacket.takeOutput();
+  stream.push(std::string(wheelBytes.constData() + 4, static_cast<size_t>(wheelBytes.size() - 4)));
+  QVERIFY(proxy.parseMessageForTest(reinterpret_cast<const uint8_t *>(kMsgDMouseWheel)));
+  QCOMPARE(proxy.lastWheelDelta().x, 120);
+  QCOMPARE(proxy.lastWheelDelta().y, -120);
+}
+
 void ServerProxyTests::inputCapabilities_v19_readsSourceAndWritesDestinationCapabilities()
 {
   RecordingEventQueue events;
@@ -445,6 +495,39 @@ void ServerProxyTests::rightCommand_missingHangulCapability_preservesLegacy()
   const auto transformed = proxy.transformInputKeyForTest(kKeySuper_R, KeyModifierSuper);
   QCOMPARE(transformed.id, kKeySuper_L);
   QCOMPARE(transformed.mask, KeyModifierSuper);
+}
+
+void ServerProxyTests::crossOSScroll_v19TransformsDmwmBeforeDelivery()
+{
+  RecordingEventQueue events;
+  FakeStream stream;
+  TestServerProxy1_9 proxy(
+      undereferenceableClient(), &stream, &events,
+      InputCapabilities{InputPlatform::Windows, kInputCapabilityCrossOSScroll}
+  );
+
+  FakeStream sourcePacket;
+  ProtocolUtil::writef(
+      &sourcePacket, kMsgDInputCapabilities, static_cast<uint8_t>(InputPlatform::MacOS), kInputCapabilityProtocolV19
+  );
+  const auto sourceBytes = sourcePacket.takeOutput();
+  stream.push(std::string(sourceBytes.constData(), static_cast<size_t>(sourceBytes.size())));
+  QVERIFY(events.dispatchEvent(Event(EventTypes::StreamInputReady, stream.getEventTarget())));
+
+  proxy.onOptionsChangedForTest({kOptionCrossOSInvertScrollX, 1, kOptionCrossOSInvertScrollY, 0});
+  FakeStream wheelPacket;
+  ProtocolUtil::writef(&wheelPacket, kMsgDMouseWheel, static_cast<int16_t>(120), static_cast<int16_t>(-120));
+  const auto wheelBytes = wheelPacket.takeOutput();
+  stream.push(std::string(wheelBytes.constData() + 4, static_cast<size_t>(wheelBytes.size() - 4)));
+  QVERIFY(proxy.parseMessageForTest(reinterpret_cast<const uint8_t *>(kMsgDMouseWheel)));
+  QCOMPARE(proxy.lastWheelDelta().x, -120);
+  QCOMPARE(proxy.lastWheelDelta().y, -120);
+
+  proxy.onOptionsChangedForTest({});
+  stream.push(std::string(wheelBytes.constData() + 4, static_cast<size_t>(wheelBytes.size() - 4)));
+  QVERIFY(proxy.parseMessageForTest(reinterpret_cast<const uint8_t *>(kMsgDMouseWheel)));
+  QCOMPARE(proxy.lastWheelDelta().x, 120);
+  QCOMPARE(proxy.lastWheelDelta().y, -120);
 }
 
 QTEST_MAIN(ServerProxyTests)

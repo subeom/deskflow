@@ -201,6 +201,9 @@ size_t Client::getMaximumClipboardReceiveSizeBytes() const
 InputCapabilities Client::inputCapabilities() const
 {
   auto capabilities = deskflow::platform::currentInputCapabilities();
+  if (deskflow::platform::isWindows()) {
+    capabilities.capabilities |= kInputCapabilityCrossOSScroll;
+  }
   if (m_computer != nullptr && m_computer->canSynthesizeKey(kKeyHangul)) {
     capabilities.capabilities |= kInputCapabilityHangul;
   }

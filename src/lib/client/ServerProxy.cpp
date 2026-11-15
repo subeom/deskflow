@@ -734,7 +734,16 @@ void ServerProxy::mouseWheel()
   ProtocolUtil::readf(m_stream, kMsgDMouseWheel + 4, &xDelta, &yDelta);
   LOG_VERBOSE("recv mouse wheel %+d,%+d", xDelta, yDelta);
 
+  int32_t transformedX = xDelta;
+  int32_t transformedY = yDelta;
+  transformMouseWheel(transformedX, transformedY);
+
   // forward
+  deliverMouseWheel(transformedX, transformedY);
+}
+
+void ServerProxy::deliverMouseWheel(int32_t xDelta, int32_t yDelta)
+{
   m_client->mouseWheel(xDelta, yDelta);
 }
 
