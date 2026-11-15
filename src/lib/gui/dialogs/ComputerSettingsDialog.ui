@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>503</width>
-    <height>600</height>
+    <height>760</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -619,6 +619,90 @@
          </layout>
         </widget>
        </item>
+        <item>
+         <widget class="QGroupBox" name="groupCrossOSInput">
+          <property name="title">
+           <string>Cross-OS Input (macOS source to Windows destination)</string>
+          </property>
+          <layout class="QVBoxLayout" name="layoutCrossOSInput">
+           <item>
+            <widget class="QLabel" name="lblCrossOSInputDescription">
+             <property name="text">
+              <string>These options apply only when this computer is a Windows destination and the source negotiates protocol 1.9. Scroll options affect all wheel events; Deskflow does not identify mouse and trackpad devices separately.</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QFormLayout" name="formCrossOSInput">
+             <item row="0" column="0">
+              <widget class="QLabel" name="lblRightCommand">
+               <property name="text">
+                <string>Right Command</string>
+               </property>
+               <property name="buddy">
+                <cstring>comboRightCommand</cstring>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="1">
+              <widget class="QComboBox" name="comboRightCommand">
+               <property name="toolTip">
+                <string>Choose whether Right Command remains the Windows key or becomes the Korean-English Hangul toggle.</string>
+               </property>
+               <item>
+                <property name="text">
+                 <string>Preserve as Windows key (default)</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>Korean-English toggle (Hangul)</string>
+                </property>
+               </item>
+              </widget>
+             </item>
+             <item row="1" column="0" colspan="2">
+              <widget class="QCheckBox" name="chkCrossOSInvertX">
+               <property name="text">
+                <string>Invert horizontal scrolling</string>
+               </property>
+              </widget>
+             </item>
+             <item row="2" column="0" colspan="2">
+              <widget class="QCheckBox" name="chkCrossOSInvertY">
+               <property name="text">
+                <string>Invert vertical scrolling</string>
+               </property>
+              </widget>
+             </item>
+             <item row="3" column="0" colspan="2">
+              <widget class="QCheckBox" name="chkCrossOSSemanticMedia">
+               <property name="text">
+                <string>Use semantic media keys</string>
+               </property>
+               <property name="toolTip">
+                <string>Enable volume, previous/next track, play/pause, and stop keys through Windows virtual media keys.</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblCrossOSScrollLayering">
+             <property name="text">
+              <string>Destination-local scroll inversion in Client Configuration is separate and is applied after these cross-OS options; enabling both can compound.</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
        <item>
         <widget class="QGroupBox" name="groupAliases">
          <property name="sizePolicy">
@@ -769,6 +853,10 @@
   <tabstop>chkFixCapsLock</tabstop>
   <tabstop>chkFixNumLock</tabstop>
   <tabstop>chkFixXTest</tabstop>
+  <tabstop>comboRightCommand</tabstop>
+  <tabstop>chkCrossOSInvertX</tabstop>
+  <tabstop>chkCrossOSInvertY</tabstop>
+  <tabstop>chkCrossOSSemanticMedia</tabstop>
   <tabstop>lineAddAlias</tabstop>
   <tabstop>btnAddAlias</tabstop>
   <tabstop>listAliases</tabstop>

@@ -40,9 +40,19 @@
    <item>
     <widget class="QGroupBox" name="groupBox">
      <property name="title">
-      <string>Scroll Modifiers</string>
+      <string>Local Scroll (this destination computer)</string>
      </property>
      <layout class="QGridLayout" name="gridLayout">
+      <item row="0" column="0" colspan="5">
+       <widget class="QLabel" name="lblLocalScrollDescription">
+        <property name="text">
+         <string>These local inversion and scale settings apply to every wheel event on this computer. Cross-OS inversion configured per destination is separate and can compound with these values.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
       <item row="5" column="2">
        <widget class="QCheckBox" name="cbYScrollInvert">
         <property name="text">

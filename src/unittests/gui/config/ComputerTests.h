@@ -13,6 +13,8 @@ private Q_SLOTS:
   // Test are run in order top to bottom
   void initTestCase();
   void basicFunctionality();
+  void crossOSSettings_defaultToDisabled();
+  void crossOSDialog_saveSerializeAndProduceOptions();
 
 private:
   inline static const QString m_settingsPath = QStringLiteral("tmp/test");

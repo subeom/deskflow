@@ -186,6 +186,8 @@ Each computer will have a section where its configuration will be stored, if the
 | xtestIsXineramaUnaware | `true` or `false` | This option works around a bug in the XTest extension when used in combination with Xinerama. It affects X11 clients only. Not all versions of the XTest extension are aware of the Xinerama extension. As a result, they do not move the mouse correctly when using multiple Xinerama screens. This option is currently ''true'' by default. If you know your XTest extension is Xinerama aware then set this option to ''false''.|
 | weakX11Focus           | `true` or `false` | This X11 Client will not gain focus until an input event has been processed its any of its screens |
 
+The `rightCommandAction`, `crossOSInvertX`, `crossOSInvertY`, and `crossOSSemanticMedia` values are available in the destination computer's **Cross-OS Input** settings. These options apply only to negotiated macOS-to-Windows protocol 1.9 links. Scroll inversion applies to all wheel events and does not distinguish mouse from trackpad devices. The destination-local **Client Configuration** inversion and scale remain separate and are applied afterward, so enabling both layers can compound.
+
 ### InternalConfig
 
 This section contains options used when in server mode it will begin with `[internalConfig]`

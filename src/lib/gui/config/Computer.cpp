@@ -34,6 +34,15 @@ void Computer::loadSettings(QSettingsProxy &settings)
   setModifier(Shift, modifierValueFromString(Settings::value(Settings::Computer::ModifierShift.arg(name)).toString()));
   setModifier(Super, modifierValueFromString(Settings::value(Settings::Computer::ModifierSuper.arg(name)).toString()));
 
+  const auto rightCommandAction =
+      Settings::value(Settings::Computer::RightCommandAction.arg(name)).toString().trimmed();
+  m_RightCommandAction = rightCommandAction.compare(QStringLiteral("hangul"), Qt::CaseInsensitive) == 0
+                             ? RightCommandAction::Hangul
+                             : RightCommandAction::Preserve;
+  m_CrossOSInvertX = Settings::value(Settings::Computer::CrossOSInvertX.arg(name)).toBool();
+  m_CrossOSInvertY = Settings::value(Settings::Computer::CrossOSInvertY.arg(name)).toBool();
+  m_CrossOSSemanticMedia = Settings::value(Settings::Computer::CrossOSSemanticMedia.arg(name)).toBool();
+
   setSwitchCornerSize(Settings::value(Settings::Computer::SwitchCornerSize.arg(name)).toInt());
 
   m_SwitchCorners[static_cast<int>(TopLeft)] =
@@ -67,6 +76,13 @@ void Computer::saveSettings(QSettingsProxy &settings) const
   Settings::setValue(Settings::Computer::HalfDuplexNumLock.arg(computerName), m_Fixes[static_cast<int>(NumLock)]);
   Settings::setValue(Settings::Computer::HalfDuplexScrollLock.arg(computerName), m_Fixes[static_cast<int>(ScrollLock)]);
   Settings::setValue(Settings::Computer::XtestIsXineramaUnaware.arg(computerName), m_Fixes[static_cast<int>(XTest)]);
+  Settings::setValue(
+      Settings::Computer::RightCommandAction.arg(computerName),
+      m_RightCommandAction == RightCommandAction::Hangul ? QStringLiteral("hangul") : QStringLiteral("preserve")
+  );
+  Settings::setValue(Settings::Computer::CrossOSInvertX.arg(computerName), m_CrossOSInvertX);
+  Settings::setValue(Settings::Computer::CrossOSInvertY.arg(computerName), m_CrossOSInvertY);
+  Settings::setValue(Settings::Computer::CrossOSSemanticMedia.arg(computerName), m_CrossOSSemanticMedia);
   Settings::setValue(Settings::Computer::SwitchCornerSize.arg(computerName), switchCornerSize());
   Settings::setValue(
       Settings::Computer::SwitchCornerTopLeft.arg(computerName), m_SwitchCorners[static_cast<int>(TopLeft)]
@@ -116,5 +132,8 @@ bool Computer::operator==(const Computer &computer) const
 {
   return m_Name == computer.m_Name && m_Aliases == computer.m_Aliases && m_Modifiers == computer.m_Modifiers &&
          m_SwitchCorners == computer.m_SwitchCorners && m_SwitchCornerSize == computer.m_SwitchCornerSize &&
-         m_Fixes == computer.m_Fixes && m_Swapped == computer.m_Swapped && m_isServer == computer.m_isServer;
+         m_Fixes == computer.m_Fixes && m_RightCommandAction == computer.m_RightCommandAction &&
+         m_CrossOSInvertX == computer.m_CrossOSInvertX && m_CrossOSInvertY == computer.m_CrossOSInvertY &&
+         m_CrossOSSemanticMedia == computer.m_CrossOSSemanticMedia && m_Swapped == computer.m_Swapped &&
+         m_isServer == computer.m_isServer;
 }

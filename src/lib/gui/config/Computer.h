@@ -12,6 +12,7 @@
 
 #include "common/KeyboardModifier.h"
 #include "common/QSettingsProxy.h"
+#include "deskflow/OptionTypes.h"
 
 #include <QIcon>
 #include <QList>
@@ -32,13 +33,21 @@ class Computer : public ComputerConfig
   friend QDataStream &operator<<(QDataStream &outStream, const Computer &computer)
   {
     return outStream << computer.name() << computer.switchCornerSize() << computer.aliases() << computer.modifiers()
-                     << computer.switchCorners() << computer.fixes() << computer.isServer();
+                     << computer.switchCorners() << computer.fixes() << computer.isServer()
+                     << static_cast<quint8>(computer.m_RightCommandAction) << computer.m_CrossOSInvertX
+                     << computer.m_CrossOSInvertY << computer.m_CrossOSSemanticMedia;
   }
 
   friend QDataStream &operator>>(QDataStream &inStream, Computer &computer)
   {
-    return inStream >> computer.m_Name >> computer.m_SwitchCornerSize >> computer.m_Aliases >> computer.m_Modifiers >>
-           computer.m_SwitchCorners >> computer.m_Fixes >> computer.m_isServer;
+    quint8 rightCommandAction = 0;
+    inStream >> computer.m_Name >> computer.m_SwitchCornerSize >> computer.m_Aliases >> computer.m_Modifiers >>
+        computer.m_SwitchCorners >> computer.m_Fixes >> computer.m_isServer >> rightCommandAction >>
+        computer.m_CrossOSInvertX >> computer.m_CrossOSInvertY >> computer.m_CrossOSSemanticMedia;
+    computer.m_RightCommandAction = rightCommandAction == static_cast<quint8>(RightCommandAction::Hangul)
+                                        ? RightCommandAction::Hangul
+                                        : RightCommandAction::Preserve;
+    return inStream;
   }
 
 public:
@@ -88,6 +97,22 @@ public:
   [[nodiscard]] const QList<bool> &fixes() const
   {
     return m_Fixes;
+  }
+  [[nodiscard]] RightCommandAction rightCommandAction() const
+  {
+    return m_RightCommandAction;
+  }
+  [[nodiscard]] bool crossOSInvertX() const
+  {
+    return m_CrossOSInvertX;
+  }
+  [[nodiscard]] bool crossOSInvertY() const
+  {
+    return m_CrossOSInvertY;
+  }
+  [[nodiscard]] bool crossOSSemanticMedia() const
+  {
+    return m_CrossOSSemanticMedia;
   }
 
   void loadSettings(QSettingsProxy &settings);
@@ -151,6 +176,22 @@ protected:
   {
     return m_Fixes;
   }
+  void setRightCommandAction(const RightCommandAction action)
+  {
+    m_RightCommandAction = action;
+  }
+  void setCrossOSInvertX(const bool enabled)
+  {
+    m_CrossOSInvertX = enabled;
+  }
+  void setCrossOSInvertY(const bool enabled)
+  {
+    m_CrossOSInvertY = enabled;
+  }
+  void setCrossOSSemanticMedia(const bool enabled)
+  {
+    m_CrossOSSemanticMedia = enabled;
+  }
   void setSwapped(const bool on)
   {
     m_Swapped = on;
@@ -164,6 +205,10 @@ private:
   QList<bool> m_SwitchCorners = {false, false, false, false};
   int m_SwitchCornerSize = 0;
   QList<bool> m_Fixes{false, false, false, false};
+  RightCommandAction m_RightCommandAction = RightCommandAction::Preserve;
+  bool m_CrossOSInvertX = false;
+  bool m_CrossOSInvertY = false;
+  bool m_CrossOSSemanticMedia = false;
   bool m_Swapped = false;
   bool m_isServer = false;
 };

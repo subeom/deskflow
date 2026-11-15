@@ -51,6 +51,11 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
   ui->comboSuper->setCurrentIndex(m_computer->modifier(static_cast<int>(KeyboardModifier::Super)));
   ui->comboAltGr->setCurrentIndex(m_computer->modifier(static_cast<int>(KeyboardModifier::AltGr)));
 
+  ui->comboRightCommand->setCurrentIndex(static_cast<int>(m_computer->rightCommandAction()));
+  ui->chkCrossOSInvertX->setChecked(m_computer->crossOSInvertX());
+  ui->chkCrossOSInvertY->setChecked(m_computer->crossOSInvertY());
+  ui->chkCrossOSSemanticMedia->setChecked(m_computer->crossOSSemanticMedia());
+
   ui->chkDeadTopLeft->setChecked(m_computer->switchCorner(static_cast<int>(TopLeft)));
   ui->chkDeadTopRight->setChecked(m_computer->switchCorner(static_cast<int>(TopRight)));
   ui->chkDeadBottomLeft->setChecked(m_computer->switchCorner(static_cast<int>(BottomLeft)));
@@ -110,6 +115,15 @@ void ComputerSettingsDialog::accept()
   m_computer->setModifier(KeyboardModifier::Meta, ui->comboMeta->currentIndex());
   m_computer->setModifier(KeyboardModifier::Super, ui->comboSuper->currentIndex());
   m_computer->setModifier(KeyboardModifier::AltGr, ui->comboAltGr->currentIndex());
+
+  m_computer->setRightCommandAction(
+      ui->comboRightCommand->currentIndex() == static_cast<int>(RightCommandAction::Hangul)
+          ? RightCommandAction::Hangul
+          : RightCommandAction::Preserve
+  );
+  m_computer->setCrossOSInvertX(ui->chkCrossOSInvertX->isChecked());
+  m_computer->setCrossOSInvertY(ui->chkCrossOSInvertY->isChecked());
+  m_computer->setCrossOSSemanticMedia(ui->chkCrossOSSemanticMedia->isChecked());
 
   m_computer->setSwitchCorner(TopLeft, ui->chkDeadTopLeft->isChecked());
   m_computer->setSwitchCorner(TopRight, ui->chkDeadTopRight->isChecked());
