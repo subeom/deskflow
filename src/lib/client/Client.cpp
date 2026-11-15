@@ -411,6 +411,7 @@ void Client::sendClipboard(ClipboardID id)
   // as the computer may detect an unchanged clipboard and
   // avoid copying the data.
   Clipboard clipboard;
+  clipboard.setSizeLimit(m_maximumClipboardSize * 1024);
   if (clipboard.open(m_timeClipboard[id])) {
     clipboard.close();
   }

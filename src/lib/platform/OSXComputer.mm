@@ -230,6 +230,8 @@ void *OSXComputer::getEventTarget() const
 
 bool OSXComputer::getClipboard(ClipboardID, IClipboard *dst) const
 {
+  // lets the pasteboard skip an image that is too large to be shared instead of converting it first
+  m_pasteboard.setReadLimit(dst->sizeLimit());
   Clipboard::copy(dst, &m_pasteboard);
   return true;
 }

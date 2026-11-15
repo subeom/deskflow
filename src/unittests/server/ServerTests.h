@@ -49,6 +49,7 @@ private Q_SLOTS:
   void clipboardOff_withASizeBoxOfZero_sharesNothing();
   void clipboardTextOnly_anEmptyClipboard_isReportedAtInfoLevelOnce();
   void clipboardTextOnly_anImage_isReportedAtInfoLevelOnce();
+  void clipboardRead_tellsThePlatformTheSizeLimit();
   void clipboardRewrite_identicalWhileTheCursorIsAway_isIgnored();
   void clipboardRewrite_withNewContentWhileTheCursorIsAway_isStillShared();
   void clipboardRewrite_rightAfterTheServerWroteTheClipboard_isIgnored();

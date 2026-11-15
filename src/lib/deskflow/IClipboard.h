@@ -123,6 +123,17 @@ public:
     return true;
   }
 
+  //! The size of the largest clipboard that is shared, in bytes, 0 if there is no limit
+  /*!
+  A platform that has to convert an image to read it may use this to not read an image that cannot be shared anyway.
+  What it returns instead of the image must make the marshalled clipboard larger than this number, so that the
+  clipboard is dropped as it is when the image is read.
+  */
+  virtual size_t sizeLimit() const
+  {
+    return 0;
+  }
+
   //! Get data
   /*!
   Return the data in the given format.  Returns the empty string

@@ -119,6 +119,18 @@ void Clipboard::setTextOnly(bool textOnly)
   m_textOnly = textOnly;
 }
 
+void Clipboard::setSizeLimit(size_t bytes)
+{
+  std::scoped_lock lock{m_mutex};
+  m_sizeLimit = bytes;
+}
+
+size_t Clipboard::sizeLimit() const
+{
+  std::scoped_lock lock{m_mutex};
+  return m_sizeLimit;
+}
+
 bool Clipboard::wants(Format format) const
 {
   std::scoped_lock lock{m_mutex};

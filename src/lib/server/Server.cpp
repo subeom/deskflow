@@ -1186,6 +1186,7 @@ bool Server::clipboardUnchanged(const BaseClientProxy *sender, ClipboardID id) c
   // what would be shared of it now, read the way onClipboardChanged() reads it
   Clipboard current;
   current.setTextOnly(m_clipboardPolicy.textOnly());
+  current.setSizeLimit(m_maximumClipboardSize * 1024);
   sender->getClipboard(id, &current);
   if (m_clipboardPolicy.apply(current).action == ClipboardSharePolicy::Action::Drop) {
     return false;
@@ -1568,6 +1569,7 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
   // get data, and of it only what is shared: a computer that is not asked for the formats that are not does not have
   // to read them either
   clipboard.m_clipboard.setTextOnly(m_clipboardPolicy.textOnly());
+  clipboard.m_clipboard.setSizeLimit(m_maximumClipboardSize * 1024);
   sender->getClipboard(id, &clipboard.m_clipboard);
 
   const auto decision = m_clipboardPolicy.apply(clipboard.m_clipboard);

@@ -153,6 +153,41 @@ client grab, and the grab reaches the other computers before its data is known (
 client leaves or at once if it is not active), so the other computers are told to give up their
 clipboards. The Mac computers keep theirs and are not sent it again; the Windows computers are.
 
+## Reading the pasteboard on a Mac
+
+The server reads the clipboard of its own computer every time the cursor leaves it, and a Mac pasteboard
+that holds an image offers a bitmap flavour that the system makes from the PNG on request: a 1280x720
+screenshot of 21 KB becomes 3.7 MB, one of 2560x1440 becomes 14.7 MB, in several milliseconds on the main
+thread, and it is dropped for its size after it was read when it is over the limit. Two things make this
+cheaper. Neither changes what is shared or what is on the wire:
+
+- **A cache per change.** What was read of each format is kept until another program changes the
+  pasteboard (`OSXClipboard`, `ClipboardReadCache`), so the next switch of computers does not read and
+  convert it again. `PasteboardSynchronize` tells what changed since its last call and is cheap, so every
+  read asks it first; a change it sees is kept for the 1 s poll that detects grabs (so no grab is lost),
+  and Deskflow's own writes empty the cache. What is read is cached up to 8 MiB, and a read that failed is
+  not cached.
+- **An image that cannot be shared is not converted.** The caller says how large a clipboard may be
+  (`IClipboard::sizeLimit()`, set by `Server` and `Client` on the clipboard they read into, which is the
+  `CLSZ` limit or 10 KB in text-only mode). Before converting, the Mac reads the PNG or TIFF of the item
+  (a few dozen KB), takes its size from the header (`pngImageSize`, `tiffImageSize`), and if a bitmap of
+  that many pixels at 4 bytes (a lower bound, so an image is never skipped that would have fit) with the
+  12 bytes of the message is over the limit, it returns something as large as the limit instead. The clipboard
+  is then dropped for its size exactly as when the image is read, with the same message. Without a
+  PNG/TIFF header, or with a limit above 64 MiB, the image is converted as before. Text-only mode never
+  reads the image at all (`wants()`).
+
+What is tested: the PNG and TIFF header parsing, the size arithmetic including overflow, the cache, and that
+the `Server` passes the limit to the platform. What is not: `OSXClipboard` itself needs a live pasteboard, which
+the tests must not touch, so its use of the cache, `PasteboardSynchronize` and the flavours was reviewed but
+not run here.
+
+Not done: moving the pasteboard reads to a worker thread. The thread safety of the Carbon pasteboard calls
+(and of the `OSXClipboard` cache) cannot be verified here, and a read that blocks (a promised flavour, an
+iCloud clipboard, a privacy prompt) would then need a timeout and a way to give up. It is the remaining
+cure for a main thread that is stalled for more than the 9 s keepalive by a slow read, and is left as a
+follow-up.
+
 ## What an unchanged Windows build (v1.27.0.45) gets
 
 It speaks protocol 1.9 and sends `CIPC` with `Windows` as its platform, so the server paces what it sends to

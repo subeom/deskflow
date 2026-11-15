@@ -39,6 +39,10 @@ add_library(${lib_name} STATIC ${PLATFORM_CODE}
   ClipboardChunk.cpp
   ClipboardChunk.h
   ClipboardIdPolicy.h
+  ClipboardImageSize.cpp
+  ClipboardImageSize.h
+  ClipboardReadCache.cpp
+  ClipboardReadCache.h
   ClipboardSender.cpp
   ClipboardSender.h
   ClipboardSharePolicy.cpp

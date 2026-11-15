@@ -51,6 +51,9 @@ public:
   */
   void setTextOnly(bool textOnly);
 
+  //! Set the size limit of the clipboard that is shared, in bytes (0: none), see IClipboard::sizeLimit()
+  void setSizeLimit(size_t bytes);
+
   // IClipboard overrides
   bool empty() final;
   void add(Format, const std::string &data) override;
@@ -59,6 +62,7 @@ public:
   Time getTime() const override;
   bool has(Format) const override;
   bool wants(Format) const override;
+  size_t sizeLimit() const override;
   std::string get(Format) const override;
 
 private:
@@ -67,6 +71,7 @@ private:
   mutable Time m_time;
   bool m_owner = false;
   bool m_textOnly = false;
+  size_t m_sizeLimit = 0;
   Time m_timeOwned;
   bool m_added[static_cast<int>(Format::TotalFormats)] = {false, false, false};
   std::string m_data[static_cast<int>(Format::TotalFormats)] = {"", "", ""};

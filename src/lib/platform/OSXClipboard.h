@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "deskflow/ClipboardReadCache.h"
 #include "deskflow/IClipboard.h"
 
 #include <Carbon/Carbon.h>
@@ -34,10 +35,21 @@ public:
   bool has(Format) const override;
   std::string get(Format) const override;
 
+  //! Whether another program changed the pasteboard since the last call
   bool synchronize();
+
+  //! Set the size of the largest clipboard that is shared (0: no limit), so that an image that cannot be is not
+  //! converted
+  void setReadLimit(size_t bytes) const;
 
 private:
   void clearConverters();
+
+  // learns whether the pasteboard changed, and forgets what was read of it if it did
+  void refresh() const;
+
+  // the size of the bitmap that the image of this item becomes, as far as the image tells without converting it
+  size_t estimateBitmapBytes(PasteboardItemID item) const;
 
 private:
   using ConverterList = std::vector<IOSXClipboardConverter *>;
@@ -45,6 +57,11 @@ private:
   mutable Time m_time;
   ConverterList m_converters;
   PasteboardRef m_pboard;
+  mutable size_t m_readLimit = 0;
+  // what was read from the pasteboard since it last changed: the server reads it every time the cursor leaves
+  mutable deskflow::clipboard::ClipboardReadCache m_cache;
+  // a change that refresh() saw and synchronize() has not told yet
+  mutable bool m_changePending = false;
 };
 
 //! Clipboard format converter interface

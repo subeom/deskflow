@@ -210,6 +210,7 @@ public:
 
   bool getClipboard(ClipboardID, IClipboard *dst) const override
   {
+    lastSizeLimit = dst->sizeLimit();
     return IClipboard::copy(dst, &pasteboard);
   }
 
@@ -222,6 +223,9 @@ public:
 
   CountingClipboard pasteboard;
   std::array<std::optional<std::string>, kClipboardEnd> received;
+  // the size limit the Server told the last clipboard it read to, which a platform can use to not read what is too
+  // large
+  mutable size_t lastSizeLimit = 0;
 };
 
 // A stream that goes nowhere: the Server writes to the stream of a client it closes
@@ -1184,6 +1188,27 @@ void ServerTests::clipboardRewrite_theSameTextCopiedOnAnotherComputer_movesTheOw
   QCOMPARE(rig.a->grabs(kClipboardClipboard), grabsOfA + 1);
   QVERIFY(rig.switchTo("primary"));
   QCOMPARE(received(rig.platform->received[kClipboardClipboard]), bytes(marshalled(30)));
+}
+
+// A platform that has to convert an image to read it can skip an image that cannot be shared, if it is told how large a
+// clipboard may be: the Server says so to the clipboard it reads into
+void ServerTests::clipboardRead_tellsThePlatformTheSizeLimit()
+{
+  {
+    ClipboardRig rig(sizeOption(3, false));
+    fill(rig.platform->pasteboard, 40, false, false);
+    rig.grab(*rig.primary, kClipboardClipboard);
+    QVERIFY(rig.switchTo("A"));
+    QCOMPARE(rig.platform->lastSizeLimit, size_t{3} * 1024 * 1024);
+  }
+  {
+    Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+    ClipboardRig rig(sizeOption(3, true));
+    fill(rig.platform->pasteboard, 40, false, false);
+    rig.grab(*rig.primary, kClipboardClipboard);
+    QVERIFY(rig.switchTo("A"));
+    QCOMPARE(rig.platform->lastSizeLimit, size_t{10} * 1024);
+  }
 }
 
 QTEST_MAIN(ServerTests)
