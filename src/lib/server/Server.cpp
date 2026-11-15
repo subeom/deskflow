@@ -1888,7 +1888,7 @@ void Server::onMouseMoveSecondary(int32_t dx, int32_t dy)
 
 void Server::onMouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource source)
 {
-  LOG_VERBOSE("onMouseWheel %+d,%+d", xDelta, yDelta);
+  LOG_VERBOSE("onMouseWheel %+d,%+d source=%d", xDelta, yDelta, static_cast<int>(source));
   assert(m_active != nullptr);
 
   // relay

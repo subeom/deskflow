@@ -215,6 +215,8 @@ scroll source changed to trackpad (scrollPhase=2 momentumPhase=0 continuous=1 so
 
 The raw fields are logged only when the classification changes, never for every event. The `continuous` and `sourcePid` values are shown for diagnosis only and are not part of the rule. If a device is classified differently than expected, the phases shown tell why.
 
+To confirm that the classification also reaches the server's relay, set the log level to **Verbose**: every relayed wheel event is then logged as `onMouseWheel +120,-120 source=1`, where `source` is `0` for unknown, `1` for mouse and `2` for trackpad. Verbose logging writes one line per scroll event, so switch back to **Info** afterwards.
+
 ### InternalConfig
 
 This section contains options used when in server mode it will begin with `[internalConfig]`
