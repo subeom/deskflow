@@ -177,6 +177,7 @@ Each computer will have a section where its configuration will be stored, if the
 | rightCommandAction      | `preserve` or `hangul` | When the source is macOS and the destination supports protocol 1.9 Korean IME input, map Right Command to Hangul instead of preserving it as Super [default: preserve] |
 | crossOSInvertX         | `true` or `false` | Invert horizontal wheel deltas only on a negotiated macOS-to-Windows protocol 1.9 link [default: false] |
 | crossOSInvertY         | `true` or `false` | Invert vertical wheel deltas only on a negotiated macOS-to-Windows protocol 1.9 link [default: false] |
+| crossOSInvertScope     | `all` or `mouseWheelOnly` | Which scroll events `crossOSInvertX` and `crossOSInvertY` apply to: every wheel event (`all`), or only events the macOS server classifies as a mouse wheel, leaving trackpad scrolling unchanged (`mouseWheelOnly`). A missing or unrecognised value means `all` [default: all] |
 | crossOSSemanticMedia  | `true` or `false` | Synthesize volume up/down/mute, previous/next track, play/pause, and stop only on a negotiated macOS-to-Windows protocol 1.9 link [default: false] |
 | switchCornerSize       | integer (N)       | Sets the size of all corners in pixels. The cursor must be within `N` pixels of the corner to be considered to be in the corner.|
 | switchCornerTopLeft    | `true` or `false` | Deskflow won't switch computers when the mouse reaches the edge of the computer if it includes this corner. The size of the corner is given by the `switchCornerSize` option. |
@@ -186,7 +187,33 @@ Each computer will have a section where its configuration will be stored, if the
 | xtestIsXineramaUnaware | `true` or `false` | This option works around a bug in the XTest extension when used in combination with Xinerama. It affects X11 clients only. Not all versions of the XTest extension are aware of the Xinerama extension. As a result, they do not move the mouse correctly when using multiple Xinerama screens. This option is currently ''true'' by default. If you know your XTest extension is Xinerama aware then set this option to ''false''.|
 | weakX11Focus           | `true` or `false` | This X11 Client will not gain focus until an input event has been processed its any of its screens |
 
-The `rightCommandAction`, `crossOSInvertX`, `crossOSInvertY`, and `crossOSSemanticMedia` values are available in the destination computer's **Cross-OS Input** settings. These options apply only to negotiated macOS-to-Windows protocol 1.9 links. Scroll inversion applies to all wheel events and does not distinguish mouse from trackpad devices. The destination-local **Client Configuration** inversion and scale remain separate and are applied afterward, so enabling both layers can compound.
+The `rightCommandAction`, `crossOSInvertX`, `crossOSInvertY`, `crossOSInvertScope`, and `crossOSSemanticMedia` values are available in the destination computer's **Cross-OS Input** settings. These options apply only to negotiated macOS-to-Windows protocol 1.9 links. By default (`crossOSInvertScope=all`) scroll inversion applies to every wheel event and does not distinguish mouse from trackpad devices. The destination-local **Client Configuration** inversion and scale remain separate and are applied afterward, so enabling both layers can compound.
+
+#### Mouse wheel only scroll inversion
+
+Setting `crossOSInvertScope` to `mouseWheelOnly` (**Apply to: Mouse wheel only (trackpad unchanged)** in the **Cross-OS Input** settings) applies `crossOSInvertX` and `crossOSInvertY` only to scroll events that the macOS server classifies as coming from a mouse wheel. It is meant for setups where the mouse wheel and the trackpad need to scroll in opposite directions on the Windows computer, for example when a utility such as Scroll Reverser is used on the Mac. Restart the server after changing it.
+
+The server classifies each scroll event when it captures it, using one rule:
+
+- the event carries a scroll phase (`kCGScrollWheelEventScrollPhase`) or a momentum phase (`kCGScrollWheelEventMomentumPhase`) which is not zero: **trackpad**
+- otherwise: **mouse**
+
+The inversion is applied on the macOS server before the wheel event is sent, so the Windows computer needs no change and the wheel packet format is unchanged. While `mouseWheelOnly` is active the server does not send the `crossOSInvertX`/`crossOSInvertY` values to the destination, so the destination does not invert again. Any scroll event that cannot be classified (an unknown source, or a destination that is not macOS-to-Windows protocol 1.9) is never inverted by this scope.
+
+The classification is a heuristic with known limits:
+
+- A Magic Mouse reports scroll phases and is therefore treated as a trackpad.
+- Utilities that smooth or emulate scrolling are classified by the phases of the events they post. One that fabricates phases is treated as a trackpad, and continuous (pixel based) events without phases are treated as a mouse. `kCGScrollWheelEventIsContinuous` and the sending process are deliberately not used.
+- The rule is covered by automated tests using synthetic events only. It has not been verified against every device and driver.
+
+To verify how your devices are classified, set the log level to **Debug** (**Preferences** > **Logs** > **Level**, or `level=DEBUG` in the `[log]` section), then stop and start the server so the new level is read. Scroll with the mouse wheel and then with the trackpad on the Mac and look in the log pane (or in the log file when **Log to file** is enabled) for lines such as:
+
+```
+scroll source changed to mouse (scrollPhase=0 momentumPhase=0 continuous=0 sourcePid=...)
+scroll source changed to trackpad (scrollPhase=2 momentumPhase=0 continuous=1 sourcePid=...)
+```
+
+The raw fields are logged only when the classification changes, never for every event. The `continuous` and `sourcePid` values are shown for diagnosis only and are not part of the rule. If a device is classified differently than expected, the phases shown tell why.
 
 ### InternalConfig
 

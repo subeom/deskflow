@@ -280,6 +280,45 @@ Protocol 1.9 does not change the formats of @ref kMsgDKeyDown, @ref kMsgDKeyRepe
 @ref kMsgDKeyUp, or @ref kMsgDMouseWheel. A peer using protocol 1.8 or older never sends or receives
 `DIPC`/`CIPC` and continues to use the existing input packets unchanged.
 
+#### Cross-OS Scroll Inversion Scope
+
+On a negotiated macOS-to-Windows protocol 1.9 link, wheel inversion is configured with these
+option pairs carried by @ref kMsgDSetOptions:
+
+- `CXIX` / `CXIY` (`kOptionCrossOSInvertScrollX` / `kOptionCrossOSInvertScrollY`): invert the
+  horizontal / vertical wheel delta when non-zero.
+- `CXIS` (`kOptionCrossOSInvertScope`): which events the inversion applies to. `0` is `All`
+  and is also the meaning when the option is absent or unrecognised; `1` is `MouseWheelOnly`.
+
+With scope `All` the source forwards `CXIX`/`CXIY` and the destination inverts every
+@ref kMsgDMouseWheel it receives, exactly as before `CXIS` existed.
+
+With scope `MouseWheelOnly` the inversion is applied by the **source**, so no new message or
+capability bit is needed and @ref kMsgDMouseWheel stays byte-for-byte identical:
+
+1. The macOS primary classifies each scroll event as `ScrollSource::Mouse`,
+   `ScrollSource::Trackpad`, or leaves it `ScrollSource::Unknown` (the default for every other
+   primary platform) and carries that value alongside the wheel deltas to the server.
+2. `ClientProxy1_9` inverts the X/Y deltas (as selected by `CXIX`/`CXIY`) of `Mouse` events
+   before writing @ref kMsgDMouseWheel. `Trackpad` and `Unknown` events are written unchanged,
+   so an event that cannot be classified is never inverted.
+3. `ClientProxy1_9` does not forward `CXIX`/`CXIY` to the destination while the scope is
+   `MouseWheelOnly`, so a destination that predates `CXIS` cannot invert a second time. The
+   other option pairs, and their order, are forwarded unchanged.
+4. A destination that implements `CXIS` also fails closed: under `MouseWheelOnly` it never
+   inverts the wheel deltas it receives.
+
+Peers that do not know `CXIS` ignore it. The destination-local **Client Configuration**
+inversion and scale are independent of this scope and are applied after it.
+
+The macOS classification rule is: an event is a trackpad event iff its
+`kCGScrollWheelEventScrollPhase` or `kCGScrollWheelEventMomentumPhase` field is non-zero,
+otherwise it is a mouse event. It is a heuristic with known limits: a Magic Mouse reports phases
+and is classified as a trackpad, and scroll smoothing utilities are classified by the phases they
+emit. `kCGScrollWheelEventIsContinuous` and the source process id are not part of the rule.
+When the classification changes, the macOS primary logs the raw fields once at `DEBUG` level
+(`scroll source changed to ...`); it never logs per event.
+
 ## Timing and Synchronization
 
 <a id="constraint-keep-alive"></a>
