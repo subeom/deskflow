@@ -37,6 +37,9 @@ Example cmake configuration:
 
 ### Windows Configuration
 
+For a reproducible Windows x64 development setup and a safe Git workflow across
+computers, see [Multi-PC development](multi-pc.md).
+
  It is recommended to use vcpkg to install the dependencies. The first time you configure Deskflow, all dependencies other than Qt will be built. If you don't want to use vcpkg, you must manually setup the dependencies. However, that will not be covered by this document.
  
 #### Windows and Qt
