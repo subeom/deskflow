@@ -134,6 +134,32 @@ void ServerConfigTests::neighborPositions_stayHalfOpenAndChain()
   }
 }
 
+void ServerConfigTests::partialDestinationInterval_clampsInsideEndpoint()
+{
+  Config config(nullptr);
+  QVERIFY(config.addComputer("source"));
+  QVERIFY(config.addComputer("bridge"));
+  QVERIFY(config.addComputer("final"));
+  QVERIFY(config.connect("source", Direction::Right, 0.0f, 1.0f, "bridge", 0.01f, 0.04f));
+  QVERIFY(config.connect("bridge", Direction::Right, 0.01f, 0.04f, "final", 0.0f, 1.0f));
+
+  float normalPosition = 0.0f;
+  QCOMPARE(config.getNeighbor("source", Direction::Right, 0.5f, &normalPosition), std::string("bridge"));
+  QCOMPARE(normalPosition, 0.01f + (0.04f - 0.01f) * 0.5f);
+
+  float edgePosition = 0.0f;
+  QCOMPARE(
+      config.getNeighbor("source", Direction::Right, std::nextafter(1.0f, 0.0f), &edgePosition), std::string("bridge")
+  );
+  QVERIFY(edgePosition >= 0.01f);
+  QVERIFY(edgePosition < 0.04f);
+  QCOMPARE(edgePosition, std::nextafter(0.04f, 0.01f));
+
+  float finalPosition = 0.0f;
+  QCOMPARE(config.getNeighbor("bridge", Direction::Right, edgePosition, &finalPosition), std::string("final"));
+  QVERIFY(finalPosition < 1.0f);
+}
+
 void ServerConfigTests::equalityCheck()
 {
   Config a(nullptr);

@@ -13,7 +13,13 @@ namespace deskflow::server {
 
 float clampCursorEdgeFraction(float position)
 {
-  return std::clamp(position, 0.0f, std::nextafter(1.0f, 0.0f));
+  return clampCursorEdgeFraction(position, 0.0f, 1.0f);
+}
+
+float clampCursorEdgeFraction(float position, float start, float end)
+{
+  assert(start < end);
+  return std::clamp(position, start, std::nextafter(end, start));
 }
 
 float getCursorEdgeFraction(int32_t cursorPosition, int32_t computerStart, int32_t computerSize)

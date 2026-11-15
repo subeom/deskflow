@@ -42,6 +42,7 @@ add_library(server STATIC
   Server.h
   ServerCursorEdges.cpp
   ServerCursorEdges.h
+  ServerNeighborTraversal.h
 )
 
 target_link_libraries(server PUBLIC common)

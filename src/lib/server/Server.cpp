@@ -25,6 +25,7 @@
 #include "server/ClientProxyUnknown.h"
 #include "server/PrimaryClient.h"
 #include "server/ServerCursorEdges.h"
+#include "server/ServerNeighborTraversal.h"
 
 #ifdef _WIN32
 #include <algorithm>
@@ -596,35 +597,42 @@ BaseClientProxy *Server::getNeighbor(const BaseClientProxy *src, Direction dir, 
   // convert position to fraction
   float t = mapToFraction(src, dir, x, y);
 
-  // search for the closest neighbor that exists in direction dir
-  float tTmp;
-  for (;;) {
-    std::string dstName(m_config->getNeighbor(srcName, dir, t, &tTmp));
+  const auto traversal = deskflow::server::traverseConnectedNeighbor(
+      srcName, t,
+      [this, dir](const std::string &source, float position) -> std::optional<deskflow::server::NeighborPosition> {
+        float positionOut = 0.0f;
+        const auto destination = m_config->getNeighbor(source, dir, position, &positionOut);
+        if (destination.empty()) {
+          return std::nullopt;
+        }
+        return deskflow::server::NeighborPosition{destination, positionOut};
+      },
+      [this](const std::string &computer) { return m_clients.contains(computer); },
+      [dir](const std::string &source, const deskflow::server::NeighborPosition &destination) {
+        LOG_VERBOSE("ignored \"%s\" on %s of \"%s\"", destination.name.c_str(), Config::dirName(dir), source.c_str());
+      }
+  );
 
-    // if nothing in that direction then return nullptr. if the
-    // destination is the source then we can make no more
-    // progress in this direction.  since we haven't found a
-    // connected neighbor we return nullptr.
-    if (dstName.empty()) {
+  if (traversal.status != deskflow::server::NeighborTraversalStatus::Connected) {
+    if (traversal.status == deskflow::server::NeighborTraversalStatus::Cycle) {
+      LOG_WARN(
+          "neighbor cycle at \"%s\" while searching %s from \"%s\"", traversal.destination.name.c_str(),
+          Config::dirName(dir), srcName.c_str()
+      );
+    } else {
       LOG_VERBOSE("no neighbor on %s of \"%s\"", Config::dirName(dir), srcName.c_str());
-      return nullptr;
     }
-
-    // look up neighbor cell.  if the computer is connected and
-    // ready then we can stop.
-    if (ClientList::const_iterator index = m_clients.find(dstName); index != m_clients.end()) {
-      LOG_VERBOSE("\"%s\" is on %s of \"%s\" at %f", dstName.c_str(), Config::dirName(dir), srcName.c_str(), t);
-      mapToPixel(index->second, dir, tTmp, x, y);
-      return index->second;
-    }
-
-    // skip over unconnected computer
-    LOG_VERBOSE("ignored \"%s\" on %s of \"%s\"", dstName.c_str(), Config::dirName(dir), srcName.c_str());
-    srcName = dstName;
-
-    // use position on skipped computer
-    t = tTmp;
+    return nullptr;
   }
+
+  ClientList::const_iterator index = m_clients.find(traversal.destination.name);
+  assert(index != m_clients.end());
+  LOG_VERBOSE(
+      "\"%s\" is on %s of \"%s\" at %f", traversal.destination.name.c_str(), Config::dirName(dir), srcName.c_str(),
+      traversal.destination.position
+  );
+  mapToPixel(index->second, dir, traversal.destination.position, x, y);
+  return index->second;
 }
 
 BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, Direction srcSide, int32_t &x, int32_t &y) const

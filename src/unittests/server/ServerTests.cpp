@@ -10,8 +10,10 @@
 #include "server/Config.h"
 #include "server/Server.h"
 #include "server/ServerCursorEdges.h"
+#include "server/ServerNeighborTraversal.h"
 
 #include <cmath>
+#include <optional>
 
 void ServerTests::SwitchToComputerInfo_alloc_computer()
 {
@@ -64,6 +66,34 @@ void ServerTests::namedTopology_topLeftOvershoot_selectsLeftComputer()
   QCOMPARE(
       config.getNeighbor("Subeoms-MacBook-Pro.local", Direction::Left, position, nullptr), std::string("SUBEOM-COPILOT")
   );
+}
+
+void ServerTests::neighborTraversal_disconnectedCycleStops()
+{
+  using namespace deskflow::server;
+
+  Config config(nullptr);
+  QVERIFY(config.addComputer("A"));
+  QVERIFY(config.addComputer("B"));
+  QVERIFY(config.addComputer("C"));
+  QVERIFY(config.connect("A", Direction::Right, 0.0f, 1.0f, "B", 0.0f, 1.0f));
+  QVERIFY(config.connect("B", Direction::Right, 0.0f, 1.0f, "C", 0.0f, 1.0f));
+  QVERIFY(config.connect("C", Direction::Right, 0.0f, 1.0f, "B", 0.0f, 1.0f));
+
+  const auto result = traverseConnectedNeighbor(
+      "A", 0.5f,
+      [&config](const std::string &source, float position) -> std::optional<NeighborPosition> {
+        float positionOut = 0.0f;
+        const auto destination = config.getNeighbor(source, Direction::Right, position, &positionOut);
+        if (destination.empty()) {
+          return std::nullopt;
+        }
+        return NeighborPosition{destination, positionOut};
+      },
+      [](const std::string &computer) { return computer == "A"; }, [](const std::string &, const NeighborPosition &) {}
+  );
+
+  QCOMPARE(result.status, NeighborTraversalStatus::Cycle);
 }
 
 QTEST_MAIN(ServerTests)

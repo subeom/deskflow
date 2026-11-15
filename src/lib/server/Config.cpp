@@ -339,7 +339,10 @@ std::string Config::getNeighbor(const std::string &srcName, Direction srcSide, f
   } else {
     // compute position on neighbor
     if (positionOut != nullptr) {
-      *positionOut = clampCursorEdgeFraction(dstEdge->inverseTransform(srcEdge->transform(position)));
+      const auto destinationInterval = dstEdge->getInterval();
+      *positionOut = clampCursorEdgeFraction(
+          dstEdge->inverseTransform(srcEdge->transform(position)), destinationInterval.first, destinationInterval.second
+      );
     }
 
     // return neighbor's name

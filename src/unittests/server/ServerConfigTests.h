@@ -15,6 +15,7 @@ private Q_SLOTS:
   void rightCommandAction_hangulAddsOption();
   void crossOSScrollOptions_areOptIn();
   void neighborPositions_stayHalfOpenAndChain();
+  void partialDestinationInterval_clampsInsideEndpoint();
   void equalityCheck();
   void equalityCheck_diff_options();
   void equalityCheck_diff_alias();

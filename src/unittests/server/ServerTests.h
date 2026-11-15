@@ -14,4 +14,5 @@ private Q_SLOTS:
   void KeyboardBroadcastInfo_alloc_stateAndComputers();
   void edgeOvershoot_clampsRouteFraction();
   void namedTopology_topLeftOvershoot_selectsLeftComputer();
+  void neighborTraversal_disconnectedCycleStops();
 };
