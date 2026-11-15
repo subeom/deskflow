@@ -64,10 +64,11 @@ void ClipboardSender::send(ClipboardID id, uint32_t sequence, const std::string 
   }
 }
 
-void ClipboardSender::cancel(ClipboardID id)
+bool ClipboardSender::cancel(ClipboardID id)
 {
-  removeTransfer(id);
+  const auto dropped = removeTransfer(id);
   m_log.cancel(TransferDirection::Sent, id);
+  return dropped;
 }
 
 bool ClipboardSender::isBusy() const
@@ -130,9 +131,9 @@ void ClipboardSender::writeNextChunk()
   m_waitingForFlush = true;
 }
 
-void ClipboardSender::removeTransfer(ClipboardID id)
+bool ClipboardSender::removeTransfer(ClipboardID id)
 {
-  std::erase_if(m_queue, [id](const Transfer &transfer) { return transfer.id == id; });
+  return std::erase_if(m_queue, [id](const Transfer &transfer) { return transfer.id == id; }) > 0;
 }
 
 void ClipboardSender::setBulkSend(bool active)

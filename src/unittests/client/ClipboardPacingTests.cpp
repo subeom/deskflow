@@ -753,6 +753,86 @@ void ClipboardPacingTests::clientGrab_fromTheServerDropsTheRunningUpload()
   QVERIFY(client.stream.takePackets().empty());
 }
 
+namespace {
+
+//! The Server sends a clipboard when the cursor enters the computer: all that was written to the stream
+std::vector<std::string> enterWith(ServerSide &server, const std::string &marshalled)
+{
+  const ClipboardOf clipboard(marshalled);
+  server.proxy->setClipboard(0, &clipboard);
+  for (size_t i = 0; i < 20; ++i) {
+    flushEvent(server.events, *server.stream);
+  }
+  return server.stream->takePackets();
+}
+
+} // namespace
+
+// A Mac ignores the grab that tells it to give up its clipboard (it keeps what it has), so what it was sent last is
+// still on it unless it copied something itself since. Sending the same bytes again only rewrites its pasteboard, which
+// is what Universal Clipboard and Handoff pick up.
+void ClipboardPacingTests::macPeer_contentItAlreadyHas_isNotSentAgain()
+{
+  ServerSide server;
+  server.receiveCipc(InputPlatform::MacOS, kSingleIdPeer);
+  const auto marshalled = marshalledText(3000);
+
+  QVERIFY(!enterWith(server, marshalled).empty());
+
+  // another computer copied the same text: the grab marks it dirty, the content is the same
+  server.proxy->grabClipboard(0);
+  server.stream->takePackets();
+  QVERIFY(enterWith(server, marshalled).empty());
+}
+
+void ClipboardPacingTests::macPeer_contentAfterItCopiedSomething_isSentAgain()
+{
+  ServerSide server;
+  server.receiveCipc(InputPlatform::MacOS, kSingleIdPeer);
+  const auto marshalled = marshalledText(3000);
+  QVERIFY(!enterWith(server, marshalled).empty());
+
+  // it took the clipboard with something of its own, and then the clipboard changed back to what it had been sent
+  server.proxy->setClipboardDirty(0, false);
+  server.proxy->grabClipboard(0);
+  server.stream->takePackets();
+  QVERIFY(!enterWith(server, marshalled).empty());
+}
+
+void ClipboardPacingTests::macPeer_newContent_isSent()
+{
+  ServerSide server;
+  server.receiveCipc(InputPlatform::MacOS, kSingleIdPeer);
+  QVERIFY(!enterWith(server, marshalledText(3000, 'a')).empty());
+
+  server.proxy->grabClipboard(0);
+  server.stream->takePackets();
+  QVERIFY(!enterWith(server, marshalledText(3000, 'b')).empty());
+}
+
+// Windows empties its clipboard when it is told to give it up, and a peer whose platform is not known may do anything
+void ClipboardPacingTests::otherPeers_sameContentAgain_isSentAgain_data()
+{
+  QTest::addColumn<int>("platform");
+  QTest::newRow("windows") << static_cast<int>(InputPlatform::Windows);
+  QTest::newRow("linux") << static_cast<int>(InputPlatform::Linux);
+  QTest::newRow("unknown") << static_cast<int>(InputPlatform::Unknown);
+}
+
+void ClipboardPacingTests::otherPeers_sameContentAgain_isSentAgain()
+{
+  QFETCH(int, platform);
+
+  ServerSide server;
+  server.receiveCipc(static_cast<InputPlatform>(platform), kSingleIdPeer);
+  const auto marshalled = marshalledText(3000);
+  QVERIFY(!enterWith(server, marshalled).empty());
+
+  server.proxy->grabClipboard(0);
+  server.stream->takePackets();
+  QVERIFY(!enterWith(server, marshalled).empty());
+}
+
 void ClipboardPacingTests::proofOfLife_negotiated_anyReceivedDataResetsTheAlarm()
 {
   ClientSide client;

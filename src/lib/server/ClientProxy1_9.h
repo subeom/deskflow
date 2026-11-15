@@ -41,6 +41,7 @@ protected:
   bool shouldPaceClipboard() const override;
   bool sendsClipboardId(ClipboardID id) const override;
   bool mirrorsSelection() const override;
+  bool keepsClipboardWhenGrabbed() const override;
 
 private:
   void sendInputCapabilities() const;

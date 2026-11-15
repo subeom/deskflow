@@ -49,6 +49,11 @@ private Q_SLOTS:
   void clipboardOff_withASizeBoxOfZero_sharesNothing();
   void clipboardTextOnly_anEmptyClipboard_isReportedAtInfoLevelOnce();
   void clipboardTextOnly_anImage_isReportedAtInfoLevelOnce();
+  void clipboardRewrite_identicalWhileTheCursorIsAway_isIgnored();
+  void clipboardRewrite_withNewContentWhileTheCursorIsAway_isStillShared();
+  void clipboardRewrite_rightAfterTheServerWroteTheClipboard_isIgnored();
+  void clipboardRewrite_afterTheWindowHasPassed_isACopy();
+  void clipboardRewrite_theSameTextCopiedOnAnotherComputer_movesTheOwnership();
   void clipboardOffForAComputer_primaryToTheOthers_skipsOnlyThatComputer();
   void clipboardOffForAComputer_whatItCopies_isNeitherSharedNorAnnounced();
   void clipboardOffForAComputer_theOthersStillShareAmongThemselves();

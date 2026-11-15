@@ -43,6 +43,11 @@ private Q_SLOTS:
   void mirror_nonX11ClientThatSendsOneId_isAlsoTheSelection();
   void mirror_peerWithoutTheCapabilityOrX11Peer_isNotMirrored_data();
   void mirror_peerWithoutTheCapabilityOrX11Peer_isNotMirrored();
+  void macPeer_contentItAlreadyHas_isNotSentAgain();
+  void macPeer_contentAfterItCopiedSomething_isSentAgain();
+  void macPeer_newContent_isSent();
+  void otherPeers_sameContentAgain_isSentAgain_data();
+  void otherPeers_sameContentAgain_isSentAgain();
   void proofOfLife_negotiated_anyReceivedDataResetsTheAlarm();
   void proofOfLife_notNegotiated_onlyKeepAlivesResetTheAlarm();
   void proofOfLife_peerWithoutTheCapability_isUnchanged();

@@ -506,6 +506,9 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
           continue;
         }
         m_active->setClipboard(id, &m_clipboards[id].m_clipboard);
+        if (m_active == m_primaryClient) {
+          m_primaryClipboardWritten[id] = std::chrono::steady_clock::now();
+        }
       }
     }
 
@@ -1172,6 +1175,30 @@ void Server::logDisabledForComputer(ClipboardID id, const BaseClientProxy *clien
   }
 }
 
+bool Server::clipboardUnchanged(const BaseClientProxy *sender, ClipboardID id) const
+{
+  // 4 bytes: a clipboard of no format, which is what nothing known looks like, and is never "the same"
+  const auto &known = m_clipboards[id].m_clipboardData;
+  if (known.size() <= 4) {
+    return false;
+  }
+
+  // what would be shared of it now, read the way onClipboardChanged() reads it
+  Clipboard current;
+  current.setTextOnly(m_clipboardPolicy.textOnly());
+  sender->getClipboard(id, &current);
+  if (m_clipboardPolicy.apply(current).action == ClipboardSharePolicy::Action::Drop) {
+    return false;
+  }
+  return current.marshall() == known;
+}
+
+bool Server::primaryClipboardWrittenRecently(ClipboardID id) const
+{
+  const auto &written = m_primaryClipboardWritten[id];
+  return written && std::chrono::steady_clock::now() - *written < m_clipboardEchoWindow;
+}
+
 void Server::setClipboardTextOnly(bool textOnly)
 {
   if (m_clipboardPolicy.textOnly() != textOnly) {
@@ -1246,6 +1273,22 @@ void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber
   ClipboardInfo &clipboard = m_clipboards[info->m_id];
   if (grabber != m_primaryClient && info->m_sequenceNumber < clipboard.m_clipboardSeqNum) {
     LOG_DEBUG("ignored computer \"%s\" grab of clipboard %d", getName(grabber).c_str(), info->m_id);
+    return;
+  }
+
+  // The primary computer grabs the clipboard again with what is already shared when another program rewrites it
+  // (Universal Clipboard and Handoff do it with what Deskflow wrote to another Mac, a clipboard manager with what it
+  // saw), which is what feeds a loop of grabs and transfers. Nothing differs but the change count, so nothing is
+  // announced, cleared or sent. That is only looked at when the clipboard is not about to be read anyway for the
+  // computer the cursor is on, because a read costs: while the cursor is on another computer, or right after Deskflow
+  // wrote the clipboard. A grab by another computer carries no data yet and is always taken.
+  if (grabber == m_primaryClient && (m_active != m_primaryClient || primaryClipboardWrittenRecently(info->m_id)) &&
+      clipboardUnchanged(grabber, info->m_id)) {
+    if (info->m_id == kClipboardClipboard) {
+      LOG_INFO("%s", formatSkipLine(info->m_id, getName(grabber), SkipReason::IdenticalContent).c_str());
+    } else {
+      LOG_DEBUG("%s", formatSkipLine(info->m_id, getName(grabber), SkipReason::IdenticalContent).c_str());
+    }
     return;
   }
 
@@ -1574,6 +1617,9 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
   // send the new clipboard to the active computer
   if (sharesClipboardWith(m_active)) {
     m_active->setClipboard(id, &clipboard.m_clipboard);
+    if (m_active == m_primaryClient) {
+      m_primaryClipboardWritten[id] = std::chrono::steady_clock::now();
+    }
   }
 }
 

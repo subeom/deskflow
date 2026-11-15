@@ -18,8 +18,11 @@
 #include "deskflow/MouseTypes.h"
 #include "server/Config.h"
 
+#include <array>
+#include <chrono>
 #include <climits>
 #include <map>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -154,6 +157,17 @@ public:
   This will disconnect any clients no longer in the configuration.
   */
   bool setConfig(const ServerConfig &);
+
+  //! Set how long a grab of the primary clipboard is looked at as a possible echo of a write by Deskflow
+  /*!
+  A program that rewrites a clipboard with what is on it (Universal Clipboard, a clipboard manager) makes the computer
+  grab it again.  For \p window after Deskflow wrote the clipboard of the primary computer, a grab of what Deskflow
+  wrote is ignored.  The default is two seconds.
+  */
+  void setClipboardEchoWindow(std::chrono::milliseconds window)
+  {
+    m_clipboardEchoWindow = window;
+  }
 
   //! Add a client
   /*!
@@ -306,6 +320,12 @@ private:
 
   // whether the clipboard is shared with \p client: not when the computer is set to leave it out
   bool sharesClipboardWith(const BaseClientProxy *client) const;
+
+  // whether \p sender holds the same shared clipboard that was last passed on
+  bool clipboardUnchanged(const BaseClientProxy *sender, ClipboardID id) const;
+
+  // whether the primary computer's clipboard was written by Deskflow so recently that a grab of it is likely an echo
+  bool primaryClipboardWrittenRecently(ClipboardID id) const;
   void logDisabledForComputer(ClipboardID id, const BaseClientProxy *client) const;
 
   // share the whole clipboard, or the text of it only
@@ -380,6 +400,12 @@ private:
     uint32_t m_clipboardSeqNum = 0;
   };
   // Order suggested by clang
+
+  // when Deskflow last wrote the clipboard of the primary computer
+  std::array<std::optional<std::chrono::steady_clock::time_point>, kClipboardEnd> m_primaryClipboardWritten;
+
+  // how long after Deskflow wrote the clipboard of the primary computer a grab of it is looked at as a possible echo
+  std::chrono::milliseconds m_clipboardEchoWindow{2000};
 
   // the Primary Computer Client
   PrimaryClient *m_primaryClient = nullptr;

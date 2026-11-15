@@ -11,7 +11,10 @@
 #include "deskflow/ClipboardTransferLog.h"
 #include "server/ClientProxy1_5.h"
 
+#include <array>
+#include <optional>
 #include <string>
+#include <utility>
 
 class Server;
 class IEventQueue;
@@ -40,10 +43,20 @@ protected:
   //! Whether this client sends one clipboard for a Windows or macOS computer, which is also its selection
   virtual bool mirrorsSelection() const;
 
+  //! Whether this client keeps its clipboard when it is told that another computer took it
+  /*!
+  A macOS computer does (it does nothing then), so what it was sent last is still on it unless it copied something
+  itself since, and sending the same bytes again only rewrites its pasteboard.  Windows empties its clipboard then,
+  and nothing is known of other platforms: they are sent the data again.
+  */
+  virtual bool keepsClipboardWhenGrabbed() const;
+
 private:
   IEventQueue *m_events;
   deskflow::clipboard::ClipboardTransferLog m_transferLog;
   bool m_loggedSkippedId = false;
+  // size and hash of what this client was last sent and has not changed since, per clipboard
+  std::array<std::optional<std::pair<size_t, size_t>>, kClipboardEnd> m_sent;
   ClipboardSender m_sender;
   std::string m_clipboardDataCached;
   ClipboardChunkAssemblyState m_clipboardChunkState;

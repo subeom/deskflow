@@ -47,6 +47,11 @@ bool ClientProxy1_6::mirrorsSelection() const
   return false;
 }
 
+bool ClientProxy1_6::keepsClipboardWhenGrabbed() const
+{
+  return false;
+}
+
 void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
 {
   if (!sendsClipboardId(id)) {
@@ -64,6 +69,14 @@ void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
     Clipboard::copy(&m_clipboard[id].m_clipboard, clipboard);
 
     std::string data = m_clipboard[id].m_clipboard.marshall();
+
+    const std::pair<size_t, size_t> content{data.size(), std::hash<std::string>{}(data)};
+    if (keepsClipboardWhenGrabbed() && m_sent[id] == content) {
+      LOG_INFO("%s", formatSkipLine(id, getName(), SkipReason::IdenticalContent, "it still has it").c_str());
+      return;
+    }
+    m_sent[id] = content;
+
     LOG_DEBUG("sending clipboard %d to \"%s\"", id, getName().c_str());
 
     m_sender.send(id, 0, data, shouldPaceClipboard());
@@ -74,14 +87,23 @@ void ClientProxy1_6::setClipboardDirty(ClipboardID id, bool dirty)
 {
   // the Server changes the state when this computer took the clipboard or copied something new, or when another one
   // did: what is on its way to this computer is stale either way, and would overwrite a newer copy
-  m_sender.cancel(id);
+  if (m_sender.cancel(id)) {
+    m_sent[id].reset();
+  }
+  if (!dirty) {
+    // the computer has its own clipboard now: it copied something, or it is the one that has the current one
+    m_sent[id].reset();
+  }
   ClientProxy1_5::setClipboardDirty(id, dirty);
 }
 
 void ClientProxy1_6::grabClipboard(ClipboardID id)
 {
-  // the grab says the data of a running transfer is stale, so it must not follow the grab
-  m_sender.cancel(id);
+  // the grab says the data of a running transfer is stale, so it must not follow the grab, and the client does not have
+  // it
+  if (m_sender.cancel(id)) {
+    m_sent[id].reset();
+  }
   ClientProxy1_5::grabClipboard(id);
 }
 

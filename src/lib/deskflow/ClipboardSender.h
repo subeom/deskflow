@@ -61,8 +61,8 @@ public:
 
   void send(ClipboardID id, uint32_t sequence, const std::string &data, bool paced);
 
-  //! Drops the paced transfer of \p id, whether it is running or waiting
-  void cancel(ClipboardID id);
+  //! Drops the paced transfer of \p id, whether it is running or waiting; true if there was one
+  bool cancel(ClipboardID id);
 
   //! True while a paced transfer is running, waiting, or its last chunk has not drained yet
   bool isBusy() const;
@@ -83,7 +83,7 @@ private:
   void onChunkEvent(void *chunk);
   void onFlushed();
   void writeNextChunk();
-  void removeTransfer(ClipboardID id);
+  bool removeTransfer(ClipboardID id);
   void setBulkSend(bool active);
 
   deskflow::IStream *m_stream;

@@ -186,6 +186,11 @@ bool ClientProxy1_9::mirrorsSelection() const
          !deskflow::clipboard::exchangesId(m_destinationInputCapabilities.platform, kClipboardSelection);
 }
 
+bool ClientProxy1_9::keepsClipboardWhenGrabbed() const
+{
+  return m_receivedInputCapabilities && m_destinationInputCapabilities.platform == InputPlatform::MacOS;
+}
+
 bool ClientProxy1_9::isHandshakeCompleteReady() const
 {
   return m_receivedInputCapabilities;

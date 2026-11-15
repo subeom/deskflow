@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <map>
@@ -1086,6 +1087,103 @@ void ServerTests::clipboardTextOnly_anImage_isReportedAtInfoLevelOnce()
 
   QCOMPARE(info.count(QStringLiteral("not sharing clipboard 0")), 1);
   QCOMPARE(info.count(QStringLiteral("not sharing clipboard 1")), 0);
+}
+
+// Another program that writes the clipboard of the primary computer with what is already on it (Handoff and Universal
+// Clipboard do this with what Deskflow wrote to the other Mac, a clipboard manager with what it saw) makes the computer
+// grab the clipboard again. That is not a new copy: telling every computer to give up its clipboard and sending the
+// same data to them again for it is what feeds the loop.
+void ServerTests::clipboardRewrite_identicalWhileTheCursorIsAway_isIgnored()
+{
+  ClipboardRig rig;
+  fill(rig.platform->pasteboard, 40, true, false);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QVERIFY(rig.switchTo("A"));
+  QCOMPARE(received(rig.a->received(kClipboardClipboard)), bytes(marshalled(40, true, false)));
+  QCOMPARE(rig.a->grabs(kClipboardClipboard), 1);
+  QCOMPARE(rig.b->grabs(kClipboardClipboard), 1);
+
+  // the same content is written again
+  InfoLines info;
+  m_log.insert(&info, true);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  m_log.remove(&info);
+
+  QCOMPARE(rig.a->grabs(kClipboardClipboard), 1);
+  QCOMPARE(rig.b->grabs(kClipboardClipboard), 1);
+  QCOMPARE(info.count(QStringLiteral("clipboard 0 skipped for \"primary\": identical content")), 1);
+}
+
+void ServerTests::clipboardRewrite_withNewContentWhileTheCursorIsAway_isStillShared()
+{
+  ClipboardRig rig;
+  fill(rig.platform->pasteboard, 40, true, false);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QVERIFY(rig.switchTo("A"));
+
+  fill(rig.platform->pasteboard, 41, true, false);
+  rig.grab(*rig.primary, kClipboardClipboard);
+
+  QCOMPARE(rig.a->grabs(kClipboardClipboard), 2);
+  QCOMPARE(received(rig.a->received(kClipboardClipboard)), bytes(marshalled(41, true, false)));
+}
+
+void ServerTests::clipboardRewrite_rightAfterTheServerWroteTheClipboard_isIgnored()
+{
+  ClipboardRig rig;
+  fill(rig.a->own(kClipboardClipboard), 30, false, false);
+  rig.grab(*rig.a, kClipboardClipboard);
+  rig.changed(*rig.a, kClipboardClipboard);
+  QVERIFY(rig.switchTo("primary"));
+  QCOMPARE(received(rig.platform->received[kClipboardClipboard]), bytes(marshalled(30)));
+  const auto grabsOfB = rig.b->grabs(kClipboardClipboard);
+
+  // the cursor is on the primary computer, so nothing else tells the rewrite from a copy but that Deskflow just wrote
+  // it
+  fill(rig.platform->pasteboard, 30, false, false);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QCOMPARE(rig.b->grabs(kClipboardClipboard), grabsOfB);
+
+  // something else is a copy
+  fill(rig.platform->pasteboard, 31, false, false);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QCOMPARE(rig.b->grabs(kClipboardClipboard), grabsOfB + 1);
+}
+
+void ServerTests::clipboardRewrite_afterTheWindowHasPassed_isACopy()
+{
+  ClipboardRig rig;
+  rig.server->setClipboardEchoWindow(std::chrono::milliseconds::zero());
+  fill(rig.a->own(kClipboardClipboard), 30, false, false);
+  rig.grab(*rig.a, kClipboardClipboard);
+  rig.changed(*rig.a, kClipboardClipboard);
+  QVERIFY(rig.switchTo("primary"));
+  const auto grabsOfB = rig.b->grabs(kClipboardClipboard);
+
+  fill(rig.platform->pasteboard, 30, false, false);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QCOMPARE(rig.b->grabs(kClipboardClipboard), grabsOfB + 1);
+}
+
+// The user copies the same text on another computer to take the clipboard: that is a grab like any other
+void ServerTests::clipboardRewrite_theSameTextCopiedOnAnotherComputer_movesTheOwnership()
+{
+  ClipboardRig rig;
+  fill(rig.a->own(kClipboardClipboard), 30, false, false);
+  rig.grab(*rig.a, kClipboardClipboard);
+  rig.changed(*rig.a, kClipboardClipboard);
+  QVERIFY(rig.switchTo("B"));
+  QCOMPARE(received(rig.b->received(kClipboardClipboard)), bytes(marshalled(30)));
+  const auto grabsOfA = rig.a->grabs(kClipboardClipboard);
+
+  fill(rig.b->own(kClipboardClipboard), 30, false, false);
+  rig.grab(*rig.b, kClipboardClipboard);
+  rig.changed(*rig.b, kClipboardClipboard);
+
+  // A is told that it is not the owner any more, and the primary gets the text when the cursor comes back
+  QCOMPARE(rig.a->grabs(kClipboardClipboard), grabsOfA + 1);
+  QVERIFY(rig.switchTo("primary"));
+  QCOMPARE(received(rig.platform->received[kClipboardClipboard]), bytes(marshalled(30)));
 }
 
 QTEST_MAIN(ServerTests)

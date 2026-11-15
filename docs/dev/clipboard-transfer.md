@@ -122,6 +122,37 @@ that shares: its options are exactly the ones it got before. When the primary le
 does not share, the primary's clipboard is still read, so that the next computer that does share gets
 current data.
 
+## Rewrites with the same content, and loops
+
+Another program can write the clipboard of a computer with what is already on it: Universal Clipboard
+and Handoff do it on the Mac with what Deskflow just wrote to the other Mac, a clipboard manager with
+what it saw. The computer sees a change and grabs the clipboard again, and every grab used to clear what
+the server knew, tell every computer to give up its clipboard, and send the data again at the next
+entry. With two Macs this feeds a loop: each transfer is written to a pasteboard, the other Mac rewrites
+its own, and so on. Two things now stop it, without any change on the wire:
+
+- **The primary computer grabs again with what is already shared.** The server only looks at this when
+  the cursor is on another computer, or within two seconds after Deskflow wrote the clipboard of the
+  primary (`setClipboardEchoWindow`). It reads the clipboard the way it does to share it (text only in
+  text-only mode) and compares it with the content it passed on last. If it is the same, the grab is
+  ignored: nothing is cleared, announced or sent, and the server logs `clipboard 0 skipped for "..."`
+  at INFO. Content that is not the same is a copy and is taken as before. Ownership stays where it was,
+  because no computer can tell the difference; it moves with the next change. A grab by another
+  computer carries no data yet and is always taken: the user may have copied the same text there on
+  purpose to take the clipboard, and its data is then passed on the same way, with the grab telling
+  the other computers that they no longer own it.
+- **A Mac is not sent what it already has.** A Mac does nothing when it is told that another computer
+  took the clipboard, so what it was sent last is still on it unless it copied something itself. The
+  proxy keeps the size and a hash of what it last sent to a client that reported `macOS`, and does not
+  send the same content again (it logs `identical content (it still has it)` at INFO). A grab by that
+  computer, or a transfer that was dropped before it ended, forgets it. Windows empties its clipboard
+  when it is told to give it up, so it is sent the data again; so is every platform that is not known.
+
+What this does not do: a program on a Windows client that rewrites what Deskflow wrote still makes the
+client grab, and the grab reaches the other computers before its data is known (it is sent when the
+client leaves or at once if it is not active), so the other computers are told to give up their
+clipboards. The Mac computers keep theirs and are not sent it again; the Windows computers are.
+
 ## What an unchanged Windows build (v1.27.0.45) gets
 
 It speaks protocol 1.9 and sends `CIPC` with `Windows` as its platform, so the server paces what it sends to
