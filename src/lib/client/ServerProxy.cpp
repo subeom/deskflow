@@ -387,6 +387,10 @@ bool ServerProxy::onGrabClipboard(ClipboardID id)
 
 void ServerProxy::onClipboardChanged(ClipboardID id, const IClipboard *clipboard)
 {
+  if (!sendsClipboardId(id)) {
+    return;
+  }
+
   std::string data = IClipboard::marshall(clipboard);
   LOG_DEBUG("sending clipboard %d seqnum=%d", id, m_seqNum);
 

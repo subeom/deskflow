@@ -7,6 +7,7 @@
 
 #include "client/Client.h"
 #include "common/ClipboardCapabilities.h"
+#include "deskflow/ClipboardIdPolicy.h"
 #include "deskflow/OptionTypes.h"
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
@@ -100,6 +101,13 @@ bool ServerProxy1_9::dataIsProofOfLife() const
   return m_receivedSourceCapabilities && (m_sourceInputCapabilities.capabilities & kClipboardCapabilityPaced) != 0;
 }
 
+bool ServerProxy1_9::sendsClipboardId(ClipboardID id) const
+{
+  return !m_receivedSourceCapabilities ||
+         (m_sourceInputCapabilities.capabilities & kClipboardCapabilitySingleId) == 0 ||
+         deskflow::clipboard::exchangesId(m_sourceInputCapabilities.platform, id);
+}
+
 bool ServerProxy1_9::synthesizeSemanticMediaKey(KeyID id)
 {
   return m_client->semanticMediaKey(id);
@@ -115,7 +123,7 @@ void ServerProxy1_9::sendInputCapabilities() const
   const auto local = localInputCapabilities();
   ProtocolUtil::writef(
       getStream(), kMsgCInputCapabilities, static_cast<uint8_t>(local.platform),
-      local.capabilities | kClipboardCapabilityPaced
+      local.capabilities | kClipboardCapabilityPaced | kClipboardCapabilitySingleId
   );
 }
 

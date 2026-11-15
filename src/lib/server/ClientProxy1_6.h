@@ -33,9 +33,16 @@ protected:
   //! Whether clipboards are sent to this client as a paced stream, which needs a negotiated protocol that has one
   virtual bool shouldPaceClipboard() const;
 
+  //! Whether the data of clipboard \p id is sent to this client; the selection is not to a client that ignores the id
+  virtual bool sendsClipboardId(ClipboardID id) const;
+
+  //! Whether this client sends one clipboard for a Windows or macOS computer, which is also its selection
+  virtual bool mirrorsSelection() const;
+
 private:
   IEventQueue *m_events;
   deskflow::clipboard::ClipboardTransferLog m_transferLog;
+  bool m_loggedSkippedId = false;
   ClipboardSender m_sender;
   std::string m_clipboardDataCached;
   ClipboardChunkAssemblyState m_clipboardChunkState;

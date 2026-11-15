@@ -84,14 +84,35 @@ Every change on the wire is gated so that links that do not negotiate it stay by
 |---|---|---|
 | paced chunks (32 KiB, one per drain) | the peer's `DIPC`/`CIPC` was received (protocol 1.9 handshake) | protocol 1.8 and older, and 1.9 before the peer's capabilities are known: the 512 KiB legacy stream |
 | any data is proof of life (client) | the server's `DIPC` carries `kClipboardCapabilityPaced` (bit 8) | servers without the bit |
+| no data for id 1, server to client | the client reported `Windows` or `macOS` in `CIPC` | other platforms, unknown platform, and links without the 1.9 handshake |
+| no data for id 1, client to server | the server reported `Windows` or `macOS` in `DIPC` and advertised `kClipboardCapabilitySingleId` (bit 9) | servers without the bit, other platforms |
 
 Regression tests pin the legacy bytes against the original `StreamChunker` path and feed the paced
 stream to the real receivers (`ClipboardChunk::assemble` through `ClientProxy1_6` and `ServerProxy`).
 
+## One clipboard id for Windows and macOS
+
+The selection (clipboard id 1) is an X11 concept. The platform code of Windows and macOS ignores the id
+(`OSXComputer::setClipboard`, `MSWindowsComputer::setClipboard` take an unnamed id), and both emit a grab
+for each id for the same clipboard. So the server sent every clipboard twice, and the receiver wrote it
+twice (on macOS each write is a `PasteboardClear` plus the flavours, which also bumps the pasteboard
+generation that Universal Clipboard advertises).
+
+Data is now left out for id 1 when the peer reported `Windows` or `macOS` in the 1.9 handshake. This
+halves the bytes, the time and the pasteboard writes in the direction where the sender knows the peer.
+An unknown platform keeps today's behaviour. The grab message for id 1 is still sent (a few bytes), so a
+peer that predates this keeps the same ownership bookkeeping; only the data is saved.
+
+The reverse direction needs the receiver to keep the selection working for X11 computers: a client leaves
+the data of id 1 out only toward a server that advertised the single id capability, and such a server
+stores the data of id 0 from a Windows or macOS client as the selection too (`ClientProxy1_6`), so a Linux
+computer entered later still gets its selection. `Client::sendClipboard` returns before reading the local
+clipboard for a skipped id, which also saves the second pasteboard read on the Mac.
+
 ## What an unchanged Windows build (v1.27.0.45) gets
 
-It speaks protocol 1.9 and sends `CIPC`, so the server paces what it sends to it (server to Windows
-needs no Windows rebuild). What Windows sends to the server stays the legacy stream and Windows does
+It speaks protocol 1.9 and sends `CIPC` with `Windows` as its platform, so the server paces what it sends to
+it and sends the data of id 0 only (server to Windows needs no Windows rebuild). What Windows sends to the server stays the legacy stream and Windows does
 not count data as proof of life: that direction needs a Windows rebuild.
 
 ## Not done, and why

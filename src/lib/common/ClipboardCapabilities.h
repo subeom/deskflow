@@ -13,3 +13,7 @@
 
 //! The peer sends clipboards as a paced, low priority stream and counts any data it receives as proof of life
 inline constexpr InputCapabilityMask kClipboardCapabilityPaced = 1u << 8;
+
+//! The peer takes the data of clipboard id 0 from a Windows or macOS sender as the selection (id 1) too, so the
+//! sender does not have to send the selection data
+inline constexpr InputCapabilityMask kClipboardCapabilitySingleId = 1u << 9;

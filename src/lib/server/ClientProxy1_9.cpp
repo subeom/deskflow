@@ -8,6 +8,7 @@
 #include "base/Log.h"
 #include "common/ClipboardCapabilities.h"
 #include "common/PlatformInfo.h"
+#include "deskflow/ClipboardIdPolicy.h"
 #include "deskflow/OptionTypes.h"
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
@@ -43,7 +44,7 @@ void ClientProxy1_9::sendInputCapabilities() const
   const auto local = deskflow::platform::currentInputCapabilities();
   ProtocolUtil::writef(
       getStream(), kMsgDInputCapabilities, static_cast<uint8_t>(local.platform),
-      local.capabilities | kClipboardCapabilityPaced
+      local.capabilities | kClipboardCapabilityPaced | kClipboardCapabilitySingleId
   );
 }
 
@@ -171,6 +172,18 @@ void ClientProxy1_9::setOptions(const OptionsList &options)
 bool ClientProxy1_9::shouldPaceClipboard() const
 {
   return m_receivedInputCapabilities;
+}
+
+bool ClientProxy1_9::sendsClipboardId(ClipboardID id) const
+{
+  // the receivers of Windows and macOS ignore the id, so only what is known about the peer drops the selection
+  return !m_receivedInputCapabilities || deskflow::clipboard::exchangesId(m_destinationInputCapabilities.platform, id);
+}
+
+bool ClientProxy1_9::mirrorsSelection() const
+{
+  return m_receivedInputCapabilities && (m_destinationInputCapabilities.capabilities & kClipboardCapabilitySingleId) &&
+         !deskflow::clipboard::exchangesId(m_destinationInputCapabilities.platform, kClipboardSelection);
 }
 
 bool ClientProxy1_9::isHandshakeCompleteReady() const

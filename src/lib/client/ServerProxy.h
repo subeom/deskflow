@@ -56,6 +56,13 @@ public:
   bool onGrabClipboard(ClipboardID);
   void onClipboardChanged(ClipboardID, const IClipboard *);
 
+  //! Whether the data of clipboard \p id is sent to the server; the selection is not to a server that takes the
+  //! clipboard as the selection too
+  virtual bool sendsClipboardId(ClipboardID) const
+  {
+    return true;
+  }
+
   //@}
 
 protected:

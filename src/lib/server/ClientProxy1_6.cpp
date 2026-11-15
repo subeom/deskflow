@@ -14,6 +14,8 @@
 
 using deskflow::clipboard::ClipboardTransferLog;
 using deskflow::clipboard::describeFormats;
+using deskflow::clipboard::formatSkipLine;
+using deskflow::clipboard::SkipReason;
 using deskflow::clipboard::TransferDirection;
 using Clock = ClipboardTransferLog::Clock;
 
@@ -35,8 +37,26 @@ bool ClientProxy1_6::shouldPaceClipboard() const
   return false;
 }
 
+bool ClientProxy1_6::sendsClipboardId(ClipboardID) const
+{
+  return true;
+}
+
+bool ClientProxy1_6::mirrorsSelection() const
+{
+  return false;
+}
+
 void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
 {
+  if (!sendsClipboardId(id)) {
+    if (!m_loggedSkippedId) {
+      m_loggedSkippedId = true;
+      LOG_INFO("%s", formatSkipLine(id, getName(), SkipReason::SelectionNotShared).c_str());
+    }
+    return;
+  }
+
   // ignore if this clipboard is already clean
   if (m_clipboard[id].m_dirty) {
     // this clipboard is now clean
@@ -83,17 +103,22 @@ bool ClientProxy1_6::recvClipboard()
         (CLOG_DEBUG "received client \"%s\" clipboard %d seqnum=%d, size=%zu", getName().c_str(), id, seq,
          m_clipboardDataCached.size())
     );
-    // save clipboard
-    m_clipboard[id].m_clipboard.unmarshall(m_clipboardDataCached, 0);
-    m_clipboard[id].m_sequenceNumber = seq;
+    // save clipboard, and notify. A Windows or macOS client that sends one clipboard sends it for both ids to the
+    // computers that need the selection
+    const auto publish = [&](ClipboardID target) {
+      m_clipboard[target].m_clipboard.unmarshall(m_clipboardDataCached, 0);
+      m_clipboard[target].m_sequenceNumber = seq;
+      auto *info = new ClipboardInfo;
+      info->m_id = target;
+      info->m_sequenceNumber = seq;
+      m_events->addEvent(Event(EventTypes::ClipboardChanged, getEventTarget(), info));
+    };
+    publish(id);
+    if (id == kClipboardClipboard && mirrorsSelection()) {
+      publish(kClipboardSelection);
+    }
     m_clipboardDataCached.clear();
     m_clipboardDataCached.shrink_to_fit();
-
-    // notify
-    auto *info = new ClipboardInfo;
-    info->m_id = id;
-    info->m_sequenceNumber = seq;
-    m_events->addEvent(Event(EventTypes::ClipboardChanged, getEventTarget(), info));
   } else if (r == TransferState::Error) {
     m_transferLog.cancel(TransferDirection::Received, id);
     return false;

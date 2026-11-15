@@ -39,6 +39,8 @@ protected:
 
   // a destination that reported its capabilities speaks protocol 1.9, whose receivers reassemble any chunk size
   bool shouldPaceClipboard() const override;
+  bool sendsClipboardId(ClipboardID id) const override;
+  bool mirrorsSelection() const override;
 
 private:
   void sendInputCapabilities() const;

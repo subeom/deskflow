@@ -521,7 +521,8 @@ void ServerProxyTests::inputCapabilities_v19_readsSourceAndWritesDestinationCapa
   FakeStream expected;
   ProtocolUtil::writef(
       &expected, kMsgCInputCapabilities, static_cast<uint8_t>(deskflow::platform::currentInputPlatform()),
-      deskflow::platform::currentInputCapabilities().capabilities | kClipboardCapabilityPaced
+      deskflow::platform::currentInputCapabilities().capabilities | kClipboardCapabilityPaced |
+          kClipboardCapabilitySingleId
   );
   QCOMPARE(stream.takeOutput(), expected.takeOutput());
 }

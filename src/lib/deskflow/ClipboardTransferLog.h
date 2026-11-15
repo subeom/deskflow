@@ -27,7 +27,8 @@ enum class SkipReason
   OverSize,
   SharingDisabled,
   DisabledForComputer,
-  IdenticalContent
+  IdenticalContent,
+  SelectionNotShared
 };
 
 //! Lists the formats of a marshalled clipboard with their sizes, e.g. "Text 5 B, HTML 9 B"

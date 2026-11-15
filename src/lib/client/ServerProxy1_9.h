@@ -30,6 +30,12 @@ protected:
   bool shouldPaceClipboard() const override;
   // only a server that advertised the paced clipboard capability is known to keep a transfer from starving keepalives
   bool dataIsProofOfLife() const override;
+
+public:
+  // a server that mirrors the clipboard into the selection does not need the selection sent to it
+  bool sendsClipboardId(ClipboardID id) const override;
+
+protected:
   bool shouldSuppressKeyRepeat(KeyID id, KeyModifierMask mask) const override;
   void transformMouseWheel(int32_t &xDelta, int32_t &yDelta) override;
   virtual InputCapabilities localInputCapabilities() const;

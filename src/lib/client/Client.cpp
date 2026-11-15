@@ -401,6 +401,11 @@ void Client::sendClipboard(ClipboardID id)
   assert(m_computer != nullptr);
   assert(m_server != nullptr);
 
+  // the server does not want this id (it takes the clipboard as the selection too): do not even read the clipboard
+  if (!m_server->sendsClipboardId(id)) {
+    return;
+  }
+
   // get clipboard data.  set the clipboard time to the last
   // clipboard time before getting the data from the computer
   // as the computer may detect an unchanged clipboard and

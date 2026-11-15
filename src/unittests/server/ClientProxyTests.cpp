@@ -516,7 +516,8 @@ void ClientProxyTests::inputCapabilities_v19_sendsSourcePlatformAndCapabilities(
   CapturingStream expected;
   ProtocolUtil::writef(
       &expected, kMsgDInputCapabilities, static_cast<uint8_t>(deskflow::platform::currentInputPlatform()),
-      deskflow::platform::currentInputCapabilities().capabilities | kClipboardCapabilityPaced
+      deskflow::platform::currentInputCapabilities().capabilities | kClipboardCapabilityPaced |
+          kClipboardCapabilitySingleId
   );
   const auto actual = stream->take();
   const auto expectedBytes = expected.take();

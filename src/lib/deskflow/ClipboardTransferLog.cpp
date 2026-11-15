@@ -93,6 +93,9 @@ std::string formatSkipLine(ClipboardID id, std::string_view peer, SkipReason rea
   case SkipReason::IdenticalContent:
     text = "identical content";
     break;
+  case SkipReason::SelectionNotShared:
+    text = "the selection is not shared with a peer that ignores the clipboard id";
+    break;
   }
 
   auto line = std::format("clipboard {} skipped for \"{}\": {}", static_cast<int>(id), peer, text);

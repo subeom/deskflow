@@ -273,6 +273,9 @@ Current capability bits:
 - bit 3: destination can apply negotiated cross-platform scroll inversion
 - bit 8: the peer paces its clipboard stream and counts any received data as proof of life (see
   [Paced Clipboard Stream](#paced-clipboard-stream)); sent by both sides, not an input capability
+- bit 9: the peer takes the data of clipboard id 0 from a Windows or macOS sender as the selection (id 1)
+  too (see [One Clipboard Id for Windows and macOS](#one-clipboard-id-for-windows-and-macos)); sent by
+  both sides, not an input capability
 
 The destination advertises bit 1 only if its current key-map inventory can synthesize
 `kKeyHangul` (on Windows only the Korean keyboard layout provides that key) and advertises bits 2
@@ -395,6 +398,27 @@ server advertised the bit resets its keepalive alarm for any data it receives, n
 so that a long inbound clipboard cannot make it declare the server dead. Without the bit the client
 resets the alarm for `CALV` only, as before. (The server already resets its alarm for any data
 received from a client.)
+
+### One Clipboard Id for Windows and macOS
+
+The selection (clipboard id 1, @ref kMsgDClipboard and @ref kMsgCClipboard) only means something on
+X11. Windows and macOS ignore the id when they set a clipboard, so they received the same data twice
+and wrote it to their clipboard twice. A sender now leaves the data of id 1 out when the peer's
+platform (from `DIPC`/`CIPC`) is Windows or macOS:
+
+- **server to client**: the server sends the data of id 0 only to a client that reported `Windows` or
+  `macOS`. It needs no capability bit: those receivers ignore the id, so a client built before this
+  change also takes only id 0. A client that reported `Linux`, `Other` or an unknown platform, and a
+  link that has not completed the 1.9 handshake, get both ids as before;
+- **client to server**: a client leaves the data of id 1 out only when the server reported `Windows` or
+  `macOS` **and** advertised bit 9 (`kClipboardCapabilitySingleId`). A server that advertises it stores
+  the data of id 0 from a Windows or macOS client as the selection too, so the computers that need the
+  selection still get it. A server without the bit (it may serve X11 clients that need id 1) keeps
+  receiving both ids.
+
+The grab message (@ref kMsgCClipboard) is still sent for both ids: it is a few bytes and keeps the
+ownership bookkeeping of the peer exactly as before. Only the data, which is the bytes and the second
+write to the clipboard, is saved.
 
 ## Timing and Synchronization
 
