@@ -750,6 +750,45 @@ bool MSWindowsKeyState::fakeKeyRepeat(
   return KeyState::fakeKeyRepeat(id, mask, count, button, lang);
 }
 
+bool MSWindowsKeyState::fakeSemanticMediaKey(KeyID id)
+{
+  UINT virtualKey = 0;
+  switch (id) {
+  case kKeyAudioUp:
+    virtualKey = VK_VOLUME_UP;
+    break;
+  case kKeyAudioDown:
+    virtualKey = VK_VOLUME_DOWN;
+    break;
+  case kKeyAudioMute:
+    virtualKey = VK_VOLUME_MUTE;
+    break;
+  case kKeyAudioPrev:
+    virtualKey = VK_MEDIA_PREV_TRACK;
+    break;
+  case kKeyAudioNext:
+    virtualKey = VK_MEDIA_NEXT_TRACK;
+    break;
+  case kKeyAudioPlay:
+    virtualKey = VK_MEDIA_PLAY_PAUSE;
+    break;
+  case kKeyAudioStop:
+    virtualKey = VK_MEDIA_STOP;
+    break;
+  default:
+    return false;
+  }
+
+  sendSemanticMediaKeyEvent(static_cast<WORD>(virtualKey), KEYEVENTF_EXTENDEDKEY);
+  sendSemanticMediaKeyEvent(static_cast<WORD>(virtualKey), KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP);
+  return true;
+}
+
+void MSWindowsKeyState::sendSemanticMediaKeyEvent(WORD virtualKey, DWORD flags)
+{
+  m_desks->fakeKeyEvent(virtualKey, 0, flags, false);
+}
+
 // We must use SendSAS (Secure Attention Sequence) to simulate Ctrl+Alt+Del (since Windows Vista).
 //
 // According to the MS docs:

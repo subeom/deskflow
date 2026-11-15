@@ -35,7 +35,7 @@ InputKeyEvent CrossPlatformInputPolicy::toDestinationKey(KeyID id, KeyModifierMa
 
 bool CrossPlatformInputPolicy::shouldSuppressRepeat(KeyID id) const
 {
-  return id == kKeySuper_R && mapsRightCommandToHangul();
+  return (id == kKeySuper_R && mapsRightCommandToHangul()) || shouldSynthesizeSemanticMedia(id);
 }
 
 bool CrossPlatformInputPolicy::mapsRightCommandToHangul() const
@@ -57,6 +57,26 @@ ScrollDelta CrossPlatformInputPolicy::toDestinationScroll(ScrollDelta delta) con
   return delta;
 }
 
+bool CrossPlatformInputPolicy::shouldSynthesizeSemanticMedia(KeyID id) const
+{
+  if (!canSynthesizeSemanticMedia()) {
+    return false;
+  }
+
+  switch (id) {
+  case kKeyAudioUp:
+  case kKeyAudioDown:
+  case kKeyAudioMute:
+  case kKeyAudioPrev:
+  case kKeyAudioNext:
+  case kKeyAudioPlay:
+  case kKeyAudioStop:
+    return true;
+  default:
+    return false;
+  }
+}
+
 bool CrossPlatformInputPolicy::isCrossPlatform() const
 {
   return isKnownInputPlatform(m_source.platform) && isKnownInputPlatform(m_destination.platform) &&
@@ -75,4 +95,11 @@ bool CrossPlatformInputPolicy::canMapScroll() const
   return isCrossPlatform() && m_source.platform == InputPlatform::MacOS &&
          m_destination.platform == InputPlatform::Windows &&
          (m_destination.capabilities & kInputCapabilityCrossOSScroll) != 0;
+}
+
+bool CrossPlatformInputPolicy::canSynthesizeSemanticMedia() const
+{
+  return m_options.semanticMedia && isCrossPlatform() && m_source.platform == InputPlatform::MacOS &&
+         m_destination.platform == InputPlatform::Windows &&
+         (m_destination.capabilities & kInputCapabilitySemanticMedia) != 0;
 }

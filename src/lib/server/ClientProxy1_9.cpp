@@ -84,7 +84,7 @@ void ClientProxy1_9::keyRepeat(
     KeyID id, KeyModifierMask mask, int32_t count, KeyButton button, const std::string &language
 )
 {
-  if (id == kKeySuper_R && m_rightSuperMapped) {
+  if ((id == kKeySuper_R && m_rightSuperMapped) || inputPolicy().shouldSynthesizeSemanticMedia(id)) {
     return;
   }
 
@@ -129,19 +129,21 @@ bool ClientProxy1_9::leave()
 void ClientProxy1_9::resetOptions()
 {
   m_rightCommandAction = RightCommandAction::Preserve;
+  m_semanticMedia = false;
   ClientProxy1_8::resetOptions();
 }
 
 void ClientProxy1_9::setOptions(const OptionsList &options)
 {
   for (size_t i = 0; i + 1 < options.size(); i += 2) {
-    if (options[i] != kOptionCrossOSRightCommand) {
-      continue;
+    if (options[i] == kOptionCrossOSRightCommand) {
+      const auto value = options[i + 1];
+      m_rightCommandAction = value == static_cast<OptionValue>(RightCommandAction::Hangul)
+                                 ? RightCommandAction::Hangul
+                                 : RightCommandAction::Preserve;
+    } else if (options[i] == kOptionCrossOSSemanticMedia) {
+      m_semanticMedia = options[i + 1] != 0;
     }
-
-    const auto value = options[i + 1];
-    m_rightCommandAction = value == static_cast<OptionValue>(RightCommandAction::Hangul) ? RightCommandAction::Hangul
-                                                                                         : RightCommandAction::Preserve;
   }
   ClientProxy1_8::setOptions(options);
 }
@@ -165,7 +167,7 @@ CrossPlatformInputPolicy ClientProxy1_9::inputPolicy() const
 {
   return {
       localInputCapabilities(), m_destinationInputCapabilities,
-      CrossPlatformInputOptions{.rightCommand = m_rightCommandAction}
+      CrossPlatformInputOptions{.rightCommand = m_rightCommandAction, .semanticMedia = m_semanticMedia}
   };
 }
 

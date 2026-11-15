@@ -203,11 +203,17 @@ InputCapabilities Client::inputCapabilities() const
   auto capabilities = deskflow::platform::currentInputCapabilities();
   if (deskflow::platform::isWindows()) {
     capabilities.capabilities |= kInputCapabilityCrossOSScroll;
+    capabilities.capabilities |= kInputCapabilitySemanticMedia;
   }
   if (m_computer != nullptr && m_computer->canSynthesizeKey(kKeyHangul)) {
     capabilities.capabilities |= kInputCapabilityHangul;
   }
   return capabilities;
+}
+
+bool Client::semanticMediaKey(KeyID id)
+{
+  return m_computer->semanticMediaKey(id);
 }
 
 void *Client::getEventTarget() const

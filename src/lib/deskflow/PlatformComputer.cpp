@@ -48,6 +48,11 @@ bool PlatformComputer::fakeKeyUp(KeyButton button)
   return getKeyState()->fakeKeyUp(button);
 }
 
+bool PlatformComputer::fakeSemanticMediaKey(KeyID id)
+{
+  return getKeyState()->fakeSemanticMediaKey(id);
+}
+
 void PlatformComputer::fakeAllKeysUp()
 {
   getKeyState()->fakeAllKeysUp();

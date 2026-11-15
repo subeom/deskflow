@@ -237,6 +237,12 @@ void Computer::keyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyButto
   m_computer->fakeKeyRepeat(id, mask, count, button, lang);
 }
 
+bool Computer::semanticMediaKey(KeyID id)
+{
+  assert(!m_isPrimary);
+  return m_computer->fakeSemanticMediaKey(id);
+}
+
 void Computer::keyUp(KeyID, KeyModifierMask, KeyButton button)
 {
   m_computer->fakeKeyUp(button);

@@ -580,6 +580,9 @@ void ServerProxy::keyDown(uint16_t id, uint16_t mask, uint16_t button, const std
 
   KeyID id2 = static_cast<KeyID>(id);
   KeyModifierMask mask2 = static_cast<KeyModifierMask>(mask);
+  if (handleSemanticMediaKey(id2)) {
+    return;
+  }
   transformInputKey(id2, mask2);
   id2 = translateKey(id2);
   mask2 = translateModifierMask(mask2);

@@ -72,6 +72,10 @@ protected:
   virtual void transformInputKey(KeyID &, KeyModifierMask &)
   {
   }
+  virtual bool handleSemanticMediaKey(KeyID)
+  {
+    return false;
+  }
   virtual bool shouldSuppressKeyRepeat(KeyID, KeyModifierMask) const
   {
     return false;

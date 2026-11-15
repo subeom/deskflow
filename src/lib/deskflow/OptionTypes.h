@@ -53,6 +53,7 @@ static const OptionID kOptionModifierMapForSuper = OPTION_CODE("MMFR");
 static const OptionID kOptionCrossOSRightCommand = OPTION_CODE("RCPM");
 static const OptionID kOptionCrossOSInvertScrollX = OPTION_CODE("CXIX");
 static const OptionID kOptionCrossOSInvertScrollY = OPTION_CODE("CXIY");
+static const OptionID kOptionCrossOSSemanticMedia = OPTION_CODE("CSMT");
 static const OptionID kOptionHeartbeat = OPTION_CODE("HART");
 static const OptionID kOptionComputerSwitchCorners = OPTION_CODE("SSCM");
 static const OptionID kOptionComputerSwitchCornerSize = OPTION_CODE("SSCS");

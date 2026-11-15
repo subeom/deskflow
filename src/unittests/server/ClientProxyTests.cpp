@@ -630,4 +630,71 @@ void ClientProxyTests::rightCommand_leave_clearsMappedAndLegacyState()
   QCOMPARE(legacy.stream->take(), expected.take());
 }
 
+void ClientProxyTests::semanticMedia_v19EnabledSuppressesRepeat()
+{
+  RecordingEventQueue events;
+  auto *stream = new CapturingStream;
+  auto *server = reinterpret_cast<Server *>(0x1);
+  TestClientProxy1_9 proxy("client", stream, server, &events);
+  (void)stream->take();
+
+  const InputCapabilities capabilities{
+      InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilitySemanticMedia
+  };
+  CapturingStream capabilityPacket;
+  ProtocolUtil::writef(
+      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
+  );
+  stream->pushInput(capabilityPacket.take());
+  stream->read(nullptr, 4);
+  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
+
+  proxy.setOptions({kOptionCrossOSSemanticMedia, 1});
+  (void)stream->take();
+  proxy.keyDown(kKeyAudioPlay, 0, 0, kLang);
+  CapturingStream expectedDown;
+  ProtocolUtil::writef(&expectedDown, kMsgDKeyDown, kKeyAudioPlay, 0, 0, &kLang);
+  QCOMPARE(stream->take(), expectedDown.take());
+
+  proxy.keyRepeat(kKeyAudioPlay, 0, 1, 0, kLang);
+  QVERIFY(stream->take().isEmpty());
+
+  proxy.keyUp(kKeyAudioPlay, 0, 0);
+  CapturingStream expectedUp;
+  ProtocolUtil::writef(&expectedUp, kMsgDKeyUp, kKeyAudioPlay, 0, 0);
+  QCOMPARE(stream->take(), expectedUp.take());
+}
+
+void ClientProxyTests::semanticMedia_v18AndDisabledPreserveWireValues()
+{
+  ProxyUnderTest legacy(8);
+  legacy.proxy->keyRepeat(kKeyAudioPlay, 0, 1, 0, kLang);
+  CapturingStream legacyExpected;
+  ProtocolUtil::writef(&legacyExpected, kMsgDKeyRepeat, kKeyAudioPlay, 0, 1, 0, &kLang);
+  QCOMPARE(legacy.stream->take(), legacyExpected.take());
+
+  RecordingEventQueue events;
+  auto *stream = new CapturingStream;
+  auto *server = reinterpret_cast<Server *>(0x1);
+  TestClientProxy1_9 proxy("client", stream, server, &events);
+  (void)stream->take();
+  const InputCapabilities capabilities{
+      InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilitySemanticMedia
+  };
+  CapturingStream capabilityPacket;
+  ProtocolUtil::writef(
+      &capabilityPacket, kMsgCInputCapabilities, static_cast<uint8_t>(capabilities.platform), capabilities.capabilities
+  );
+  stream->pushInput(capabilityPacket.take());
+  stream->read(nullptr, 4);
+  QVERIFY(proxy.parseHandshakeMessageForTest(reinterpret_cast<const uint8_t *>(kMsgCInputCapabilities)));
+
+  proxy.setOptions({kOptionCrossOSSemanticMedia, 0});
+  (void)stream->take();
+  proxy.keyRepeat(kKeyAudioPlay, 0, 1, 0, kLang);
+  CapturingStream disabledExpected;
+  ProtocolUtil::writef(&disabledExpected, kMsgDKeyRepeat, kKeyAudioPlay, 0, 1, 0, &kLang);
+  QCOMPARE(stream->take(), disabledExpected.take());
+}
+
 QTEST_MAIN(ClientProxyTests)

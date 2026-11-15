@@ -177,6 +177,7 @@ Each computer will have a section where its configuration will be stored, if the
 | rightCommandAction      | `preserve` or `hangul` | When the source is macOS and the destination supports protocol 1.9 Korean IME input, map Right Command to Hangul instead of preserving it as Super [default: preserve] |
 | crossOSInvertX         | `true` or `false` | Invert horizontal wheel deltas only on a negotiated macOS-to-Windows protocol 1.9 link [default: false] |
 | crossOSInvertY         | `true` or `false` | Invert vertical wheel deltas only on a negotiated macOS-to-Windows protocol 1.9 link [default: false] |
+| crossOSSemanticMedia  | `true` or `false` | Synthesize volume up/down/mute, previous/next track, play/pause, and stop only on a negotiated macOS-to-Windows protocol 1.9 link [default: false] |
 | switchCornerSize       | integer (N)       | Sets the size of all corners in pixels. The cursor must be within `N` pixels of the corner to be considered to be in the corner.|
 | switchCornerTopLeft    | `true` or `false` | Deskflow won't switch computers when the mouse reaches the edge of the computer if it includes this corner. The size of the corner is given by the `switchCornerSize` option. |
 | switchCornerTopRight   | `true` or `false` | Deskflow won't switch computers when the mouse reaches the edge of the computer if it includes this corner. The size of the corner is given by the `switchCornerSize` option. |

@@ -164,6 +164,7 @@ public:
   }
   size_t getMaximumClipboardReceiveSizeBytes() const;
   InputCapabilities inputCapabilities() const;
+  bool semanticMediaKey(KeyID id);
 
   //@}
 

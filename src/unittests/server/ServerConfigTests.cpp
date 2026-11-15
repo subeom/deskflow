@@ -92,6 +92,27 @@ void ServerConfigTests::crossOSScrollOptions_areOptIn()
   QCOMPARE(option->second, 1);
 }
 
+void ServerConfigTests::crossOSSemanticMediaOption_isOptIn()
+{
+  const auto key = Settings::Computer::CrossOSSemanticMedia.arg(QStringLiteral("mediaComputer"));
+  Settings::setValue(key, true);
+
+  Config enabled(nullptr);
+  QVERIFY(enabled.addComputer("mediaComputer"));
+  const auto *enabledOptions = enabled.getOptions("mediaComputer");
+  QVERIFY(enabledOptions != nullptr);
+  const auto enabledOption = enabledOptions->find(kOptionCrossOSSemanticMedia);
+  QVERIFY(enabledOption != enabledOptions->end());
+  QCOMPARE(enabledOption->second, 1);
+
+  Settings::setValue(key, false);
+  Config disabled(nullptr);
+  QVERIFY(disabled.addComputer("mediaComputer"));
+  const auto *disabledOptions = disabled.getOptions("mediaComputer");
+  QVERIFY(disabledOptions != nullptr);
+  QCOMPARE(disabledOptions->count(kOptionCrossOSSemanticMedia), static_cast<size_t>(0));
+}
+
 void ServerConfigTests::neighborPositions_stayHalfOpenAndChain()
 {
   Config config(nullptr);

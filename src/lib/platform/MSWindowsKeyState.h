@@ -134,6 +134,7 @@ public:
   void fakeKeyDown(KeyID id, KeyModifierMask mask, KeyButton button, const std::string &lang) override;
   bool fakeKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyButton button, const std::string &lang) override;
   bool fakeCtrlAltDel() override;
+  bool fakeSemanticMediaKey(KeyID id) override;
   KeyModifierMask pollActiveModifiers() const override;
   int32_t pollActiveGroup() const override;
   void pollPressedKeys(KeyButtonSet &pressedKeys) const override;
@@ -167,6 +168,7 @@ protected:
   void getKeyMap(deskflow::KeyMap &keyMap) override;
   void fakeKey(const Keystroke &keystroke) override;
   KeyModifierMask &getActiveModifiersRValue() override;
+  virtual void sendSemanticMediaKeyEvent(WORD virtualKey, DWORD flags);
 
 private:
   using GroupList = std::vector<HKL>;

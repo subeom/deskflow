@@ -305,6 +305,16 @@ public:
     return parseMessage(code) == ConnectionResult::Okay;
   }
 
+  bool handleSemanticMediaKeyForTest(KeyID id)
+  {
+    return handleSemanticMediaKey(id);
+  }
+
+  KeyID lastSemanticMediaKey() const
+  {
+    return m_lastSemanticMediaKey;
+  }
+
   ScrollDelta lastWheelDelta() const
   {
     return m_lastWheelDelta;
@@ -321,9 +331,16 @@ protected:
     m_lastWheelDelta = {xDelta, yDelta};
   }
 
+  bool synthesizeSemanticMediaKey(KeyID id) override
+  {
+    m_lastSemanticMediaKey = id;
+    return true;
+  }
+
 private:
   InputCapabilities m_localCapabilities;
   ScrollDelta m_lastWheelDelta{0, 0};
+  KeyID m_lastSemanticMediaKey = kKeyNone;
 };
 
 Client *undereferenceableClient()
@@ -528,6 +545,38 @@ void ServerProxyTests::crossOSScroll_v19TransformsDmwmBeforeDelivery()
   QVERIFY(proxy.parseMessageForTest(reinterpret_cast<const uint8_t *>(kMsgDMouseWheel)));
   QCOMPARE(proxy.lastWheelDelta().x, 120);
   QCOMPARE(proxy.lastWheelDelta().y, -120);
+}
+
+void ServerProxyTests::semanticMedia_v19HandlesOnlyEligibleKeys()
+{
+  RecordingEventQueue events;
+  FakeStream stream;
+  TestServerProxy1_9 proxy(
+      undereferenceableClient(), &stream, &events,
+      InputCapabilities{InputPlatform::Windows, kInputCapabilitySemanticMedia}
+  );
+
+  FakeStream sourcePacket;
+  ProtocolUtil::writef(
+      &sourcePacket, kMsgDInputCapabilities, static_cast<uint8_t>(InputPlatform::MacOS), kInputCapabilityProtocolV19
+  );
+  const auto sourceBytes = sourcePacket.takeOutput();
+  stream.push(std::string(sourceBytes.constData(), static_cast<size_t>(sourceBytes.size())));
+  QVERIFY(events.dispatchEvent(Event(EventTypes::StreamInputReady, stream.getEventTarget())));
+
+  proxy.onOptionsChangedForTest({kOptionCrossOSSemanticMedia, 1});
+  FakeStream keyPacket;
+  const std::string language = "en";
+  ProtocolUtil::writef(&keyPacket, kMsgDKeyDown, kKeyAudioPlay, 0, 0, &language);
+  const auto keyBytes = keyPacket.takeOutput();
+  stream.push(std::string(keyBytes.constData() + 4, static_cast<size_t>(keyBytes.size() - 4)));
+  QVERIFY(proxy.parseMessageForTest(reinterpret_cast<const uint8_t *>(kMsgDKeyDown)));
+  QCOMPARE(proxy.lastSemanticMediaKey(), kKeyAudioPlay);
+  QVERIFY(!proxy.handleSemanticMediaKeyForTest(kKeyBrightnessUp));
+  QVERIFY(!proxy.handleSemanticMediaKeyForTest(kKeyF1));
+
+  proxy.onOptionsChangedForTest({});
+  QVERIFY(!proxy.handleSemanticMediaKeyForTest(kKeyAudioPlay));
 }
 
 QTEST_MAIN(ServerProxyTests)

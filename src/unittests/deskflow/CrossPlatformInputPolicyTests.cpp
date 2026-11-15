@@ -9,6 +9,7 @@
 
 #include <QTest>
 
+#include <array>
 #include <limits>
 
 namespace {
@@ -176,6 +177,52 @@ void CrossPlatformInputPolicyTests::scrollPolicy_invertsOnlySelectedAxesAndBound
       both.toDestinationScroll({std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()});
   QCOMPARE(edgeDelta.x, 32768);
   QCOMPARE(edgeDelta.y, -32767);
+}
+
+void CrossPlatformInputPolicyTests::semanticMediaPolicy_requiresMacWindowsCapabilityAndOption()
+{
+  const CrossPlatformInputOptions enabled{.semanticMedia = true};
+  const InputCapabilities mac{InputPlatform::MacOS, kInputCapabilityProtocolV19};
+  const InputCapabilities windows{InputPlatform::Windows, kInputCapabilitySemanticMedia};
+
+  const CrossPlatformInputPolicy eligible(mac, windows, enabled);
+  QVERIFY(eligible.shouldSynthesizeSemanticMedia(kKeyAudioPlay));
+  QVERIFY(eligible.shouldSuppressRepeat(kKeyAudioPlay));
+
+  const CrossPlatformInputPolicy same(mac, capabilities(InputPlatform::MacOS, kInputCapabilitySemanticMedia), enabled);
+  QVERIFY(!same.shouldSynthesizeSemanticMedia(kKeyAudioPlay));
+
+  const CrossPlatformInputPolicy disabled(mac, windows, {});
+  QVERIFY(!disabled.shouldSynthesizeSemanticMedia(kKeyAudioPlay));
+
+  const CrossPlatformInputPolicy missingCapability(
+      mac, capabilities(InputPlatform::Windows, kInputCapabilityProtocolV19), enabled
+  );
+  QVERIFY(!missingCapability.shouldSynthesizeSemanticMedia(kKeyAudioPlay));
+
+  const CrossPlatformInputPolicy unknown(capabilities(InputPlatform::Unknown), windows, enabled);
+  QVERIFY(!unknown.shouldSynthesizeSemanticMedia(kKeyAudioPlay));
+}
+
+void CrossPlatformInputPolicyTests::semanticMediaPolicy_supportsOnlyApprovedIds()
+{
+  const CrossPlatformInputPolicy policy(
+      capabilities(InputPlatform::MacOS), capabilities(InputPlatform::Windows, kInputCapabilitySemanticMedia),
+      {.semanticMedia = true}
+  );
+  constexpr std::array supported = {kKeyAudioUp,   kKeyAudioDown, kKeyAudioMute, kKeyAudioPrev,
+                                    kKeyAudioNext, kKeyAudioPlay, kKeyAudioStop};
+  for (const auto key : supported) {
+    QVERIFY(policy.shouldSynthesizeSemanticMedia(key));
+  }
+
+  constexpr std::array unsupported = {kKeyBrightnessUp, kKeyBrightnessDown, kKeyMissionControl,
+                                      kKeyLaunchpad,    kKeyEject,          kKeyF1,
+                                      kKeyF20};
+  for (const auto key : unsupported) {
+    QVERIFY(!policy.shouldSynthesizeSemanticMedia(key));
+    QVERIFY(!policy.shouldSuppressRepeat(key));
+  }
 }
 
 QTEST_MAIN(CrossPlatformInputPolicyTests)

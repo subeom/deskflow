@@ -43,6 +43,7 @@ private:
   InputCapabilities m_destinationInputCapabilities;
   bool m_receivedInputCapabilities = false;
   RightCommandAction m_rightCommandAction = RightCommandAction::Preserve;
+  bool m_semanticMedia = false;
   bool m_leftSuperDown = false;
   bool m_rightSuperDown = false;
   bool m_rightSuperMapped = false;

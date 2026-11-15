@@ -122,6 +122,8 @@ public:
   */
   void keyRepeat(KeyID id, KeyModifierMask, int32_t count, KeyButton, const std::string &lang);
 
+  bool semanticMediaKey(KeyID id);
+
   //! Notify of key release
   /*!
   Synthesize key events to generate a release of key \c id.  If possible

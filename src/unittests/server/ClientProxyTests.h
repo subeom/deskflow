@@ -34,6 +34,8 @@ private Q_SLOTS:
   void rightCommand_v18_preservesLegacyMacWireValue();
   void rightCommand_v19_preservesLegacyAggregateState();
   void rightCommand_leave_clearsMappedAndLegacyState();
+  void semanticMedia_v19EnabledSuppressesRepeat();
+  void semanticMedia_v18AndDisabledPreserveWireValues();
 
 private:
   Log m_log;

@@ -527,7 +527,7 @@ void Settings::removeUnknownComputers(const QStringList &knownComputers)
 
 QVariant Settings::computerDefaults(const QString &key)
 {
-  if (key == "crossOSInvertX" || key == "crossOSInvertY")
+  if (key == "crossOSInvertX" || key == "crossOSInvertY" || key == "crossOSSemanticMedia")
     return false;
   if (key.contains(QStringLiteral("halfDuplex")) || key.contains("xtestIsXineramaUnaware") || key.contains("X11") ||
       key.contains("Left") || key.contains("Right"))

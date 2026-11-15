@@ -21,4 +21,6 @@ private Q_SLOTS:
   void scrollPolicy_requiresCrossPlatformAndCapabilities();
   void scrollPolicy_preservesNonMacWindowsPairs();
   void scrollPolicy_invertsOnlySelectedAxesAndBoundaries();
+  void semanticMediaPolicy_requiresMacWindowsCapabilityAndOption();
+  void semanticMediaPolicy_supportsOnlyApprovedIds();
 };

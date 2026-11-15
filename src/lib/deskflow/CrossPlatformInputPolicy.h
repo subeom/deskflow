@@ -17,6 +17,7 @@ struct CrossPlatformInputOptions
   RightCommandAction rightCommand = RightCommandAction::Preserve;
   bool invertScrollX = false;
   bool invertScrollY = false;
+  bool semanticMedia = false;
 };
 
 struct InputKeyEvent
@@ -35,11 +36,13 @@ public:
   bool shouldSuppressRepeat(KeyID id) const;
   bool mapsRightCommandToHangul() const;
   ScrollDelta toDestinationScroll(ScrollDelta delta) const;
+  bool shouldSynthesizeSemanticMedia(KeyID id) const;
 
 private:
   bool isCrossPlatform() const;
   bool canMapHangul() const;
   bool canMapScroll() const;
+  bool canSynthesizeSemanticMedia() const;
 
   InputCapabilities m_source;
   InputCapabilities m_destination;

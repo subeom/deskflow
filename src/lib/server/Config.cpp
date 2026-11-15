@@ -130,6 +130,9 @@ bool Config::addComputer(const std::string &name)
   if (Settings::value(Settings::Computer::CrossOSInvertY.arg(computer)).toBool()) {
     addOption(name, kOptionCrossOSInvertScrollY, 1);
   }
+  if (Settings::value(Settings::Computer::CrossOSSemanticMedia.arg(computer)).toBool()) {
+    addOption(name, kOptionCrossOSSemanticMedia, 1);
+  }
 
   return true;
 }

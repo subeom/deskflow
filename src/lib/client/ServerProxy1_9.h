@@ -25,9 +25,13 @@ protected:
   ConnectionResult parseMessage(const uint8_t *code) override;
   void onOptionsChanged(const OptionsList &options) override;
   void transformInputKey(KeyID &id, KeyModifierMask &mask) override;
+  bool handleSemanticMediaKey(KeyID id) override;
   bool shouldSuppressKeyRepeat(KeyID id, KeyModifierMask mask) const override;
   void transformMouseWheel(int32_t &xDelta, int32_t &yDelta) override;
   virtual InputCapabilities localInputCapabilities() const;
+
+protected:
+  virtual bool synthesizeSemanticMediaKey(KeyID id);
 
 private:
   bool receiveInputCapabilities();
@@ -39,4 +43,5 @@ private:
   RightCommandAction m_rightCommandAction = RightCommandAction::Preserve;
   bool m_invertScrollX = false;
   bool m_invertScrollY = false;
+  bool m_semanticMedia = false;
 };
