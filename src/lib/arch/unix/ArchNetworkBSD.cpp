@@ -20,9 +20,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
-#if !defined(TCP_NODELAY)
 #include <netinet/tcp.h>
-#endif
 
 static const int s_family[] = {
     PF_UNSPEC,
@@ -428,6 +426,20 @@ void ArchNetworkBSD::setKeepAliveOnSocket(ArchSocket s, bool keepAlive)
   if (setsockopt(s->m_fd, SOL_SOCKET, SO_KEEPALIVE, reinterpret_cast<const optval_t *>(&opt), sizeof(opt)) == -1) {
     throwError(errno);
   }
+}
+
+void ArchNetworkBSD::setUnsentLowWaterOnSocket(ArchSocket s, [[maybe_unused]] uint32_t bytes)
+{
+#if defined(TCP_NOTSENT_LOWAT)
+  if (s == nullptr) {
+    return;
+  }
+  // best effort: a socket that refuses the option just keeps its kernel queue
+  const int opt = static_cast<int>(bytes);
+  setsockopt(s->m_fd, IPPROTO_TCP, TCP_NOTSENT_LOWAT, reinterpret_cast<const optval_t *>(&opt), sizeof(opt));
+#else
+  static_cast<void>(s);
+#endif
 }
 
 bool ArchNetworkBSD::setReuseAddrOnSocket(ArchSocket s, bool reuse)

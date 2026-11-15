@@ -74,6 +74,17 @@ public:
   */
   virtual void shutdownOutput() = 0;
 
+  //! Hint that bulk data is being written
+  /*!
+  While \p active is true the stream should keep as little unsent data below this layer (e.g. in the kernel send
+  buffer) as it can, so that data written later is not queued behind much of the bulk data. Streams that cannot do
+  this ignore the hint, which is the default.
+  */
+  virtual void setBulkSend(bool active)
+  {
+    static_cast<void>(active);
+  }
+
   //@}
   //! @name accessors
   //@{

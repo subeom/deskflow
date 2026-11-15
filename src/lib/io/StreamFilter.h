@@ -41,6 +41,7 @@ public:
   void flush() override;
   void shutdownInput() override;
   void shutdownOutput() override;
+  void setBulkSend(bool active) override;
   void *getEventTarget() const override;
   bool isReady() const override;
   uint32_t getSize() const override;

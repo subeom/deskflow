@@ -166,6 +166,18 @@ void TCPSocket::write(const void *buffer, uint32_t n)
   }
 }
 
+void TCPSocket::setBulkSend(bool active)
+{
+  // while bulk data is being written, keep only a little unsent data in the kernel so that the next input event is
+  // not queued behind it
+  constexpr uint32_t kUnsentLowWaterBytes = 16 * 1024;
+
+  Lock lock(&m_mutex);
+  if (m_socket != nullptr) {
+    ARCH->setUnsentLowWaterOnSocket(m_socket, active ? kUnsentLowWaterBytes : 0);
+  }
+}
+
 void TCPSocket::flush()
 {
   Lock lock(&m_mutex);

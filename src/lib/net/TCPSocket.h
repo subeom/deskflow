@@ -48,6 +48,7 @@ public:
   uint32_t read(void *buffer, uint32_t n) override;
   void write(const void *buffer, uint32_t n) override;
   void flush() override;
+  void setBulkSend(bool active) override;
   void shutdownInput() override;
   void shutdownOutput() override;
   bool isReady() const override;
