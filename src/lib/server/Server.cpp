@@ -1536,7 +1536,9 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
                                 ? "its text is " + std::to_string(decision.textBytes) + " bytes, only text of up to " +
                                       std::to_string(ClipboardSharePolicy::kTextOnlyMaxTextBytes) + " bytes is shared"
                                 : "it has no text, only text is shared";
-    if (firstTime) {
+    // the clipboard and the selection are one copy on Windows and macOS, which are read from the same pasteboard:
+    // the clipboard is the one that is reported
+    if (firstTime && id == kClipboardClipboard) {
       LOG_INFO("not sharing clipboard %d of \"%s\": %s", id, name.c_str(), why.c_str());
     } else {
       LOG_DEBUG("still not sharing clipboard %d of \"%s\": %s", id, name.c_str(), why.c_str());

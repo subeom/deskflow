@@ -220,8 +220,9 @@ void ServerConfigTests::clipboardSizeOption_data()
   QTest::newRow("off, 1 MiB") << false << 1u << 1024;
   QTest::newRow("off, 3 MiB") << false << 3u << 3072;
   QTest::newRow("off, 20 MiB") << false << 20u << 20480;
-  // text only caps what every peer sends and accepts at 10 KiB, and an off switch stays off
-  QTest::newRow("text only, 0 MiB") << true << 0u << 0;
+  // text only is always 10 KiB, whatever the size box holds: it is greyed out then, and a 0 in it must not keep sharing
+  // off (off with 0 is still off, as above)
+  QTest::newRow("text only, 0 MiB") << true << 0u << 10;
   QTest::newRow("text only, 1 MiB") << true << 1u << 10;
   QTest::newRow("text only, 3 MiB") << true << 3u << 10;
   QTest::newRow("text only, 20 MiB") << true << 20u << 10;

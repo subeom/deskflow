@@ -69,11 +69,10 @@ ClipboardSharePolicy::Decision ClipboardSharePolicy::apply(Clipboard &clipboard)
 
 uint32_t ClipboardSharePolicy::sizeOptionKiB(uint32_t configuredMiB, bool textOnly)
 {
-  const uint32_t configuredKiB = configuredMiB * 1024;
-  if (!textOnly || configuredKiB == 0) {
-    return configuredKiB;
+  if (textOnly) {
+    return kTextOnlyLimitBytes / 1024;
   }
-  return std::min<uint32_t>(configuredKiB, kTextOnlyLimitBytes / 1024);
+  return configuredMiB * 1024;
 }
 
 bool ClipboardRejectionLog::report(const ClipboardSharePolicy::Decision &decision)

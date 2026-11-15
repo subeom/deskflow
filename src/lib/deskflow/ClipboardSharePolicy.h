@@ -93,8 +93,9 @@ public:
 
   //! The clipboard size option (CLSZ, in KiB) to send for a configured size of \p configuredMiB MiB
   /*!
-  Not in text-only mode this is the configured size, as it always was.  In text-only mode it is the text-only
-  limit, or 0 (sharing is off) if the configured size is 0.
+  Not in text-only mode this is the configured size, as it always was (0 turns sharing off).  In text-only mode it is
+  the text-only limit whatever the configured size is: the size box is replaced by that fixed limit, so a 0 left in
+  it must not keep sharing off behind a setting that promises text.
   */
   static uint32_t sizeOptionKiB(uint32_t configuredMiB, bool textOnly);
 
@@ -108,8 +109,8 @@ class ClipboardRejectionLog
 public:
   //! Whether \p decision is worth a report
   /*!
-  True for a clipboard that is not shared and differs from the one that was reported last; false for the same one
-  again.  A clipboard that is shared re-arms the report.
+  True for a clipboard that is not shared and differs from the one that was reported last (in why it is not shared or
+  in the size of its text); false for the same one again.  A clipboard that is shared re-arms the report.
   */
   bool report(const ClipboardSharePolicy::Decision &decision);
 

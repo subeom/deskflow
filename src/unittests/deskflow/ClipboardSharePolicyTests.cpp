@@ -337,8 +337,9 @@ void ClipboardSharePolicyTests::sizeOption_data()
   QTest::newRow("off, 1 MiB") << false << 1u << 1024u;
   QTest::newRow("off, 3 MiB") << false << 3u << 3072u;
   QTest::newRow("off, 20 MiB") << false << 20u << 20480u;
-  // on: 10 KiB at most, and 0 (sharing is off) stays 0
-  QTest::newRow("on, 0 MiB") << true << 0u << 0u;
+  // on: always 10 KiB. The size box is greyed out and replaced by the fixed limit, so a 0 left in it does not keep
+  // sharing off behind a checkbox that promises text
+  QTest::newRow("on, 0 MiB") << true << 0u << 10u;
   QTest::newRow("on, 1 MiB") << true << 1u << 10u;
   QTest::newRow("on, 3 MiB") << true << 3u << 10u;
   QTest::newRow("on, 20 MiB") << true << 20u << 10u;

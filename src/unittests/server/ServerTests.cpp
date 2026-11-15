@@ -10,6 +10,7 @@
 #include "../deskflow/MockEventQueue.h"
 #include "../deskflow/MockPlatformComputer.h"
 #include "base/Event.h"
+#include "base/ILogOutputter.h"
 #include "common/Settings.h"
 #include "deskflow/Clipboard.h"
 #include "deskflow/ClipboardSharePolicy.h"
@@ -24,6 +25,7 @@
 #include "server/ServerCursorEdges.h"
 #include "server/ServerNeighborTraversal.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -388,6 +390,33 @@ private:
   std::array<Clipboard, kClipboardEnd> m_own;
   std::array<bool, kClipboardEnd> m_dirty{};
   std::array<std::optional<std::string>, kClipboardEnd> m_received;
+};
+
+// Keeps the INFO lines that are logged
+class InfoLines : public ILogOutputter
+{
+public:
+  void open(const QString &) override
+  {
+  }
+  void close() override
+  {
+  }
+  bool write(LogLevel::Level level, const QString &message) override
+  {
+    if (level == LogLevel::Level::Info)
+      lines.append(message);
+    return false;
+  }
+
+  int count(const QString &text) const
+  {
+    return static_cast<int>(std::count_if(lines.begin(), lines.end(), [&](const QString &line) {
+      return line.contains(text);
+    }));
+  }
+
+  QStringList lines;
 };
 
 // A real Server whose primary computer has a pasteboard to read, with two remote computers connected, "A" and "B"
@@ -999,6 +1028,64 @@ void ServerTests::clipboardOffForAComputer_isToldWithAnOptionThatWinsOverTheGlob
   }
   // a computer that shares is sent exactly what it was before the setting existed
   QCOMPARE(withOff, withoutOff);
+}
+
+// Text only replaces the size box with a fixed limit, so a 0 in the greyed out box must not keep sharing off
+void ServerTests::clipboardTextOnly_withASizeBoxOfZero_stillSharesText()
+{
+  Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+  ClipboardRig rig(sizeOption(0, true));
+  fill(rig.platform->pasteboard, 30, true, true);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QVERIFY(rig.switchTo("A"));
+  QCOMPARE(received(rig.a->received(kClipboardClipboard)), bytes(marshalled(30)));
+}
+
+void ServerTests::clipboardOff_withASizeBoxOfZero_sharesNothing()
+{
+  ClipboardRig rig(sizeOption(0, false));
+  fill(rig.platform->pasteboard, 30, false, false);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QVERIFY(rig.switchTo("A"));
+  QVERIFY(neverReceivedAnything(rig.a->received(kClipboardClipboard)));
+}
+
+// A clipboard that is not shared is read again on every switch: it is reported once at INFO level, and for the
+// clipboard only, because on Windows and macOS the selection is read from the same pasteboard and would repeat the line
+void ServerTests::clipboardTextOnly_anEmptyClipboard_isReportedAtInfoLevelOnce()
+{
+  InfoLines info;
+  m_log.insert(&info, true);
+  Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+  ClipboardRig rig(sizeOption(3, true));
+  fill(rig.platform->pasteboard, kNoText, false, false);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  rig.grab(*rig.primary, kClipboardSelection);
+  QVERIFY(rig.switchTo("A"));
+  QVERIFY(rig.switchTo("primary"));
+  QVERIFY(rig.switchTo("B"));
+  m_log.remove(&info);
+
+  QCOMPARE(info.count(QStringLiteral("not sharing clipboard 0")), 1);
+  QCOMPARE(info.count(QStringLiteral("not sharing clipboard 1")), 0);
+}
+
+void ServerTests::clipboardTextOnly_anImage_isReportedAtInfoLevelOnce()
+{
+  InfoLines info;
+  m_log.insert(&info, true);
+  Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+  ClipboardRig rig(sizeOption(3, true));
+  fill(rig.platform->pasteboard, kNoText, false, true);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  rig.grab(*rig.primary, kClipboardSelection);
+  QVERIFY(rig.switchTo("A"));
+  QVERIFY(rig.switchTo("primary"));
+  QVERIFY(rig.switchTo("B"));
+  m_log.remove(&info);
+
+  QCOMPARE(info.count(QStringLiteral("not sharing clipboard 0")), 1);
+  QCOMPARE(info.count(QStringLiteral("not sharing clipboard 1")), 0);
 }
 
 QTEST_MAIN(ServerTests)
