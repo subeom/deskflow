@@ -77,6 +77,24 @@ void SettingsTests::checkValidSettings()
   }
 }
 
+void SettingsTests::clipboardTextOnly_isOffByDefaultAndRoundTrips()
+{
+  const auto key = Settings::Server::ClipboardTextOnly;
+  QVERIFY(Settings::validKeys().contains(key));
+
+  // a config from before the setting existed has no value for it: it is off
+  Settings::setValue(key);
+  QCOMPARE(Settings::defaultValue(key), QVariant(false));
+  QCOMPARE(Settings::value(key), QVariant(false));
+
+  Settings::setValue(key, true);
+  QCOMPARE(Settings::value(key).toBool(), true);
+  Settings::setValue(key, false);
+  QCOMPARE(Settings::value(key).toBool(), false);
+  Settings::setValue(key);
+  QCOMPARE(Settings::value(key).toBool(), false);
+}
+
 void SettingsTests::checkCleanComputerName()
 {
   const auto input = QStringLiteral("--!_ _-C@o#mpu$t%e^&*(r)= +Name\n[1]2|3?4--5>6<,7`~/8*90\\.lan--..    ..");

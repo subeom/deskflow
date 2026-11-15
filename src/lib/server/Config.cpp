@@ -10,6 +10,7 @@
 
 #include "base/IEventQueue.h"
 #include "common/KeyboardModifier.h"
+#include "deskflow/ClipboardSharePolicy.h"
 #include "deskflow/KeyMap.h"
 #include "deskflow/KeyTypes.h"
 #include "deskflow/OptionTypes.h"
@@ -576,7 +577,14 @@ void Config::readSectionOptions(ConfigReadContext &s)
   addOption("", kOptionRelativeMouseMoves, Settings::value(Settings::Server::RelativeMouseMoves).toBool());
   addOption("", kOptionWin32KeepForeground, Settings::value(Settings::Server::Win32KeepForeground).toBool());
   addOption("", kOptionClipboardSharing, Settings::value(Settings::Server::EnableClipboard).toBool());
-  addOption("", kOptionClipboardSharingSize, Settings::value(Settings::Server::ClipboardSize).toUInt() * 1024);
+  // Peers only learn of text-only clipboard sharing through this size, which they already honour
+  addOption(
+      "", kOptionClipboardSharingSize,
+      ClipboardSharePolicy::sizeOptionKiB(
+          Settings::value(Settings::Server::ClipboardSize).toUInt(),
+          Settings::value(Settings::Server::ClipboardTextOnly).toBool()
+      )
+  );
 
   if (const auto address = Settings::value(Settings::Core::Interface).toString(); !address.isEmpty()) {
     m_deskflowAddress = NetworkAddress(address.toStdString(), Settings::value(Settings::Core::Port).toInt());

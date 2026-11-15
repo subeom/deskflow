@@ -12,6 +12,7 @@
 #include "base/Stopwatch.h"
 #include "common/NetworkProtocol.h"
 #include "deskflow/Clipboard.h"
+#include "deskflow/ClipboardSharePolicy.h"
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/KeyTypes.h"
 #include "deskflow/MouseTypes.h"
@@ -303,6 +304,9 @@ private:
   // process options from configuration
   void processOptions();
 
+  // share the whole clipboard, or the text of it only
+  void setClipboardTextOnly(bool textOnly);
+
   // event handlers
   void handleShapeChanged(BaseClientProxy *client);
   void handleClipboardGrabbed(const Event &event, BaseClientProxy *client);
@@ -418,6 +422,12 @@ private:
 
   // clipboard cache
   ClipboardInfo m_clipboards[kClipboardEnd];
+
+  // what of a clipboard is shared: all of it, or the text of it only
+  ClipboardSharePolicy m_clipboardPolicy;
+
+  // the clipboards that were not shared last, so that each is reported once
+  ClipboardRejectionLog m_clipboardRejections[kClipboardEnd];
 
   // used in hello message sent to the client
   NetworkProtocol m_protocol = NetworkProtocol::Barrier;

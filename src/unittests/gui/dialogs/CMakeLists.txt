@@ -8,3 +8,16 @@ create_test(
   SOURCE DialogLayoutTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME ServerConfigDialogTests
+  DEPENDS gui
+  LIBS server
+  SOURCE ServerConfigDialogTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+# the header of the server configuration dialog includes the headers next to it by their short names
+foreach(test DialogLayoutTests ServerConfigDialogTests)
+  target_include_directories(${test} PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+endforeach()

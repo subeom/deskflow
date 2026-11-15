@@ -111,6 +111,18 @@ public:
   */
   virtual bool has(Format) const = 0;
 
+  //! Check if a format is wanted
+  /*!
+  Return false if this clipboard has no use for data in the given format.  copy() then does not even read the format
+  from its source, which matters because reading some formats is expensive (a platform may have to convert an image
+  to a bitmap first), and a clipboard that does not want a format should ignore it when it is added.  Every format is
+  wanted unless a subclass says otherwise.
+  */
+  virtual bool wants(Format) const
+  {
+    return true;
+  }
+
   //! Get data
   /*!
   Return the data in the given format.  Returns the empty string

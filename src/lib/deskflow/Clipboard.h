@@ -44,6 +44,13 @@ public:
 
   //@}
 
+  //! Hold text only
+  /*!
+  A clipboard that holds text only wants no other format: add() ignores them, and copy() into this clipboard does not
+  read them from its source.  The data it holds now is not touched.
+  */
+  void setTextOnly(bool textOnly);
+
   // IClipboard overrides
   bool empty() final;
   void add(Format, const std::string &data) override;
@@ -51,6 +58,7 @@ public:
   void close() const override;
   Time getTime() const override;
   bool has(Format) const override;
+  bool wants(Format) const override;
   std::string get(Format) const override;
 
 private:
@@ -58,6 +66,7 @@ private:
   mutable std::mutex m_mutex;
   mutable Time m_time;
   bool m_owner = false;
+  bool m_textOnly = false;
   Time m_timeOwned;
   bool m_added[static_cast<int>(Format::TotalFormats)] = {false, false, false};
   std::string m_data[static_cast<int>(Format::TotalFormats)] = {"", "", ""};

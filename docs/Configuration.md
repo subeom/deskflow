@@ -138,6 +138,7 @@ This section contains options used when in server mode it will begin with `[serv
 |Option              |    Valid Values   |Description|
 |:-------------------|:-----------------:|:-----------|
 | clipboardSize      | int > 0           | Deskflow will send a maximum of `N` megabytes of clipboard data to another computer when the mouse transitions to that computer. Clients use the server's value for both sending and receiving.|
+| clipboardTextOnly  | `true` or `false` | When `true` only plain text of up to 10 KB is shared, see [Share text only](#share-text-only-up-to-10-kb). `clipboardSize` is not used then. Needs `enableClipboard`. (default: false)|
 | defaultLockToComputerState| `true` or `false` | When this is true the cursor is locked to the new computer when switching (default: false)|
 | disableLockToComputer| `true` or `false` | If false pressing scroll lock will toggle your cursor to be locked to current computer. (default: false) |
 | enableClipboard    | `true` or `false` | When `true` the clipboard will be shared with all clients If set to ''true'' then clipboard shared and the ''clipboardSharingSize'' setting will be used. If set to false, then clipboard sharing will be disabled and the the ''clipboardSharingSize'' setting will be ignored.|
@@ -156,6 +157,25 @@ This section contains options used when in server mode it will begin with `[serv
 |win32KeepForeground | `true` or `false` | If set to ''true'' (the default), Deskflow will grab the foreground focus on a Windows server (thereby putting all other windows in the background) upon switching to a client. If set to ''false'', it will leave the currently foreground window in the foreground. Deskflow grabs the focus to avoid issues with other apps interfering with Deskflow's ability to read the hardware inputs. |
 
  - You can use both the ''switchDelay'' and ''switchDoubleTap'' options at the same time. Deskflow will switch when either requirement is satisfied.
+
+#### Share text only (up to 10 KB)
+
+A clipboard is sent whole, with every format it holds (text, HTML, images), over the connection that also carries the mouse and the keyboard, so a large clipboard can make switching slow or even drop the connection. Setting `clipboardTextOnly` to `true` (**Share text only (max 10 KB)** in **Server Configuration > Advanced > Misc**, under **Enable clipboard sharing**) shares plain text of up to 10 KB and nothing else:
+
+- Only the plain text is shared. Images, formatted (HTML) text and every other format are not, and neither is a clipboard that holds no text.
+- The limit is 10 KB = 10 × 1024 = 10240 bytes of the clipboard as it is sent: the UTF-8 text plus 12 bytes that every clipboard message carries. The longest text that is shared is therefore **10228 bytes**; a text of exactly 10240 bytes is not shared. These are bytes, not characters: a Hangul syllable takes 3 bytes and an emoji 4. The computers that send their own clipboard to the server compare the same number with `>=`, so from them the longest text is 10227 bytes.
+- Text that is too long is never cut short, because a cut-off text is a damaged text: it is not shared at all. The server logs at INFO level that a clipboard was not shared, once for each such clipboard and not on every clipboard event.
+- `clipboardSize` is not used while this is on. The limit the server gives to its clients (the `CLSZ` option, in kilobytes) is the smaller of `clipboardSize` and 10 KB, and a `clipboardSize` of 0 still turns clipboard sharing off. With the setting off, nothing changes: the clipboard is shared and limited exactly as before.
+
+The server applies the rule itself in both directions and does not rely on the computers it serves. Its own clipboard is reduced to the text before it is sent to a client, and it does not read the HTML and image formats of its own clipboard at all. The clipboard a client sends is reduced to the text, or dropped, before the server keeps it or passes it on to the other clients.
+
+The other computers need **no new build and no setting**: the existing `CLSZ` option already makes a client refuse to send a clipboard larger than the limit. The server sends it when a client connects and whenever it applies its configuration, and saving the **Server Configuration** dialog restarts the server, which is when the setting takes effect.
+
+What this does not do:
+
+- A client that has no such setting still reads and sends every format of its own clipboard when the whole of it is under the limit, and the server keeps the text. A clipboard whose formats together are over 10 KB (formatted text that is long, for example) is not sent by the client at all, even if its plain text alone would fit.
+- Copying something that is not shared still empties the clipboards of the other computers, as any copy does, so there is nothing to paste there until something that is shared is copied.
+- Sending each clipboard once rather than twice and pacing the transfer are not part of this setting.
 
 ### Computer Settings
 

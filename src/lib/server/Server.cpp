@@ -1138,6 +1138,28 @@ void Server::processOptions()
   }
   m_relativeMoves = newRelativeMoves;
   m_protocol = Settings::networkProtocol();
+  setClipboardTextOnly(Settings::value(Settings::Server::ClipboardTextOnly).toBool());
+}
+
+void Server::setClipboardTextOnly(bool textOnly)
+{
+  if (m_clipboardPolicy.textOnly() != textOnly) {
+    if (textOnly) {
+      LOG_INFO("clipboard sharing is limited to text of up to %zu bytes", ClipboardSharePolicy::kTextOnlyMaxTextBytes);
+    } else {
+      LOG_INFO("clipboard sharing is not limited to text any more");
+    }
+  }
+
+  m_clipboardPolicy = ClipboardSharePolicy(textOnly);
+  for (auto &clipboard : m_clipboards) {
+    clipboard.m_clipboard.setTextOnly(textOnly);
+    if (textOnly) {
+      // what was kept from before is held to it as well
+      m_clipboardPolicy.apply(clipboard.m_clipboard);
+      clipboard.m_clipboardData = clipboard.m_clipboard.marshall();
+    }
+  }
 }
 
 void Server::handleShapeChanged(BaseClientProxy *client)
@@ -1459,8 +1481,27 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
   // should be the expected client
   assert(sender == m_clients.find(clipboard.m_clipboardOwner)->second);
 
-  // get data
+  // get data, and of it only what is shared: a computer that is not asked for the formats that are not does not have
+  // to read them either
+  clipboard.m_clipboard.setTextOnly(m_clipboardPolicy.textOnly());
   sender->getClipboard(id, &clipboard.m_clipboard);
+
+  const auto decision = m_clipboardPolicy.apply(clipboard.m_clipboard);
+  const bool firstTime = m_clipboardRejections[id].report(decision);
+  if (decision.action == ClipboardSharePolicy::Action::Drop) {
+    // every switch to another computer reads the clipboard again, so a clipboard is reported once
+    const std::string name = getName(sender);
+    const std::string why = decision.reason == ClipboardSharePolicy::Reason::TextTooLarge
+                                ? "its text is " + std::to_string(decision.textBytes) + " bytes, only text of up to " +
+                                      std::to_string(ClipboardSharePolicy::kTextOnlyMaxTextBytes) + " bytes is shared"
+                                : "it has no text, only text is shared";
+    if (firstTime) {
+      LOG_INFO("not sharing clipboard %d of \"%s\": %s", id, name.c_str(), why.c_str());
+    } else {
+      LOG_DEBUG("still not sharing clipboard %d of \"%s\": %s", id, name.c_str(), why.c_str());
+    }
+    return;
+  }
 
   std::string data = clipboard.m_clipboard.marshall();
   if (data.size() > m_maximumClipboardSize * 1024) {

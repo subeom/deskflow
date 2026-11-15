@@ -22,6 +22,14 @@ create_test(
 )
 
 create_test(
+  NAME ClipboardSharePolicyTests
+  DEPENDS app
+  LIBS arch base io ${extra_libs}
+  SOURCE ClipboardSharePolicyTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+create_test(
   NAME ClipboardChunksTests
   DEPENDS app
   LIBS arch base io ${extra_libs}

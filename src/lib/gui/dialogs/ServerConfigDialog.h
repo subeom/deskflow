@@ -60,6 +60,7 @@ protected:
   void toggleWin32Foreground(bool enabled);
 
   void toggleClipboard(bool enabled);
+  void toggleClipboardTextOnly(bool enabled);
   void setClipboardLimit(int limit);
 
   void toggleHeartbeat(bool enabled);
@@ -92,6 +93,7 @@ private:
   void refreshControls();
   void initConnections() const;
   void updateControls() const;
+  void updateClipboardControls() const;
   void restoreFromDefaults();
   void setServerConfig();
   bool isGeneralConfigModified() const;
@@ -104,6 +106,7 @@ private:
   ServerConfig &m_originalServerConfig;
   NetworkProtocol m_protocol;
   bool m_enableClipboard;
+  bool m_clipboardTextOnly = false;
   bool m_enableHeartbeat;
   int m_heartbeatRate;
   int m_switchDelay;

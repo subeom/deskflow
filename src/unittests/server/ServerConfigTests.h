@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
  */
 
+#include "arch/Arch.h"
+
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -18,6 +20,9 @@ private Q_SLOTS:
   void crossOSScrollOptions_areOptIn();
   void crossOSInvertScope_isOptIn();
   void crossOSSemanticMediaOption_isOptIn();
+  void clipboardSizeOption_data();
+  void clipboardSizeOption();
+  void clipboardSizeOption_oldConfigWithoutTheKeyIsOff();
   void neighborPositions_stayHalfOpenAndChain();
   void partialDestinationInterval_clampsInsideEndpoint();
   void equalityCheck();
@@ -30,6 +35,8 @@ private Q_SLOTS:
   void equalityCheck_diff_neighbours3();
 
 private:
+  // reading a configuration resolves its network address
+  Arch m_arch;
   QTemporaryDir m_settingsDir;
   QString m_settingsFile;
 };
