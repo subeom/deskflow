@@ -32,6 +32,7 @@ void ServerTests::edgeOvershoot_clampsRouteFraction()
 {
   QCOMPARE(deskflow::server::getCursorEdgeFraction(-1, 0, 1080), 0.0f);
   QCOMPARE(deskflow::server::getCursorEdgeFraction(1080, 0, 1080), std::nextafter(1.0f, 0.0f));
+  QCOMPARE(deskflow::server::getCursorEdgeFraction(540, 0, 1080), 540.5f / 1080.0f);
 }
 
 void ServerTests::namedTopology_topLeftOvershoot_selectsLeftComputer()
@@ -49,7 +50,10 @@ void ServerTests::namedTopology_topLeftOvershoot_selectsLeftComputer()
 
   const auto rawLeftPosition = -0.5f / 1080.0f;
   const auto rawTopPosition = 0.5f / 1920.0f;
-  QCOMPARE(config.getNeighbor("Subeoms-MacBook-Pro.local", Direction::Left, rawLeftPosition, nullptr), std::string());
+  QCOMPARE(
+      config.getNeighbor("Subeoms-MacBook-Pro.local", Direction::Left, rawLeftPosition, nullptr),
+      std::string("SUBEOM-COPILOT")
+  );
   QCOMPARE(
       config.getNeighbor("Subeoms-MacBook-Pro.local", Direction::Top, rawTopPosition, nullptr),
       std::string("9800X3D-5080")

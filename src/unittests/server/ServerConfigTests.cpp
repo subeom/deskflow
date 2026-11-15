@@ -11,6 +11,9 @@
 #include "deskflow/CrossPlatformInputPolicy.h"
 #include "server/Config.h"
 
+#include <array>
+#include <cmath>
+
 class OnlySystemFilter : public InputFilter::Condition
 {
 public:
@@ -59,6 +62,48 @@ void ServerConfigTests::rightCommandAction_hangulAddsOption()
   QVERIFY(fallbackOptions != nullptr);
   option = fallbackOptions->find(kOptionCrossOSRightCommand);
   QVERIFY(option == fallbackOptions->end());
+}
+
+void ServerConfigTests::neighborPositions_stayHalfOpenAndChain()
+{
+  Config config(nullptr);
+  QVERIFY(config.addComputer("source"));
+  QVERIFY(config.addComputer("rightBridge"));
+  QVERIFY(config.addComputer("rightFinal"));
+  QVERIFY(config.addComputer("bottomBridge"));
+  QVERIFY(config.addComputer("bottomFinal"));
+  QVERIFY(config.connect("source", Direction::Right, 0.0f, 1.0f, "rightBridge", 0.5f, 1.0f));
+  QVERIFY(config.connect("source", Direction::Bottom, 0.0f, 1.0f, "bottomBridge", 0.5f, 1.0f));
+  QVERIFY(config.connect("rightBridge", Direction::Right, 0.0f, 1.0f, "rightFinal", 0.0f, 1.0f));
+  QVERIFY(config.connect("bottomBridge", Direction::Bottom, 0.0f, 1.0f, "bottomFinal", 0.0f, 1.0f));
+
+  struct Route
+  {
+    Direction direction;
+    const char *bridge;
+    const char *final;
+  };
+  constexpr std::array routes = {
+      Route{Direction::Right, "rightBridge", "rightFinal"},
+      Route{Direction::Bottom, "bottomBridge", "bottomFinal"},
+  };
+  const auto upperEdge = std::nextafter(1.0f, 0.0f);
+
+  for (const auto &route : routes) {
+    float positionOut = 0.0f;
+    QCOMPARE(config.getNeighbor("source", route.direction, 0.25f, &positionOut), std::string(route.bridge));
+    QCOMPARE(positionOut, 0.625f);
+
+    QCOMPARE(config.getNeighbor("source", route.direction, upperEdge, &positionOut), std::string(route.bridge));
+    QVERIFY(positionOut < 1.0f);
+    QCOMPARE(positionOut, upperEdge);
+
+    float finalPositionOut = 0.0f;
+    QCOMPARE(
+        config.getNeighbor(route.bridge, route.direction, positionOut, &finalPositionOut), std::string(route.final)
+    );
+    QVERIFY(finalPositionOut < 1.0f);
+  }
 }
 
 void ServerConfigTests::equalityCheck()

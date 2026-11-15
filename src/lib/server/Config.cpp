@@ -15,6 +15,7 @@
 #include "deskflow/OptionTypes.h"
 #include "net/SocketException.h"
 #include "server/Server.h"
+#include "server/ServerCursorEdges.h"
 
 #include <assert.h>
 #include <cstdlib>
@@ -315,6 +316,7 @@ std::string Config::getCanonicalName(const std::string &name) const
 std::string Config::getNeighbor(const std::string &srcName, Direction srcSide, float position, float *positionOut) const
 {
   assert(srcSide >= Direction::FirstDirection && srcSide <= Direction::LastDirection);
+  position = clampCursorEdgeFraction(position);
 
   // find source cell
   CellMap::const_iterator index = m_map.find(getCanonicalName(srcName));
@@ -331,7 +333,7 @@ std::string Config::getNeighbor(const std::string &srcName, Direction srcSide, f
   } else {
     // compute position on neighbor
     if (positionOut != nullptr) {
-      *positionOut = dstEdge->inverseTransform(srcEdge->transform(position));
+      *positionOut = clampCursorEdgeFraction(dstEdge->inverseTransform(srcEdge->transform(position)));
     }
 
     // return neighbor's name

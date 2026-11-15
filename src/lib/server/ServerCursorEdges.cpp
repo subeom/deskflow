@@ -11,13 +11,18 @@
 
 namespace deskflow::server {
 
+float clampCursorEdgeFraction(float position)
+{
+  return std::clamp(position, 0.0f, std::nextafter(1.0f, 0.0f));
+}
+
 float getCursorEdgeFraction(int32_t cursorPosition, int32_t computerStart, int32_t computerSize)
 {
   assert(computerSize > 0);
 
   const auto fraction = (static_cast<float>(cursorPosition) - static_cast<float>(computerStart) + 0.5f) /
                         static_cast<float>(computerSize);
-  return std::clamp(fraction, 0.0f, std::nextafter(1.0f, 0.0f));
+  return clampCursorEdgeFraction(fraction);
 }
 
 } // namespace deskflow::server

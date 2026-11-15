@@ -9,6 +9,7 @@
 
 namespace deskflow::server {
 
+float clampCursorEdgeFraction(float position);
 float getCursorEdgeFraction(int32_t cursorPosition, int32_t computerStart, int32_t computerSize);
 
 } // namespace deskflow::server

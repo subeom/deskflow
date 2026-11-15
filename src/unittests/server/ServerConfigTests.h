@@ -13,6 +13,7 @@ class ServerConfigTests : public QObject
 private Q_SLOTS:
   void initTestCase();
   void rightCommandAction_hangulAddsOption();
+  void neighborPositions_stayHalfOpenAndChain();
   void equalityCheck();
   void equalityCheck_diff_options();
   void equalityCheck_diff_alias();
