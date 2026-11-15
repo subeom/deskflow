@@ -2,14 +2,6 @@
 <ui version="4.0">
  <class>ComputerSettingsDialog</class>
  <widget class="QDialog" name="ComputerSettingsDialog">
-  <property name="geometry">
-   <rect>
-    <x>0</x>
-    <y>0</y>
-    <width>503</width>
-    <height>760</height>
-   </rect>
-  </property>
   <property name="windowTitle">
    <string>Computer settings</string>
   </property>
@@ -619,117 +611,6 @@
          </layout>
         </widget>
        </item>
-        <item>
-         <widget class="QGroupBox" name="groupCrossOSInput">
-          <property name="title">
-           <string>Cross-OS Input (macOS source to Windows destination)</string>
-          </property>
-          <layout class="QVBoxLayout" name="layoutCrossOSInput">
-           <item>
-            <widget class="QLabel" name="lblCrossOSInputDescription">
-             <property name="text">
-              <string>These options apply only when this computer is a Windows destination and the source negotiates protocol 1.9. Scroll inversion applies to all scrolling unless you choose "Mouse wheel only", which is a best-effort check based on macOS scroll phases.</string>
-             </property>
-             <property name="wordWrap">
-              <bool>true</bool>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <layout class="QFormLayout" name="formCrossOSInput">
-             <item row="0" column="0">
-              <widget class="QLabel" name="lblRightCommand">
-               <property name="text">
-                <string>Right Command</string>
-               </property>
-               <property name="buddy">
-                <cstring>comboRightCommand</cstring>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="1">
-              <widget class="QComboBox" name="comboRightCommand">
-               <property name="toolTip">
-                <string>Choose whether Right Command remains the Windows key or becomes the Korean-English Hangul toggle.</string>
-               </property>
-               <item>
-                <property name="text">
-                 <string>Preserve as Windows key (default)</string>
-                </property>
-               </item>
-               <item>
-                <property name="text">
-                 <string>Korean-English toggle (Hangul)</string>
-                </property>
-               </item>
-              </widget>
-             </item>
-             <item row="1" column="0" colspan="2">
-              <widget class="QCheckBox" name="chkCrossOSInvertX">
-               <property name="text">
-                <string>Invert horizontal scrolling</string>
-               </property>
-              </widget>
-             </item>
-             <item row="2" column="0" colspan="2">
-              <widget class="QCheckBox" name="chkCrossOSInvertY">
-               <property name="text">
-                <string>Invert vertical scrolling</string>
-               </property>
-              </widget>
-             </item>
-             <item row="3" column="0">
-              <widget class="QLabel" name="lblCrossOSInvertScope">
-               <property name="text">
-                <string>Apply to</string>
-               </property>
-               <property name="buddy">
-                <cstring>comboCrossOSInvertScope</cstring>
-               </property>
-              </widget>
-             </item>
-             <item row="3" column="1">
-              <widget class="QComboBox" name="comboCrossOSInvertScope">
-               <property name="toolTip">
-                <string>Choose which scrolling the inversion above applies to. "Mouse wheel only" leaves trackpad scrolling unchanged. Devices that report scroll or momentum phases (trackpads, Magic Mouse, and some smoothing utilities) count as a trackpad.</string>
-               </property>
-               <item>
-                <property name="text">
-                 <string>All scrolling</string>
-                </property>
-               </item>
-               <item>
-                <property name="text">
-                 <string>Mouse wheel only (trackpad unchanged)</string>
-                </property>
-               </item>
-              </widget>
-             </item>
-             <item row="4" column="0" colspan="2">
-              <widget class="QCheckBox" name="chkCrossOSSemanticMedia">
-               <property name="text">
-                <string>Use semantic media keys</string>
-               </property>
-               <property name="toolTip">
-                <string>Enable volume, previous/next track, play/pause, and stop keys through Windows virtual media keys.</string>
-               </property>
-              </widget>
-             </item>
-            </layout>
-           </item>
-           <item>
-            <widget class="QLabel" name="lblCrossOSScrollLayering">
-             <property name="text">
-              <string>Destination-local scroll inversion in Client Configuration is separate and is applied after these cross-OS options; enabling both can compound.</string>
-             </property>
-             <property name="wordWrap">
-              <bool>true</bool>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </widget>
-        </item>
        <item>
         <widget class="QGroupBox" name="groupAliases">
          <property name="sizePolicy">
@@ -846,6 +727,127 @@
     </layout>
    </item>
    <item>
+    <widget class="QGroupBox" name="groupCrossOSInput">
+     <property name="toolTip">
+      <string>These options apply only when this computer is a Windows destination and the source negotiates protocol 1.9. Scroll inversion applies to all scrolling unless you choose "Mouse wheel only", which is a best-effort check based on macOS scroll phases.</string>
+     </property>
+     <property name="title">
+      <string>Cross-OS Input (macOS source to Windows destination)</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutCrossOSInput">
+      <item>
+       <widget class="QLabel" name="lblCrossOSInputDescription">
+        <property name="text">
+         <string>Applies only when a Mac server controls this Windows computer.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QFormLayout" name="formCrossOSInput">
+        <item row="0" column="0">
+         <widget class="QLabel" name="lblRightCommand">
+          <property name="text">
+           <string>Right Command</string>
+          </property>
+          <property name="buddy">
+           <cstring>comboRightCommand</cstring>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QComboBox" name="comboRightCommand">
+          <property name="toolTip">
+           <string>Choose whether Right Command remains the Windows key or becomes the Korean-English Hangul toggle.</string>
+          </property>
+          <item>
+           <property name="text">
+            <string>Preserve as Windows key (default)</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Korean-English toggle (Hangul)</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item row="1" column="0" colspan="2">
+         <layout class="QHBoxLayout" name="layoutCrossOSInvert">
+          <item>
+           <widget class="QCheckBox" name="chkCrossOSInvertX">
+            <property name="toolTip">
+             <string>Inverts horizontal scrolling sent from the macOS source. Scroll inversion in Client Configuration is applied afterwards, so enabling both can compound.</string>
+            </property>
+            <property name="text">
+             <string>Invert horizontal scrolling</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="chkCrossOSInvertY">
+            <property name="toolTip">
+             <string>Inverts vertical scrolling sent from the macOS source. Scroll inversion in Client Configuration is applied afterwards, so enabling both can compound.</string>
+            </property>
+            <property name="text">
+             <string>Invert vertical scrolling</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item row="2" column="0">
+         <widget class="QLabel" name="lblCrossOSInvertScope">
+          <property name="text">
+           <string>Apply to</string>
+          </property>
+          <property name="buddy">
+           <cstring>comboCrossOSInvertScope</cstring>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="QComboBox" name="comboCrossOSInvertScope">
+          <property name="toolTip">
+           <string>Choose which scrolling the inversion above applies to. "Mouse wheel only" leaves trackpad scrolling unchanged. Devices that report scroll or momentum phases (trackpads, Magic Mouse, and some smoothing utilities) count as a trackpad.</string>
+          </property>
+          <item>
+           <property name="text">
+            <string>All scrolling</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Mouse wheel only (trackpad unchanged)</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item row="3" column="0" colspan="2">
+         <widget class="QCheckBox" name="chkCrossOSSemanticMedia">
+          <property name="toolTip">
+           <string>Enable volume, previous/next track, play/pause, and stop keys through Windows virtual media keys.</string>
+          </property>
+          <property name="text">
+           <string>Use semantic media keys</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLabel" name="lblCrossOSScrollLayering">
+        <property name="toolTip">
+         <string>Destination-local scroll inversion in Client Configuration is separate and is applied after these cross-OS options; enabling both can compound.</string>
+        </property>
+        <property name="text">
+         <string>Client Configuration scroll inversion can compound with these.</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QDialogButtonBox" name="buttonBox">
      <property name="minimumSize">
       <size>
@@ -880,15 +882,15 @@
   <tabstop>chkFixCapsLock</tabstop>
   <tabstop>chkFixNumLock</tabstop>
   <tabstop>chkFixXTest</tabstop>
+  <tabstop>lineAddAlias</tabstop>
+  <tabstop>btnAddAlias</tabstop>
+  <tabstop>listAliases</tabstop>
+  <tabstop>btnRemoveAlias</tabstop>
   <tabstop>comboRightCommand</tabstop>
   <tabstop>chkCrossOSInvertX</tabstop>
   <tabstop>chkCrossOSInvertY</tabstop>
   <tabstop>comboCrossOSInvertScope</tabstop>
   <tabstop>chkCrossOSSemanticMedia</tabstop>
-  <tabstop>lineAddAlias</tabstop>
-  <tabstop>btnAddAlias</tabstop>
-  <tabstop>listAliases</tabstop>
-  <tabstop>btnRemoveAlias</tabstop>
  </tabstops>
  <resources/>
  <connections/>
