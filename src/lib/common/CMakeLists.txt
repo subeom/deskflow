@@ -12,6 +12,7 @@ configure_file(VersionInfo.h.in VersionInfo.h @ONLY)
 add_library(common STATIC
   Action.cpp
   Action.h
+  ClipboardCapabilities.h
   Coordinate.h
   Enums.h
   ExitCodes.h

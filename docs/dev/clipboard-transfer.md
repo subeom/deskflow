@@ -30,7 +30,9 @@ and keepalives, and a **logical low priority channel inside the existing stream*
 
 - the sender cuts a clipboard into 32 KiB chunks and writes **one chunk each time the stream reports
   that its output has drained** (`StreamOutputFlushed`). Input and keepalive messages are written
-  directly, so they are never queued behind more than a chunk of clipboard data;
+  directly. The event fires on any drain of the buffer, also one that an input packet caused, so up to
+  about two chunks (64 KiB) of clipboard data can be in flight at a time, and an input or keepalive packet
+  waits behind at most that, not behind the whole clipboard;
 - while a paced transfer runs, the kernel send buffer is limited (`TCP_NOTSENT_LOWAT`) so that the
   backlog lives in the user space queue, where input overtakes it, and not in the kernel, where it
   cannot. Without this the pacing alone did not help in the experiment, and the limit alone did not
@@ -113,6 +115,16 @@ advertised the single id capability. Such a server takes the grab and the data o
 (`ClientProxy1_6`, in the order grab, grab, data, data, so the grab of an id is seen before its data), so a
 Linux computer entered later still gets its selection. `Client::sendClipboard` returns before reading the local
 clipboard for a skipped id, which also saves the second pasteboard read on the Mac.
+
+Known limitation (pre-existing, not changed here): the rule above applies to **peers** only
+(`exchangesId` in `ClientProxy1_9` and `ServerProxy1_9`). The server's own primary computer
+(`PrimaryClient`) still gets `grabClipboard` and `setClipboard` for id 1, whatever its platform. With a
+Windows primary, the selection grab (id 1) of an X11 client empties the primary's only clipboard, and with
+a Windows or macOS primary, an X11 client that owns different data for id 0 and id 1 leaves the primary
+with the id 1 data, because the platform code ignores the id and the last write wins. This only matters
+with Linux/X11 clients; Windows and macOS computers among themselves are not affected. A possible
+follow-up is to skip id 1 for a primary that is not on X11 in `handleClipboardGrabbed`, `switchComputer`
+and `onClipboardChanged`, with the same `exchangesId` rule.
 
 ## Leaving one computer out
 
