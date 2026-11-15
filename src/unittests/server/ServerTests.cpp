@@ -1231,4 +1231,48 @@ void ServerTests::clipboardRead_tellsThePlatformTheSizeLimit()
   }
 }
 
+// A computer that is not the owner of a clipboard any more may still send its data: a client that was not told that
+// another computer took the selection claims it until it leaves. What it sends must not replace the owner's data.
+void ServerTests::clipboardChanged_fromAComputerThatIsNotTheOwner_isIgnored()
+{
+  ClipboardRig rig;
+  fill(rig.a->own(kClipboardClipboard), 30, false, false);
+  rig.grab(*rig.a, kClipboardClipboard);
+  rig.changed(*rig.a, kClipboardClipboard);
+
+  fill(rig.b->own(kClipboardClipboard), 31, false, false);
+  rig.grab(*rig.b, kClipboardClipboard);
+  rig.changed(*rig.b, kClipboardClipboard);
+
+  // A still thinks it owns what it had and says so
+  rig.changed(*rig.a, kClipboardClipboard);
+
+  QVERIFY(rig.switchTo("primary"));
+  QCOMPARE(received(rig.platform->received[kClipboardClipboard]), bytes(marshalled(31)));
+}
+
+// What was dropped for its size is never sent, not even after the limit was raised: on a Mac what stays in its place
+// is not the clipboard
+void ServerTests::clipboardOverTheLimit_stillIsNotSentAfterTheLimitWasRaised()
+{
+  ClipboardRig rig(1);
+  fill(rig.platform->pasteboard, 2000, false, false);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QVERIFY(rig.switchTo("A")); // read, and dropped for its size
+
+  // the limit is raised in the configuration the Server uses (an option that is already in one is not replaced)
+  deskflow::server::Config raised(&rig.events);
+  raised.addComputer("primary");
+  raised.addComputer("A");
+  raised.addComputer("B");
+  raised.addOption("", kOptionClipboardSharingSize, 100);
+  rig.config = raised;
+  QVERIFY(rig.server->setConfig(rig.config));
+  QCOMPARE(rig.server->getMaximumClipboardSizeBytes(), size_t{100} * 1024);
+
+  // the cursor goes on from A: the primary is not read again, and what the Server kept is not the clipboard
+  QVERIFY(rig.switchTo("B"));
+  QVERIFY(neverReceivedAnything(rig.b->received(kClipboardClipboard)));
+}
+
 QTEST_MAIN(ServerTests)

@@ -398,6 +398,8 @@ private:
     std::string m_clipboardData;
     std::string m_clipboardOwner;
     uint32_t m_clipboardSeqNum = 0;
+    // what was read last was dropped for its size: what is kept of it is not to be sent, whatever the limit is by now
+    bool m_oversize = false;
   };
   // Order suggested by clang
 

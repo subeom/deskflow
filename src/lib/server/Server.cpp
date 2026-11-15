@@ -502,7 +502,8 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
       // send the clipboard data to new active computer
       for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
         // Hackity hackity hack
-        if (m_clipboards[id].m_clipboard.marshall().size() > (m_maximumClipboardSize * 1024)) {
+        if (m_clipboards[id].m_oversize ||
+            m_clipboards[id].m_clipboard.marshall().size() > (m_maximumClipboardSize * 1024)) {
           continue;
         }
         // The primary computer that does not share its clipboard stays the owner of the empty clipboards the Server
@@ -1305,6 +1306,7 @@ void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber
   );
   clipboard.m_clipboardOwner = getName(grabber);
   clipboard.m_clipboardSeqNum = info->m_sequenceNumber;
+  clipboard.m_oversize = false;
 
   // clear the clipboard data (since it's not known at this point)
   if (clipboard.m_clipboard.open(0)) {
@@ -1568,8 +1570,13 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
     return;
   }
 
-  // should be the expected client
-  assert(sender == m_clients.find(clipboard.m_clipboardOwner)->second);
+  // should be the expected client: another computer may still send what it had, because it was not told that the
+  // clipboard is not its own any more (a computer that is not told of a grab of the selection)
+  const auto owner = m_clients.find(clipboard.m_clipboardOwner);
+  if (owner == m_clients.end() || owner->second != sender) {
+    LOG_DEBUG("ignored computer \"%s\" update of clipboard %d (not the owner)", getName(sender).c_str(), id);
+    return;
+  }
 
   // get data, and of it only what is shared: a computer that is not asked for the formats that are not does not have
   // to read them either
@@ -1600,8 +1607,10 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
   if (data.size() > m_maximumClipboardSize * 1024) {
     const auto detail = std::format("{} B exceeds the {} KB limit", data.size(), m_maximumClipboardSize);
     LOG_WARN("%s", formatSkipLine(id, clipboard.m_clipboardOwner, SkipReason::OverSize, detail).c_str());
+    clipboard.m_oversize = true;
     return;
   }
+  clipboard.m_oversize = false;
 
   // ignore if data hasn't changed
   if (data == clipboard.m_clipboardData) {
