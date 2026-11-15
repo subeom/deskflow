@@ -7,6 +7,7 @@
 #pragma once
 
 #include "deskflow/ClipboardChunk.h"
+#include "deskflow/ClipboardSender.h"
 #include "deskflow/ClipboardTransferLog.h"
 #include "server/ClientProxy1_5.h"
 
@@ -23,14 +24,19 @@ public:
   ~ClientProxy1_6() override;
 
   void setClipboard(ClipboardID id, const IClipboard *clipboard) override;
+  void grabClipboard(ClipboardID id) override;
   bool recvClipboard() override;
 
 protected:
   std::string describeClipboardActivity() const override;
 
+  //! Whether clipboards are sent to this client as a paced stream, which needs a negotiated protocol that has one
+  virtual bool shouldPaceClipboard() const;
+
 private:
   IEventQueue *m_events;
   deskflow::clipboard::ClipboardTransferLog m_transferLog;
+  ClipboardSender m_sender;
   std::string m_clipboardDataCached;
   ClipboardChunkAssemblyState m_clipboardChunkState;
 };

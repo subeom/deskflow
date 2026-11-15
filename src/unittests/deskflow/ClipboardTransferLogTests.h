@@ -20,4 +20,5 @@ private Q_SLOTS:
   void cancelDropsTheTransfer();
   void skipLinesNameTheReason();
   void keepAliveTimeoutLineReportsSilenceAndTransfer();
+  void joinActivityLeavesOutIdleDirections();
 };

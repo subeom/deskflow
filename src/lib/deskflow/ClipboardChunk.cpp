@@ -211,5 +211,12 @@ void ClipboardChunk::send(deskflow::IStream *stream, void *data)
     break;
   }
 
-  ProtocolUtil::writef(stream, kMsgDClipboard, id, sequence, mark, &dataChunk);
+  write(stream, id, sequence, mark, dataChunk);
+}
+
+void ClipboardChunk::write(
+    deskflow::IStream *stream, ClipboardID id, uint32_t sequence, uint8_t mark, const std::string &data
+)
+{
+  ProtocolUtil::writef(stream, kMsgDClipboard, id, sequence, mark, &data);
 }

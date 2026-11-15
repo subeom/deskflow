@@ -41,6 +41,10 @@ public:
 
   static void send(deskflow::IStream *stream, void *data);
 
+  //! Writes one clipboard message without building a ClipboardChunk first; the bytes equal those of send()
+  static void
+  write(deskflow::IStream *stream, ClipboardID id, uint32_t sequence, uint8_t mark, const std::string &data);
+
   //! The chunk type (ChunkType) of a ClipboardChunk passed as the data of a ClipboardSending event
   static uint8_t getMark(const void *data);
 

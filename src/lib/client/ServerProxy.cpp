@@ -24,7 +24,6 @@
 
 using deskflow::clipboard::ClipboardTransferLog;
 using deskflow::clipboard::describeFormats;
-using deskflow::clipboard::transferChunkCount;
 using deskflow::clipboard::TransferDirection;
 using Clock = ClipboardTransferLog::Clock;
 
@@ -35,7 +34,8 @@ using Clock = ClipboardTransferLog::Clock;
 ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue *events)
     : m_client(client),
       m_stream(stream),
-      m_events(events)
+      m_events(events),
+      m_sender(stream, events, this, "server")
 {
   assert(m_client != nullptr);
   assert(m_stream != nullptr);
@@ -48,15 +48,6 @@ ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue 
   m_events->addHandler(EventTypes::StreamInputReady, m_stream->getEventTarget(), [this](const auto &) {
     handleData();
   });
-  m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
-    ClipboardChunk::send(m_stream, e.getDataObject());
-    if (ClipboardChunk::getMark(e.getDataObject()) == ChunkType::DataEnd) {
-      const auto id = ClipboardChunk::getId(e.getDataObject());
-      if (const auto line = m_transferLog.finish(TransferDirection::Sent, id, Clock::now())) {
-        LOG_INFO("%s", line->c_str());
-      }
-    }
-  });
 
   // send heartbeat
   setKeepAliveRate(kKeepAliveRate);
@@ -66,12 +57,13 @@ ServerProxy::~ServerProxy()
 {
   setKeepAliveRate(-1.0);
   m_events->removeHandler(EventTypes::StreamInputReady, m_stream->getEventTarget());
-  m_events->removeHandler(EventTypes::ClipboardSending, this);
 }
 
-void ServerProxy::resetKeepAliveAlarm()
+void ServerProxy::resetKeepAliveAlarm(bool isKeepAlive)
 {
-  m_lastKeepAlive = Clock::now();
+  if (isKeepAlive) {
+    m_lastKeepAlive = Clock::now();
+  }
   if (m_keepAliveAlarmTimer != nullptr) {
     m_events->removeHandler(EventTypes::Timer, m_keepAliveAlarmTimer);
     m_events->deleteTimer(m_keepAliveAlarmTimer);
@@ -96,6 +88,10 @@ void ServerProxy::handleData()
   // handle messages until there are no more.  first read message code.
   uint8_t code[4];
   uint32_t n = m_stream->read(code, 4);
+  if (n != 0 && dataIsProofOfLife()) {
+    // a long inbound clipboard must not look like a dead server just because no keepalive got through it
+    resetKeepAliveAlarm(false);
+  }
   while (n != 0) {
     // verify we got an entire code
     if (n != 4) {
@@ -347,7 +343,8 @@ void ServerProxy::handleKeepAliveAlarm()
   };
   LOG_INFO(
       "%s", deskflow::clipboard::formatKeepAliveTimeout(
-                "server", since(m_lastKeepAlive), since(m_lastData), m_transferLog.describeActive(now)
+                "server", since(m_lastKeepAlive), since(m_lastData),
+                deskflow::clipboard::joinActivity(m_transferLog.describeActive(now), m_sender.describeActive())
             )
                 .c_str()
   );
@@ -382,6 +379,8 @@ void ServerProxy::onInfoChanged()
 bool ServerProxy::onGrabClipboard(ClipboardID id)
 {
   LOG_VERBOSE("sending clipboard %d changed", id);
+  // the grab says the data of a running upload is stale, so it must not follow the grab
+  m_sender.cancel(id);
   ProtocolUtil::writef(m_stream, kMsgCClipboard, id, m_seqNum);
   return true;
 }
@@ -390,12 +389,8 @@ void ServerProxy::onClipboardChanged(ClipboardID id, const IClipboard *clipboard
 {
   std::string data = IClipboard::marshall(clipboard);
   LOG_DEBUG("sending clipboard %d seqnum=%d", id, m_seqNum);
-  m_transferLog.begin(
-      TransferDirection::Sent, id, "server", describeFormats(data), data.size(),
-      transferChunkCount(data.size(), kClipboardChunkSize), false, Clock::now()
-  );
 
-  StreamChunker::sendClipboard(data, data.size(), id, m_seqNum, m_events, this);
+  m_sender.send(id, m_seqNum, data, shouldPaceClipboard());
 }
 
 void ServerProxy::flushCompressedMouse()

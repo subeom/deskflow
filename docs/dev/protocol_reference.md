@@ -271,6 +271,8 @@ Current capability bits:
 - bit 1: destination can synthesize `kKeyHangul`
 - bit 2: destination can synthesize supported semantic media keys
 - bit 3: destination can apply negotiated cross-platform scroll inversion
+- bit 8: the peer paces its clipboard stream and counts any received data as proof of life (see
+  [Paced Clipboard Stream](#paced-clipboard-stream)); sent by both sides, not an input capability
 
 The destination advertises bit 1 only if its current key-map inventory can synthesize
 `kKeyHangul` (on Windows only the Korean keyboard layout provides that key) and advertises bits 2
@@ -351,6 +353,49 @@ emit. `kCGScrollWheelEventIsContinuous` and the source process id are not part o
 When the classification changes, the macOS primary logs the raw fields once at `DEBUG` level
 (`scroll source changed to ...`); it never logs per event.
 
+### Paced Clipboard Stream
+
+Large clipboards used to be pushed into the connection all at once. The mouse, keys and keepalives
+written afterwards waited behind them, and a slow link delayed the keepalives long enough for the
+client to declare the server dead. A protocol 1.9 link therefore sends @ref kMsgDClipboard as a
+paced, low priority stream **inside the same TCP connection** (see `docs/dev/clipboard-transfer.md`
+for the design and for what was deliberately not done).
+
+The messages do not change. A transfer is still `start`, `data`... and `end` chunks (the mark byte of
+@ref kMsgDClipboard), and every receiver of protocol 1.6 and later reassembles any chunk size
+(`ClipboardChunk::assemble`). Only the chunk boundaries and the timing differ from the legacy
+stream:
+
+- the data is cut into chunks of 32 KiB (the legacy sender uses 512 KiB), and only one data chunk is
+  written each time the connection reports that its output has drained. The start chunk goes out with
+  the first data chunk and the end chunk with the last one;
+- the transfers of the two clipboard ids are sent one after the other;
+- a new transfer for a clipboard id replaces a transfer of that id that is running or waiting. The old
+  one stops without an end chunk: the receiver drops its partial data when the next start chunk
+  arrives. A @ref kMsgCClipboard for an id also stops the transfer of that id, because the grab says
+  its data is stale.
+- while a paced transfer runs, the sender limits the unsent data in the kernel send buffer
+  (`TCP_NOTSENT_LOWAT`, 16 KiB) where the platform has that option, so the backlog stays in the
+  user space queue behind the input messages. Platforms without the option only get the pacing.
+
+**Gate.** Pacing changes what is on the wire, so it is used only on a link that completed the
+protocol 1.9 handshake (the peer's `DIPC`/`CIPC` was received). A peer of protocol 1.8 or older, and a
+1.9 connection before the peer's capabilities are known, get the legacy stream byte for byte. The
+sender does not need the peer to advertise anything for this: a 1.9 receiver that predates the
+capability reassembles the stream like any other.
+
+**Capability bit.** `DIPC` and `CIPC` carry one more capability bit, defined in
+`common/ClipboardCapabilities.h`:
+
+- bit 8 (`kClipboardCapabilityPaced`): the peer sends clipboards as a paced stream and counts any
+  data it receives as proof of life.
+
+Peers that predate the bit ignore it, so the layout of `DIPC` and `CIPC` is unchanged. A client whose
+server advertised the bit resets its keepalive alarm for any data it receives, not only for `CALV`,
+so that a long inbound clipboard cannot make it declare the server dead. Without the bit the client
+resets the alarm for `CALV` only, as before. (The server already resets its alarm for any data
+received from a client.)
+
 ## Timing and Synchronization
 
 <a id="constraint-keep-alive"></a>
@@ -363,8 +408,9 @@ When the classification changes, the macOS primary logs the raw fields once at `
 
 **Client-Side Behavior:**
 - Upon receiving a kMsgCKeepAlive message, the client must immediately send a kMsgCKeepAlive message back
-- The client maintains a timeout that is reset each time any message is received
-- If no message is received for 9.0 seconds (3 × @ref kKeepAliveRate), client must disconnect
+- The client maintains a timeout that is reset each time a kMsgCKeepAlive message is received. When the server
+  advertised the paced clipboard capability (bit 8 of kMsgDInputCapabilities) any received data resets it too
+- If the timeout is not reset for 9.0 seconds (3 × @ref kKeepAliveRate), client must disconnect
 - This is handled by the  (private) ServerProxy::handleKeepAliveAlarm method
 
 <a id="constraint-computer-entry-sync"></a>

@@ -171,4 +171,17 @@ void ClipboardTransferLogTests::keepAliveTimeoutLineReportsSilenceAndTransfer()
   );
 }
 
+void ClipboardTransferLogTests::joinActivityLeavesOutIdleDirections()
+{
+  QCOMPARE(QString::fromStdString(joinActivity("none", "none")), QStringLiteral("none"));
+  QCOMPARE(
+      QString::fromStdString(joinActivity("receiving clipboard 0", "none")), QStringLiteral("receiving clipboard 0")
+  );
+  QCOMPARE(QString::fromStdString(joinActivity("none", "sending clipboard 1")), QStringLiteral("sending clipboard 1"));
+  QCOMPARE(
+      QString::fromStdString(joinActivity("receiving clipboard 0", "sending clipboard 1")),
+      QStringLiteral("receiving clipboard 0, sending clipboard 1")
+  );
+}
+
 QTEST_MAIN(ClipboardTransferLogTests)

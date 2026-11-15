@@ -12,6 +12,7 @@
 #include "client/Client.h"
 #include "client/ServerProxy.h"
 #include "client/ServerProxy1_9.h"
+#include "common/ClipboardCapabilities.h"
 #include "common/InputCapabilities.h"
 #include "common/PlatformInfo.h"
 #include "deskflow/AppUtil.h"
@@ -520,7 +521,7 @@ void ServerProxyTests::inputCapabilities_v19_readsSourceAndWritesDestinationCapa
   FakeStream expected;
   ProtocolUtil::writef(
       &expected, kMsgCInputCapabilities, static_cast<uint8_t>(deskflow::platform::currentInputPlatform()),
-      deskflow::platform::currentInputCapabilities().capabilities
+      deskflow::platform::currentInputCapabilities().capabilities | kClipboardCapabilityPaced
   );
   QCOMPARE(stream.takeOutput(), expected.takeOutput());
 }

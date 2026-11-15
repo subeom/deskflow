@@ -6,6 +6,7 @@
 #include "client/ServerProxy1_9.h"
 
 #include "client/Client.h"
+#include "common/ClipboardCapabilities.h"
 #include "deskflow/OptionTypes.h"
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
@@ -46,6 +47,7 @@ bool ServerProxy1_9::receiveInputCapabilities()
   m_sourceInputCapabilities = {
       isKnownInputPlatform(parsedPlatform) ? parsedPlatform : InputPlatform::Unknown, capabilities
   };
+  m_receivedSourceCapabilities = true;
   sendInputCapabilities();
   return true;
 }
@@ -88,6 +90,16 @@ void ServerProxy1_9::transformMouseWheel(int32_t &xDelta, int32_t &yDelta)
   yDelta = transformed.y;
 }
 
+bool ServerProxy1_9::shouldPaceClipboard() const
+{
+  return m_receivedSourceCapabilities;
+}
+
+bool ServerProxy1_9::dataIsProofOfLife() const
+{
+  return m_receivedSourceCapabilities && (m_sourceInputCapabilities.capabilities & kClipboardCapabilityPaced) != 0;
+}
+
 bool ServerProxy1_9::synthesizeSemanticMediaKey(KeyID id)
 {
   return m_client->semanticMediaKey(id);
@@ -101,7 +113,10 @@ InputCapabilities ServerProxy1_9::localInputCapabilities() const
 void ServerProxy1_9::sendInputCapabilities() const
 {
   const auto local = localInputCapabilities();
-  ProtocolUtil::writef(getStream(), kMsgCInputCapabilities, static_cast<uint8_t>(local.platform), local.capabilities);
+  ProtocolUtil::writef(
+      getStream(), kMsgCInputCapabilities, static_cast<uint8_t>(local.platform),
+      local.capabilities | kClipboardCapabilityPaced
+  );
 }
 
 CrossPlatformInputPolicy ServerProxy1_9::inputPolicy() const

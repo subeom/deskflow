@@ -102,6 +102,17 @@ std::string formatSkipLine(ClipboardID id, std::string_view peer, SkipReason rea
   return line;
 }
 
+std::string joinActivity(std::string_view first, std::string_view second)
+{
+  if (first == "none") {
+    return std::string(second);
+  }
+  if (second == "none") {
+    return std::string(first);
+  }
+  return std::format("{}, {}", first, second);
+}
+
 std::string formatKeepAliveTimeout(
     std::string_view who, std::chrono::milliseconds sinceKeepAlive, std::chrono::milliseconds sinceData,
     std::string_view transfers

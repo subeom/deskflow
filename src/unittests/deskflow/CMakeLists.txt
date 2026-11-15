@@ -30,6 +30,14 @@ create_test(
 )
 
 create_test(
+  NAME ClipboardSenderTests
+  DEPENDS app
+  LIBS arch base io ${extra_libs}
+  SOURCE ClipboardSenderTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+create_test(
   NAME ClipboardTransferLogTests
   DEPENDS app
   LIBS arch base io ${extra_libs}

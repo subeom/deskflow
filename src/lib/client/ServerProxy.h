@@ -12,6 +12,7 @@
 
 #include "common/Enums.h"
 #include "deskflow/ClipboardChunk.h"
+#include "deskflow/ClipboardSender.h"
 #include "deskflow/ClipboardTransferLog.h"
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/KeyTypes.h"
@@ -85,6 +86,18 @@ protected:
   }
   virtual void deliverMouseWheel(int32_t xDelta, int32_t yDelta);
 
+  //! Whether clipboards are sent to the server as a paced stream, which needs a negotiated protocol that has one
+  virtual bool shouldPaceClipboard() const
+  {
+    return false;
+  }
+
+  //! Whether any data from the server proves that it is alive, not only its keepalives
+  virtual bool dataIsProofOfLife() const
+  {
+    return false;
+  }
+
   deskflow::IStream *getStream() const
   {
     return m_stream;
@@ -96,7 +109,7 @@ private:
 
   void sendInfo(const ClientInfo &);
 
-  void resetKeepAliveAlarm();
+  void resetKeepAliveAlarm(bool isKeepAlive = true);
   void setKeepAliveRate(double);
 
   // modifier key translation
@@ -154,6 +167,7 @@ private:
   std::string m_clipboardDataCached;
   ClipboardChunkAssemblyState m_clipboardChunkState;
   deskflow::clipboard::ClipboardTransferLog m_transferLog;
+  ClipboardSender m_sender;
   std::chrono::steady_clock::time_point m_lastData = std::chrono::steady_clock::now();
   std::chrono::steady_clock::time_point m_lastKeepAlive = std::chrono::steady_clock::now();
 };

@@ -39,6 +39,9 @@ size_t transferChunkCount(size_t dataBytes, size_t chunkSize);
 //! One INFO line saying why a clipboard was not transferred; \p detail is appended in parentheses
 std::string formatSkipLine(ClipboardID id, std::string_view peer, SkipReason reason, std::string_view detail = {});
 
+//! Joins two descriptions from ClipboardTransferLog::describeActive(), leaving out the one that is "none"
+std::string joinActivity(std::string_view first, std::string_view second);
+
 //! The INFO line for a keepalive that did not arrive in time
 std::string formatKeepAliveTimeout(
     std::string_view who, std::chrono::milliseconds sinceKeepAlive, std::chrono::milliseconds sinceData,

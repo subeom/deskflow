@@ -37,6 +37,9 @@ protected:
   bool isHandshakeCompleteReady() const override;
   virtual InputCapabilities localInputCapabilities() const;
 
+  // a destination that reported its capabilities speaks protocol 1.9, whose receivers reassemble any chunk size
+  bool shouldPaceClipboard() const override;
+
 private:
   void sendInputCapabilities() const;
   bool receiveInputCapabilities();

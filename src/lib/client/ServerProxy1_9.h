@@ -25,6 +25,11 @@ protected:
   ConnectionResult parseMessage(const uint8_t *code) override;
   void onOptionsChanged(const OptionsList &options) override;
   bool handleSemanticMediaKey(KeyID id) override;
+
+  // a server that sent its capabilities speaks protocol 1.9, whose receivers reassemble any chunk size
+  bool shouldPaceClipboard() const override;
+  // only a server that advertised the paced clipboard capability is known to keep a transfer from starving keepalives
+  bool dataIsProofOfLife() const override;
   bool shouldSuppressKeyRepeat(KeyID id, KeyModifierMask mask) const override;
   void transformMouseWheel(int32_t &xDelta, int32_t &yDelta) override;
   virtual InputCapabilities localInputCapabilities() const;
@@ -39,6 +44,7 @@ private:
 
   Client *m_client = nullptr;
   InputCapabilities m_sourceInputCapabilities;
+  bool m_receivedSourceCapabilities = false;
   bool m_invertScrollX = false;
   bool m_invertScrollY = false;
   ScrollInvertScope m_scrollInvertScope = ScrollInvertScope::All;

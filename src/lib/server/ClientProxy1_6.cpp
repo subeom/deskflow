@@ -9,13 +9,11 @@
 #include "base/Log.h"
 #include "deskflow/ClipboardChunk.h"
 #include "deskflow/ProtocolUtil.h"
-#include "deskflow/StreamChunker.h"
 #include "io/IStream.h"
 #include "server/Server.h"
 
 using deskflow::clipboard::ClipboardTransferLog;
 using deskflow::clipboard::describeFormats;
-using deskflow::clipboard::transferChunkCount;
 using deskflow::clipboard::TransferDirection;
 using Clock = ClipboardTransferLog::Clock;
 
@@ -25,22 +23,16 @@ using Clock = ClipboardTransferLog::Clock;
 
 ClientProxy1_6::ClientProxy1_6(const std::string &name, deskflow::IStream *stream, Server *server, IEventQueue *events)
     : ClientProxy1_5(name, stream, server, events),
-      m_events(events)
+      m_events(events),
+      m_sender(stream, events, this, name)
 {
-  m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
-    ClipboardChunk::send(getStream(), e.getDataObject());
-    if (ClipboardChunk::getMark(e.getDataObject()) == ChunkType::DataEnd) {
-      const auto id = ClipboardChunk::getId(e.getDataObject());
-      if (const auto line = m_transferLog.finish(TransferDirection::Sent, id, Clock::now())) {
-        LOG_INFO("%s", line->c_str());
-      }
-    }
-  });
 }
 
-ClientProxy1_6::~ClientProxy1_6()
+ClientProxy1_6::~ClientProxy1_6() = default;
+
+bool ClientProxy1_6::shouldPaceClipboard() const
 {
-  m_events->removeHandler(EventTypes::ClipboardSending, this);
+  return false;
 }
 
 void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
@@ -52,16 +44,17 @@ void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
     Clipboard::copy(&m_clipboard[id].m_clipboard, clipboard);
 
     std::string data = m_clipboard[id].m_clipboard.marshall();
-
-    size_t size = data.size();
     LOG_DEBUG("sending clipboard %d to \"%s\"", id, getName().c_str());
-    m_transferLog.begin(
-        TransferDirection::Sent, id, getName(), describeFormats(data), size,
-        transferChunkCount(size, kClipboardChunkSize), false, Clock::now()
-    );
 
-    StreamChunker::sendClipboard(data, size, id, 0, m_events, this);
+    m_sender.send(id, 0, data, shouldPaceClipboard());
   }
+}
+
+void ClientProxy1_6::grabClipboard(ClipboardID id)
+{
+  // the grab says the data of a running transfer is stale, so it must not follow the grab
+  m_sender.cancel(id);
+  ClientProxy1_5::grabClipboard(id);
 }
 
 bool ClientProxy1_6::recvClipboard()
@@ -111,5 +104,5 @@ bool ClientProxy1_6::recvClipboard()
 
 std::string ClientProxy1_6::describeClipboardActivity() const
 {
-  return m_transferLog.describeActive(Clock::now());
+  return deskflow::clipboard::joinActivity(m_transferLog.describeActive(Clock::now()), m_sender.describeActive());
 }
