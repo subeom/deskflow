@@ -23,6 +23,10 @@ add_library(${target} STATIC
   FileTail.h
   Logger.cpp
   Logger.h
+  MacUpdateInstaller.cpp
+  MacUpdateInstaller.h
+  MacUpdateVerifier.cpp
+  MacUpdateVerifier.h
   MainWindow.cpp
   MainWindow.h
   MainWindow.ui
@@ -35,10 +39,12 @@ add_library(${target} STATIC
   UpdateCache.h
   UpdateIntegrity.cpp
   UpdateIntegrity.h
+  UpdateInstaller.h
   UpdateNetwork.cpp
   UpdateNetwork.h
   UpdateRelease.cpp
   UpdateRelease.h
+  UpdateVerifier.h
   VersionChecker.cpp
   VersionChecker.h
   config/ComputerConfig.h

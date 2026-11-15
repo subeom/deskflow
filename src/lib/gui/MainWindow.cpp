@@ -61,6 +61,7 @@ using namespace deskflow::gui;
 
 MainWindow::MainWindow()
     : ui{std::make_unique<Ui::MainWindow>()},
+      m_updateInstaller{deskflow::gui::createPlatformUpdateInstaller()},
       m_coreProcess(m_serverConfig),
       m_trayIcon{new QSystemTrayIcon(this)},
       m_guiDupeChecker{new QLocalServer(this)},
@@ -300,7 +301,10 @@ void MainWindow::connectSlots()
 
   connect(m_statusBar, &StatusBar::requestShowMyFingerprints, this, &MainWindow::showMyFingerprint);
   connect(m_statusBar, &StatusBar::requestUpdateVersion, this, &MainWindow::openGetNewVersionUrl);
+  connect(m_statusBar, &StatusBar::requestUpdateInstall, this, &MainWindow::installUpdate);
   connect(&m_versionChecker, &VersionChecker::updateFound, m_statusBar, &StatusBar::updateFound);
+  connect(&m_versionChecker, &VersionChecker::updateStaged, m_statusBar, &StatusBar::updateStaged);
+  connect(&m_versionChecker, &VersionChecker::updateError, m_statusBar, &StatusBar::updateFailed);
 
   connect(m_guiDupeChecker, &QLocalServer::newConnection, this, &MainWindow::showAndActivate);
 
@@ -471,9 +475,44 @@ void MainWindow::openAboutDialog()
   about.exec();
 }
 
-void MainWindow::openGetNewVersionUrl() const
+void MainWindow::openGetNewVersionUrl(const QString &releaseUrl) const
 {
-  QDesktopServices::openUrl(QUrl(kUrlDownload));
+  QDesktopServices::openUrl(QUrl(releaseUrl.isEmpty() ? kUrlDownload : releaseUrl));
+}
+
+void MainWindow::installUpdate(const deskflow::gui::StagedUpdate &staged)
+{
+  if (!m_updateInstaller) {
+    QMessageBox::warning(
+        this, tr("Update unavailable"), tr("This Deskflow installation cannot install updates automatically.")
+    );
+    return;
+  }
+
+  QMessageBox confirmation(this);
+  confirmation.setIcon(QMessageBox::Question);
+  confirmation.setWindowTitle(tr("Install Deskflow update"));
+  confirmation.setText(tr("Install Deskflow v%1?").arg(staged.version));
+  confirmation.setInformativeText(
+      tr("The downloaded app has passed Deskflow's checksum, signature, and notarization checks. "
+         "Deskflow will replace the current app, then restart.")
+  );
+  confirmation.addButton(QMessageBox::Cancel);
+  const auto installButton = confirmation.addButton(tr("Install and restart"), QMessageBox::AcceptRole);
+  confirmation.setDefaultButton(QMessageBox::Cancel);
+  confirmation.exec();
+  if (confirmation.clickedButton() != installButton) {
+    return;
+  }
+
+  const auto result = m_updateInstaller->start(staged, true);
+  if (!result.ok) {
+    QMessageBox::warning(
+        this, tr("Update failed"), result.error.isEmpty() ? tr("The update helper could not start.") : result.error
+    );
+    return;
+  }
+  close();
 }
 
 void MainWindow::openSettings()

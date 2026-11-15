@@ -7,6 +7,7 @@
 
 #include "gui/UpdateRelease.h"
 
+#include <QMetaType>
 #include <QString>
 
 #include <optional>
@@ -34,6 +35,7 @@ public:
   explicit UpdateCache(QString rootPath);
 
   std::optional<StagedUpdate> find(const UpdatePlan &plan) const;
+  static std::optional<StagedUpdate> load(const QString &manifestPath);
   UpdateStageResult
   stage(const UpdatePlan &plan, const QByteArray &installer, const std::optional<QByteArray> &sums = std::nullopt);
   bool discard(const StagedUpdate &staged);
@@ -46,3 +48,5 @@ private:
 };
 
 } // namespace deskflow::gui
+
+Q_DECLARE_METATYPE(deskflow::gui::StagedUpdate)

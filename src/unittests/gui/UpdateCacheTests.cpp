@@ -9,6 +9,7 @@
 #include "gui/UpdateRelease.h"
 
 #include <QCryptographicHash>
+#include <QFile>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -28,6 +29,14 @@ UpdatePlan planFor(const QByteArray &payload)
       QStringLiteral("sha256:%1").arg(hash), payload.size()
   };
   plan.mode = UpdateInstallMode::Automatic;
+  const auto sums = plan.installer->digest.mid(7).toUtf8() + QByteArrayLiteral("  ") + plan.installer->name.toUtf8() +
+                    QByteArrayLiteral("\n");
+  const auto sumsHash = QString::fromLatin1(QCryptographicHash::hash(sums, QCryptographicHash::Sha256).toHex());
+  plan.checksums = UpdateAsset{
+      QStringLiteral("sums.txt"),
+      QStringLiteral("https://github.com/deskflow/deskflow/releases/download/v1.28.0/sums.txt"),
+      QStringLiteral("sha256:%1").arg(sumsHash), sums.size()
+  };
   return plan;
 }
 
@@ -85,6 +94,66 @@ void UpdateCacheTests::stage_deduplicatesExistingVerifiedArtifact()
   QVERIFY(second.ok);
   QCOMPARE(second.staged.installerPath, first.staged.installerPath);
   QCOMPARE(QFileInfo(second.staged.installerPath).lastModified(), firstWrite);
+}
+
+void UpdateCacheTests::stage_requiresVerifiedChecksumAsset()
+{
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QByteArray payload("verified installer");
+  const auto plan = planFor(payload);
+  UpdateCache cache(directory.path());
+
+  const auto missing = cache.stage(plan, payload);
+  QVERIFY(!missing.ok);
+  QVERIFY(missing.error.contains(QStringLiteral("checksum"), Qt::CaseInsensitive));
+
+  const auto corruptSums = sumsFor(plan) + QByteArrayLiteral("\n");
+  const auto corrupt = cache.stage(plan, payload, corruptSums);
+  QVERIFY(!corrupt.ok);
+  QVERIFY(corrupt.error.contains(QStringLiteral("checksum"), Qt::CaseInsensitive));
+}
+
+void UpdateCacheTests::load_reverifiesStagedManifestAndPayload()
+{
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QByteArray payload("verified installer");
+  const auto plan = planFor(payload);
+  UpdateCache cache(directory.path());
+  const auto staged = cache.stage(plan, payload, sumsFor(plan));
+  QVERIFY(staged.ok);
+
+  const auto loaded = UpdateCache::load(staged.staged.manifestPath);
+  QVERIFY(loaded);
+  QCOMPARE(loaded->version, staged.staged.version);
+  QCOMPARE(loaded->installerName, staged.staged.installerName);
+  QCOMPARE(loaded->installerPath, staged.staged.installerPath);
+}
+
+void UpdateCacheTests::load_rejectsTamperedManifestOrPayload()
+{
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QByteArray payload("verified installer");
+  const auto plan = planFor(payload);
+  UpdateCache cache(directory.path());
+  const auto staged = cache.stage(plan, payload, sumsFor(plan));
+  QVERIFY(staged.ok);
+
+  QFile installer(staged.staged.installerPath);
+  QVERIFY(installer.open(QIODevice::WriteOnly));
+  QVERIFY(installer.write("tampered") > 0);
+  installer.close();
+  QVERIFY(!UpdateCache::load(staged.staged.manifestPath));
+
+  const auto restored = cache.stage(plan, payload, sumsFor(plan));
+  QVERIFY(restored.ok);
+  QFile manifest(restored.staged.manifestPath);
+  QVERIFY(manifest.open(QIODevice::WriteOnly));
+  QVERIFY(manifest.write(R"json({"version":"1.28.0","installer":"../evil.dmg"})json") > 0);
+  manifest.close();
+  QVERIFY(!UpdateCache::load(restored.staged.manifestPath));
 }
 
 QTEST_MAIN(UpdateCacheTests)

@@ -10,15 +10,14 @@
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QSet>
-#include <QUrl>
 
 namespace deskflow::gui {
 
 namespace {
 
-constexpr auto kGitHubReleasesPrefix = "https://github.com/deskflow/deskflow/releases/";
-constexpr auto kReleasePagePrefix = "https://github.com/deskflow/deskflow/releases/tag/";
 constexpr auto kDigestPattern = R"(sha256:[0-9a-fA-F]{64})";
+constexpr auto kMaximumAutomaticInstallerBytes = 512LL * 1024 * 1024;
+constexpr auto kMaximumAutomaticChecksumBytes = 2LL * 1024 * 1024;
 
 struct ParsedVersion
 {
@@ -65,12 +64,15 @@ std::optional<ParsedVersion> parseVersion(const QString &version)
   };
 }
 
-bool isOfficialAssetUrl(const QString &url, const QString &tag)
+bool isSafeAssetName(const QString &name)
 {
-  const QUrl parsed(url);
-  const auto expectedPathPrefix = QStringLiteral("/deskflow/deskflow/releases/download/%1/").arg(tag);
-  return parsed.scheme() == QStringLiteral("https") && parsed.host() == QStringLiteral("github.com") &&
-         parsed.path().startsWith(expectedPathPrefix);
+  static const QRegularExpression pattern(QStringLiteral(R"(^[A-Za-z0-9][A-Za-z0-9._+-]*$)"));
+  return pattern.match(name).hasMatch();
+}
+
+bool isOfficialAssetUrl(const QString &url, const QString &tag, const QString &name)
+{
+  return url == QStringLiteral("https://github.com/deskflow/deskflow/releases/download/%1/%2").arg(tag, name);
 }
 
 std::optional<UpdateAsset> findAsset(const UpdateRelease &release, const QString &name)
@@ -105,7 +107,7 @@ UpdateReleaseParseResult parseGitHubRelease(const QByteArray &json)
   }
 
   const auto pageUrl = root.value(QStringLiteral("html_url")).toString();
-  if (!pageUrl.startsWith(kReleasePagePrefix + tag)) {
+  if (pageUrl != QStringLiteral("https://github.com/deskflow/deskflow/releases/tag/%1").arg(tag)) {
     return {{}, QStringLiteral("release page is not the official Deskflow release URL")};
   }
 
@@ -121,7 +123,7 @@ UpdateReleaseParseResult parseGitHubRelease(const QByteArray &json)
     const auto url = asset.value(QStringLiteral("browser_download_url")).toString();
     const auto size = asset.value(QStringLiteral("size")).toInteger();
     const auto digest = asset.value(QStringLiteral("digest")).toString();
-    if (name.isEmpty() || !isOfficialAssetUrl(url, tag) || size <= 0 || names.contains(name)) {
+    if (!isSafeAssetName(name) || !isOfficialAssetUrl(url, tag, name) || size <= 0 || names.contains(name)) {
       return {{}, QStringLiteral("release contains an invalid or duplicate asset")};
     }
     names.insert(name);
@@ -184,6 +186,11 @@ planUpdate(const UpdateRelease &release, const QString &platform, const QString 
   }
 
   if (plan.checksums && !isValidSha256Digest(plan.checksums->digest)) {
+    return std::nullopt;
+  }
+  if (plan.mode == UpdateInstallMode::Automatic &&
+      (plan.installer->size > kMaximumAutomaticInstallerBytes ||
+       (plan.checksums && plan.checksums->size > kMaximumAutomaticChecksumBytes))) {
     return std::nullopt;
   }
   return plan;

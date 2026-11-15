@@ -39,16 +39,17 @@ struct QtUpdateNetwork::Request
 
 bool isAllowedUpdateRedirect(const QUrl &url)
 {
-  if (url.scheme() != QStringLiteral("https")) {
+  if (url.scheme() != QStringLiteral("https") || !url.userInfo().isEmpty() || (url.port() != -1 && url.port() != 443) ||
+      !url.fragment().isEmpty()) {
     return false;
   }
 
   const auto host = url.host();
   if (host == QStringLiteral("api.github.com")) {
-    return url.path() == QStringLiteral("/repos/deskflow/deskflow/releases/latest");
+    return url.path() == QStringLiteral("/repos/deskflow/deskflow/releases/latest") && url.query().isEmpty();
   }
   if (host == QStringLiteral("github.com")) {
-    return url.path().startsWith(QStringLiteral("/deskflow/deskflow/releases/download/"));
+    return url.path().startsWith(QStringLiteral("/deskflow/deskflow/releases/download/")) && url.query().isEmpty();
   }
 
   static const QSet<QString> redirectHosts = {

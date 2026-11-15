@@ -7,6 +7,7 @@
 #include "StatusBar.h"
 #include "common/Constants.h"
 #include "common/Settings.h"
+#include "common/UrlConstants.h"
 
 #include <QEvent>
 #include <QLabel>
@@ -47,7 +48,13 @@ StatusBar::StatusBar(QWidget *parent)
   m_btnUpdate->setFixedHeight(btnHeight);
   m_btnUpdate->setIconSize(iconSize);
   insertPermanentWidget(3, m_btnUpdate);
-  connect(m_btnUpdate, &QPushButton::clicked, this, &StatusBar::requestUpdateVersion);
+  connect(m_btnUpdate, &QPushButton::clicked, this, [this] {
+    if (m_updateButtonState == UpdateButtonState::Staged && m_stagedUpdate) {
+      Q_EMIT requestUpdateInstall(*m_stagedUpdate);
+    } else if (m_updateButtonState != UpdateButtonState::Hidden) {
+      Q_EMIT requestUpdateVersion(m_updateReleaseUrl);
+    }
+  });
 
   m_retryTimer->setInterval(1000);
   m_retryTimer->setSingleShot(false);
@@ -163,10 +170,57 @@ void StatusBar::setBtnFingerprintVisible(bool visible)
   m_btnFingerprint->setVisible(visible);
 }
 
-void StatusBar::updateFound(const QString &version)
+void StatusBar::updateFound(const QString &version, const QString &releaseUrl)
 {
-  m_btnUpdate->setVisible(true);
-  m_btnUpdate->setToolTip(tr("A new version v%1 is available").arg(version));
+  m_updateButtonState = UpdateButtonState::Manual;
+  m_updateVersion = version;
+  m_updateReleaseUrl = releaseUrl;
+  m_stagedUpdate.reset();
+  m_updateError.clear();
+  updateButton();
+}
+
+void StatusBar::updateStaged(const deskflow::gui::StagedUpdate &staged)
+{
+  m_updateButtonState = UpdateButtonState::Staged;
+  m_updateVersion = staged.version;
+  m_stagedUpdate = staged;
+  m_updateReleaseUrl.clear();
+  m_updateError.clear();
+  updateButton();
+}
+
+void StatusBar::updateFailed(const QString &message)
+{
+  m_updateButtonState = UpdateButtonState::Failed;
+  m_updateVersion.clear();
+  m_stagedUpdate.reset();
+  m_updateReleaseUrl = kUrlDownload;
+  m_updateError = message;
+  updateButton();
+}
+
+void StatusBar::updateButton()
+{
+  m_btnUpdate->setVisible(m_updateButtonState != UpdateButtonState::Hidden);
+  switch (m_updateButtonState) {
+  case UpdateButtonState::Manual:
+    m_btnUpdate->setText(tr("Update available"));
+    m_btnUpdate->setToolTip(tr("Download Deskflow v%1 from the official release").arg(m_updateVersion));
+    break;
+  case UpdateButtonState::Staged:
+    m_btnUpdate->setText(tr("Install update"));
+    m_btnUpdate->setToolTip(tr("Deskflow v%1 is verified and ready to install").arg(m_updateVersion));
+    break;
+  case UpdateButtonState::Failed:
+    m_btnUpdate->setText(tr("Update check failed"));
+    m_btnUpdate->setToolTip(m_updateError);
+    break;
+  case UpdateButtonState::Hidden:
+    m_btnUpdate->setText({});
+    m_btnUpdate->setToolTip({});
+    break;
+  }
 }
 
 void StatusBar::changeEvent(QEvent *e)
@@ -179,7 +233,7 @@ void StatusBar::changeEvent(QEvent *e)
 void StatusBar::updateText()
 {
   m_btnFingerprint->setToolTip(tr("View local fingerprint"));
-  m_btnUpdate->setText(tr("Update available"));
+  updateButton();
   setSecurityLevel(m_securityLevel);
 }
 

@@ -81,7 +81,7 @@
        <item>
         <widget class="QCheckBox" name="cbAutoUpdate">
          <property name="text">
-          <string>Check for updates on startup</string>
+          <string>Check for updates and stage verified macOS updates on startup</string>
          </property>
         </widget>
        </item>

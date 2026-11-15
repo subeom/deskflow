@@ -215,7 +215,8 @@ bool showUpdateCheckOption(QWidget *parent)
   message.setText(
       QObject::tr(
           "<p>Would you like to check for updates when %1 starts?</p>"
-          "<p>Checking for updates requires an Internet connection.</p>"
+          "<p>Checking requires an Internet connection. On supported macOS installations, %1 downloads "
+          "and verifies the update before asking for confirmation to install.</p>"
           "<p>URL: <pre>%2</pre></p>"
       )
           .arg(kAppName, Settings::value(Settings::Gui::UpdateCheckUrl).toString())

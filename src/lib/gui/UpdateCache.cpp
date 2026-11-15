@@ -7,6 +7,7 @@
 
 #include "gui/UpdateIntegrity.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -37,18 +38,109 @@ bool writeFile(const QString &path, const QByteArray &data)
   return file.commit();
 }
 
+void removeDirectory(const QString &path)
+{
+  QDir directory(path);
+  if (directory.exists() && !directory.removeRecursively()) {
+    qWarning().noquote() << "failed to remove invalid update stage:" << path;
+  }
+}
+
 bool safeFileName(const QString &name)
 {
   return !name.isEmpty() && QFileInfo(name).fileName() == name && !name.contains(QLatin1Char('/')) &&
          !name.contains(QLatin1Char('\\')) && name != QStringLiteral(".") && name != QStringLiteral("..");
 }
 
-std::optional<QByteArray> existingSums(const QString &path)
+struct LoadedStagedUpdate
 {
-  if (!QFileInfo::exists(path)) {
+  StagedUpdate staged;
+  UpdateAsset installer;
+  QString releaseUrl;
+  std::optional<UpdateAsset> checksums;
+};
+
+std::optional<LoadedStagedUpdate> loadManifest(const QString &manifestPath)
+{
+  const QFileInfo manifestInfo(manifestPath);
+  if (manifestInfo.isSymLink() || !manifestInfo.isFile() ||
+      manifestInfo.fileName() != QStringLiteral("manifest.json")) {
     return std::nullopt;
   }
-  return readFile(path);
+
+  const auto manifestData = readFile(manifestInfo.absoluteFilePath());
+  if (!manifestData) {
+    return std::nullopt;
+  }
+
+  QJsonParseError parseError;
+  const auto manifest = QJsonDocument::fromJson(*manifestData, &parseError);
+  if (parseError.error != QJsonParseError::NoError || !manifest.isObject()) {
+    return std::nullopt;
+  }
+  const auto object = manifest.object();
+  const auto version = object.value(QStringLiteral("version")).toString();
+  const auto installerName = object.value(QStringLiteral("installer")).toString();
+  const auto digest = object.value(QStringLiteral("digest")).toString();
+  const auto size = object.value(QStringLiteral("size")).toInteger();
+  const auto releaseUrl = object.value(QStringLiteral("releaseUrl")).toString();
+  static const QRegularExpression safeVersion(QStringLiteral(R"(^\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?$)"));
+  if (!safeVersion.match(version).hasMatch() || !safeFileName(installerName) || !isValidSha256Digest(digest) ||
+      size <= 0 || releaseUrl != QStringLiteral("https://github.com/deskflow/deskflow/releases/tag/v%1").arg(version) ||
+      manifestInfo.dir().dirName() != version) {
+    return std::nullopt;
+  }
+
+  const auto installerPath = manifestInfo.absoluteDir().filePath(installerName);
+  const QFileInfo installerInfo(installerPath);
+  const auto expectedInstallerPath = QDir(manifestInfo.dir().canonicalPath()).filePath(installerName);
+  if (installerInfo.isSymLink() || !installerInfo.isFile() ||
+      installerInfo.canonicalFilePath() != expectedInstallerPath) {
+    return std::nullopt;
+  }
+  const auto installerData = readFile(installerInfo.absoluteFilePath());
+  if (!installerData) {
+    return std::nullopt;
+  }
+
+  std::optional<UpdateAsset> checksums;
+  const auto checksumDigest = object.value(QStringLiteral("checksumDigest")).toString();
+  const auto checksumSize = object.value(QStringLiteral("checksumSize")).toInteger();
+  if (!checksumDigest.isEmpty()) {
+    if (!isValidSha256Digest(checksumDigest) || checksumSize <= 0) {
+      return std::nullopt;
+    }
+    checksums = UpdateAsset{QStringLiteral("sums.txt"), {}, checksumDigest, checksumSize};
+  }
+
+  std::optional<QByteArray> sums;
+  const auto sumsPath = manifestInfo.absoluteDir().filePath(QStringLiteral("sums.txt"));
+  if (checksums) {
+    const QFileInfo sumsInfo(sumsPath);
+    if (sumsInfo.isSymLink() || !sumsInfo.isFile() ||
+        sumsInfo.canonicalFilePath() != QDir(manifestInfo.dir().canonicalPath()).filePath(QStringLiteral("sums.txt"))) {
+      return std::nullopt;
+    }
+    const auto sumsData = readFile(sumsInfo.absoluteFilePath());
+    if (!sumsData || !verifyUpdatePayload(*checksums, *sumsData, std::nullopt).ok) {
+      return std::nullopt;
+    }
+    sums = *sumsData;
+  } else if (QFileInfo::exists(sumsPath)) {
+    return std::nullopt;
+  }
+
+  const UpdateAsset installer{installerName, {}, digest, size};
+  if (!verifyUpdatePayload(installer, *installerData, sums).ok) {
+    return std::nullopt;
+  }
+
+  return LoadedStagedUpdate{
+      {version, installerName, installerInfo.absoluteFilePath(), manifestInfo.absoluteFilePath()},
+      installer,
+      releaseUrl,
+      checksums
+  };
 }
 
 } // namespace
@@ -65,36 +157,28 @@ std::optional<StagedUpdate> UpdateCache::find(const UpdatePlan &plan) const
 
   const auto directory = stageDirectory(plan);
   const auto manifestPath = QDir(directory).filePath(QStringLiteral("manifest.json"));
-  const auto manifestData = readFile(manifestPath);
-  if (!manifestData) {
+  const auto loaded = loadManifest(manifestPath);
+  if (!loaded) {
     return std::nullopt;
   }
 
-  QJsonParseError parseError;
-  const auto manifest = QJsonDocument::fromJson(*manifestData, &parseError);
-  if (parseError.error != QJsonParseError::NoError || !manifest.isObject()) {
+  if (loaded->staged.version != plan.releaseVersion || loaded->installer.name != plan.installer->name ||
+      loaded->installer.digest != plan.installer->digest || loaded->installer.size != plan.installer->size ||
+      loaded->releaseUrl != plan.releaseUrl || loaded->checksums.has_value() != plan.checksums.has_value()) {
     return std::nullopt;
   }
-  const auto object = manifest.object();
-  if (object.value(QStringLiteral("version")).toString() != plan.releaseVersion ||
-      object.value(QStringLiteral("installer")).toString() != plan.installer->name ||
-      object.value(QStringLiteral("digest")).toString() != plan.installer->digest ||
-      object.value(QStringLiteral("size")).toInteger() != plan.installer->size ||
-      object.value(QStringLiteral("releaseUrl")).toString() != plan.releaseUrl) {
+  if (loaded->checksums &&
+      (loaded->checksums->digest != plan.checksums->digest || loaded->checksums->size != plan.checksums->size)) {
     return std::nullopt;
   }
 
-  const auto installerPath = QDir(directory).filePath(plan.installer->name);
-  const auto installerData = readFile(installerPath);
-  if (!installerData) {
-    return std::nullopt;
-  }
-  const auto sums = existingSums(QDir(directory).filePath(QStringLiteral("sums.txt")));
-  if (!verifyUpdatePayload(*plan.installer, *installerData, sums).ok) {
-    return std::nullopt;
-  }
+  return loaded->staged;
+}
 
-  return StagedUpdate{plan.releaseVersion, plan.installer->name, installerPath, manifestPath};
+std::optional<StagedUpdate> UpdateCache::load(const QString &manifestPath)
+{
+  const auto loaded = loadManifest(manifestPath);
+  return loaded ? std::optional<StagedUpdate>{loaded->staged} : std::nullopt;
 }
 
 UpdateStageResult
@@ -102,6 +186,20 @@ UpdateCache::stage(const UpdatePlan &plan, const QByteArray &installer, const st
 {
   if (!plan.installer || !safeFileName(plan.installer->name)) {
     return {false, {}, QStringLiteral("invalid update asset name")};
+  }
+  if (plan.checksums.has_value() != sums.has_value()) {
+    return {
+        false,
+        {},
+        plan.checksums ? QStringLiteral("release checksum file is missing")
+                       : QStringLiteral("unexpected update checksum file")
+    };
+  }
+  if (sums) {
+    const auto checksumVerification = verifyUpdatePayload(*plan.checksums, *sums, std::nullopt);
+    if (!checksumVerification.ok) {
+      return {false, {}, QStringLiteral("update checksum file failed verification")};
+    }
   }
 
   const auto verification = verifyUpdatePayload(*plan.installer, installer, sums);
@@ -125,7 +223,9 @@ UpdateCache::stage(const UpdatePlan &plan, const QByteArray &installer, const st
   const auto directory = stageDirectory(plan);
   QDir existingDirectory(directory);
   if (existingDirectory.exists()) {
-    existingDirectory.removeRecursively();
+    if (!existingDirectory.removeRecursively()) {
+      return {false, {}, QStringLiteral("cannot replace invalid update stage")};
+    }
   }
   if (!root.mkpath(directory)) {
     return {false, {}, QStringLiteral("cannot create update stage directory")};
@@ -133,31 +233,35 @@ UpdateCache::stage(const UpdatePlan &plan, const QByteArray &installer, const st
 
   const auto installerPath = QDir(directory).filePath(plan.installer->name);
   if (!writeFile(installerPath, installer)) {
-    QDir(directory).removeRecursively();
+    removeDirectory(directory);
     return {false, {}, QStringLiteral("failed to publish staged installer")};
   }
 
   if (sums) {
     if (!writeFile(QDir(directory).filePath(QStringLiteral("sums.txt")), *sums)) {
-      QDir(directory).removeRecursively();
+      removeDirectory(directory);
       return {false, {}, QStringLiteral("failed to publish staged checksum file")};
     }
   }
 
   const QJsonObject manifest{
-      {QStringLiteral("version"), plan.releaseVersion},   {QStringLiteral("installer"), plan.installer->name},
-      {QStringLiteral("digest"), plan.installer->digest}, {QStringLiteral("size"), plan.installer->size},
+      {QStringLiteral("version"), plan.releaseVersion},
+      {QStringLiteral("installer"), plan.installer->name},
+      {QStringLiteral("digest"), plan.installer->digest},
+      {QStringLiteral("size"), plan.installer->size},
       {QStringLiteral("releaseUrl"), plan.releaseUrl},
+      {QStringLiteral("checksumDigest"), plan.checksums ? plan.checksums->digest : QString()},
+      {QStringLiteral("checksumSize"), plan.checksums ? plan.checksums->size : 0},
   };
   const auto manifestPath = QDir(directory).filePath(QStringLiteral("manifest.json"));
   if (!writeFile(manifestPath, QJsonDocument(manifest).toJson(QJsonDocument::Compact))) {
-    QDir(directory).removeRecursively();
+    removeDirectory(directory);
     return {false, {}, QStringLiteral("failed to publish update manifest")};
   }
 
   const auto staged = find(plan);
   if (!staged) {
-    QDir(directory).removeRecursively();
+    removeDirectory(directory);
     return {false, {}, QStringLiteral("staged update failed final verification")};
   }
   return {true, *staged, {}};

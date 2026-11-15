@@ -9,6 +9,9 @@
 #include <QStatusBar>
 
 #include "common/Enums.h"
+#include "gui/UpdateCache.h"
+
+#include <optional>
 
 class QPushButton;
 class QLabel;
@@ -30,16 +33,28 @@ public:
   void setSecurityIcon(bool encrypted);
   void setSecurityLevel(const QString &securityLevel);
   void setBtnFingerprintVisible(bool visible);
-  void updateFound(const QString &version);
+  void updateFound(const QString &version, const QString &releaseUrl);
+  void updateStaged(const deskflow::gui::StagedUpdate &staged);
+  void updateFailed(const QString &message);
 
 Q_SIGNALS:
   void requestShowMyFingerprints();
-  void requestUpdateVersion();
+  void requestUpdateVersion(const QString &releaseUrl);
+  void requestUpdateInstall(const deskflow::gui::StagedUpdate &staged);
 
 protected:
   void changeEvent(QEvent *e) override;
 
 private:
+  enum class UpdateButtonState
+  {
+    Hidden,
+    Manual,
+    Staged,
+    Failed
+  };
+
+  void updateButton();
   void updateText();
   void updateTimerLabel();
   QPushButton *m_btnFingerprint = nullptr;
@@ -50,4 +65,9 @@ private:
   QString m_securityLevel;
   int m_connectionInterval = -1;
   QTimer *m_retryTimer = nullptr;
+  UpdateButtonState m_updateButtonState = UpdateButtonState::Hidden;
+  QString m_updateVersion;
+  QString m_updateReleaseUrl;
+  QString m_updateError;
+  std::optional<deskflow::gui::StagedUpdate> m_stagedUpdate;
 };

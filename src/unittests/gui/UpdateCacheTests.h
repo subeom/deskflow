@@ -15,4 +15,7 @@ private Q_SLOTS:
   void stage_publishesVerifiedArtifactAndManifest();
   void stage_rejectsInvalidPayloadWithoutPublishing();
   void stage_deduplicatesExistingVerifiedArtifact();
+  void stage_requiresVerifiedChecksumAsset();
+  void load_reverifiesStagedManifestAndPayload();
+  void load_rejectsTamperedManifestOrPayload();
 };

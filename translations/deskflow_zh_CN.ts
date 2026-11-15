@@ -147,7 +147,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>Scroll Modifiers</source>
-        <translation type="unfinished">滚动修饰符</translation>
+        <translation type="obsolete">滚动修饰符</translation>
     </message>
     <message>
         <source>Invert</source>
@@ -176,6 +176,14 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Clear Server History</source>
         <translation type="unfinished">清除服务器历史记录</translation>
+    </message>
+    <message>
+        <source>Local Scroll (this destination computer)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>These local inversion and scale settings apply to every wheel event on this computer. Cross-OS inversion configured per destination is separate and can compound with these values.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -327,6 +335,50 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>The computer name cannot be the same as an alias. Please either remove the alias or change the computer name.</source>
         <translation type="unfinished">计算机名称不能与别名相同。请删除别名或更改计算机名称。</translation>
+    </message>
+    <message>
+        <source>Cross-OS Input (macOS source to Windows destination)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>These options apply only when this computer is a Windows destination and the source negotiates protocol 1.9. Scroll options affect all wheel events; Deskflow does not identify mouse and trackpad devices separately.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Right Command</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Choose whether Right Command remains the Windows key or becomes the Korean-English Hangul toggle.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Preserve as Windows key (default)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Korean-English toggle (Hangul)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Invert horizontal scrolling</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Invert vertical scrolling</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Use semantic media keys</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enable volume, previous/next track, play/pause, and stop keys through Windows virtual media keys.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Destination-local scroll inversion in Client Configuration is separate and is applied after these cross-OS options; enabling both can compound.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -557,6 +609,38 @@ Do you want to connect to the server?
     <message>
         <source>Could not save server configuration to file.</source>
         <translation>无法将服务器配置保存到文件。</translation>
+    </message>
+    <message>
+        <source>Update unavailable</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>This Deskflow installation cannot install updates automatically.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Install Deskflow update</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Install Deskflow v%1?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The downloaded app has passed Deskflow&apos;s checksum, signature, and notarization checks. Deskflow will replace the current app, then restart.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Install and restart</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Update failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The update helper could not start.</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Start</source>
@@ -857,8 +941,12 @@ Additionally, check you are able to %1 the server config file: %2</source>
         <translation>检查更新</translation>
     </message>
     <message>
+        <source>&lt;p&gt;Would you like to check for updates when %1 starts?&lt;/p&gt;&lt;p&gt;Checking requires an Internet connection. On supported macOS installations, %1 downloads and verifies the update before asking for confirmation to install.&lt;/p&gt;&lt;p&gt;URL: &lt;pre&gt;%2&lt;/pre&gt;&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>&lt;p&gt;Would you like to check for updates when %1 starts?&lt;/p&gt;&lt;p&gt;Checking for updates requires an Internet connection.&lt;/p&gt;&lt;p&gt;URL: &lt;pre&gt;%2&lt;/pre&gt;&lt;/p&gt;</source>
-        <translation>&lt;p&gt;您希望在 %1 启动时检查更新吗？&lt;/p&gt;&lt;p&gt;检查更新需要互联网连接。&lt;/p&gt;&lt;p&gt;URL: &lt;pre&gt;%2&lt;/pre&gt;&lt;/p&gt;</translation>
+        <translation type="vanished">&lt;p&gt;您希望在 %1 启动时检查更新吗？&lt;/p&gt;&lt;p&gt;检查更新需要互联网连接。&lt;/p&gt;&lt;p&gt;URL: &lt;pre&gt;%2&lt;/pre&gt;&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Background service offline</source>
@@ -1111,7 +1199,7 @@ Enabling this setting will disable the server config GUI.</source>
     </message>
     <message>
         <source>Check for updates on startup</source>
-        <translation>启动时检查更新</translation>
+        <translation type="vanished">启动时检查更新</translation>
     </message>
     <message>
         <source>Prevent this computer from going to sleep</source>
@@ -1297,6 +1385,10 @@ Enabling this setting will disable the server config GUI.</source>
         <source>Remove all settings</source>
         <translation type="unfinished">移除所有设置</translation>
     </message>
+    <message>
+        <source>Check for updates and stage verified macOS updates on startup</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialogButtonBox</name>
@@ -1370,7 +1462,7 @@ Enabling this setting will disable the server config GUI.</source>
     </message>
     <message>
         <source>A new version v%1 is available</source>
-        <translation>新版本 v%1 可用</translation>
+        <translation type="vanished">新版本 v%1 可用</translation>
     </message>
     <message>
         <source>View local fingerprint</source>
@@ -1379,6 +1471,22 @@ Enabling this setting will disable the server config GUI.</source>
     <message>
         <source>Update available</source>
         <translation>有可用更新</translation>
+    </message>
+    <message>
+        <source>Download Deskflow v%1 from the official release</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Install update</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Deskflow v%1 is verified and ready to install</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Update check failed</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>%1 is connecting...</source>

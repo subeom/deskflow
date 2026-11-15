@@ -16,6 +16,7 @@
 #include "gui/MainWindow.h"
 #include "gui/Messages.h"
 #include "gui/StyleUtils.h"
+#include "gui/UpdateInstaller.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -71,12 +72,18 @@ int main(int argc, char *argv[])
   auto helpOption = QCommandLineOption({"h", "help"}, "Display Help on the command line");
   auto versionOption = QCommandLineOption({"v", "version"}, "Display version information");
   auto resetOption = QCommandLineOption("reset", "Reset all settings");
+  auto applyUpdateOption =
+      QCommandLineOption("apply-update", "Apply a verified staged update from its manifest", "manifest");
+  auto updateParentPidOption =
+      QCommandLineOption("update-parent-pid", "Wait for the update parent process before applying", "pid");
 
   QCommandLineParser parser;
   parser.setSingleDashWordOptionMode(QCommandLineParser::ParseAsLongOptions);
   parser.addOption(helpOption);
   parser.addOption(versionOption);
   parser.addOption(resetOption);
+  parser.addOption(applyUpdateOption);
+  parser.addOption(updateParentPidOption);
   parser.parse(QCoreApplication::arguments());
 
   if (!parser.errorText().isEmpty()) {
@@ -92,6 +99,27 @@ int main(int argc, char *argv[])
 
   if (parser.isSet(versionOption)) {
     QTextStream(stdout) << kHeader << kCopyright << Qt::endl;
+    return s_exitSuccess;
+  }
+
+  const auto applyUpdate = parser.isSet(applyUpdateOption);
+  const auto hasParentPid = parser.isSet(updateParentPidOption);
+  if (applyUpdate != hasParentPid) {
+    qCritical() << "--apply-update and --update-parent-pid must be used together.";
+    return s_exitArgs;
+  }
+  if (applyUpdate) {
+    bool validPid = false;
+    const auto parentPid = parser.value(updateParentPidOption).toLongLong(&validPid);
+    if (!validPid || parentPid <= 1) {
+      qCritical() << "The update parent PID is invalid.";
+      return s_exitArgs;
+    }
+    const auto result = applyPlatformUpdate(parser.value(applyUpdateOption), parentPid);
+    if (!result.ok) {
+      qCritical().noquote() << result.error;
+      return s_exitFailed;
+    }
     return s_exitSuccess;
   }
 

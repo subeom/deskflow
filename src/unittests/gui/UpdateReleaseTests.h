@@ -14,7 +14,9 @@ class UpdateReleaseTests : public QObject
 private Q_SLOTS:
   void latestStableRelease_parsesAndSelectsMacInstaller();
   void latestStableRelease_rejectsDraftOrPrerelease();
+  void latestStableRelease_rejectsMismatchedOfficialUrls();
   void updatePlan_keepsWindowsAndPackageManagedMacManual();
   void updatePlan_rejectsMissingOrInvalidDigest();
+  void updatePlan_rejectsOversizedAutomaticDownloads();
   void versionComparison_neverDowngradesAndOrdersStages();
 };

@@ -38,3 +38,24 @@ create_test(
   SOURCE UpdateCacheTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME UpdateVerifierTests
+  DEPENDS gui
+  SOURCE UpdateVerifierTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
+  NAME UpdateInstallerTests
+  DEPENDS gui
+  SOURCE UpdateInstallerTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
+  NAME StatusBarTests
+  DEPENDS gui
+  SOURCE StatusBarTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)

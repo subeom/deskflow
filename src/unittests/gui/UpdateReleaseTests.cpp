@@ -23,19 +23,22 @@ QByteArray releaseJson(bool draft, bool prerelease, const QByteArray &digest = Q
   const QJsonArray assets = {
       QJsonObject{
           {"name", "deskflow-1.28.0-macos-arm64.dmg"},
-          {"browser_download_url", "https://github.com/deskflow/deskflow/releases/download/v1.28.0/arm.dmg"},
+          {"browser_download_url", "https://github.com/deskflow/deskflow/releases/download/v1.28.0/"
+                                   "deskflow-1.28.0-macos-arm64.dmg"},
           {"size", 120},
           {"digest", QString::fromLatin1(installerDigest)},
       },
       QJsonObject{
           {"name", "deskflow-1.28.0-macos-x86_64.dmg"},
-          {"browser_download_url", "https://github.com/deskflow/deskflow/releases/download/v1.28.0/intel.dmg"},
+          {"browser_download_url", "https://github.com/deskflow/deskflow/releases/download/v1.28.0/"
+                                   "deskflow-1.28.0-macos-x86_64.dmg"},
           {"size", 121},
           {"digest", "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
       },
       QJsonObject{
           {"name", "deskflow-1.28.0-win-x64.msi"},
-          {"browser_download_url", "https://github.com/deskflow/deskflow/releases/download/v1.28.0/win.msi"},
+          {"browser_download_url", "https://github.com/deskflow/deskflow/releases/download/v1.28.0/"
+                                   "deskflow-1.28.0-win-x64.msi"},
           {"size", 122},
           {"digest", "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
       },
@@ -52,6 +55,23 @@ QByteArray releaseJson(bool draft, bool prerelease, const QByteArray &digest = Q
       {"assets", assets},
   };
   return QJsonDocument(release).toJson(QJsonDocument::Compact);
+}
+
+QByteArray releaseJsonWithAssetSize(const QString &name, qint64 size)
+{
+  auto document = QJsonDocument::fromJson(releaseJson(false, false));
+  auto root = document.object();
+  auto assets = root.value(QStringLiteral("assets")).toArray();
+  for (auto index = 0; index < assets.size(); ++index) {
+    auto asset = assets.at(index).toObject();
+    if (asset.value(QStringLiteral("name")).toString() == name) {
+      asset.insert(QStringLiteral("size"), size);
+      assets.replace(index, asset);
+    }
+  }
+  root.insert(QStringLiteral("assets"), assets);
+  document.setObject(root);
+  return document.toJson(QJsonDocument::Compact);
 }
 
 } // namespace
@@ -76,6 +96,21 @@ void UpdateReleaseTests::latestStableRelease_rejectsDraftOrPrerelease()
 {
   QVERIFY(!deskflow::gui::parseGitHubRelease(releaseJson(true, false)).release.has_value());
   QVERIFY(!deskflow::gui::parseGitHubRelease(releaseJson(false, true)).release.has_value());
+}
+
+void UpdateReleaseTests::latestStableRelease_rejectsMismatchedOfficialUrls()
+{
+  const auto releasePageSuffix = releaseJson(false, false)
+                                     .replace(
+                                         "https://github.com/deskflow/deskflow/releases/tag/v1.28.0",
+                                         "https://github.com/deskflow/deskflow/releases/tag/v1.28.0?download=1"
+                                     );
+  QVERIFY(!deskflow::gui::parseGitHubRelease(releasePageSuffix).release.has_value());
+
+  const auto assetNameMismatch =
+      releaseJson(false, false)
+          .replace("deskflow-1.28.0-macos-arm64.dmg\",", "deskflow-1.28.0-macos-arm64.dmg?unexpected=true\",");
+  QVERIFY(!deskflow::gui::parseGitHubRelease(assetNameMismatch).release.has_value());
 }
 
 void UpdateReleaseTests::updatePlan_keepsWindowsAndPackageManagedMacManual()
@@ -105,6 +140,22 @@ void UpdateReleaseTests::updatePlan_rejectsMissingOrInvalidDigest()
         deskflow::gui::planUpdate(*release.release, QStringLiteral("macos"), QStringLiteral("arm64"), false);
     QVERIFY(!plan.has_value());
   }
+}
+
+void UpdateReleaseTests::updatePlan_rejectsOversizedAutomaticDownloads()
+{
+  const auto installer = QStringLiteral("deskflow-1.28.0-macos-arm64.dmg");
+  const auto release = deskflow::gui::parseGitHubRelease(releaseJsonWithAssetSize(installer, 1024LL * 1024 * 1024));
+  QVERIFY(release.release.has_value());
+  QVERIFY(
+      !deskflow::gui::planUpdate(*release.release, QStringLiteral("macos"), QStringLiteral("arm64"), false).has_value()
+  );
+
+  const auto checksums =
+      deskflow::gui::parseGitHubRelease(releaseJsonWithAssetSize(QStringLiteral("sums.txt"), 4 * 1024 * 1024));
+  QVERIFY(checksums.release.has_value());
+  QVERIFY(!deskflow::gui::planUpdate(*checksums.release, QStringLiteral("macos"), QStringLiteral("arm64"), false)
+               .has_value());
 }
 
 void UpdateReleaseTests::versionComparison_neverDowngradesAndOrdersStages()
