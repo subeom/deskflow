@@ -49,6 +49,7 @@ private:
   bool m_invertScrollY = false;
   ScrollInvertScope m_scrollInvertScope = ScrollInvertScope::All;
   bool m_semanticMedia = false;
-  // the F18 presses written as Hangul and not released yet, by the KeyButton the source gave them
+  // the F18 presses written as Hangul and not released yet, by the KeyButton the source gave them (the key id of a
+  // macOS release is kKeyNone, so the button is the only thing that pairs a release with its press)
   std::set<KeyButton> m_f18HangulButtons;
 };

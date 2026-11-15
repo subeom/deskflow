@@ -40,9 +40,16 @@ private Q_SLOTS:
   void rightCommand_bytesMatchOriginalServer_data();
   void rightCommand_bytesMatchOriginalServer();
   void f18_macToWindows_sendsHangulWithSourceButtonAndModifiers();
+  void f18_consecutivePresses_eachToggleOnce();
   void f18_heldKey_togglesOnceAndSuppressesRepeat();
-  void f18_release_followsHowThePressWasSent();
-  void f18_leave_forgetsHeldKeys();
+  void f18_holdWithAutoRepeat_thenRelease_thenNewPress();
+  void f18_releaseIsMatchedByButton_data();
+  void f18_releaseIsMatchedByButton();
+  void f18_optionTurnedOffMidHold_data();
+  void f18_optionTurnedOffMidHold();
+  void f18_optionTurnedOnMidHold_releaseStaysPlain();
+  void f18_leaveMidHold_forgetsTheHeldKey();
+  void f18_otherKeysWhileHeld_doNotDisturbTheHeldKey();
   void f18_ineligibleLinks_passThrough_data();
   void f18_ineligibleLinks_passThrough();
   void f18_legacyLinks_passThrough_data();

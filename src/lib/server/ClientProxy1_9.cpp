@@ -82,8 +82,7 @@ void ClientProxy1_9::keyRepeat(
 )
 {
   // the key was sent as Hangul, which must toggle the input mode once however long F18 is held
-  const bool heldAsHangul = id == kKeyF18 && m_f18HangulButtons.contains(button);
-  if (heldAsHangul || inputPolicy().shouldSuppressRepeat(id)) {
+  if (m_f18HangulButtons.contains(button) || inputPolicy().shouldSuppressRepeat(id)) {
     return;
   }
   ClientProxy1_8::keyRepeat(id, mask, count, button, language);
@@ -91,8 +90,9 @@ void ClientProxy1_9::keyRepeat(
 
 void ClientProxy1_9::keyUp(KeyID id, KeyModifierMask mask, KeyButton button)
 {
-  // the release follows how the press was sent, whatever the options say by now
-  if (id == kKeyF18 && m_f18HangulButtons.erase(button) > 0) {
+  // The release follows how the press was sent, whatever the options say by now. A macOS source releases a key with
+  // kKeyNone ("the id isn't used, we just need the same button"), so the held press is found by its button alone.
+  if (m_f18HangulButtons.erase(button) > 0) {
     ClientProxy1_8::keyUp(kKeyHangul, mask, button);
     return;
   }

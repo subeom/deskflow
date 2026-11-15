@@ -299,8 +299,10 @@ the destination is Windows, the destination reported capability bit 1, and `HGF8
    for a key that is still held, so that holding F18 toggles the input mode once.
 3. The matching @ref kMsgDKeyUp is written as a @ref kMsgDKeyUp for `kKeyHangul` with the same
    `KeyButton`. The proxy remembers which presses it sent as Hangul, so the release follows how the
-   press was sent even if the options changed meanwhile. That memory is dropped on
-   @ref kMsgCLeave, which makes the destination release every key.
+   press was sent even if the options changed meanwhile. A macOS source writes the release of an
+   ordinary key with `kKeyNone` and only the `KeyButton` says which key went up, so the proxy
+   matches a release (and a repeat) to the remembered press by `KeyButton` alone, never by key id.
+   That memory is dropped on @ref kMsgCLeave, which makes the destination release every key.
 
 Every other case, including every other key, F13 to F17 and F19 onwards among them, a link below
 1.9, a destination that is not Windows or did not report bit 1, and `HGF8` being absent, writes

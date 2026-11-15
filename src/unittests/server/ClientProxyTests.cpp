@@ -350,6 +350,65 @@ void sendKeyEvent(ClientProxy &proxy, KeyEvent event, KeyID id, KeyModifierMask 
   }
 }
 
+// What a macOS source hands to the proxy for one physical key, exactly as the server produces it
+// (OSXKeyState::mapKeyFromEvent -> KeyState::sendKeyEvent -> Server::onKeyDown/onKeyRepeat/onKeyUp): a press and every
+// auto-repeat carry the key's own id, an auto-repeat has a count of 1, and the release of an ordinary key carries
+// kKeyNone ("the id isn't used, we just need the same button"), so only its KeyButton says which key went up.
+// Modifier keys are reported by OSXKeyState::handleModifierKey instead and release with their real id.
+class MacSource
+{
+public:
+  explicit MacSource(ClientProxy &proxy) : m_proxy(proxy)
+  {
+  }
+
+  void press(KeyID id, KeyButton button, KeyModifierMask mask = 0)
+  {
+    m_proxy.keyDown(id, mask, button, kLang);
+  }
+
+  void autoRepeat(KeyID id, KeyButton button, KeyModifierMask mask = 0)
+  {
+    m_proxy.keyRepeat(id, mask, 1, button, kLang);
+  }
+
+  void release(KeyButton button, KeyModifierMask mask = 0)
+  {
+    m_proxy.keyUp(kKeyNone, mask, button);
+  }
+
+  void releaseModifier(KeyID id, KeyButton button, KeyModifierMask mask = 0)
+  {
+    m_proxy.keyUp(id, mask, button);
+  }
+
+private:
+  ClientProxy &m_proxy;
+};
+
+// The id a macOS source puts on \p event of the ordinary key \p id
+KeyID macKeyId(KeyEvent event, KeyID id)
+{
+  return event == KeyEvent::Up ? kKeyNone : id;
+}
+
+QByteArray hangulDownBytes(KeyModifierMask mask = 0)
+{
+  return originalKeyBytes(9, KeyEvent::Down, kKeyHangul, mask, kF18Button);
+}
+
+QByteArray hangulUpBytes(KeyModifierMask mask = 0)
+{
+  return originalKeyBytes(9, KeyEvent::Up, kKeyHangul, mask, kF18Button);
+}
+
+// Turns the F18 option on and drops the option message it caused
+void enableF18Hangul(V19Link &link)
+{
+  link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
+  (void)link.written();
+}
+
 QByteArray wheelBytes(int32_t xDelta, int32_t yDelta)
 {
   CapturingStream expected;
@@ -809,109 +868,239 @@ void ClientProxyTests::f18_macToWindows_sendsHangulWithSourceButtonAndModifiers(
 {
   V19Link link(kWindowsWithHangul);
   QVERIFY(link.destinationParsed);
-  link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
-  (void)link.written();
+  enableF18Hangul(link);
+  MacSource mac(*link.proxy);
 
   // the source's KeyButton is what pairs the release with the press on the destination, so it travels unchanged,
-  // and so do the modifiers that were held
+  // and so do the modifiers that were held.  The release is the way macOS sends it: no key id, only the button
   constexpr KeyModifierMask held = KeyModifierShift | KeyModifierControl;
-  link.proxy->keyDown(kKeyF18, held, kF18Button, kLang);
-  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyHangul, held, kF18Button));
-  link.proxy->keyUp(kKeyF18, held, kF18Button);
-  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyHangul, held, kF18Button));
+  mac.press(kKeyF18, kF18Button, held);
+  QCOMPARE(link.written(), hangulDownBytes(held));
+  mac.release(kF18Button, held);
+  QCOMPARE(link.written(), hangulUpBytes(held));
 
   // a second press is a second toggle
-  link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
-  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyHangul, 0, kF18Button));
-  link.proxy->keyUp(kKeyF18, 0, kF18Button);
-  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyHangul, 0, kF18Button));
+  mac.press(kKeyF18, kF18Button);
+  QCOMPARE(link.written(), hangulDownBytes());
+  mac.release(kF18Button);
+  QCOMPARE(link.written(), hangulUpBytes());
+}
+
+void ClientProxyTests::f18_consecutivePresses_eachToggleOnce()
+{
+  V19Link link(kWindowsWithHangul);
+  QVERIFY(link.destinationParsed);
+  enableF18Hangul(link);
+  MacSource mac(*link.proxy);
+
+  // every tap of the key must toggle the destination's input mode, not just the first one after the cursor arrived
+  for (const KeyModifierMask mask : {KeyModifierMask(0), KeyModifierShift, KeyModifierMask(0), KeyModifierSuper}) {
+    mac.press(kKeyF18, kF18Button, mask);
+    QCOMPARE(link.written(), hangulDownBytes(mask));
+    mac.release(kF18Button, mask);
+    QCOMPARE(link.written(), hangulUpBytes(mask));
+  }
 }
 
 void ClientProxyTests::f18_heldKey_togglesOnceAndSuppressesRepeat()
 {
   V19Link link(kWindowsWithHangul);
   QVERIFY(link.destinationParsed);
-  link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
-  (void)link.written();
+  enableF18Hangul(link);
+  MacSource mac(*link.proxy);
 
-  link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
-  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyHangul, 0, kF18Button));
+  mac.press(kKeyF18, kF18Button);
+  QCOMPARE(link.written(), hangulDownBytes());
 
-  // holding the key repeats it, and a misreported second press of the held key counts as a repeat: none of them
-  // may reach the destination, where each would toggle the input mode again
+  // holding the key repeats it (with the key's own id), and a misreported second press of the held key counts as a
+  // repeat: none of them may reach the destination, where each would toggle the input mode again
   for (int i = 0; i < 3; ++i) {
-    link.proxy->keyRepeat(kKeyF18, 0, kCount, kF18Button, kLang);
+    mac.autoRepeat(kKeyF18, kF18Button);
     QVERIFY(link.written().isEmpty());
   }
-  link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
+  mac.press(kKeyF18, kF18Button);
   QVERIFY(link.written().isEmpty());
 
-  link.proxy->keyUp(kKeyF18, 0, kF18Button);
-  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyHangul, 0, kF18Button));
+  mac.release(kF18Button);
+  QCOMPARE(link.written(), hangulUpBytes());
 }
 
-void ClientProxyTests::f18_release_followsHowThePressWasSent()
-{
-  // pressed while mapped, released after the option went away: the destination still gets the Hangul release
-  {
-    V19Link link(kWindowsWithHangul);
-    QVERIFY(link.destinationParsed);
-    link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
-    (void)link.written();
-    link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
-    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyHangul, 0, kF18Button));
-
-    link.proxy->resetOptions();
-    (void)link.written();
-    link.proxy->keyRepeat(kKeyF18, 0, kCount, kF18Button, kLang);
-    QVERIFY(link.written().isEmpty());
-    link.proxy->keyUp(kKeyF18, 0, kF18Button);
-    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyHangul, 0, kF18Button));
-
-    // the next press is a plain F18 again
-    link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
-    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyF18, 0, kF18Button));
-    link.proxy->keyUp(kKeyF18, 0, kF18Button);
-    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyF18, 0, kF18Button));
-  }
-
-  // pressed while passed through, released after the option came: the destination never saw Hangul go down, so it
-  // must not get a Hangul release
-  {
-    V19Link link(kWindowsWithHangul);
-    QVERIFY(link.destinationParsed);
-    link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
-    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyF18, 0, kF18Button));
-
-    link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
-    (void)link.written();
-    link.proxy->keyUp(kKeyF18, 0, kF18Button);
-    QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyF18, 0, kF18Button));
-  }
-}
-
-void ClientProxyTests::f18_leave_forgetsHeldKeys()
+void ClientProxyTests::f18_holdWithAutoRepeat_thenRelease_thenNewPress()
 {
   V19Link link(kWindowsWithHangul);
   QVERIFY(link.destinationParsed);
-  link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
-  (void)link.written();
+  enableF18Hangul(link);
+  MacSource mac(*link.proxy);
+
+  // however long the key was held, its release ends the hold and the next press toggles again
+  for (const int repeats : {4, 0, 1}) {
+    mac.press(kKeyF18, kF18Button, KeyModifierShift);
+    QCOMPARE(link.written(), hangulDownBytes(KeyModifierShift));
+    for (int i = 0; i < repeats; ++i) {
+      mac.autoRepeat(kKeyF18, kF18Button, KeyModifierShift);
+      QVERIFY(link.written().isEmpty());
+    }
+    mac.release(kF18Button, KeyModifierShift);
+    QCOMPARE(link.written(), hangulUpBytes(KeyModifierShift));
+  }
+}
+
+void ClientProxyTests::f18_releaseIsMatchedByButton_data()
+{
+  QTest::addColumn<KeyID>("releaseId");
+
+  QTest::newRow("macOS: a release carries no key id") << kKeyNone;
+  QTest::newRow("a release that still names F18") << kKeyF18;
+}
+
+void ClientProxyTests::f18_releaseIsMatchedByButton()
+{
+  QFETCH(KeyID, releaseId);
+
+  V19Link link(kWindowsWithHangul);
+  QVERIFY(link.destinationParsed);
+  enableF18Hangul(link);
 
   link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
+  QCOMPARE(link.written(), hangulDownBytes());
+  link.proxy->keyUp(releaseId, 0, kF18Button);
+  QCOMPARE(link.written(), hangulUpBytes());
+
+  // the key is free for the next press
+  link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
+  QCOMPARE(link.written(), hangulDownBytes());
+  link.proxy->keyUp(releaseId, 0, kF18Button);
+  QCOMPARE(link.written(), hangulUpBytes());
+}
+
+void ClientProxyTests::f18_optionTurnedOffMidHold_data()
+{
+  QTest::addColumn<bool>("reset");
+  QTest::addColumn<int>("value");
+
+  QTest::newRow("options reset") << true << 0;
+  QTest::newRow("pass-through value") << false << static_cast<int>(F18Action::PassThrough);
+  QTest::newRow("unknown value") << false << 7;
+}
+
+void ClientProxyTests::f18_optionTurnedOffMidHold()
+{
+  QFETCH(bool, reset);
+  QFETCH(int, value);
+
+  V19Link link(kWindowsWithHangul);
+  QVERIFY(link.destinationParsed);
+  enableF18Hangul(link);
+  MacSource mac(*link.proxy);
+
+  mac.press(kKeyF18, kF18Button);
+  QCOMPARE(link.written(), hangulDownBytes());
+
+  if (reset) {
+    link.proxy->resetOptions();
+  } else {
+    link.proxy->setOptions({kOptionCrossOSF18Key, static_cast<uint32_t>(value)});
+  }
+  (void)link.written();
+
+  // the destination still has Hangul down: the key's repeats stay suppressed and its release lets go of Hangul
+  mac.autoRepeat(kKeyF18, kF18Button);
+  QVERIFY(link.written().isEmpty());
+  mac.release(kF18Button);
+  QCOMPARE(link.written(), hangulUpBytes());
+
+  // from then on F18 is a plain key again
+  mac.press(kKeyF18, kF18Button);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyF18, 0, kF18Button));
+  mac.autoRepeat(kKeyF18, kF18Button);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Repeat, kKeyF18, 0, kF18Button, 1));
+  mac.release(kF18Button);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyNone, 0, kF18Button));
+}
+
+void ClientProxyTests::f18_optionTurnedOnMidHold_releaseStaysPlain()
+{
+  V19Link link(kWindowsWithHangul);
+  QVERIFY(link.destinationParsed);
+  MacSource mac(*link.proxy);
+
+  mac.press(kKeyF18, kF18Button);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyF18, 0, kF18Button));
+
+  enableF18Hangul(link);
+
+  // the destination never saw Hangul go down, so it must not get a Hangul release
+  mac.release(kF18Button);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyNone, 0, kF18Button));
+
+  // and the next press maps
+  mac.press(kKeyF18, kF18Button);
+  QCOMPARE(link.written(), hangulDownBytes());
+  mac.release(kF18Button);
+  QCOMPARE(link.written(), hangulUpBytes());
+}
+
+void ClientProxyTests::f18_leaveMidHold_forgetsTheHeldKey()
+{
+  V19Link link(kWindowsWithHangul);
+  QVERIFY(link.destinationParsed);
+  enableF18Hangul(link);
+  MacSource mac(*link.proxy);
+
+  mac.press(kKeyF18, kF18Button);
   (void)link.written();
   QVERIFY(link.proxy->leave());
   (void)link.written();
   link.proxy->enter(0, 0, 0, 0, false);
   (void)link.written();
 
-  // the destination released everything when the cursor left, so a late release of the old press is not
-  // translated into a Hangul key-up for a key that is no longer down there
-  link.proxy->keyUp(kKeyF18, 0, kF18Button);
-  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyF18, 0, kF18Button));
+  // the destination released everything when the cursor left: the repeats of the old hold stay suppressed, and a
+  // late release of the old press is not translated into a Hangul key-up for a key that is no longer down there
+  mac.autoRepeat(kKeyF18, kF18Button);
+  QVERIFY(link.written().isEmpty());
+  mac.release(kF18Button);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyNone, 0, kF18Button));
 
-  // and the next press maps again
-  link.proxy->keyDown(kKeyF18, 0, kF18Button, kLang);
-  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeyHangul, 0, kF18Button));
+  // a new press maps again, and so does the one after it
+  for (int i = 0; i < 2; ++i) {
+    mac.press(kKeyF18, kF18Button);
+    QCOMPARE(link.written(), hangulDownBytes());
+    mac.release(kF18Button);
+    QCOMPARE(link.written(), hangulUpBytes());
+  }
+}
+
+void ClientProxyTests::f18_otherKeysWhileHeld_doNotDisturbTheHeldKey()
+{
+  V19Link link(kWindowsWithHangul);
+  QVERIFY(link.destinationParsed);
+  enableF18Hangul(link);
+  MacSource mac(*link.proxy);
+
+  mac.press(kKeyF18, kF18Button);
+  QCOMPARE(link.written(), hangulDownBytes());
+
+  // typing while F18 is down: an ordinary key (released with kKeyNone) and Left Command (a modifier, released with
+  // its own id) travel untouched, and releasing them is not mistaken for releasing F18
+  mac.press('a', kButton);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, 'a', 0, kButton));
+  mac.release(kButton);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeyNone, 0, kButton));
+  mac.press(kKeySuper_L, kLeftCommandButton, KeyModifierSuper);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Down, kKeySuper_L, KeyModifierSuper, kLeftCommandButton));
+  mac.releaseModifier(kKeySuper_L, kLeftCommandButton);
+  QCOMPARE(link.written(), originalKeyBytes(9, KeyEvent::Up, kKeySuper_L, 0, kLeftCommandButton));
+
+  // F18 is still held
+  mac.autoRepeat(kKeyF18, kF18Button);
+  QVERIFY(link.written().isEmpty());
+  mac.release(kF18Button);
+  QCOMPARE(link.written(), hangulUpBytes());
+
+  mac.press(kKeyF18, kF18Button);
+  QCOMPARE(link.written(), hangulDownBytes());
+  mac.release(kF18Button);
+  QCOMPARE(link.written(), hangulUpBytes());
 }
 
 void ClientProxyTests::f18_ineligibleLinks_passThrough_data()
@@ -953,8 +1142,9 @@ void ClientProxyTests::f18_ineligibleLinks_passThrough()
   (void)link.written();
 
   for (const auto event : {KeyEvent::Down, KeyEvent::Repeat, KeyEvent::Up}) {
-    sendKeyEvent(*link.proxy, event, kKeyF18, KeyModifierShift, kF18Button);
-    QCOMPARE(link.written(), originalKeyBytes(9, event, kKeyF18, KeyModifierShift, kF18Button));
+    const KeyID id = macKeyId(event, kKeyF18);
+    sendKeyEvent(*link.proxy, event, id, KeyModifierShift, kF18Button);
+    QCOMPARE(link.written(), originalKeyBytes(9, event, id, KeyModifierShift, kF18Button));
   }
 }
 
@@ -977,8 +1167,9 @@ void ClientProxyTests::f18_legacyLinks_passThrough()
   (void)test.stream->take();
 
   for (const auto event : {KeyEvent::Down, KeyEvent::Repeat, KeyEvent::Up}) {
-    sendKeyEvent(*test.proxy, event, kKeyF18, KeyModifierShift, kF18Button);
-    QCOMPARE(test.stream->take(), originalKeyBytes(minor, event, kKeyF18, KeyModifierShift, kF18Button));
+    const KeyID id = macKeyId(event, kKeyF18);
+    sendKeyEvent(*test.proxy, event, id, KeyModifierShift, kF18Button);
+    QCOMPARE(test.stream->take(), originalKeyBytes(minor, event, id, KeyModifierShift, kF18Button));
   }
 }
 
@@ -1013,9 +1204,13 @@ void ClientProxyTests::f18_otherKeys_passThrough()
   link.proxy->setOptions({kOptionCrossOSF18Key, kHangulAction});
   (void)link.written();
 
-  for (const auto event : {KeyEvent::Down, KeyEvent::Repeat, KeyEvent::Up}) {
-    sendKeyEvent(*link.proxy, event, key, KeyModifierSuper, kButton);
-    QCOMPARE(link.written(), originalKeyBytes(9, event, key, KeyModifierSuper, kButton));
+  // an ordinary key releases with kKeyNone and a modifier with its own id; both must travel untouched
+  const std::pair<KeyEvent, KeyID> events[] = {
+      {KeyEvent::Down, key}, {KeyEvent::Repeat, key}, {KeyEvent::Up, kKeyNone}, {KeyEvent::Up, key}
+  };
+  for (const auto &[event, id] : events) {
+    sendKeyEvent(*link.proxy, event, id, KeyModifierSuper, kButton);
+    QCOMPARE(link.written(), originalKeyBytes(9, event, id, KeyModifierSuper, kButton));
   }
 }
 
@@ -1026,9 +1221,10 @@ void ClientProxyTests::f18_optionOffInvalidOrReset_passesThrough()
 
   const auto expectPassThrough = [&](const char *when) {
     for (const auto event : {KeyEvent::Down, KeyEvent::Repeat, KeyEvent::Up}) {
-      sendKeyEvent(*link.proxy, event, kKeyF18, 0, kF18Button);
+      const KeyID id = macKeyId(event, kKeyF18);
+      sendKeyEvent(*link.proxy, event, id, 0, kF18Button);
       QVERIFY2(
-          link.written() == originalKeyBytes(9, event, kKeyF18, 0, kF18Button),
+          link.written() == originalKeyBytes(9, event, id, 0, kF18Button),
           qPrintable(QStringLiteral("F18 was not passed through %1").arg(QString::fromUtf8(when)))
       );
     }
