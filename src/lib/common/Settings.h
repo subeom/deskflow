@@ -104,6 +104,7 @@ public:
   struct Server
   {
     inline static const auto ClipboardSize = QStringLiteral("server/clipboardSize");
+    inline static const auto ClipboardTextOnly = QStringLiteral("server/clipboardTextOnly");
     inline static const auto DefaultLockToComputerState = QStringLiteral("server/defaultLockToComputerState");
     inline static const auto DisableLockToComputer = QStringLiteral("server/disableLockToComputer");
     inline static const auto EnableClipboard = QStringLiteral("server/enableClipboard");
@@ -326,6 +327,7 @@ private:
     , Security::KeySize
     , Security::TlsEnabled
     , Server::ClipboardSize
+    , Server::ClipboardTextOnly
     , Server::DefaultLockToComputerState
     , Server::DisableLockToComputer
     , Server::EnableClipboard
@@ -362,6 +364,7 @@ private:
     , Client::XdpClipboardRetried
     , Log::ToFile
     , Log::GuiDebug
+    , Server::ClipboardTextOnly
     , Server::DefaultLockToComputerState
     , Server::DisableLockToComputer
     , Server::EnableHeartbeat

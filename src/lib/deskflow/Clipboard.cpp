@@ -55,6 +55,11 @@ void Clipboard::add(Format format, const std::string &data)
     return;
   }
 
+  // a clipboard that holds text only has no use for any other format
+  if (m_textOnly && format != Format::Text) {
+    return;
+  }
+
   const auto formatID = static_cast<int>(format);
   m_data[formatID] = data;
   m_added[formatID] = true;
@@ -106,6 +111,18 @@ std::string Clipboard::get(Format format) const
     return "";
   }
   return m_data[static_cast<int>(format)];
+}
+
+void Clipboard::setTextOnly(bool textOnly)
+{
+  std::scoped_lock lock{m_mutex};
+  m_textOnly = textOnly;
+}
+
+bool Clipboard::wants(Format format) const
+{
+  std::scoped_lock lock{m_mutex};
+  return !m_textOnly || format == Format::Text;
 }
 
 void Clipboard::unmarshall(const std::string &data, Time time)

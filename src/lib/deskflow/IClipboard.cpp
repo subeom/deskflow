@@ -137,7 +137,7 @@ bool IClipboard::copy(IClipboard *dst, const IClipboard *src, Time time)
       if (dst->empty()) {
         for (int32_t format = 0; format != static_cast<int>(Format::TotalFormats); ++format) {
           auto eFormat = (IClipboard::Format)format;
-          if (src->has(eFormat)) {
+          if (dst->wants(eFormat) && src->has(eFormat)) {
             dst->add(eFormat, src->get(eFormat));
           }
         }

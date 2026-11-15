@@ -8,10 +8,13 @@
 
 #include "common/Settings.h"
 #include "gui/config/Computer.h"
+#include "gui/config/ServerConfig.h"
 #include "gui/dialogs/ClientConfigDialog.h"
 #include "gui/dialogs/ComputerSettingsDialog.h"
+#include "gui/dialogs/ServerConfigDialog.h"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDir>
@@ -25,6 +28,7 @@
 #include <QSizePolicy>
 #include <QStyle>
 #include <QStyleFactory>
+#include <QTabWidget>
 #include <QTest>
 #include <QWidget>
 
@@ -317,6 +321,40 @@ void DialogLayoutTests::clientConfigDialog_isLaidOutWithoutSqueezing()
       violations.isEmpty(),
       qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
   );
+}
+
+void DialogLayoutTests::serverConfigDialog_advancedTab_isLaidOutWithoutSqueezing_data()
+{
+  addScenarios();
+}
+
+// The clipboard choices live in the Advanced tab: a check box added to them must not squeeze or overlap the rows
+void DialogLayoutTests::serverConfigDialog_advancedTab_isLaidOutWithoutSqueezing()
+{
+  QFETCH(QString, style);
+  QFETCH(qreal, fontScale);
+  QFETCH(int, sizeMode);
+
+  QVERIFY(QApplication::setStyle(style) != nullptr);
+  Settings::setValue(Settings::Server::EnableClipboard, true);
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  auto *tabs = dialog.findChild<QTabWidget *>(QStringLiteral("tabWidget"));
+  auto *advanced = dialog.findChild<QWidget *>(QStringLiteral("tabAdvanced"));
+  QVERIFY(tabs != nullptr && advanced != nullptr);
+  tabs->setCurrentWidget(advanced);
+  showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
+  QVERIFY(dialog.isVisible());
+  QVERIFY(dialog.findChild<QCheckBox *>(QStringLiteral("cbClipboardTextOnly")) != nullptr);
+  QVERIFY(dialog.findChild<QCheckBox *>(QStringLiteral("cbClipboardTextOnly"))->isVisibleTo(&dialog));
+  grabIfRequested(QStringLiteral("ServerConfigDialogAdvanced"), dialog);
+
+  const auto violations = findLayoutViolations(dialog);
+  QVERIFY2(
+      violations.isEmpty(),
+      qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+  );
+  Settings::setValue(Settings::Server::EnableClipboard);
 }
 
 QTEST_MAIN(DialogLayoutTests)

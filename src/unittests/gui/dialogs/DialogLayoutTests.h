@@ -20,6 +20,8 @@ private Q_SLOTS:
   void computerSettingsDialog_isLaidOutWithoutSqueezing();
   void clientConfigDialog_isLaidOutWithoutSqueezing_data();
   void clientConfigDialog_isLaidOutWithoutSqueezing();
+  void serverConfigDialog_advancedTab_isLaidOutWithoutSqueezing_data();
+  void serverConfigDialog_advancedTab_isLaidOutWithoutSqueezing();
 
 private:
   QTemporaryDir m_settingsDir;

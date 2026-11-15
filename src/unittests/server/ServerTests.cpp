@@ -11,14 +11,20 @@
 #include "../deskflow/MockPlatformComputer.h"
 #include "base/Event.h"
 #include "common/Settings.h"
+#include "deskflow/Clipboard.h"
+#include "deskflow/ClipboardSharePolicy.h"
 #include "deskflow/Computer.h"
 #include "deskflow/IPrimaryComputer.h"
+#include "deskflow/ipc/CoreIpcServer.h"
+#include "io/IStream.h"
+#include "server/ClientProxy.h"
 #include "server/Config.h"
 #include "server/PrimaryClient.h"
 #include "server/Server.h"
 #include "server/ServerCursorEdges.h"
 #include "server/ServerNeighborTraversal.h"
 
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <map>
@@ -131,6 +137,317 @@ constexpr auto kUnknown = static_cast<int>(ScrollSource::Unknown);
 constexpr auto kMouse = static_cast<int>(ScrollSource::Mouse);
 constexpr auto kTrackpad = static_cast<int>(ScrollSource::Trackpad);
 
+constexpr int kNoText = -1;
+constexpr int kTextOnlyLimit = static_cast<int>(ClipboardSharePolicy::kTextOnlyMaxTextBytes);
+
+// Fills \p clipboard with text of \p textBytes bytes (none for kNoText), and HTML and a bitmap if asked for
+void fill(Clipboard &clipboard, int textBytes, bool html = false, bool bitmap = false)
+{
+  clipboard.open(0);
+  clipboard.empty();
+  if (textBytes != kNoText)
+    clipboard.add(IClipboard::Format::Text, std::string(static_cast<size_t>(textBytes), 'a'));
+  if (html)
+    clipboard.add(IClipboard::Format::HTML, "<b>bold</b>");
+  if (bitmap)
+    clipboard.add(IClipboard::Format::Bitmap, std::string(4096, 'x'));
+  clipboard.close();
+}
+
+// What a clipboard that holds this is when it is marshalled
+std::string marshalled(int textBytes, bool html = false, bool bitmap = false)
+{
+  Clipboard clipboard;
+  fill(clipboard, textBytes, html, bitmap);
+  return clipboard.marshall();
+}
+
+// The clipboard size option (CLSZ) a server reads from a configuration of \p configuredMiB MiB
+OptionValue sizeOption(uint32_t configuredMiB, bool textOnly)
+{
+  return static_cast<OptionValue>(ClipboardSharePolicy::sizeOptionKiB(configuredMiB, textOnly));
+}
+
+// A clipboard that counts what is read from it
+class CountingClipboard : public Clipboard
+{
+public:
+  bool has(Format format) const override
+  {
+    ++m_has[static_cast<size_t>(format)];
+    return Clipboard::has(format);
+  }
+
+  std::string get(Format format) const override
+  {
+    ++m_get[static_cast<size_t>(format)];
+    return Clipboard::get(format);
+  }
+
+  int hasCalls(Format format) const
+  {
+    return m_has[static_cast<size_t>(format)];
+  }
+
+  int getCalls(Format format) const
+  {
+    return m_get[static_cast<size_t>(format)];
+  }
+
+private:
+  mutable std::array<int, static_cast<size_t>(Format::TotalFormats)> m_has{};
+  mutable std::array<int, static_cast<size_t>(Format::TotalFormats)> m_get{};
+};
+
+// The primary computer's platform: its pasteboard is what the Server reads, and what it writes is recorded
+class ClipboardPlatform : public MockPlatformComputer
+{
+public:
+  using MockPlatformComputer::MockPlatformComputer;
+
+  bool getClipboard(ClipboardID, IClipboard *dst) const override
+  {
+    return IClipboard::copy(dst, &pasteboard);
+  }
+
+  bool setClipboard(ClipboardID id, const IClipboard *src) override
+  {
+    if (src != nullptr)
+      received[id] = IClipboard::marshall(src);
+    return true;
+  }
+
+  CountingClipboard pasteboard;
+  std::array<std::optional<std::string>, kClipboardEnd> received;
+};
+
+// A stream that goes nowhere: the Server writes to the stream of a client it closes
+class NullStream : public deskflow::IStream
+{
+public:
+  void close() override
+  {
+  }
+  uint32_t read(void *, uint32_t) override
+  {
+    return 0;
+  }
+  void write(const void *, uint32_t) override
+  {
+  }
+  void flush() override
+  {
+  }
+  void shutdownInput() override
+  {
+  }
+  void shutdownOutput() override
+  {
+  }
+  void *getEventTarget() const override
+  {
+    return const_cast<NullStream *>(this);
+  }
+  bool isReady() const override
+  {
+    return false;
+  }
+  uint32_t getSize() const override
+  {
+    return 0;
+  }
+};
+
+// A remote computer: its own clipboard is what the Server reads when it is said to have changed, and what the Server
+// asks it to set is recorded
+class RecordingClient : public ClientProxy
+{
+public:
+  explicit RecordingClient(const std::string &name) : ClientProxy(name, new NullStream)
+  {
+  }
+
+  Clipboard &own(ClipboardID id)
+  {
+    return m_own[id];
+  }
+
+  // what the Server last asked this computer to put on its clipboard, marshalled
+  const std::optional<std::string> &received(ClipboardID id) const
+  {
+    return m_received[id];
+  }
+
+  bool getClipboard(ClipboardID id, IClipboard *dst) const override
+  {
+    return IClipboard::copy(dst, &m_own[id]);
+  }
+
+  void setClipboard(ClipboardID id, const IClipboard *src) override
+  {
+    // like a proxy, a computer is only sent a clipboard it does not have yet
+    if (m_dirty[id]) {
+      m_dirty[id] = false;
+      m_received[id] = IClipboard::marshall(src);
+    }
+  }
+
+  void grabClipboard(ClipboardID id) override
+  {
+    m_dirty[id] = true;
+  }
+
+  void setClipboardDirty(ClipboardID id, bool dirty) override
+  {
+    m_dirty[id] = dirty;
+  }
+
+  void getShape(int32_t &x, int32_t &y, int32_t &width, int32_t &height) const override
+  {
+    x = 0;
+    y = 0;
+    width = 1920;
+    height = 1080;
+  }
+  void getCursorPos(int32_t &x, int32_t &y) const override
+  {
+    x = 960;
+    y = 540;
+  }
+  void enter(int32_t, int32_t, uint32_t, KeyModifierMask, bool) override
+  {
+  }
+  bool leave() override
+  {
+    return true;
+  }
+  void keyDown(KeyID, KeyModifierMask, KeyButton, const std::string &) override
+  {
+  }
+  void keyRepeat(KeyID, KeyModifierMask, int32_t, KeyButton, const std::string &) override
+  {
+  }
+  void keyUp(KeyID, KeyModifierMask, KeyButton) override
+  {
+  }
+  void mouseDown(ButtonID) override
+  {
+  }
+  void mouseUp(ButtonID) override
+  {
+  }
+  void mouseMove(int32_t, int32_t) override
+  {
+  }
+  void mouseRelativeMove(int32_t, int32_t) override
+  {
+  }
+  void mouseWheel(int32_t, int32_t) override
+  {
+  }
+  void screensaver(bool) override
+  {
+  }
+  void resetOptions() override
+  {
+  }
+  void setOptions(const OptionsList &) override
+  {
+  }
+  void sendDragInfo(uint32_t, const char *, size_t) override
+  {
+  }
+  void fileChunkSending(uint8_t, char *, size_t) override
+  {
+  }
+  void secureInputNotification(const std::string &) const override
+  {
+  }
+  std::string getSecureInputApp() const override
+  {
+    return {};
+  }
+
+private:
+  std::array<Clipboard, kClipboardEnd> m_own;
+  std::array<bool, kClipboardEnd> m_dirty{};
+  std::array<std::optional<std::string>, kClipboardEnd> m_received;
+};
+
+// A real Server whose primary computer has a pasteboard to read, with two remote computers connected, "A" and "B"
+struct ClipboardRig
+{
+  DispatchingEventQueue events;
+  deskflow::server::Config config{&events};
+  ClipboardPlatform *platform = nullptr;
+  std::unique_ptr<deskflow::Computer> computer;
+  std::unique_ptr<PrimaryClient> primary;
+  std::unique_ptr<Server> server;
+  // the Server owns the remote computers from the moment it adopts them
+  RecordingClient *a = nullptr;
+  RecordingClient *b = nullptr;
+
+  // \p sizeOption is the clipboard size option the server is configured with, if any
+  explicit ClipboardRig(std::optional<OptionValue> sizeOption = std::nullopt)
+  {
+    config.addComputer("primary");
+    config.addComputer("A");
+    config.addComputer("B");
+    if (sizeOption)
+      config.addOption("", kOptionClipboardSharingSize, *sizeOption);
+
+    platform = new ClipboardPlatform(&events);
+    computer = std::make_unique<deskflow::Computer>(platform, &events);
+    primary = std::make_unique<PrimaryClient>("primary", computer.get());
+    server = std::make_unique<Server>(config, primary.get(), computer.get(), &events);
+
+    a = new RecordingClient("A");
+    b = new RecordingClient("B");
+    server->adoptClient(a);
+    server->adoptClient(b);
+  }
+
+  // Delivers an event to the Server the way the event queue does; takes ownership of \p data
+  bool dispatch(EventTypes type, void *target, void *data)
+  {
+    const Event event(type, target, data);
+    const auto dispatched = events.dispatchEvent(event);
+    Event::deleteData(event);
+    return dispatched;
+  }
+
+  // The cursor moves to the computer called \p name
+  bool switchTo(const char *name)
+  {
+    // the Server reads the data of this event as plain data, as the input filter sends it
+    auto info = std::make_unique<Server::SwitchToComputerInfo>(name);
+    const Event event(
+        EventTypes::ServerSwitchToComputer, config.getInputFilter(), info.get(), Event::EventFlags::DontFreeData
+    );
+    return events.dispatchEvent(event);
+  }
+
+  void clipboardEvent(EventTypes type, BaseClientProxy &computer, ClipboardID id)
+  {
+    auto *info = static_cast<IComputer::ClipboardInfo *>(std::malloc(sizeof(IComputer::ClipboardInfo)));
+    info->m_id = id;
+    info->m_sequenceNumber = 0;
+    QVERIFY2(dispatch(type, computer.getEventTarget(), info), "the Server did not handle the clipboard event");
+  }
+
+  // \p computer says it took the clipboard
+  void grab(BaseClientProxy &computer, ClipboardID id)
+  {
+    clipboardEvent(EventTypes::ClipboardGrabbed, computer, id);
+  }
+
+  // \p computer says that what is on its clipboard changed
+  void changed(BaseClientProxy &computer, ClipboardID id)
+  {
+    clipboardEvent(EventTypes::ClipboardChanged, computer, id);
+  }
+};
+
 } // namespace
 
 void ServerTests::initTestCase()
@@ -138,6 +455,12 @@ void ServerTests::initTestCase()
   // the Config in these tests reads per computer settings
   QVERIFY(m_settingsDir.isValid());
   Settings::setSettingsFile(m_settingsDir.filePath(QStringLiteral("Deskflow.conf")));
+  m_ipcServer = new deskflow::core::ipc::CoreIpcServer(this);
+}
+
+void ServerTests::cleanup()
+{
+  Settings::setValue(Settings::Server::ClipboardTextOnly);
 }
 
 void ServerTests::SwitchToComputerInfo_alloc_computer()
@@ -283,6 +606,282 @@ void ServerTests::neighborTraversal_disconnectedCycleStops()
   );
 
   QCOMPARE(result.status, NeighborTraversalStatus::Cycle);
+}
+
+// What the Server shares is decided when the cursor leaves the primary computer or a computer says its clipboard
+// changed, so the tests use the clipboards the way they are used: a computer says it took the clipboard (and the rest
+// is told to give up theirs), then the cursor moves, or the computer says what is on its clipboard now.
+namespace {
+
+QByteArray bytes(const std::string &data)
+{
+  return QByteArray::fromStdString(data);
+}
+
+// What a computer was last asked to put on its clipboard, in a form that shows in a failure
+QByteArray received(const std::optional<std::string> &data)
+{
+  return data ? bytes(*data) : QByteArray("<nothing>");
+}
+
+// Whether a computer was told anything that is a clipboard: it has not been, or it was asked to give up its own
+bool neverReceivedAnything(const std::optional<std::string> &data)
+{
+  return !data || *data == std::string(4, '\0');
+}
+
+} // namespace
+
+void ServerTests::clipboardOff_sharesEveryFormatOfThePrimary()
+{
+  ClipboardRig rig(sizeOption(3, false));
+  fill(rig.platform->pasteboard, 40, true, true);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QVERIFY(rig.switchTo("A"));
+
+  // off is what it always was: the clipboard goes as a whole, with every format it holds
+  QCOMPARE(received(rig.a->received(kClipboardClipboard)), bytes(marshalled(40, true, true)));
+  QCOMPARE(received(rig.a->received(kClipboardSelection)), bytes(marshalled(40, true, true)));
+}
+
+void ServerTests::clipboardOff_theSizeLimitStillApplies()
+{
+  // a limit of 1 KiB: a clipboard that fits is shared, and one that does not is not, as it always was
+  {
+    ClipboardRig rig(1);
+    fill(rig.platform->pasteboard, 500, true, false);
+    rig.grab(*rig.primary, kClipboardClipboard);
+    QVERIFY(rig.switchTo("A"));
+    QCOMPARE(received(rig.a->received(kClipboardClipboard)), bytes(marshalled(500, true, false)));
+  }
+  {
+    ClipboardRig rig(1);
+    fill(rig.platform->pasteboard, 2000, false, false);
+    rig.grab(*rig.primary, kClipboardClipboard);
+    QVERIFY(rig.switchTo("A"));
+    QVERIFY(neverReceivedAnything(rig.a->received(kClipboardClipboard)));
+  }
+}
+
+void ServerTests::clipboardTextOnly_primaryToClient_sharesTextUpToTheLimit_data()
+{
+  QTest::addColumn<int>("textBytes");
+
+  QTest::newRow("text 0 B") << 0;
+  QTest::newRow("text 1 B") << 1;
+  QTest::newRow("text that marshals to exactly 10240 B") << kTextOnlyLimit;
+}
+
+void ServerTests::clipboardTextOnly_primaryToClient_sharesTextUpToTheLimit()
+{
+  QFETCH(int, textBytes);
+
+  // with the size option a real server sends to its peers, and without it: the policy does not rely on it
+  for (const bool withSizeOption : {true, false}) {
+    Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+    ClipboardRig rig(withSizeOption ? std::optional<OptionValue>(sizeOption(3, true)) : std::nullopt);
+    fill(rig.platform->pasteboard, textBytes);
+    rig.grab(*rig.primary, kClipboardClipboard);
+    QVERIFY(rig.switchTo("A"));
+
+    QCOMPARE(received(rig.a->received(kClipboardClipboard)), bytes(marshalled(textBytes)));
+    QCOMPARE(received(rig.a->received(kClipboardSelection)), bytes(marshalled(textBytes)));
+  }
+}
+
+void ServerTests::clipboardTextOnly_primaryToClient_sharesNothingElse_data()
+{
+  QTest::addColumn<int>("textBytes");
+  QTest::addColumn<bool>("html");
+  QTest::addColumn<bool>("bitmap");
+
+  QTest::newRow("text of 10229 B") << kTextOnlyLimit + 1 << false << false;
+  QTest::newRow("text of exactly 10240 B") << 10 * 1024 << false << false;
+  QTest::newRow("text of 1 MiB with HTML and a bitmap") << 1024 * 1024 << true << true;
+  QTest::newRow("bitmap only") << kNoText << false << true;
+  QTest::newRow("HTML only") << kNoText << true << false;
+  QTest::newRow("HTML and bitmap") << kNoText << true << true;
+  QTest::newRow("nothing") << kNoText << false << false;
+}
+
+void ServerTests::clipboardTextOnly_primaryToClient_sharesNothingElse()
+{
+  QFETCH(int, textBytes);
+  QFETCH(bool, html);
+  QFETCH(bool, bitmap);
+
+  for (const bool withSizeOption : {true, false}) {
+    Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+    ClipboardRig rig(withSizeOption ? std::optional<OptionValue>(sizeOption(3, true)) : std::nullopt);
+    fill(rig.platform->pasteboard, textBytes, html, bitmap);
+    rig.grab(*rig.primary, kClipboardClipboard);
+    QVERIFY(rig.switchTo("A"));
+
+    for (const auto id : {kClipboardClipboard, kClipboardSelection})
+      QVERIFY2(
+          neverReceivedAnything(rig.a->received(id)), qPrintable(QString::fromLatin1(received(rig.a->received(id))))
+      );
+  }
+}
+
+void ServerTests::clipboardTextOnly_primaryToClient_stripsOtherFormats()
+{
+  Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+  ClipboardRig rig(sizeOption(3, true));
+  fill(rig.platform->pasteboard, 40, true, true);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QVERIFY(rig.switchTo("A"));
+
+  // the text goes, whole; the HTML and the bitmap stay where they are
+  QCOMPARE(received(rig.a->received(kClipboardClipboard)), bytes(marshalled(40)));
+  QCOMPARE(received(rig.a->received(kClipboardSelection)), bytes(marshalled(40)));
+}
+
+// A platform converts an image to a bitmap, which is far more than a text costs, only when it is asked for it
+void ServerTests::clipboardTextOnly_primaryToClient_neverReadsHtmlOrBitmap()
+{
+  Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+  ClipboardRig rig(sizeOption(3, true));
+  fill(rig.platform->pasteboard, 40, true, true);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QVERIFY(rig.switchTo("A"));
+
+  const auto &pasteboard = rig.platform->pasteboard;
+  QVERIFY(pasteboard.getCalls(IClipboard::Format::Text) > 0);
+  QCOMPARE(pasteboard.getCalls(IClipboard::Format::HTML), 0);
+  QCOMPARE(pasteboard.getCalls(IClipboard::Format::Bitmap), 0);
+  QCOMPARE(pasteboard.hasCalls(IClipboard::Format::HTML), 0);
+  QCOMPARE(pasteboard.hasCalls(IClipboard::Format::Bitmap), 0);
+}
+
+void ServerTests::clipboardOff_primaryToClient_readsEveryFormat()
+{
+  ClipboardRig rig(sizeOption(3, false));
+  fill(rig.platform->pasteboard, 40, true, true);
+  rig.grab(*rig.primary, kClipboardClipboard);
+  QVERIFY(rig.switchTo("A"));
+
+  const auto &pasteboard = rig.platform->pasteboard;
+  QVERIFY(pasteboard.getCalls(IClipboard::Format::Text) > 0);
+  QVERIFY(pasteboard.getCalls(IClipboard::Format::HTML) > 0);
+  QVERIFY(pasteboard.getCalls(IClipboard::Format::Bitmap) > 0);
+}
+
+// An old client sends whatever it has that fits in the size option: HTML and a bitmap along with the text
+void ServerTests::clipboardTextOnly_clientToPrimary_stripsOtherFormats()
+{
+  Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+  ClipboardRig rig(sizeOption(3, true));
+  fill(rig.a->own(kClipboardClipboard), 30, true, true);
+  rig.grab(*rig.a, kClipboardClipboard);
+  rig.changed(*rig.a, kClipboardClipboard);
+
+  // the pasteboard of the server only gets the text
+  QCOMPARE(received(rig.platform->received[kClipboardClipboard]), bytes(marshalled(30)));
+
+  // and so does the next computer the cursor enters
+  QVERIFY(rig.switchTo("B"));
+  QCOMPARE(received(rig.b->received(kClipboardClipboard)), bytes(marshalled(30)));
+}
+
+void ServerTests::clipboardTextOnly_clientToPrimary_sharesNothingElse_data()
+{
+  QTest::addColumn<int>("textBytes");
+  QTest::addColumn<bool>("html");
+  QTest::addColumn<bool>("bitmap");
+
+  QTest::newRow("text of 10229 B") << kTextOnlyLimit + 1 << false << false;
+  QTest::newRow("long text with HTML") << 1024 * 1024 << true << false;
+  QTest::newRow("bitmap only") << kNoText << false << true;
+  QTest::newRow("HTML only") << kNoText << true << false;
+}
+
+void ServerTests::clipboardTextOnly_clientToPrimary_sharesNothingElse()
+{
+  QFETCH(int, textBytes);
+  QFETCH(bool, html);
+  QFETCH(bool, bitmap);
+
+  for (const bool withSizeOption : {true, false}) {
+    Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+    ClipboardRig rig(withSizeOption ? std::optional<OptionValue>(sizeOption(3, true)) : std::nullopt);
+    fill(rig.a->own(kClipboardClipboard), textBytes, html, bitmap);
+    rig.grab(*rig.a, kClipboardClipboard);
+    rig.changed(*rig.a, kClipboardClipboard);
+
+    QVERIFY2(
+        !rig.platform->received[kClipboardClipboard].has_value(),
+        qPrintable(QString::fromLatin1(received(rig.platform->received[kClipboardClipboard])))
+    );
+
+    QVERIFY(rig.switchTo("B"));
+    QVERIFY(neverReceivedAnything(rig.b->received(kClipboardClipboard)));
+  }
+}
+
+void ServerTests::clipboardTextOnly_clientToClient_forwardsTheTextOnly()
+{
+  Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+  ClipboardRig rig(sizeOption(3, true));
+  QVERIFY(rig.switchTo("B"));
+
+  fill(rig.a->own(kClipboardClipboard), 25, true, true);
+  rig.grab(*rig.a, kClipboardClipboard);
+  rig.changed(*rig.a, kClipboardClipboard);
+
+  // what one computer copies and the cursor is on another: the server passes on the text only
+  QCOMPARE(received(rig.b->received(kClipboardClipboard)), bytes(marshalled(25)));
+}
+
+void ServerTests::clipboardTextOnly_clientToClient_forwardsNothingElse_data()
+{
+  QTest::addColumn<int>("textBytes");
+  QTest::addColumn<bool>("html");
+  QTest::addColumn<bool>("bitmap");
+
+  QTest::newRow("text of 10229 B") << kTextOnlyLimit + 1 << false << false;
+  QTest::newRow("long text with HTML and a bitmap") << 1024 * 1024 << true << true;
+  QTest::newRow("bitmap only") << kNoText << false << true;
+  QTest::newRow("HTML only") << kNoText << true << false;
+}
+
+void ServerTests::clipboardTextOnly_clientToClient_forwardsNothingElse()
+{
+  QFETCH(int, textBytes);
+  QFETCH(bool, html);
+  QFETCH(bool, bitmap);
+
+  for (const bool withSizeOption : {true, false}) {
+    Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+    ClipboardRig rig(withSizeOption ? std::optional<OptionValue>(sizeOption(3, true)) : std::nullopt);
+    QVERIFY(rig.switchTo("B"));
+
+    fill(rig.a->own(kClipboardClipboard), textBytes, html, bitmap);
+    rig.grab(*rig.a, kClipboardClipboard);
+    rig.changed(*rig.a, kClipboardClipboard);
+
+    QVERIFY2(
+        !rig.b->received(kClipboardClipboard).has_value(),
+        qPrintable(QString::fromLatin1(received(rig.b->received(kClipboardClipboard))))
+    );
+  }
+}
+
+// The setting is read when the configuration is: a server that was sharing everything and is told to share text only
+// does not hand out what it has kept
+void ServerTests::clipboardTextOnly_turnedOnLater_stripsWhatIsCached()
+{
+  ClipboardRig rig(sizeOption(3, false));
+  QVERIFY(rig.switchTo("A"));
+  fill(rig.a->own(kClipboardClipboard), 30, true, true);
+  rig.grab(*rig.a, kClipboardClipboard);
+  rig.changed(*rig.a, kClipboardClipboard);
+
+  Settings::setValue(Settings::Server::ClipboardTextOnly, true);
+  QVERIFY(rig.server->setConfig(rig.config));
+
+  QVERIFY(rig.switchTo("B"));
+  QCOMPARE(received(rig.b->received(kClipboardClipboard)), bytes(marshalled(30)));
 }
 
 QTEST_MAIN(ServerTests)

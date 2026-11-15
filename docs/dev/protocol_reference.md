@@ -667,6 +667,7 @@ For platform-specific implementation details, refer to:
   - Clipboard grab notifications
   - Data transfer (@ref kMsgDClipboard - text, images, HTML)
   - Streaming for large data (v1.6+)
+  - Size limit: the server's `CLSZ` option, in kilobytes, which is what both sides compare the marshalled clipboard with. The server's "share text only (up to 10 KB)" mode (see `docs/Configuration.md`) only lowers this value and strips the other formats on the server; it adds nothing to the protocol.
 
 - **File Transfer** (v1.5+)
   - Drag-and-drop initiation

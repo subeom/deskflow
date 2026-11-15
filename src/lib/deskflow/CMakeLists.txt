@@ -38,8 +38,11 @@ add_library(${lib_name} STATIC ${PLATFORM_CODE}
   Clipboard.h
   ClipboardChunk.cpp
   ClipboardChunk.h
+  ClipboardIdPolicy.h
   ClipboardSender.cpp
   ClipboardSender.h
+  ClipboardSharePolicy.cpp
+  ClipboardSharePolicy.h
   ClipboardTransferLog.cpp
   ClipboardTransferLog.h
   CrossPlatformInputPolicy.cpp

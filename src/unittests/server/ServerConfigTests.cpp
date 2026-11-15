@@ -14,6 +14,7 @@
 #include <array>
 #include <cmath>
 #include <optional>
+#include <sstream>
 
 class OnlySystemFilter : public InputFilter::Condition
 {
@@ -192,6 +193,80 @@ void ServerConfigTests::crossOSInvertScope_isOptIn()
   // parsed like f18Action: trimmed and case-insensitive
   Settings::setValue(key, QStringLiteral(" MouseWheelONLY "));
   QCOMPARE(scopeOption().value_or(-1), static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly));
+}
+
+namespace {
+
+// The global options a server config reads from the settings
+Config::ScreenOptions readGlobalOptions()
+{
+  Config config(nullptr);
+  std::istringstream input("section: options\nend\n");
+  input >> config;
+  const auto *options = config.getOptions("");
+  return options == nullptr ? Config::ScreenOptions() : *options;
+}
+
+} // namespace
+
+void ServerConfigTests::clipboardSizeOption_data()
+{
+  QTest::addColumn<bool>("textOnly");
+  QTest::addColumn<uint>("configuredMiB");
+  QTest::addColumn<int>("expectedKiB");
+
+  // CLSZ is in KiB on the wire, the setting is in MiB: off sends what it always sent
+  QTest::newRow("off, 0 MiB") << false << 0u << 0;
+  QTest::newRow("off, 1 MiB") << false << 1u << 1024;
+  QTest::newRow("off, 3 MiB") << false << 3u << 3072;
+  QTest::newRow("off, 20 MiB") << false << 20u << 20480;
+  // text only caps what every peer sends and accepts at 10 KiB, and an off switch stays off
+  QTest::newRow("text only, 0 MiB") << true << 0u << 0;
+  QTest::newRow("text only, 1 MiB") << true << 1u << 10;
+  QTest::newRow("text only, 3 MiB") << true << 3u << 10;
+  QTest::newRow("text only, 20 MiB") << true << 20u << 10;
+}
+
+// Peers learn of text-only mode through the size option they already honour, so no peer has to be rebuilt
+void ServerConfigTests::clipboardSizeOption()
+{
+  QFETCH(bool, textOnly);
+  QFETCH(uint, configuredMiB);
+  QFETCH(int, expectedKiB);
+
+  Settings::setValue(Settings::Server::EnableClipboard, true);
+  Settings::setValue(Settings::Server::ClipboardSize, configuredMiB);
+  Settings::setValue(Settings::Server::ClipboardTextOnly, false);
+  const auto offOptions = readGlobalOptions();
+  QVERIFY(offOptions.contains(kOptionClipboardSharingSize));
+  QCOMPARE(offOptions.at(kOptionClipboardSharingSize), static_cast<int>(configuredMiB * 1024));
+
+  Settings::setValue(Settings::Server::ClipboardTextOnly, textOnly);
+  const auto options = readGlobalOptions();
+  QVERIFY(options.contains(kOptionClipboardSharingSize));
+  QCOMPARE(options.at(kOptionClipboardSharingSize), expectedKiB);
+
+  // text only adds no option and changes no other: the size is the only thing a peer is told
+  auto others = options;
+  auto offOthers = offOptions;
+  others.erase(kOptionClipboardSharingSize);
+  offOthers.erase(kOptionClipboardSharingSize);
+  QVERIFY(others == offOthers);
+  QCOMPARE(options.at(kOptionClipboardSharing), 1);
+
+  Settings::setValue(Settings::Server::ClipboardSize);
+  Settings::setValue(Settings::Server::ClipboardTextOnly);
+  Settings::setValue(Settings::Server::EnableClipboard);
+}
+
+void ServerConfigTests::clipboardSizeOption_oldConfigWithoutTheKeyIsOff()
+{
+  // a config from before the setting existed has no value for it
+  Settings::setValue(Settings::Server::ClipboardSize);
+  Settings::setValue(Settings::Server::ClipboardTextOnly);
+
+  const auto options = readGlobalOptions();
+  QCOMPARE(options.at(kOptionClipboardSharingSize), 3 * 1024);
 }
 
 void ServerConfigTests::neighborPositions_stayHalfOpenAndChain()
