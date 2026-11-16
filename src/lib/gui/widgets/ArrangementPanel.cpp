@@ -41,7 +41,8 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
       m_btnFit(new QPushButton(tr("Zoom to fit"), this)),
       m_btnReset(new QPushButton(tr("Reset from classic grid"), this)),
       m_btnEdit(new QPushButton(tr("Edit computer..."), this)),
-      m_btnRemove(new QPushButton(tr("Remove computer"), this))
+      m_btnRemove(new QPushButton(tr("Remove computer"), this)),
+      m_btnAdd(new QPushButton(tr("Add computer..."), this))
 {
   setObjectName(QStringLiteral("arrangementPanel"));
   m_canvas->setObjectName(QStringLiteral("arrangementCanvas"));
@@ -53,6 +54,8 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   m_btnReset->setObjectName(QStringLiteral("btnArrangementReset"));
   m_btnEdit->setObjectName(QStringLiteral("btnArrangementEdit"));
   m_btnRemove->setObjectName(QStringLiteral("btnArrangementRemove"));
+  m_btnAdd->setObjectName(QStringLiteral("btnArrangementAdd"));
+  m_btnAdd->setToolTip(tr("Add a computer. It is put beside the others, where nothing touches it, until you drag it."));
 
   auto title = m_lblTitle->font();
   title.setBold(true);
@@ -91,6 +94,7 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   buttons->addWidget(m_btnFit);
   buttons->addWidget(m_btnReset);
   buttons->addStretch(1);
+  buttons->addWidget(m_btnAdd);
   buttons->addWidget(m_btnEdit);
   buttons->addWidget(m_btnRemove);
 
@@ -105,6 +109,7 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   connect(m_btnClassicGrid, &QPushButton::clicked, this, &ArrangementPanel::useClassicGridRequested);
   connect(m_btnFit, &QPushButton::clicked, m_canvas, &ArrangementCanvas::zoomToFit);
   connect(m_btnReset, &QPushButton::clicked, this, &ArrangementPanel::resetFromClassicGrid);
+  connect(m_btnAdd, &QPushButton::clicked, this, &ArrangementPanel::addComputerRequested);
   connect(m_btnEdit, &QPushButton::clicked, this, [this] { Q_EMIT editComputerRequested(m_canvas->selected()); });
   connect(m_btnRemove, &QPushButton::clicked, this, [this] { Q_EMIT removeComputerRequested(m_canvas->selected()); });
   connect(m_canvas, &ArrangementCanvas::selectedChanged, this, &ArrangementPanel::updateSelection);
@@ -128,6 +133,11 @@ void ArrangementPanel::refresh()
 bool ArrangementPanel::hasErrors() const
 {
   return m_errors;
+}
+
+void ArrangementPanel::setAddEnabled(bool enabled)
+{
+  m_btnAdd->setEnabled(enabled);
 }
 
 void ArrangementPanel::updateSelection()
@@ -185,6 +195,7 @@ void ArrangementPanel::updateIssues()
 
 void ArrangementPanel::resetFromClassicGrid()
 {
+  m_config.adoptReportedScreens();
   const auto conversion = m_config.classicGridAsArrangement();
   m_config.setArrangement(conversion.arrangement);
   refresh();

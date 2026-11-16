@@ -21,10 +21,14 @@
 #include <QDir>
 #include <QGroupBox>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QRect>
+#include <QSignalSpy>
 #include <QSpinBox>
+#include <QTemporaryFile>
 #include <QTest>
+#include <QTimer>
 
 #include <optional>
 #include <tuple>
@@ -118,6 +122,9 @@ void ServerConfigDialogTests::cleanup()
   Settings::setValue(Settings::Server::ClipboardTextOnly);
   Settings::setValue(Settings::Server::EnableClipboard);
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+  // the dialog writes these as soon as they are changed
+  Settings::setValue(Settings::Server::ExternalConfig);
+  Settings::setValue(Settings::Server::ExternalConfigFile);
 }
 
 void ServerConfigDialogTests::experimentalMultiMonitor_isOffByDefaultAndSaysItIsExperimental()
@@ -538,6 +545,106 @@ void saveGrab(QWidget &widget, const QString &name)
 }
 
 } // namespace
+
+void ServerConfigDialogTests::arrangement_inCanvasMode_theGridOnlyWidgetsGiveWayToButtons_andAComputerIsAdded()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  dialog.show();
+  // what is dragged onto the grid, or from it to the trash, has no grid to drag to or from
+  for (const auto *name : {"lblNewComputer", "lblRemoveComputer", "label_2"})
+    QVERIFY2(!dialog.findChild<QWidget *>(QString::fromLatin1(name))->isVisibleTo(&dialog), name);
+  auto *add = buttonNamed(dialog, "btnArrangementAdd");
+  QVERIFY(add != nullptr && add->isVisibleTo(&dialog) && add->isEnabled());
+  // the button asks for the dialog of a new computer, which is shut here as it opens
+  QSignalSpy asked(panelOf(dialog), &ArrangementPanel::addComputerRequested);
+  QTimer closer;
+  closer.setInterval(10);
+  QObject::connect(&closer, &QTimer::timeout, [] {
+    if (auto *modal = QApplication::activeModalWidget())
+      modal->close();
+  });
+  closer.start();
+  add->click();
+  closer.stop();
+  QCOMPARE(asked.count(), 1);
+
+  // a computer that is added has a place, apart from the others, and the canvas shows it
+  QVERIFY(dialog.addClient(QStringLiteral("NEW")));
+  QCOMPARE(panelOf(dialog)->canvas()->arrangement().computers.size(), size_t(4));
+  QVERIFY(!panelOf(dialog)->hasErrors());
+
+  // and the classic grid has its widgets again
+  buttonNamed(dialog, "btnUseClassicGrid")->click();
+  for (const auto *name : {"lblNewComputer", "lblRemoveComputer", "label_2"})
+    QVERIFY2(dialog.findChild<QWidget *>(QString::fromLatin1(name))->isVisibleTo(&dialog), name);
+}
+
+void ServerConfigDialogTests::arrangement_saveKeepsWhatComputersReportedWhileTheDialogWasOpen()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  ServerConfig main;
+  ServerConfigDialog dialog(nullptr, main);
+  // the computer connected, and told its screen, while the dialog was open
+  main.setReportedScreen(QStringLiteral("MINI"), QRect(0, 0, 2560, 1440));
+  textOnlyBox(dialog)->setChecked(!textOnlyBox(dialog)->isChecked());
+  Q_EMIT buttons(dialog)->accepted();
+  QVERIFY(main.reportedScreen(QStringLiteral("MINI")));
+  QCOMPARE(*main.reportedScreen(QStringLiteral("MINI")), QRect(0, 0, 2560, 1440));
+}
+
+void ServerConfigDialogTests::arrangement_firstUse_adoptsTheSizesThatComputersReported()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  {
+    ServerConfig config;
+    config.setReportedScreen(QStringLiteral("MINI"), QRect(0, 0, 2560, 1440));
+    ServerConfigDialog dialog(nullptr, config);
+    dialog.show();
+    buttonNamed(dialog, "btnUseArrangement")->click();
+    const auto &arrangement = panelOf(dialog)->canvas()->arrangement();
+    const auto &mini = arrangement.computers[static_cast<size_t>(arrangement.indexOf("MINI"))];
+    QCOMPARE(mini.shape().w, 2560);
+    QCOMPARE(mini.shape().h, 1440);
+    Q_EMIT buttons(dialog)->accepted();
+  }
+  // it is the size of the computer in the saved arrangement, not what a report says at the time
+  QCOMPARE(Settings::value(Settings::Computer::ArrangementWidth.arg("MINI")).toInt(), 2560);
+  QCOMPARE(Settings::value(Settings::Computer::ArrangementHeight.arg("MINI")).toInt(), 1440);
+  const ServerConfig fresh;
+  QVERIFY(fresh.arrangement().computers.size() == 3);
+}
+
+void ServerConfigDialogTests::arrangement_withAnExternalConfig_canBeSavedWhateverTheArrangementIs()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  for (const auto &[name, x, y] :
+       std::vector<std::tuple<QString, double, double>>{{"srv", 0, 0}, {"PC", 100, 100}, {"MINI", 3440, 0}}) {
+    Settings::setValue(Settings::Computer::ArrangementX.arg(name), x);
+    Settings::setValue(Settings::Computer::ArrangementY.arg(name), y);
+  }
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  dialog.show();
+  QVERIFY(panelOf(dialog)->hasErrors());
+
+  // the file that is used is the user's own, and its tabs are off: nothing of the arrangement is written
+  QTemporaryFile file;
+  QVERIFY(file.open());
+  auto *external = dialog.findChild<QGroupBox *>(QStringLiteral("groupExternalConfig"));
+  auto *line = dialog.findChild<QLineEdit *>(QStringLiteral("lineConfigFile"));
+  QVERIFY(external != nullptr && line != nullptr);
+  line->setText(file.fileName());
+  external->setChecked(true);
+  QVERIFY(saveIsEnabled(dialog));
+}
 
 void ServerConfigDialogTests::arrangement_screenshots_areMadeOfTheDialogs()
 {

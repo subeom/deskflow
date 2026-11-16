@@ -72,6 +72,9 @@ ServerConfigDialog::ServerConfigDialog(QWidget *parent, ServerConfig &config)
     toggleUseArrangement(false);
   });
   connect(
+      m_arrangementPanel, &ArrangementPanel::addComputerRequested, this, qOverload<>(&ServerConfigDialog::addClient)
+  );
+  connect(
       m_arrangementPanel, &ArrangementPanel::editComputerRequested, this, &ServerConfigDialog::editArrangementComputer
   );
   connect(
@@ -116,7 +119,10 @@ void ServerConfigDialog::save()
 
   // now that the dialog has been accepted, copy the new server config to the
   // original one, which is a reference to the one in MainWindow.
+  // what the computers that are connected said their screens are belongs to the server that runs, not to this copy
+  const auto reportedScreens = m_originalServerConfig.reportedScreens();
   setOriginalServerConfig(serverConfig());
+  m_originalServerConfig.setReportedScreens(reportedScreens);
   if (Settings::value(Settings::Server::EnableClipboard).toBool() != m_enableClipboard) {
     Settings::setValue(Settings::Server::XdpRestoreToken, QString());
     Settings::setValue(Settings::Server::XdpClipboardRetried, false);
@@ -463,6 +469,7 @@ void ServerConfigDialog::toggleUseArrangement(bool use)
   m_useArrangement = use;
   // the first time, the computers are where the classic grid has them, with the size of their screens
   if (use && !serverConfig().hasArrangement()) {
+    serverConfig().adoptReportedScreens();
     const auto conversion = serverConfig().classicGridAsArrangement();
     serverConfig().setArrangement(conversion.arrangement);
     if (!conversion.notKept.empty()) {
@@ -493,7 +500,12 @@ void ServerConfigDialog::updateArrangementMode()
     return;
   const bool canvas = m_experimentalMultiMonitor && m_useArrangement;
   ui->computerSetupView->setVisible(!canvas);
+  // what is dragged onto the grid, or from it to the trash, has no grid to be dragged to or from: the panel has buttons
+  ui->lblNewComputer->setVisible(!canvas);
+  ui->lblRemoveComputer->setVisible(!canvas);
+  ui->label_2->setVisible(!canvas);
   m_arrangementPanel->setVisible(canvas);
+  m_arrangementPanel->setAddEnabled(!model().isFull());
   m_arrangementBanner->setVisible(m_experimentalMultiMonitor && !m_useArrangement);
   m_arrangementBanner->setEnabled(Settings::isWritable());
   if (canvas)
@@ -502,8 +514,11 @@ void ServerConfigDialog::updateArrangementMode()
 
 void ServerConfigDialog::refreshArrangement()
 {
-  if (m_arrangementPanel != nullptr && m_arrangementPanel->isVisibleTo(this))
-    m_arrangementPanel->refresh();
+  if (m_arrangementPanel != nullptr) {
+    m_arrangementPanel->setAddEnabled(!model().isFull());
+    if (m_arrangementPanel->isVisibleTo(this))
+      m_arrangementPanel->refresh();
+  }
 }
 
 void ServerConfigDialog::editArrangementComputer(const QString &name)
@@ -811,10 +826,11 @@ bool ServerConfigDialog::isGeneralConfigDefault() const
 void ServerConfigDialog::setButtonBoxEnabledButtons() const
 {
   const bool writable = Settings::isWritable();
-  // a configuration that has computers on top of each other in the arrangement is not saved
+  // a configuration that has computers on top of each other in the arrangement is not saved (with the configuration of
+  // the user's own nothing of the arrangement is written, and the tabs to put it right are off)
   const bool arrangementIsFine =
-      !(m_experimentalMultiMonitor && m_useArrangement && m_arrangementPanel != nullptr &&
-        m_arrangementPanel->hasErrors());
+      ui->groupExternalConfig->isChecked() || !(m_experimentalMultiMonitor && m_useArrangement &&
+                                                m_arrangementPanel != nullptr && m_arrangementPanel->hasErrors());
   m_buttonBox->enableSave(
       writable && arrangementIsFine && (isGeneralConfigModified() || !(m_originalServerConfig == m_serverConfig))
   );

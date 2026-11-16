@@ -154,6 +154,24 @@ void ArrangementCanvasTests::drag_escapeCancelsIt()
   QCOMPARE(computerOf(*canvas, "B").originX, 2600.0);
 }
 
+void ArrangementCanvasTests::drag_aRightClickInTheMiddleOfIt_doesNotEndIt()
+{
+  auto canvas = canvasOf(twoApart());
+  QSignalSpy changed(canvas.get(), &ArrangementCanvas::arrangementChanged);
+  const auto from = canvas->boxOf("B").center().toPoint();
+  const auto to = plus(*canvas, from, 1930 - 2600, 12 - 300);
+  QTest::mousePress(canvas.get(), Qt::LeftButton, {}, from);
+  QTest::mouseMove(canvas.get(), from + (to - from) / 2);
+  // the other button goes down and up while the first is held: the drag goes on
+  QTest::mousePress(canvas.get(), Qt::RightButton, {}, from + (to - from) / 2);
+  QTest::mouseRelease(canvas.get(), Qt::RightButton, {}, from + (to - from) / 2);
+  QCOMPARE(changed.count(), 0);
+  QTest::mouseMove(canvas.get(), to);
+  QTest::mouseRelease(canvas.get(), Qt::LeftButton, {}, to);
+  QCOMPARE(changed.count(), 1);
+  QCOMPARE(computerOf(*canvas, "B").originX, 1920.0);
+}
+
 void ArrangementCanvasTests::drag_aBackgroundDrag_movesTheViewNotTheComputers()
 {
   auto canvas = canvasOf(twoApart());

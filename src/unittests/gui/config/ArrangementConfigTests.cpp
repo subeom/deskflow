@@ -10,6 +10,7 @@
 #include "gui/core/ReportedScreen.h"
 
 #include <QRect>
+#include <QSettings>
 #include <QTextStream>
 
 #include <optional>
@@ -440,8 +441,12 @@ void ArrangementConfigTests::arrangement_oldConfigurationsLoadAsTheyWere()
   }
   // and saving it adds no key
   config.commit();
-  QVERIFY(!Settings::value(Settings::Computer::ArrangementX.arg("A")).isValid());
-  QVERIFY(!Settings::value(Settings::Computer::ArrangementWidth.arg("B")).toBool());
+  QSettings file(Settings::settingsFile(), QSettings::IniFormat);
+  QVERIFY(!file.contains(Settings::Computer::ArrangementX.arg("A")));
+  QVERIFY(!file.contains(Settings::Computer::ArrangementY.arg("A")));
+  QVERIFY(!file.contains(Settings::Computer::ArrangementZoom.arg("A")));
+  QVERIFY(!file.contains(Settings::Computer::ArrangementWidth.arg("B")));
+  QVERIFY(!file.contains(Settings::Computer::ArrangementHeight.arg("B")));
   QCOMPARE(
       generated(config),
       QStringLiteral("section: links\n\tA:\n\t\tright = B\n\tB:\n\t\tleft = A\nend\n\nsection: options\nend\n\n")
@@ -504,24 +509,42 @@ void ArrangementConfigTests::reportedScreen_isParsedFromTheLogOfTheCore()
   }
 }
 
-void ArrangementConfigTests::reportedScreen_isWhatAComputerWithNoSizeIsDrawnAs()
+void ArrangementConfigTests::reportedScreen_doesNotChangeWhatIsGenerated()
 {
-  writeGrid({{6, "A"}, {7, "B"}, {8, "C"}}, "A");
+  // what a computer reported is in memory only: the file that is written must be the same with it and without it
+  writeGrid({{6, "A"}, {7, "B"}}, "A");
   ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{});
-  // B has a size that was said, C has none; A is the server
+  place("A", 0, 0, 1.0, 1920, 1080);
+  place("B", 1920, 0);
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  ServerConfig live;
+  live.setReportedScreen("B", QRect(0, 0, 2560, 1440));
+  const ServerConfig fresh;
+  QCOMPARE(generated(live), generated(fresh));
+}
+
+void ArrangementConfigTests::reportedScreen_isAdoptedAsTheSizeOfAComputerThatHasNone()
+{
+  writeGrid({{6, "A"}, {7, "B"}, {8, "C"}, {9, "D"}}, "A");
+  ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{});
+  // B has a size that was said, C and D have none; C's screen begins at -1920, which a size cannot say
   Settings::setValue(Settings::Computer::ArrangementWidth.arg("B"), 1600);
   Settings::setValue(Settings::Computer::ArrangementHeight.arg("B"), 900);
   ServerConfig config;
   config.setReportedScreen("b", QRect(0, 0, 2560, 1440));
   config.setReportedScreen("C", QRect(-1920, 0, 4480, 1440));
+  config.setReportedScreen("D", QRect(0, 0, 2560, 1440));
+  config.adoptReportedScreens();
   const auto arrangement = config.classicGridAsArrangement().arrangement;
   const auto shapeOf = [&](const char *name) {
     return arrangement.computers[static_cast<size_t>(arrangement.indexOf(name))].shape();
   };
   // a size that was said wins over what the computer reports, which is what the dialog warns of
   QCOMPARE(shapeOf("B"), (deskflow::server::MonitorRect{0, 0, 1600, 900}));
-  QCOMPARE(shapeOf("C"), (deskflow::server::MonitorRect{-1920, 0, 4480, 1440}));
-  // and one that nothing was said of is the usual monitor
+  QCOMPARE(shapeOf("D"), (deskflow::server::MonitorRect{0, 0, 2560, 1440}));
+  // one that starts elsewhere, and one that nothing was said of, is the usual monitor
+  QCOMPARE(shapeOf("C"), (deskflow::server::MonitorRect{0, 0, 1920, 1080}));
   QCOMPARE(shapeOf("A"), (deskflow::server::MonitorRect{0, 0, 1920, 1080}));
   QVERIFY(!config.reportedScreen("A"));
   QVERIFY(config.reportedScreen("c"));

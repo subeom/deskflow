@@ -93,6 +93,20 @@ public:
   */
   void setReportedScreen(const QString &computer, const QRect &shape);
   std::optional<QRect> reportedScreen(const QString &computer) const;
+  const QHash<QString, QRect> &reportedScreens() const
+  {
+    return m_reportedScreens;
+  }
+  void setReportedScreens(const QHash<QString, QRect> &screens)
+  {
+    m_reportedScreens = screens;
+  }
+
+  //! Make the screen that a computer reported its size, when it has no monitors and no size that was said
+  /*!
+  A size is only taken from a report where the screen begins at 0,0: another one needs its monitors said.
+  */
+  void adoptReportedScreens();
 
   //! The displays of this computer, as the operating system says: nothing if it does not
   static std::vector<deskflow::server::MonitorRect> serverMonitors();

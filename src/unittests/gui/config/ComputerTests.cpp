@@ -21,6 +21,7 @@
 #include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QTemporaryDir>
 #include <QTimer>
 
@@ -702,6 +703,46 @@ void ComputerTests::monitorLayoutDialog_importOfAFileThatIsNotAFit_saysSoAndChan
 
   // a file that is not there
   QVERIFY(!dialog.importMonitorLayout(directory.filePath(QStringLiteral("missing.txt"))));
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+}
+
+void ComputerTests::arrangementDialog_aZoomThatTheSpinBoxCannotShow_isKeptWhenNothingIsTouched()
+{
+  // a zoom of 5 is a scale of 20 %, which the spin box (25 to 500) cannot show: it is not changed by an OK
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  for (const double zoom : {5.0, 0.1, 0.8}) {
+    Computer computer(QStringLiteral("zoomed"));
+    computer.setArrangementZoom(zoom);
+    ComputerSettingsDialog dialog(nullptr, &computer);
+    dialog.accept();
+    QCOMPARE(computer.arrangementZoom(), zoom);
+  }
+  // and it is what is asked for when the scale is touched
+  Computer computer(QStringLiteral("zoomed"));
+  ComputerSettingsDialog dialog(nullptr, &computer);
+  dialog.findChild<QSpinBox *>(QStringLiteral("sbDisplayScale"))->setValue(150);
+  dialog.accept();
+  QVERIFY(std::abs(computer.arrangementZoom() - 100.0 / 150.0) < 1.0e-12);
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+}
+
+void ComputerTests::arrangementDialog_theServer_hasNoMonitorsToSayButAScale()
+{
+  // the screen of the server is what the operating system says: nothing typed for it would be used
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Computer server(QStringLiteral("srv"));
+  server.markAsServer();
+  ComputerSettingsDialog dialog(nullptr, &server);
+  QVERIFY(!layoutEdit(dialog)->isEnabled());
+  QVERIFY(!importButton(dialog)->isEnabled());
+  QVERIFY(!dialog.findChild<QSpinBox *>(QStringLiteral("sbArrangementWidth"))->isEnabled());
+  QVERIFY(!dialog.findChild<QSpinBox *>(QStringLiteral("sbArrangementHeight"))->isEnabled());
+  QVERIFY(dialog.findChild<QSpinBox *>(QStringLiteral("sbDisplayScale"))->isEnabled());
+
+  Computer client(QStringLiteral("client"));
+  ComputerSettingsDialog other(nullptr, &client);
+  QVERIFY(layoutEdit(other)->isEnabled());
+  QVERIFY(other.findChild<QSpinBox *>(QStringLiteral("sbArrangementWidth"))->isEnabled());
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
 }
 

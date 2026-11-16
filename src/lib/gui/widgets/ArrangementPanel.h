@@ -35,12 +35,16 @@ public:
   //! Whether the arrangement has an error, which a configuration cannot be saved with
   bool hasErrors() const;
 
+  //! Whether a computer can be added: the grid that holds the computers is not full
+  void setAddEnabled(bool enabled);
+
 Q_SIGNALS:
   //! A computer was moved, or the arrangement was made again from the classic grid
   void changed();
   void useClassicGridRequested();
   void editComputerRequested(const QString &computer);
   void removeComputerRequested(const QString &computer);
+  void addComputerRequested();
 
 private:
   void updateIssues();
@@ -57,5 +61,6 @@ private:
   QPushButton *m_btnReset = nullptr;
   QPushButton *m_btnEdit = nullptr;
   QPushButton *m_btnRemove = nullptr;
+  QPushButton *m_btnAdd = nullptr;
   bool m_errors = false;
 };

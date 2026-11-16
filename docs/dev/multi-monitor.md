@@ -83,6 +83,7 @@ leaving the percentages alone is what keeps existing links working.)
 | `src/lib/server/Config.{h,cpp}` | `Config::addComputer` reads the layout from the settings, as it reads the other per computer values; `setMonitorLayout` / `getMonitorLayout`; the layout is part of `operator==` |
 | `src/lib/server/Server.{h,cpp}` | the predicate, the entry on a monitor in `mapToNeighbor`, the moves in `onMouseMoveSecondary`, the log lines |
 | `src/lib/gui/...` | the check box in the server configuration dialog (Advanced), the text field, validation and import in the computer settings dialog |
+| [arrangement.md](arrangement.md) | the arrangement of the computers, which makes the links from where the screens touch and gives the server's own screen its edges |
 
 The GUI and the core are different processes that share one settings file. Saving the server
 configuration dialog restarts a running core, which reads the file again; `ServerApp::reloadConfig`
@@ -124,9 +125,10 @@ desktop). The dialogs have layout tests in three styles at two font sizes.
 - **The client does not report its monitors.** The layout is typed (or imported) by the user. A
   negotiated capability and a message for it (stage 3 of the research) would need a new Windows and Mac
   client, and is not part of this.
-- **The server's own screen.** A layout for the primary computer is ignored (and the log says so). If
-  the Mac that is the server has an external display, its edge detection stays that of one rectangle.
-  Reading its own displays is a later step and needs no wire change.
+- **The server's own screen** is not mapped by a layout: a layout for the primary computer is ignored (and the log
+  says so). Its displays are read from the operating system and used with the arrangement of the computers (the
+  `server/useArrangement` setting, see [arrangement.md](arrangement.md)); without it the edge detection of the
+  server stays that of one rectangle.
 - **Each monitor is not a screen of its own**, and there are no links per monitor.
 - **Mouse speed** is not scaled; `DESKFLOW_MOUSE_ADJUSTMENT` still applies to every computer.
 - **Relative mouse moves** (locked cursor, games) are relative as before and do not use the layout.

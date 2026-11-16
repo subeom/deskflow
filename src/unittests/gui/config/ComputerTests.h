@@ -35,6 +35,8 @@ private Q_SLOTS:
   void monitorLayoutDialog_importsWhatTheDiagnosticToolsPrint_data();
   void monitorLayoutDialog_importsWhatTheDiagnosticToolsPrint();
   void monitorLayoutDialog_importOfAFileThatIsNotAFit_saysSoAndChangesNothing();
+  void arrangementDialog_aZoomThatTheSpinBoxCannotShow_isKeptWhenNothingIsTouched();
+  void arrangementDialog_theServer_hasNoMonitorsToSayButAScale();
 
 private:
   inline static const QString m_settingsPath = QStringLiteral("tmp/test");

@@ -428,6 +428,7 @@ void ArrangementCanvas::mousePressEvent(QMouseEvent *event)
     const auto index = indexOf(name);
     const auto &computer = m_arrangement.computers[static_cast<size_t>(index)];
     m_drag.index = index;
+    m_drag.button = event->button();
     m_drag.pressed = event->position();
     m_drag.originX = computer.originX;
     m_drag.originY = computer.originY;
@@ -438,6 +439,7 @@ void ArrangementCanvas::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton)
       setSelected(QString());
     m_drag.panning = true;
+    m_drag.button = event->button();
     m_drag.pressed = event->position();
     m_drag.offsetAtPress = m_offset;
   }
@@ -470,7 +472,11 @@ void ArrangementCanvas::mouseMoveEvent(QMouseEvent *event)
 
 void ArrangementCanvas::mouseReleaseEvent(QMouseEvent *event)
 {
-  Q_UNUSED(event);
+  // another button that is pressed and released while this one is held does not end what this one began
+  if (event->button() != m_drag.button) {
+    QWidget::mouseReleaseEvent(event);
+    return;
+  }
   const auto drag = m_drag;
   m_drag = {};
   unsetCursor();

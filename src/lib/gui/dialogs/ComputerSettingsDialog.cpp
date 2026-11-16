@@ -79,6 +79,8 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
   ui->chkShareClipboard->setChecked(m_computer->shareClipboard());
 
   m_monitorLayoutAvailable = experimentIsOn(parent);
+  // the screen of the server is what the operating system says: nothing that is typed for it would be used
+  const bool monitorsCanBeSet = m_monitorLayoutAvailable && !m_computer->isServer();
   const auto fixedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
   ui->textMonitorLayout->setFont(fixedFont);
   // three lines of the font of the text, whatever it is, so that a layout of a few monitors is seen as it is; the field
@@ -88,8 +90,8 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
       qRound(ui->textMonitorLayout->document()->documentMargin() * 2)
   );
   ui->textMonitorLayout->setPlainText(m_computer->monitorLayout());
-  ui->textMonitorLayout->setEnabled(m_monitorLayoutAvailable);
-  ui->btnImportMonitorLayout->setEnabled(m_monitorLayoutAvailable);
+  ui->textMonitorLayout->setEnabled(monitorsCanBeSet);
+  ui->btnImportMonitorLayout->setEnabled(monitorsCanBeSet);
   updateMonitorLayoutStatus();
 
   // the size of the screen when there are no monitors, and the display scale: what the arrangement of the computers has
@@ -110,8 +112,9 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
   m_sbArrangementHeight->setValue(m_computer->arrangementHeight());
   m_sbDisplayScale->setRange(25, 500);
   m_sbDisplayScale->setSuffix(QStringLiteral(" %"));
-  m_scaleShown = static_cast<int>(std::lround(100.0 / m_computer->arrangementZoom()));
-  m_sbDisplayScale->setValue(m_scaleShown);
+  m_sbDisplayScale->setValue(static_cast<int>(std::lround(100.0 / m_computer->arrangementZoom())));
+  // what the spin box shows, which is not the scale of a zoom that it cannot show (25 to 500 %)
+  m_scaleShown = m_sbDisplayScale->value();
   const auto sizeTip = tr(
       "The size of the screen of this computer in its own pixels, for the arrangement of the computers, when you have "
       "not set monitors above. Not said: 1920 x 1080."
@@ -139,8 +142,9 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
   arrangement->addWidget(m_sbDisplayScale, 1, 1);
   arrangement->setColumnStretch(4, 1);
   ui->layoutMonitorLayout->addLayout(arrangement);
-  for (auto *box : {m_sbArrangementWidth, m_sbArrangementHeight, m_sbDisplayScale})
-    box->setEnabled(m_monitorLayoutAvailable);
+  for (auto *box : {m_sbArrangementWidth, m_sbArrangementHeight})
+    box->setEnabled(monitorsCanBeSet);
+  m_sbDisplayScale->setEnabled(m_monitorLayoutAvailable);
 
   const auto valNameError = new validators::ValidationError(this, ui->lblNameError);
   const auto valName = new validators::ComputerLineNameValidator(ui->lineNameEdit, valNameError, computers);
@@ -208,7 +212,7 @@ void ComputerSettingsDialog::accept()
   // a layout that is not valid is not saved: the status line says what is wrong with it. One that cannot be set is left
   // as it is.
   std::optional<QString> monitorLayout;
-  if (m_monitorLayoutAvailable) {
+  if (m_monitorLayoutAvailable && !m_computer->isServer()) {
     const auto text = ui->textMonitorLayout->toPlainText().trimmed();
     if (text.isEmpty()) {
       monitorLayout = QString();
@@ -244,7 +248,8 @@ void ComputerSettingsDialog::accept()
   if (monitorLayout)
     m_computer->setMonitorLayout(*monitorLayout);
   if (m_monitorLayoutAvailable) {
-    m_computer->setArrangementSize(m_sbArrangementWidth->value(), m_sbArrangementHeight->value());
+    if (!m_computer->isServer())
+      m_computer->setArrangementSize(m_sbArrangementWidth->value(), m_sbArrangementHeight->value());
     // a scale that was not touched keeps the zoom that was set, which may not be a whole number of percent
     if (m_sbDisplayScale->value() != m_scaleShown)
       m_computer->setArrangementZoom(deskflow::server::arrangement::zoomForScale(m_sbDisplayScale->value()));
@@ -320,6 +325,11 @@ void ComputerSettingsDialog::updateMonitorLayoutStatus()
         ui->lblMonitorLayoutStatus,
         tr("Turn on \"Experimental: multi-monitor aware cursor mapping\" in the server's Advanced tab to set a layout.")
     );
+    return;
+  }
+
+  if (m_computer->isServer()) {
+    showStatus(ui->lblMonitorLayoutStatus, tr("The screen of this computer is what the operating system says."));
     return;
   }
 

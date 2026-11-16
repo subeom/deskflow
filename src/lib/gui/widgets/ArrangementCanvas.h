@@ -128,6 +128,7 @@ private:
     deskflow::server::arrangement::SnapResult snapped;
     bool moved = false;
     bool panning = false;
+    Qt::MouseButton button = Qt::NoButton;
     QPointF offsetAtPress;
   };
   Drag m_drag;

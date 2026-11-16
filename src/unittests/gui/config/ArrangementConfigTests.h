@@ -32,7 +32,8 @@ private Q_SLOTS:
   void arrangement_classicGridConversion_keepsTheLinks();
   void reportedScreen_isParsedFromTheLogOfTheCore_data();
   void reportedScreen_isParsedFromTheLogOfTheCore();
-  void reportedScreen_isWhatAComputerWithNoSizeIsDrawnAs();
+  void reportedScreen_doesNotChangeWhatIsGenerated();
+  void reportedScreen_isAdoptedAsTheSizeOfAComputerThatHasNone();
 
 private:
   QTemporaryDir m_settingsDir;

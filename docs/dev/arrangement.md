@@ -46,8 +46,9 @@ does not move the monitors it had. The bounding box of the monitors of a compute
 fractions are fractions of the sides of this box, as the core has always read them.
 
 Edges touch when they are within `kTouchTolerance = 0.5` units of each other (zoom 0.667 makes fractions that no
-decimal says exactly) and the touching segment is longer than `kMinLink = 1` unit. Positions are stored with three
-decimals.
+decimal says exactly) and the touching segment is longer than `kMinLink = 1` unit. Stretches of one side that overlap
+or are apart by less than `kHair = 0.01` unit are the same place (a position that was rounded to three decimals
+misses by up to 5e-4): they meet in the middle, so that the intervals that the core reads never overlap.
 
 ### 2. Per-computer data
 
@@ -108,7 +109,11 @@ A T-shaped or staggered contact is several links of one side (the T of the serve
 beside the MacBook part are two links of `left`). A computer touching two computers on one side gives two links.
 What is **not** expressible is one row of a side that has *two different exposed edges* (a U shape: the inner edge of
 an arm and the outer edge of the other arm, in the same rows) with two neighbours: source intervals would overlap. The
-outer edge (the one on the bounding box) wins, the other link is dropped and the dialog warns.
+outer edge (the one on the bounding box) wins, the other link is dropped and the dialog warns (`AmbiguousSide`).
+Since the core lets the pointer leave through *any* exposed edge of a side, a link also covers the rows of an edge of
+that side that touches nothing, if it is in the same rows (the outer edges of the U with a computer in its notch):
+that is a warning too (`EdgeInTheSameRows`), not an error. The T of the server does not have it: its edges on a side
+are in rows of their own.
 
 ### 4. How it composes with the silhouette mapping
 
@@ -127,10 +132,17 @@ the MacBook part), and comes back onto a monitor, away from the jump zone.
 The primary's exit is decided from the **position** alone, like it always was: the macOS event tap gives the pointer
 position, and the system clamps it to the desktop, so a pointer pushed against an exposed edge sits on its edge
 pixel. A position whose pixel `jumpZone` further out (`x − zone`, `x + zone`, `y − zone`, `y + zone`) is no monitor is
-*at an exposed edge* and tries to leave on that side. This is what the box edge test always meant (`x < ax + zone`),
-for every rectangle it is the same test, and the limits are the legacy ones: touching the edge is pushing (so
-*sliding along* an exposed edge pushes too), and the delay and double-tap options decide, as before, whether a push
-switches.
+*at an exposed edge* and tries to leave on that side (a horizontal side is tried before a vertical one, in a corner).
+This is what the box edge test always meant (`x < ax + zone`), for every rectangle it is the same test, and the limits
+are the legacy ones: touching the edge is pushing (so *sliding along* an exposed edge pushes too), and the delay and
+double-tap options decide, as before, whether a push switches (the double tap is armed when the pointer was as far
+from an exposed edge as the option says, for an inner edge as for one on the bounding box). The neighbour is found
+from where the pointer would be beyond the **bounding box**, as always, so the fraction along the side is the same
+whether the pointer leaves through an inner edge or through the box. A position that the system reports in a hole is
+judged from the nearest monitor pixel. The corner locks are the corners of the bounding box. Coming back, the pointer
+lands on the outermost monitor pixel of the row (or column) and, if the primary has a neighbour on that side, `jumpZone`
+pixels in, so that it does not bounce. If the platform tells no monitors, they are not the screen of the platform, or
+they make up a rectangle, nothing of this runs: it is the code that always ran.
 
 ### 5. The classic grid becomes an arrangement
 
@@ -151,11 +163,39 @@ stored, untouched, and **Use the classic grid** switches to it.
   zoom (the pointer is mapped by position only); mixed per-monitor DPI inside one computer is one zoom.
 - Universal Control and similar are not designed for. Nothing depends on them.
 
+### Reported screens (stage D)
+
+A computer tells the server its screen in `DINF` as it always did. While the experiment is on the core logs it
+(`computer "X" reports its screen: x,y wxh`, at INFO, once for each change and each connection), the GUI reads that
+line from the output of the core (no IPC change, no new message), and uses it for a computer that has no monitors
+and no size that was said, instead of 1920 × 1080, and to **warn** when the arrangement has another screen for a
+computer (the core only uses the monitors of a computer when their bounding box is exactly what it reports).
+
+## Verified, and not
+
+Verified by tests that run here: the library (tables, seeded property tests, the equivalence with the classic grid, the
+text read back by the real core `Config`), the golden pins of the pointer decisions that were recorded from the code
+before the change, the server's silhouette on the user's real T (leaving through every exposed edge, coming back,
+display changes, the log), the canvas widget (drag, snap, keys), the dialogs (state, save, layout in three styles at two
+font sizes), the generated configuration (golden) and the settings round trip. Not verified: the feel of the canvas
+with a real mouse, a Windows PC or a Mac with several monitors, the pointer at an inner edge on a real macOS (the event
+tap was not run), Windows compiling and behaviour, a display that is plugged in while the server runs.
+
 ## Where it is
 
 | Where | What |
 |---|---|
 | `src/lib/server/Arrangement.{h,cpp}` | the pure library: types, validation, snapping, derivation, grid conversion, link text. No Qt, no platform |
-| `src/lib/deskflow/IPlatformComputer.h`, `Computer`, `PrimaryClient`, `OSXComputer` | `getMonitors()` of the server's own desktop (default: its one rectangle) |
-| `src/lib/server/Server.{h,cpp}` | silhouette of the primary (exit through any exposed edge, entry on a monitor) |
-| `src/lib/gui/...` | canvas widget, arrangement persistence, link generation in `operator<<(ServerConfig)` |
+| `src/lib/deskflow/IPlatformComputer.h`, `Computer.{h,cpp}`, `src/lib/server/PrimaryClient.{h,cpp}` | `getMonitors()` of the server's own desktop (default: nothing, which is its one rectangle) |
+| `src/lib/platform/OSXDisplays.{h,cpp}`, `OSXComputer.{h,mm}` | the only macOS code: the active displays in points, kept up to date with the shape |
+| `src/lib/server/Server.{h,cpp}` | silhouette of the primary (exit through any exposed edge, entry on a monitor, double tap), the log lines |
+| `src/lib/common/Settings.{h,cpp}` | `server/useArrangement`, `computer_<name>/arrangement{X,Y,Zoom,Width,Height}` |
+| `src/lib/gui/widgets/ArrangementCanvas`, `ArrangementPanel` | the canvas and what goes with it |
+| `src/lib/gui/config/ServerConfig`, `Computer` | the arrangement of the grid's computers, link generation in `operator<<`, persistence |
+| `src/lib/gui/dialogs/ServerConfigDialog`, `ComputerSettingsDialog` | the panel and the offer; screen size and display scale |
+| `src/lib/gui/core/ReportedScreen`, `MainWindow` | the line of the core log that says the screen of a computer |
+
+The shared files that a Windows build compiles (everything but `OSXDisplays` and `OSXComputer`): `Arrangement.{h,cpp}`,
+`Server.{h,cpp}`, `PrimaryClient.{h,cpp}`, `Computer.{h,cpp}`, `IPlatformComputer.h`, `Settings.{h,cpp}`, and in the GUI
+`ArrangementCanvas`, `ArrangementPanel`, `ServerConfig`, `Computer`, `ServerConfigDialog`, `ComputerSettingsDialog`,
+`ReportedScreen` and `MainWindow`.
