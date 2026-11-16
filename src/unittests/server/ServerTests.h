@@ -79,6 +79,10 @@ private Q_SLOTS:
   void pointerPin_linkIntervals_landWhereTheyAlwaysDid();
   void pointerPin_cornersOfThePrimary_horizontalIsTriedFirst_data();
   void pointerPin_cornersOfThePrimary_horizontalIsTriedFirst();
+  void pointerPin_theDesktopOfTheServer_leavesWhereItAlwaysDid_data();
+  void pointerPin_theDesktopOfTheServer_leavesWhereItAlwaysDid();
+  void pointerPin_theDesktopOfTheServer_isEnteredWhereItAlwaysWas_data();
+  void pointerPin_theDesktopOfTheServer_isEnteredWhereItAlwaysWas();
   void monitorGeometry_enteringAHole_landsOnAMonitor();
   void monitorGeometry_theExampleOfTheDocumentation();
   void monitorGeometry_leavingThroughAnInnerEdge_happensAtOnce();

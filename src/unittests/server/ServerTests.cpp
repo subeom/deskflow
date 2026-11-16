@@ -2289,6 +2289,145 @@ void ServerTests::pointerPin_cornersOfThePrimary_horizontalIsTriedFirst()
 
 namespace {
 
+// The desktop of the MacBook Pro of the user below a DELL ultrawide: a T whose bounding box has a hole on both sides of
+// the MacBook. Server before the arrangement only knows this box.
+const Box kTShapedPrimary{0, 0, 3440, 2787};
+
+// A primary computer that has a neighbour on each of its sides: L, R, U and D. With \p partial each side has two,
+// each for part of the edge, as the links that an arrangement derives are.
+std::unique_ptr<PointerRig> surrounded(const Box &primary, Mode mode, bool partial)
+{
+  using enum Direction;
+  auto rig = std::make_unique<PointerRig>(
+      primary,
+      std::vector<PointerRig::Remote>{
+          {"L", {0, 0, 1920, 1080}}, {"R", {0, 0, 2560, 1440}}, {"U", {-1920, 0, 4480, 1440}}, {"D", {0, 0, 1920, 1080}}
+      }
+  );
+  if (!partial) {
+    rig->link("primary", Left, "L");
+    rig->link("primary", Right, "R");
+    rig->link("primary", Top, "U");
+    rig->link("primary", Bottom, "D");
+  } else {
+    auto &config = rig->config;
+    config.connect("primary", Left, 0.0f, 0.5f, "L", 0.0f, 1.0f);
+    config.connect("primary", Left, 0.5f, 1.0f, "D", 0.0f, 1.0f);
+    config.connect("primary", Right, 0.0f, 0.4f, "R", 0.0f, 1.0f);
+    config.connect("primary", Right, 0.4f, 1.0f, "U", 0.25f, 0.75f);
+    config.connect("primary", Top, 0.0f, 0.25f, "U", 0.0f, 1.0f);
+    config.connect("primary", Top, 0.25f, 1.0f, "L", 0.0f, 0.5f);
+    config.connect("primary", Bottom, 0.0f, 0.2f, "D", 0.0f, 1.0f);
+    config.connect("primary", Bottom, 0.2f, 1.0f, "R", 0.5f, 1.0f);
+    config.connect("L", Right, 0.0f, 1.0f, "primary", 0.0f, 0.5f);
+    config.connect("R", Left, 0.0f, 1.0f, "primary", 0.0f, 0.4f);
+    config.connect("U", Bottom, 0.0f, 1.0f, "primary", 0.0f, 0.25f);
+    config.connect("D", Top, 0.0f, 1.0f, "primary", 0.0f, 0.2f);
+  }
+  applyMode(*rig, mode);
+  return rig;
+}
+
+// What the Server decides when the primary computer reports the pointer on each of a lattice of positions that has the
+// edges of the bounding box, the inner edges of the T, and the places around both: which computer it goes to, and where
+// it enters it
+uint64_t everyPrimaryPositionDigest(const Box &primary, Mode mode, bool partial)
+{
+  const std::array<int32_t, 15> xs = {0, 1, 2, 5, 752, 753, 754, 1720, 2816, 2817, 2818, 3434, 3437, 3438, 3439};
+  const std::array<int32_t, 14> ys = {0, 1, 2, 5, 1000, 1438, 1439, 1440, 1441, 2000, 2780, 2784, 2785, 2786};
+  auto rig = surrounded(primary, mode, partial);
+  Digest digest;
+  for (const auto y : ys) {
+    for (const auto x : xs) {
+      std::map<std::string, size_t> before;
+      for (const auto &[name, client] : rig->clients)
+        before[name] = client->entered.size();
+      rig->moveOnPrimary(x, y);
+      int32_t went = 0;
+      int32_t index = 0;
+      for (const auto &[name, client] : rig->clients) {
+        ++index;
+        if (client->entered.size() > before[name]) {
+          went = index;
+          digest.add(client->entered.back());
+        }
+      }
+      digest.add(went);
+      rig->switchTo("primary");
+    }
+  }
+  return digest.value();
+}
+
+struct PrimaryPositionPin
+{
+  bool partial;
+  uint64_t digest;
+};
+
+// recorded from the Server as it was before the screen of the primary computer was looked at
+constexpr std::array<PrimaryPositionPin, 2> kPrimaryPositionPins = {
+    {{false, 15076667723849277015ull}, {true, 3465769844334219375ull}}
+};
+
+struct TShapedSidePin
+{
+  Direction side;
+  uint64_t enterThrough;
+  uint64_t leaveBy;
+};
+
+constexpr std::array<TShapedSidePin, 4> kTShapedSidePins = {{
+    {Direction::Left, 8718497104015154596ull, 14401041880609622769ull},
+    {Direction::Right, 10346735935467749189ull, 13480785004795995027ull},
+    {Direction::Top, 722090003010527315ull, 14735681858960440683ull},
+    {Direction::Bottom, 15724209203813177547ull, 10613106204156536195ull},
+}};
+
+} // namespace
+
+void ServerTests::pointerPin_theDesktopOfTheServer_leavesWhereItAlwaysDid_data()
+{
+  QTest::addColumn<int>("mode");
+  QTest::addColumn<int>("pin");
+  for (const auto mode : kModes) {
+    for (size_t i = 0; i < kPrimaryPositionPins.size(); ++i)
+      QTest::newRow(
+          qPrintable(QStringLiteral("%1, %2")
+                         .arg(kPrimaryPositionPins.at(i).partial ? "links of part of an edge" : "whole links")
+                         .arg(modeName(mode)))
+      ) << static_cast<int>(mode)
+        << static_cast<int>(i);
+  }
+}
+
+void ServerTests::pointerPin_theDesktopOfTheServer_leavesWhereItAlwaysDid()
+{
+  const QuietLog quiet;
+  QFETCH(int, mode);
+  QFETCH(int, pin);
+  const auto &expected = kPrimaryPositionPins.at(static_cast<size_t>(pin));
+  QCOMPARE(everyPrimaryPositionDigest(kTShapedPrimary, static_cast<Mode>(mode), expected.partial), expected.digest);
+}
+
+void ServerTests::pointerPin_theDesktopOfTheServer_isEnteredWhereItAlwaysWas_data()
+{
+  addModeRows();
+}
+
+void ServerTests::pointerPin_theDesktopOfTheServer_isEnteredWhereItAlwaysWas()
+{
+  const QuietLog quiet;
+  QFETCH(int, mode);
+  const auto at = static_cast<Mode>(mode);
+  for (const auto &pin : kTShapedSidePins) {
+    QCOMPARE(everyEntryDigest(kTShapedPrimary, pin.side, at), pin.enterThrough);
+    QCOMPARE(everyExitDigest(kTShapedPrimary, pin.side, at), pin.leaveBy);
+  }
+}
+
+namespace {
+
 // Keeps the INFO lines that are logged for as long as it lives, whatever becomes of the test
 class ScopedInfoLines : public InfoLines
 {

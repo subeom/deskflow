@@ -8,3 +8,11 @@ create_test(
   SOURCE ComputerTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME ArrangementConfigTests
+  DEPENDS gui
+  LIBS server
+  SOURCE ArrangementConfigTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
