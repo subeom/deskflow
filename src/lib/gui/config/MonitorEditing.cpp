@@ -1,0 +1,42 @@
+/*
+ * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2026 Deskflow Developers
+ * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
+ */
+
+#include "MonitorEditing.h"
+
+#include <vector>
+
+namespace deskflow::gui {
+
+server::editor::Layout
+drawingOf(const ::Computer &computer, double originX, double originY, const std::optional<QRect> &reported)
+{
+  using server::MonitorRect;
+  std::vector<MonitorRect> rects;
+  if (!computer.monitorLayout().isEmpty()) {
+    if (const auto parsed = server::MonitorLayout::parse(computer.monitorLayout().toStdString()); parsed)
+      rects = parsed.layout->monitors();
+  }
+  if (rects.empty()) {
+    if (computer.arrangementWidth() > 0 && computer.arrangementHeight() > 0)
+      rects = {{0, 0, computer.arrangementWidth(), computer.arrangementHeight()}};
+    else if (reported && reported->width() > 0 && reported->height() > 0)
+      rects = {{reported->x(), reported->y(), reported->width(), reported->height()}};
+    else
+      rects = {{0, 0, 1920, 1080}};
+  }
+  const std::vector<double> scales(computer.monitorScales().begin(), computer.monitorScales().end());
+  return server::editor::fromStored(rects, computer.arrangementZoom(), originX, originY, scales);
+}
+
+void apply(::Computer &computer, const server::editor::Realised &made)
+{
+  computer.setMonitorLayout(QString::fromStdString(made.text));
+  computer.setMonitorScales(QList<double>(made.scales.begin(), made.scales.end()));
+  computer.setArrangementZoom(made.zoom);
+  computer.setArrangementOrigin(made.originX, made.originY);
+}
+
+} // namespace deskflow::gui

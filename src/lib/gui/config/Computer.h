@@ -39,7 +39,7 @@ class Computer : public ComputerConfig
                      << static_cast<quint8>(computer.m_CrossOSInvertScope) << computer.m_ShareClipboard
                      << computer.m_MonitorLayout << computer.m_ArrangementPlaced << computer.m_ArrangementX
                      << computer.m_ArrangementY << computer.m_ArrangementZoom << computer.m_ArrangementWidth
-                     << computer.m_ArrangementHeight;
+                     << computer.m_ArrangementHeight << computer.m_MonitorScales;
   }
 
   friend QDataStream &operator>>(QDataStream &inStream, Computer &computer)
@@ -51,7 +51,7 @@ class Computer : public ComputerConfig
         computer.m_CrossOSInvertY >> computer.m_CrossOSSemanticMedia >> crossOSInvertScope >>
         computer.m_ShareClipboard >> computer.m_MonitorLayout >> computer.m_ArrangementPlaced >>
         computer.m_ArrangementX >> computer.m_ArrangementY >> computer.m_ArrangementZoom >>
-        computer.m_ArrangementWidth >> computer.m_ArrangementHeight;
+        computer.m_ArrangementWidth >> computer.m_ArrangementHeight >> computer.m_MonitorScales;
     computer.m_F18Action =
         f18Action == static_cast<quint8>(F18Action::Hangul) ? F18Action::Hangul : F18Action::PassThrough;
     computer.m_CrossOSInvertScope = crossOSInvertScope == static_cast<quint8>(ScrollInvertScope::MouseWheelOnly)
@@ -182,6 +182,20 @@ public:
   {
     m_ArrangementZoom = zoom;
   }
+  //! The display scale in percent of each monitor of the layout, in its order; empty: the scale of the zoom
+  [[nodiscard]] const QList<double> &monitorScales() const
+  {
+    return m_MonitorScales;
+  }
+  //! The monitors as the text of a monitor layout, in the coordinates that the computer reports
+  void setMonitorLayout(const QString &layout)
+  {
+    m_MonitorLayout = layout.trimmed();
+  }
+  void setMonitorScales(const QList<double> &scales)
+  {
+    m_MonitorScales = scales;
+  }
   void setArrangementSize(int width, int height)
   {
     m_ArrangementWidth = width;
@@ -273,10 +287,6 @@ protected:
   {
     m_ShareClipboard = enabled;
   }
-  void setMonitorLayout(const QString &layout)
-  {
-    m_MonitorLayout = layout.trimmed();
-  }
   void setSwapped(const bool on)
   {
     m_Swapped = on;
@@ -303,6 +313,7 @@ private:
   double m_ArrangementZoom = 1.0;
   int m_ArrangementWidth = 0;
   int m_ArrangementHeight = 0;
+  QList<double> m_MonitorScales = {};
   bool m_Swapped = false;
   bool m_isServer = false;
 };

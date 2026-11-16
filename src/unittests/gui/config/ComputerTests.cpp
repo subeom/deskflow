@@ -746,4 +746,48 @@ void ComputerTests::arrangementDialog_theServer_hasNoMonitorsToSayButAScale()
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
 }
 
+void ComputerTests::monitorScales_areOptional_savedLoadedAndCompared()
+{
+  const auto name = QStringLiteral("scales-computer");
+  const auto key = Settings::Computer::MonitorScales.arg(name);
+
+  // a configuration that predates the setting: no scales, and none is written for a computer that has none
+  Settings::proxy().setValue("name", name);
+  Computer computer;
+  computer.loadSettings(Settings::proxy());
+  QVERIFY(computer.monitorScales().isEmpty());
+  computer.saveSettings(Settings::proxy());
+  QVERIFY(!QSettings(Settings::settingsFile(), QSettings::IniFormat).contains(key));
+
+  computer.setMonitorScales({150.0, 100.0, 125.5});
+  const auto other = computer;
+  QVERIFY(computer == other);
+  computer.saveSettings(Settings::proxy());
+  Computer loaded;
+  loaded.loadSettings(Settings::proxy());
+  QCOMPARE(loaded.monitorScales(), (QList<double>{150.0, 100.0, 125.5}));
+  QVERIFY(loaded == computer);
+
+  // it takes part in equality and in what is serialized
+  Computer changed = computer;
+  changed.setMonitorScales({150.0, 100.0});
+  QVERIFY(!(changed == computer));
+  QByteArray serialized;
+  QDataStream output(&serialized, QIODevice::WriteOnly);
+  output << computer;
+  Computer copy;
+  QDataStream input(&serialized, QIODevice::ReadOnly);
+  input >> copy;
+  QVERIFY(copy == computer);
+
+  // what is not a scale is not kept, and none is written again for a computer that is back to none
+  Settings::setValue(key, QStringLiteral("abc,,0,150,1000"));
+  Computer odd;
+  odd.loadSettings(Settings::proxy());
+  QCOMPARE(odd.monitorScales(), (QList<double>{150.0}));
+  odd.setMonitorScales({});
+  odd.saveSettings(Settings::proxy());
+  QVERIFY(!QSettings(Settings::settingsFile(), QSettings::IniFormat).contains(key));
+}
+
 QTEST_MAIN(ComputerTests)

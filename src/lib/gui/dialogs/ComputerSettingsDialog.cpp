@@ -245,8 +245,12 @@ void ComputerSettingsDialog::accept()
       m_computer->addAlias(alias);
   }
 
-  if (monitorLayout)
+  if (monitorLayout) {
+    // the scales are those of the monitors that were drawn: numbers that are typed are another layout
+    if (*monitorLayout != m_computer->monitorLayout())
+      m_computer->setMonitorScales({});
     m_computer->setMonitorLayout(*monitorLayout);
+  }
   if (m_monitorLayoutAvailable) {
     if (!m_computer->isServer())
       m_computer->setArrangementSize(m_sbArrangementWidth->value(), m_sbArrangementHeight->value());

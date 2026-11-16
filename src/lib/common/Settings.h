@@ -144,8 +144,8 @@ public:
     inline static const auto ModifierShift = QStringLiteral("computer_%1/modifierShift");
     inline static const auto ModifierSuper = QStringLiteral("computer_%1/modifierSuper");
     // experimental: the arrangement of the computers. Where the origin of the coordinates of the computer is in the
-    // arrangement (no key: not placed yet), how many units of the arrangement a unit of the computer is, and the size of
-    // its screen when it has no monitor layout (0: not said)
+    // arrangement (no key: not placed yet), how many units of the arrangement a unit of the computer is, and the size
+    // of its screen when it has no monitor layout (0: not said)
     inline static const auto ArrangementHeight = QStringLiteral("computer_%1/arrangementHeight");
     inline static const auto ArrangementWidth = QStringLiteral("computer_%1/arrangementWidth");
     inline static const auto ArrangementX = QStringLiteral("computer_%1/arrangementX");
@@ -153,6 +153,9 @@ public:
     inline static const auto ArrangementZoom = QStringLiteral("computer_%1/arrangementZoom");
     // experimental: the monitors of the computer, x,y,w,h;x,y,w,h in the coordinates of the shape that it reports
     inline static const auto MonitorLayout = QStringLiteral("computer_%1/monitorLayout");
+    // experimental: the display scale in percent of each monitor of the layout, in its order (150,100); none: the
+    // scale of the zoom. Only the monitor editor uses it, to draw the monitors as they are
+    inline static const auto MonitorScales = QStringLiteral("computer_%1/monitorScales");
     inline static const auto ShareClipboard = QStringLiteral("computer_%1/shareClipboard");
     inline static const auto F18Action = QStringLiteral("computer_%1/f18Action");
     inline static const auto CrossOSInvertX = QStringLiteral("computer_%1/crossOSInvertX");

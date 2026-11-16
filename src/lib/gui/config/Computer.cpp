@@ -62,6 +62,13 @@ void Computer::loadSettings(QSettingsProxy &settings)
   m_ArrangementZoom = zoom > 0 ? zoom : 1.0;
   m_ArrangementWidth = std::max(0, Settings::value(Settings::Computer::ArrangementWidth.arg(name)).toInt());
   m_ArrangementHeight = std::max(0, Settings::value(Settings::Computer::ArrangementHeight.arg(name)).toInt());
+  m_MonitorScales.clear();
+  for (const auto &part : Settings::textValue(Settings::Computer::MonitorScales.arg(name)).split(QLatin1Char(','))) {
+    bool ok = false;
+    const auto scale = part.trimmed().toDouble(&ok);
+    if (ok && scale >= 25.0 && scale <= 500.0)
+      m_MonitorScales.append(scale);
+  }
 
   setSwitchCornerSize(Settings::value(Settings::Computer::SwitchCornerSize.arg(name)).toInt());
 
@@ -133,6 +140,13 @@ void Computer::saveSettings(QSettingsProxy &settings) const
       Settings::Computer::ArrangementHeight.arg(computerName),
       m_ArrangementHeight == 0 ? QVariant() : QVariant(m_ArrangementHeight)
   );
+  // a computer that has no scales of its monitors has no key
+  QStringList scales;
+  for (const auto scale : m_MonitorScales)
+    scales << QString::number(scale, 'g', 10);
+  Settings::setValue(
+      Settings::Computer::MonitorScales.arg(computerName), scales.isEmpty() ? QVariant() : QVariant(scales.join(','))
+  );
   Settings::setValue(Settings::Computer::SwitchCornerSize.arg(computerName), switchCornerSize());
   Settings::setValue(
       Settings::Computer::SwitchCornerTopLeft.arg(computerName), m_SwitchCorners[static_cast<int>(TopLeft)]
@@ -189,6 +203,6 @@ bool Computer::operator==(const Computer &computer) const
          m_MonitorLayout == computer.m_MonitorLayout && m_ArrangementPlaced == computer.m_ArrangementPlaced &&
          m_ArrangementX == computer.m_ArrangementX && m_ArrangementY == computer.m_ArrangementY &&
          m_ArrangementZoom == computer.m_ArrangementZoom && m_ArrangementWidth == computer.m_ArrangementWidth &&
-         m_ArrangementHeight == computer.m_ArrangementHeight && m_Swapped == computer.m_Swapped &&
-         m_isServer == computer.m_isServer;
+         m_ArrangementHeight == computer.m_ArrangementHeight && m_MonitorScales == computer.m_MonitorScales &&
+         m_Swapped == computer.m_Swapped && m_isServer == computer.m_isServer;
 }

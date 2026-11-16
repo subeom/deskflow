@@ -6,8 +6,10 @@
 #include "ArrangementConfigTests.h"
 
 #include "common/Settings.h"
+#include "gui/config/MonitorEditing.h"
 #include "gui/config/ServerConfig.h"
 #include "gui/core/ReportedScreen.h"
+#include "server/MonitorEditor.h"
 
 #include <QRect>
 #include <QSettings>
@@ -578,6 +580,45 @@ void ArrangementConfigTests::assumedSizes_areOfTheComputersThatHaveNoMonitorsAnd
   config.setReportedScreen("D", QRect(0, 0, 2560, 1440));
   config.adoptReportedScreens();
   QCOMPARE(config.assumedSizes(), QStringList({"E"}));
+}
+
+void ArrangementConfigTests::monitorEditing_drawsWhatIsStored_andStoresWhatIsMade()
+{
+  using namespace deskflow::server;
+  // a Windows PC of two monitors that was stored as numbers, at 150 %, placed at 100,200
+  Computer pc("PC");
+  pc.setMonitorLayout(QStringLiteral("0,0,2560,1440;-1920,360,1920,1080"));
+  pc.setArrangementZoom(100.0 / 150.0);
+  pc.setMonitorScales({150.0, 100.0});
+  const auto drawn = deskflow::gui::drawingOf(pc, 100, 200, std::nullopt);
+  QCOMPARE(drawn.monitors.size(), size_t{2});
+  QCOMPARE(drawn.monitors[0].scale, 150.0);
+  QCOMPARE(drawn.monitors[0].pixelsW(), 2560);
+  QVERIFY(std::abs(drawn.monitors[0].x - 100) < 1e-9);
+  QVERIFY(std::abs(drawn.monitors[1].x - (100 - 1920 * 100.0 / 150.0)) < 1e-9);
+
+  // a computer that has no layout is its typed size, or else the screen that it reported, or else a screen of the usual
+  // size
+  Computer typed("typed");
+  typed.setArrangementSize(1600, 900);
+  QCOMPARE(deskflow::gui::drawingOf(typed, 0, 0, std::nullopt).monitors[0].pixelsW(), 1600);
+  Computer plain("plain");
+  QCOMPARE(deskflow::gui::drawingOf(plain, 0, 0, std::nullopt).monitors[0].pixelsH(), 1080);
+  const auto fromReport = deskflow::gui::drawingOf(plain, 0, 0, QRect(-1920, 0, 4480, 1440));
+  QCOMPARE(fromReport.monitors[0].pixelsW(), 4480);
+  QCOMPARE(fromReport.monitors[0].pixelsH(), 1440);
+
+  // what the editor made is what the computer has: the layout, the zoom, the scales and the place
+  auto layout = editor::withScale(drawn, 1, 125);
+  const auto made = editor::realise(layout, MonitorRect{-1536, 0, 4096, 1440});
+  QVERIFY2(made.fit == editor::Fit::Matches, made.error.c_str());
+  deskflow::gui::apply(pc, made);
+  QCOMPARE(pc.monitorLayout(), QString::fromStdString(made.text));
+  QCOMPARE(pc.monitorScales(), (QList<double>{150.0, 125.0}));
+  QCOMPARE(pc.arrangementZoom(), made.zoom);
+  QVERIFY(pc.arrangementPlaced());
+  QCOMPARE(pc.arrangementX(), made.originX);
+  QCOMPARE(pc.arrangementY(), made.originY);
 }
 
 void ArrangementConfigTests::reportedScreen_doesNotChangeWhatIsGenerated()

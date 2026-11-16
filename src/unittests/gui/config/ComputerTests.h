@@ -37,6 +37,7 @@ private Q_SLOTS:
   void monitorLayoutDialog_importOfAFileThatIsNotAFit_saysSoAndChangesNothing();
   void arrangementDialog_aZoomThatTheSpinBoxCannotShow_isKeptWhenNothingIsTouched();
   void arrangementDialog_theServer_hasNoMonitorsToSayButAScale();
+  void monitorScales_areOptional_savedLoadedAndCompared();
 
 private:
   inline static const QString m_settingsPath = QStringLiteral("tmp/test");
