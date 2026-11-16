@@ -14,6 +14,7 @@
 #include "gui/dialogs/ComputerSettingsDialog.h"
 #include "gui/dialogs/ConnectionTestDialog.h"
 #include "gui/dialogs/MonitorEditorDialog.h"
+#include "gui/dialogs/ServerAddressesDialog.h"
 #include "gui/dialogs/ServerConfigDialog.h"
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
@@ -593,6 +594,51 @@ void DialogLayoutTests::connectionTestDialog_isLaidOutWithoutSqueezing()
   QVERIFY(dialog.findChild<QPushButton *>(QStringLiteral("btnCopySummary"))->isVisibleTo(&dialog));
   QVERIFY(dialog.findChild<QPushButton *>(QStringLiteral("btnRunAgain"))->isVisibleTo(&dialog));
   grabIfRequested(QStringLiteral("ConnectionTestDialog"), dialog);
+
+  const auto violations = findLayoutViolations(dialog);
+  QVERIFY2(
+      violations.isEmpty(),
+      qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+  );
+}
+
+void DialogLayoutTests::serverAddressesDialog_isLaidOutWithoutSqueezing_data()
+{
+  addScenarios();
+}
+
+// A table of the addresses of the server, an explanation per kind of address and a tip: a table that has names of
+// interfaces as long as those of Windows must not squeeze or overlap, in any style, font size or window size
+void DialogLayoutTests::serverAddressesDialog_isLaidOutWithoutSqueezing()
+{
+  using deskflow::gui::AddressInfo;
+  using deskflow::gui::AddressKind;
+  QFETCH(QString, style);
+  QFETCH(qreal, fontScale);
+  QFETCH(int, sizeMode);
+
+  QVERIFY(QApplication::setStyle(style) != nullptr);
+  const QList<AddressInfo> addresses{
+      {QStringLiteral("10.0.21.36"), QStringLiteral("en7"), AddressKind::Lan},
+      {QStringLiteral("10.18.0.77"), QStringLiteral("en0"), AddressKind::Lan},
+      {QStringLiteral("100.76.209.252"), QStringLiteral("utun100"), AddressKind::Overlay},
+      {QStringLiteral("172.28.80.1"), QStringLiteral("vEthernet (WSL (Hyper-V firewall))"), AddressKind::Virtual},
+      {QStringLiteral("169.254.88.9"), QStringLiteral("Ethernet 3"), AddressKind::LinkLocal},
+  };
+  ServerAddressesDialog dialog(nullptr, addresses);
+  showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
+  QVERIFY(dialog.isVisible());
+  auto *view = dialog.findChild<QTextBrowser *>(QStringLiteral("addressesView"));
+  QVERIFY(view != nullptr && view->isVisibleTo(&dialog));
+  const auto text = view->toPlainText();
+  for (const auto &info : addresses) {
+    QVERIFY2(text.contains(info.address), qPrintable(text));
+    QVERIFY(text.contains(info.interfaceName));
+  }
+  QVERIFY(text.contains(deskflow::gui::addressKindLabel(AddressKind::Overlay)));
+  QVERIFY(text.contains(deskflow::gui::addressListTip()));
+  QVERIFY2(view->height() >= view->fontMetrics().lineSpacing() * 10, qPrintable(describe(view->geometry())));
+  grabIfRequested(QStringLiteral("ServerAddressesDialog"), dialog);
 
   const auto violations = findLayoutViolations(dialog);
   QVERIFY2(

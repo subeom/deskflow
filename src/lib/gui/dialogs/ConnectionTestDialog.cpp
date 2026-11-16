@@ -56,8 +56,8 @@ ConnectionTestDialog::ConnectionTestDialog(
   m_resultsView->setObjectName(QStringLiteral("resultsView"));
   m_resultsView->setOpenLinks(false);
   // a few lines of the font in use, so that the panel is never a sliver
-  m_resultsView->setMinimumHeight(m_resultsView->fontMetrics().lineSpacing() * 16);
-  m_resultsView->setMinimumWidth(m_resultsView->fontMetrics().averageCharWidth() * 64);
+  m_resultsView->setMinimumHeight(fontMetrics().lineSpacing() * 16);
+  m_resultsView->setMinimumWidth(fontMetrics().averageCharWidth() * 64);
   // one short line: the text that is long lives in the panel, which scrolls, so no wrapped label asks for a height
   // that depends on the width
   m_status->setObjectName(QStringLiteral("lblStatus"));
@@ -243,6 +243,12 @@ QSize ConnectionTestDialog::sizeHint() const
 void ConnectionTestDialog::changeEvent(QEvent *event)
 {
   QDialog::changeEvent(event);
+  if (event->type() == QEvent::FontChange) {
+    // the panel is as many lines and letters as the font in use, also when the font is changed after the dialog was
+    // made
+    m_resultsView->setMinimumHeight(fontMetrics().lineSpacing() * 16);
+    m_resultsView->setMinimumWidth(fontMetrics().averageCharWidth() * 64);
+  }
   if (event->type() == QEvent::LanguageChange) {
     retranslate();
   }
