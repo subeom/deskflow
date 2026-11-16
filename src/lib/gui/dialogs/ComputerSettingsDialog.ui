@@ -861,6 +861,66 @@
     </widget>
    </item>
    <item>
+    <widget class="QGroupBox" name="groupMonitorLayout">
+     <property name="toolTip">
+      <string>Experimental. For a computer whose monitors do not make up a rectangle (monitors of different sizes, an L shape, a portrait monitor beside a landscape one). With the layout set, the pointer enters on a monitor and leaves through any edge, and not into the holes. Without it, or when it is not valid or not of the screen size the computer reports, Deskflow behaves exactly as before.</string>
+     </property>
+     <property name="title">
+      <string>Monitor layout (experimental)</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutMonitorLayout">
+      <item>
+       <widget class="QPlainTextEdit" name="textMonitorLayout">
+        <property name="toolTip">
+         <string>The monitors of this computer as x,y,w,h, one to a line or separated by ;, in the coordinates that the computer reports its screen in. The diagnostic tools print them in a block to paste. The monitors have to make up the screen size that the computer reports to the server: the server log says when they do not, and the layout is not used then.</string>
+        </property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="sizeAdjustPolicy">
+         <enum>QAbstractScrollArea::SizeAdjustPolicy::AdjustToContents</enum>
+        </property>
+        <property name="lineWrapMode">
+         <enum>QPlainTextEdit::LineWrapMode::NoWrap</enum>
+        </property>
+        <property name="placeholderText">
+         <string notr="true">x,y,w,h
+0,0,2560,1440
+2560,0,1920,1080</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="layoutMonitorLayoutImport">
+        <item>
+         <widget class="QPushButton" name="btnImportMonitorLayout">
+          <property name="text">
+           <string>Import from diagnostic file...</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="lblMonitorLayoutStatus">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QDialogButtonBox" name="buttonBox">
      <property name="minimumSize">
       <size>
@@ -905,6 +965,8 @@
   <tabstop>chkCrossOSInvertY</tabstop>
   <tabstop>comboCrossOSInvertScope</tabstop>
   <tabstop>chkCrossOSSemanticMedia</tabstop>
+  <tabstop>textMonitorLayout</tabstop>
+  <tabstop>btnImportMonitorLayout</tabstop>
  </tabstops>
  <resources/>
  <connections/>

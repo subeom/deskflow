@@ -14,6 +14,10 @@ class ServerConfigDialogTests : public QObject
 private Q_SLOTS:
   void initTestCase();
   void cleanup();
+  void experimentalMultiMonitor_isOffByDefaultAndSaysItIsExperimental();
+  void experimentalMultiMonitor_isLoadedSavedAndRestoredToOff();
+  void experimentalMultiMonitor_makesTheDialogModified();
+  void experimentalMultiMonitor_isToldToTheComputerDialogsThatItOpens();
   void clipboardTextOnly_isOffByDefault();
   void clipboardTextOnly_isOnlyAvailableWhileClipboardsAreShared();
   void clipboardTextOnly_replacesTheSizeLimit();

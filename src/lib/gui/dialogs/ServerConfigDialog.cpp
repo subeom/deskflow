@@ -81,6 +81,7 @@ void ServerConfigDialog::save()
   Settings::setValue(Settings::Server::EnableClipboard, m_enableClipboard);
   Settings::setValue(Settings::Server::ClipboardSize, m_clipboardSize);
   Settings::setValue(Settings::Server::ClipboardTextOnly, m_clipboardTextOnly);
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, m_experimentalMultiMonitor);
   Settings::setValue(Settings::Server::EnableHeartbeat, m_enableHeartbeat);
   Settings::setValue(Settings::Server::Heartbeat, m_heartbeatRate);
   Settings::setValue(Settings::Server::EnableSwitchDelay, m_enableSwitchDelay);
@@ -397,6 +398,17 @@ bool ServerConfigDialog::browseConfigFile()
   return false;
 }
 
+void ServerConfigDialog::toggleExperimentalMultiMonitor(bool enabled)
+{
+  if (m_experimentalMultiMonitor == enabled)
+    return;
+
+  m_experimentalMultiMonitor = enabled;
+  // the computer dialogs that this one opens take it from here, before it is saved
+  setProperty("experimentalMultiMonitor", enabled);
+  setButtonBoxEnabledButtons();
+}
+
 void ServerConfigDialog::loadFromConfig()
 {
   m_protocol = Settings::networkProtocol();
@@ -413,6 +425,8 @@ void ServerConfigDialog::loadFromConfig()
   m_enableClipboard = Settings::value(Settings::Server::EnableClipboard).toBool();
   m_clipboardSize = Settings::value(Settings::Server::ClipboardSize).toUInt();
   m_clipboardTextOnly = Settings::value(Settings::Server::ClipboardTextOnly).toBool();
+  m_experimentalMultiMonitor = Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool();
+  setProperty("experimentalMultiMonitor", m_experimentalMultiMonitor);
 
   ui->lineConfigFile->setText(serverConfig().configFile());
   ui->groupExternalConfig->setChecked(serverConfig().useExternalConfig());
@@ -473,6 +487,7 @@ void ServerConfigDialog::refreshControls()
   ui->cbDisableLockToComputer->setChecked(m_disableLockToComputer);
   ui->cbEnableClipboard->setChecked(m_enableClipboard);
   ui->cbClipboardTextOnly->setChecked(m_clipboardTextOnly);
+  ui->cbExperimentalMultiMonitor->setChecked(m_experimentalMultiMonitor);
   updateClipboardControls();
   ui->sbClipboardSizeLimit->setValue(m_clipboardSize);
 }
@@ -517,6 +532,9 @@ void ServerConfigDialog::initConnections() const
   connect(ui->cbRelativeMouseMoves, &QCheckBox::toggled, this, &ServerConfigDialog::toggleRelativeMouseMoves);
   connect(ui->cbEnableClipboard, &QCheckBox::toggled, this, &ServerConfigDialog::toggleClipboard);
   connect(ui->cbClipboardTextOnly, &QCheckBox::toggled, this, &ServerConfigDialog::toggleClipboardTextOnly);
+  connect(
+      ui->cbExperimentalMultiMonitor, &QCheckBox::toggled, this, &ServerConfigDialog::toggleExperimentalMultiMonitor
+  );
   connect(ui->btnBrowseConfigFile, &QPushButton::clicked, this, &ServerConfigDialog::browseConfigFile);
   connect(ui->groupExternalConfig, &QGroupBox::toggled, this, &ServerConfigDialog::toggleExternalConfig);
   connect(ui->lineConfigFile, &QLineEdit::textChanged, this, &ServerConfigDialog::setServerConfig);
@@ -549,6 +567,7 @@ void ServerConfigDialog::updateControls() const
   ui->cbRelativeMouseMoves->setEnabled(writable);
   ui->cbSwitchDelay->setEnabled(writable);
   ui->cbWin32KeepForeground->setEnabled(writable);
+  ui->cbExperimentalMultiMonitor->setEnabled(writable);
   ui->cbSwitchDoubleTap->setEnabled(writable);
   ui->sbSwitchDoubleTap->setEnabled(writable && ui->cbSwitchDoubleTap->isChecked());
   ui->sbSwitchDelay->setEnabled(writable && ui->cbSwitchDelay->isChecked());
@@ -580,6 +599,8 @@ void ServerConfigDialog::restoreFromDefaults()
   m_enableClipboard = Settings::defaultValue(Settings::Server::EnableClipboard).toBool();
   m_clipboardSize = Settings::defaultValue(Settings::Server::ClipboardSize).toUInt();
   m_clipboardTextOnly = Settings::defaultValue(Settings::Server::ClipboardTextOnly).toBool();
+  m_experimentalMultiMonitor = Settings::defaultValue(Settings::Server::ExperimentalMultiMonitor).toBool();
+  setProperty("experimentalMultiMonitor", m_experimentalMultiMonitor);
 
   ui->groupExternalConfig->setChecked(Settings::defaultValue(Settings::Server::ExternalConfig).toBool());
   ui->lineConfigFile->setText(Settings::defaultValue(Settings::Server::ExternalConfigFile).toString());
@@ -622,6 +643,7 @@ bool ServerConfigDialog::isGeneralConfigModified() const
          m_enableClipboard != Settings::value(Settings::Server::EnableClipboard).toBool() ||
          m_clipboardSize != Settings::value(Settings::Server::ClipboardSize).toUInt() ||
          m_clipboardTextOnly != Settings::value(Settings::Server::ClipboardTextOnly).toBool() ||
+         m_experimentalMultiMonitor != Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool() ||
          m_enableHeartbeat != Settings::value(Settings::Server::EnableHeartbeat).toBool() ||
          m_heartbeatRate != Settings::value(Settings::Server::Heartbeat).toInt() ||
          m_enableSwitchDelay != Settings::value(Settings::Server::EnableSwitchDelay).toBool() ||
@@ -642,6 +664,7 @@ bool ServerConfigDialog::isGeneralConfigDefault() const
          m_enableClipboard == Settings::defaultValue(Settings::Server::EnableClipboard).toBool() &&
          m_clipboardSize == Settings::defaultValue(Settings::Server::ClipboardSize).toUInt() &&
          m_clipboardTextOnly == Settings::defaultValue(Settings::Server::ClipboardTextOnly).toBool() &&
+         m_experimentalMultiMonitor == Settings::defaultValue(Settings::Server::ExperimentalMultiMonitor).toBool() &&
          m_enableHeartbeat == Settings::defaultValue(Settings::Server::EnableHeartbeat).toBool() &&
          m_heartbeatRate == Settings::defaultValue(Settings::Server::Heartbeat).toInt() &&
          m_enableSwitchDelay == Settings::defaultValue(Settings::Server::EnableSwitchDelay).toBool() &&

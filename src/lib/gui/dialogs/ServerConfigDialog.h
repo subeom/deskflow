@@ -63,6 +63,8 @@ protected:
   void toggleClipboardTextOnly(bool enabled);
   void setClipboardLimit(int limit);
 
+  void toggleExperimentalMultiMonitor(bool enabled);
+
   void toggleHeartbeat(bool enabled);
   void setHeartbeat(int rate);
 
@@ -107,6 +109,7 @@ private:
   NetworkProtocol m_protocol;
   bool m_enableClipboard;
   bool m_clipboardTextOnly = false;
+  bool m_experimentalMultiMonitor = false;
   bool m_enableHeartbeat;
   int m_heartbeatRate;
   int m_switchDelay;

@@ -20,6 +20,18 @@ private Q_SLOTS:
   void shareClipboard_defaultsOnAndAddsNoOption();
   void shareClipboard_off_isSavedLoadedAndProducesTheOption();
   void shareClipboard_dialogChecksTheBoxAndSerializes();
+  void monitorLayout_isEmptyAndAddsNothingByDefault();
+  void monitorLayout_isSavedLoadedAndReadByTheServer_data();
+  void monitorLayout_isSavedLoadedAndReadByTheServer();
+  void monitorLayout_takesPartInEquality();
+  void monitorLayoutDialog_isOffUntilTheExperimentIsOn();
+  void monitorLayoutDialog_followsTheServerDialog();
+  void monitorLayoutDialog_saysWhetherTheLayoutIsValid();
+  void monitorLayoutDialog_savesTheLayoutAsTheServerReadsIt();
+  void monitorLayoutDialog_doesNotSaveALayoutThatIsWrong();
+  void monitorLayoutDialog_importsWhatTheDiagnosticToolsPrint_data();
+  void monitorLayoutDialog_importsWhatTheDiagnosticToolsPrint();
+  void monitorLayoutDialog_importOfAFileThatIsNotAFit_saysSoAndChangesNothing();
 
 private:
   inline static const QString m_settingsPath = QStringLiteral("tmp/test");

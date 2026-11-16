@@ -29,6 +29,14 @@ public:
   );
   ~ComputerSettingsDialog() override;
 
+  //! Put the monitors that a diagnostic tool printed in \p path as the monitor layout of the computer (experimental)
+  /*!
+  Returns true if the file has a block of monitors that is a valid layout, which is then in the text field. A block
+  that is not valid is put there too, to be put right, and the file is said to not be a fit; a file with no block, or
+  that cannot be read, changes nothing.
+  */
+  bool importMonitorLayout(const QString &path);
+
 public Q_SLOTS:
   void accept() override;
 
@@ -37,8 +45,12 @@ private Q_SLOTS:
   void removeAlias() const;
   void checkNewAliasName(const QString &text);
   void aliasSelected();
+  void chooseMonitorLayoutFile();
+  void updateMonitorLayoutStatus();
 
 private:
   std::unique_ptr<Ui::ComputerSettingsDialog> ui;
   Computer *m_computer;
+  // the experiment is on, so the layout can be set
+  bool m_monitorLayoutAvailable = false;
 };

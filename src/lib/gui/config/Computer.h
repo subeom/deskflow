@@ -36,7 +36,8 @@ class Computer : public ComputerConfig
                      << computer.switchCorners() << computer.fixes() << computer.isServer()
                      << static_cast<quint8>(computer.m_F18Action) << computer.m_CrossOSInvertX
                      << computer.m_CrossOSInvertY << computer.m_CrossOSSemanticMedia
-                     << static_cast<quint8>(computer.m_CrossOSInvertScope) << computer.m_ShareClipboard;
+                     << static_cast<quint8>(computer.m_CrossOSInvertScope) << computer.m_ShareClipboard
+                     << computer.m_MonitorLayout;
   }
 
   friend QDataStream &operator>>(QDataStream &inStream, Computer &computer)
@@ -45,7 +46,8 @@ class Computer : public ComputerConfig
     quint8 crossOSInvertScope = 0;
     inStream >> computer.m_Name >> computer.m_SwitchCornerSize >> computer.m_Aliases >> computer.m_Modifiers >>
         computer.m_SwitchCorners >> computer.m_Fixes >> computer.m_isServer >> f18Action >> computer.m_CrossOSInvertX >>
-        computer.m_CrossOSInvertY >> computer.m_CrossOSSemanticMedia >> crossOSInvertScope >> computer.m_ShareClipboard;
+        computer.m_CrossOSInvertY >> computer.m_CrossOSSemanticMedia >> crossOSInvertScope >>
+        computer.m_ShareClipboard >> computer.m_MonitorLayout;
     computer.m_F18Action =
         f18Action == static_cast<quint8>(F18Action::Hangul) ? F18Action::Hangul : F18Action::PassThrough;
     computer.m_CrossOSInvertScope = crossOSInvertScope == static_cast<quint8>(ScrollInvertScope::MouseWheelOnly)
@@ -125,6 +127,11 @@ public:
   [[nodiscard]] bool shareClipboard() const
   {
     return m_ShareClipboard;
+  }
+  //! The monitors of the computer (experimental), as the text that was set: empty when there is none
+  [[nodiscard]] const QString &monitorLayout() const
+  {
+    return m_MonitorLayout;
   }
 
   void loadSettings(QSettingsProxy &settings);
@@ -212,6 +219,10 @@ protected:
   {
     m_ShareClipboard = enabled;
   }
+  void setMonitorLayout(const QString &layout)
+  {
+    m_MonitorLayout = layout.trimmed();
+  }
   void setSwapped(const bool on)
   {
     m_Swapped = on;
@@ -231,6 +242,7 @@ private:
   ScrollInvertScope m_CrossOSInvertScope = ScrollInvertScope::All;
   bool m_CrossOSSemanticMedia = false;
   bool m_ShareClipboard = true;
+  QString m_MonitorLayout = {};
   bool m_Swapped = false;
   bool m_isServer = false;
 };

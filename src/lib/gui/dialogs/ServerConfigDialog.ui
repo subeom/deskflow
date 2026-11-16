@@ -777,6 +777,37 @@
         </widget>
        </item>
        <item>
+        <widget class="QGroupBox" name="groupExperimental">
+         <property name="title">
+          <string>Experimental</string>
+         </property>
+         <layout class="QVBoxLayout" name="layoutExperimental">
+          <property name="leftMargin">
+           <number>6</number>
+          </property>
+          <property name="topMargin">
+           <number>6</number>
+          </property>
+          <property name="rightMargin">
+           <number>6</number>
+          </property>
+          <property name="bottomMargin">
+           <number>6</number>
+          </property>
+          <item>
+           <widget class="QCheckBox" name="cbExperimentalMultiMonitor">
+            <property name="toolTip">
+             <string>For computers whose monitors do not make up a rectangle: the pointer is put on a monitor and not in a hole, and leaves through any edge. It works for the computers that have a monitor layout (in their computer settings) that is of the screen size they report; nothing changes for the others. This is an experiment: off = Deskflow behaves exactly as before.</string>
+            </property>
+            <property name="text">
+             <string>Experimental: multi-monitor aware cursor mapping</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
         <widget class="QGroupBox" name="groupExternalConfig">
          <property name="toolTip">
           <string>Use a server config file to create complex computer layouts that are not possible with the simple grid-based computer layout editor.
@@ -934,6 +965,7 @@ Enabling this setting will disable the server config GUI.</string>
   <tabstop>cbHeartbeat</tabstop>
   <tabstop>sbHeartbeat</tabstop>
   <tabstop>cbRelativeMouseMoves</tabstop>
+  <tabstop>cbExperimentalMultiMonitor</tabstop>
   <tabstop>tabWidget</tabstop>
  </tabstops>
  <resources/>

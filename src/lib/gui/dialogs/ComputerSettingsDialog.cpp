@@ -9,16 +9,55 @@
 #include "ui_ComputerSettingsDialog.h"
 
 #include "gui/config/Computer.h"
+#include "server/MonitorGeometry.h"
 #include "validators/AliasValidator.h"
 #include "validators/ComputerLineNameValidator.h"
 #include "validators/ValidationError.h"
 
+#include <QFile>
+#include <QFileDialog>
+#include <QFontDatabase>
+#include <QLabel>
 #include <QMessageBox>
+#include <QTextStream>
+
+#include <optional>
 
 #include <common/Settings.h>
 
 using enum ComputerConfig::SwitchCorner;
 using enum ComputerConfig::Fix;
+
+namespace {
+
+// the property that the server configuration dialog has to say whether the experiment is on, before that is saved
+constexpr auto kExperimentProperty = "experimentalMultiMonitor";
+
+// whether a layout can be set: the experiment is on in the dialog that this one was opened from, or if there is none,
+// in the settings
+bool experimentIsOn(const QWidget *parent)
+{
+  for (const QObject *object = parent; object != nullptr; object = object->parent()) {
+    if (const auto value = object->property(kExperimentProperty); value.isValid())
+      return value.toBool();
+  }
+  return Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool();
+}
+
+QString monitorCount(size_t count)
+{
+  return count == 1 ? QObject::tr("1 monitor") : QObject::tr("%1 monitors").arg(count);
+}
+
+// The status is a line that does not wrap: a window does not grow its height for wrapped text, so it would be squeezed.
+// What does not fit the width is cut, and is all in the tool tip.
+void showStatus(QLabel *label, const QString &text)
+{
+  label->setText(text);
+  label->setToolTip(text);
+}
+
+} // namespace
 
 ComputerSettingsDialog::~ComputerSettingsDialog() = default;
 
@@ -33,6 +72,20 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
 
   ui->lineNameEdit->setText(m_computer->name());
   ui->chkShareClipboard->setChecked(m_computer->shareClipboard());
+
+  m_monitorLayoutAvailable = experimentIsOn(parent);
+  const auto fixedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+  ui->textMonitorLayout->setFont(fixedFont);
+  // three lines of the font of the text, whatever it is, so that a layout of a few monitors is seen as it is; the field
+  // grows with what is in it
+  ui->textMonitorLayout->setMinimumHeight(
+      ui->textMonitorLayout->fontMetrics().lineSpacing() * 3 + 2 * ui->textMonitorLayout->frameWidth() +
+      qRound(ui->textMonitorLayout->document()->documentMargin() * 2)
+  );
+  ui->textMonitorLayout->setPlainText(m_computer->monitorLayout());
+  ui->textMonitorLayout->setEnabled(m_monitorLayoutAvailable);
+  ui->btnImportMonitorLayout->setEnabled(m_monitorLayoutAvailable);
+  updateMonitorLayoutStatus();
 
   const auto valNameError = new validators::ValidationError(this, ui->lblNameError);
   const auto valName = new validators::ComputerLineNameValidator(ui->lineNameEdit, valNameError, computers);
@@ -77,6 +130,10 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
   connect(ui->btnRemoveAlias, &QPushButton::clicked, this, &ComputerSettingsDialog::removeAlias);
   connect(ui->lineAddAlias, &QLineEdit::textChanged, this, &ComputerSettingsDialog::checkNewAliasName);
   connect(ui->listAliases, &QListWidget::itemSelectionChanged, this, &ComputerSettingsDialog::aliasSelected);
+  connect(
+      ui->textMonitorLayout, &QPlainTextEdit::textChanged, this, &ComputerSettingsDialog::updateMonitorLayoutStatus
+  );
+  connect(ui->btnImportMonitorLayout, &QPushButton::clicked, this, &ComputerSettingsDialog::chooseMonitorLayoutFile);
 }
 
 void ComputerSettingsDialog::accept()
@@ -93,8 +150,27 @@ void ComputerSettingsDialog::accept()
     return;
   }
 
+  // a layout that is not valid is not saved: the status line says what is wrong with it. One that cannot be set is left
+  // as it is.
+  std::optional<QString> monitorLayout;
+  if (m_monitorLayoutAvailable) {
+    const auto text = ui->textMonitorLayout->toPlainText().trimmed();
+    if (text.isEmpty()) {
+      monitorLayout = QString();
+    } else {
+      const auto parsed = deskflow::server::MonitorLayout::parse(text.toStdString());
+      if (!parsed) {
+        ui->textMonitorLayout->setFocus();
+        return;
+      }
+      monitorLayout = QString::fromStdString(parsed.layout->format());
+    }
+  }
+
   m_computer->setName(ui->lineNameEdit->text());
   m_computer->setShareClipboard(ui->chkShareClipboard->isChecked());
+  if (monitorLayout)
+    m_computer->setMonitorLayout(*monitorLayout);
 
   m_computer->aliases().clear();
 
@@ -171,4 +247,85 @@ void ComputerSettingsDialog::checkNewAliasName(const QString &text)
 void ComputerSettingsDialog::aliasSelected()
 {
   ui->btnRemoveAlias->setEnabled(!ui->listAliases->selectedItems().isEmpty());
+}
+
+void ComputerSettingsDialog::updateMonitorLayoutStatus()
+{
+  using deskflow::server::MonitorLayout;
+
+  if (!m_monitorLayoutAvailable) {
+    showStatus(
+        ui->lblMonitorLayoutStatus,
+        tr("Turn on \"Experimental: multi-monitor aware cursor mapping\" in the server's Advanced tab to set a layout.")
+    );
+    return;
+  }
+
+  const auto text = ui->textMonitorLayout->toPlainText();
+  if (text.trimmed().isEmpty()) {
+    showStatus(ui->lblMonitorLayoutStatus, tr("No layout: this computer is mapped as it always was."));
+    return;
+  }
+
+  const auto parsed = MonitorLayout::parse(text.toStdString());
+  if (!parsed) {
+    showStatus(ui->lblMonitorLayoutStatus, tr("Not valid: %1").arg(QString::fromStdString(parsed.error)));
+    return;
+  }
+
+  const auto box = parsed.layout->boundingBox();
+  auto status = tr("Valid: %1, bounding box %2,%3 %4x%5.")
+                    .arg(monitorCount(parsed.layout->monitors().size()))
+                    .arg(box.x)
+                    .arg(box.y)
+                    .arg(box.w)
+                    .arg(box.h);
+  if (parsed.layout->isPlainRectangle())
+    status += tr(" A rectangle: this changes nothing.");
+  if (parsed.duplicatesRemoved > 0)
+    status += tr(" %1 that are the same as another are counted once.").arg(parsed.duplicatesRemoved);
+  showStatus(ui->lblMonitorLayoutStatus, status);
+}
+
+void ComputerSettingsDialog::chooseMonitorLayoutFile()
+{
+  const auto path = QFileDialog::getOpenFileName(
+      this, tr("Import monitor layout"), QString(), tr("Text files (*.txt *.log);;All files (*)")
+  );
+  if (!path.isEmpty())
+    importMonitorLayout(path);
+}
+
+bool ComputerSettingsDialog::importMonitorLayout(const QString &path)
+{
+  using deskflow::server::MonitorLayout;
+
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly)) {
+    showStatus(ui->lblMonitorLayoutStatus, tr("Cannot read %1.").arg(path));
+    return false;
+  }
+  // text that PowerShell wrote may be UTF-16, which the byte order mark tells
+  QTextStream stream(&file);
+  const auto content = stream.readAll();
+
+  const auto block = MonitorLayout::extractPasteBlock(content.toStdString());
+  if (block.empty()) {
+    showStatus(
+        ui->lblMonitorLayoutStatus,
+        tr("This file has no block of monitors to paste (no \"Paste-ready block\", no \"monitor\" line).")
+    );
+    return false;
+  }
+
+  const auto parsed = MonitorLayout::parse(block);
+  if (!parsed) {
+    // to be put right
+    ui->textMonitorLayout->setPlainText(QString::fromStdString(block).trimmed());
+    return false;
+  }
+
+  // one monitor to a line, to read it
+  ui->textMonitorLayout->setPlainText(QString::fromStdString(parsed.layout->format()).replace(QLatin1Char(';'), u'\n'));
+  return true;
 }

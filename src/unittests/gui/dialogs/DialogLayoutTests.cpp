@@ -18,11 +18,14 @@
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDir>
+#include <QLabel>
 #include <QLayout>
 #include <QLayoutItem>
 #include <QList>
 #include <QMap>
 #include <QPixmap>
+#include <QPlainTextEdit>
+#include <QPushButton>
 #include <QRect>
 #include <QRegularExpression>
 #include <QSizePolicy>
@@ -304,6 +307,46 @@ void DialogLayoutTests::clientConfigDialog_isLaidOutWithoutSqueezing_data()
   addScenarios();
 }
 
+void DialogLayoutTests::computerSettingsDialog_monitorLayout_isLaidOutWithoutSqueezing_data()
+{
+  addScenarios();
+}
+
+// The monitor layout group has a text field that grows, a button, and a status line of wrapped text that is long when
+// what is wrong with a layout is said: none of it may be squeezed or overlap
+void DialogLayoutTests::computerSettingsDialog_monitorLayout_isLaidOutWithoutSqueezing()
+{
+  QFETCH(QString, style);
+  QFETCH(qreal, fontScale);
+  QFETCH(int, sizeMode);
+
+  QVERIFY(QApplication::setStyle(style) != nullptr);
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Computer computer(QStringLiteral("layout-test"));
+  ComputerSettingsDialog dialog(nullptr, &computer);
+  auto *edit = dialog.findChild<QPlainTextEdit *>(QStringLiteral("textMonitorLayout"));
+  auto *status = dialog.findChild<QLabel *>(QStringLiteral("lblMonitorLayoutStatus"));
+  auto *import = dialog.findChild<QPushButton *>(QStringLiteral("btnImportMonitorLayout"));
+  QVERIFY(edit != nullptr && status != nullptr && import != nullptr);
+  edit->setPlainText(
+      QStringLiteral("0,0,1920,1080\n1920,0,1920,1080\n3840,0,1920,1080\n5760,0,1920,1080\n99999999999,0")
+  );
+  showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
+  QVERIFY(dialog.isVisible());
+  QVERIFY(edit->isVisibleTo(&dialog) && status->isVisibleTo(&dialog) && import->isVisibleTo(&dialog));
+  QVERIFY(status->text().contains(QStringLiteral("Not valid")));
+  // the text field is a few lines of its own font, not a line
+  QVERIFY2(edit->height() >= edit->fontMetrics().lineSpacing() * 3, qPrintable(describe(edit->geometry())));
+  grabIfRequested(QStringLiteral("ComputerSettingsDialogMonitorLayout"), dialog);
+
+  const auto violations = findLayoutViolations(dialog);
+  QVERIFY2(
+      violations.isEmpty(),
+      qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+  );
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+}
+
 void DialogLayoutTests::clientConfigDialog_isLaidOutWithoutSqueezing()
 {
   QFETCH(QString, style);
@@ -347,6 +390,9 @@ void DialogLayoutTests::serverConfigDialog_advancedTab_isLaidOutWithoutSqueezing
   QVERIFY(dialog.isVisible());
   QVERIFY(dialog.findChild<QCheckBox *>(QStringLiteral("cbClipboardTextOnly")) != nullptr);
   QVERIFY(dialog.findChild<QCheckBox *>(QStringLiteral("cbClipboardTextOnly"))->isVisibleTo(&dialog));
+  // the experiment's check box has a group of its own in the same tab
+  QVERIFY(dialog.findChild<QCheckBox *>(QStringLiteral("cbExperimentalMultiMonitor")) != nullptr);
+  QVERIFY(dialog.findChild<QCheckBox *>(QStringLiteral("cbExperimentalMultiMonitor"))->isVisibleTo(&dialog));
   grabIfRequested(QStringLiteral("ServerConfigDialogAdvanced"), dialog);
 
   const auto violations = findLayoutViolations(dialog);

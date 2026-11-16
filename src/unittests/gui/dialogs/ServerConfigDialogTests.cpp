@@ -12,6 +12,7 @@
 
 #include <QCheckBox>
 #include <QDialogButtonBox>
+#include <QGroupBox>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTest>
@@ -26,6 +27,11 @@ QCheckBox *textOnlyBox(const ServerConfigDialog &dialog)
 QCheckBox *clipboardBox(const ServerConfigDialog &dialog)
 {
   return dialog.findChild<QCheckBox *>(QStringLiteral("cbEnableClipboard"));
+}
+
+QCheckBox *experimentalBox(const ServerConfigDialog &dialog)
+{
+  return dialog.findChild<QCheckBox *>(QStringLiteral("cbExperimentalMultiMonitor"));
 }
 
 SettingsDialogButtonBox *buttons(const ServerConfigDialog &dialog)
@@ -51,6 +57,86 @@ void ServerConfigDialogTests::cleanup()
 {
   Settings::setValue(Settings::Server::ClipboardTextOnly);
   Settings::setValue(Settings::Server::EnableClipboard);
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+}
+
+void ServerConfigDialogTests::experimentalMultiMonitor_isOffByDefaultAndSaysItIsExperimental()
+{
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+
+  const auto *box = experimentalBox(dialog);
+  QVERIFY2(box != nullptr, "the dialog has no check box for the experiment");
+  QVERIFY(!box->isChecked());
+  QCOMPARE(box->text(), QStringLiteral("Experimental: multi-monitor aware cursor mapping"));
+  QVERIFY2(
+      box->toolTip().contains(QStringLiteral("off = Deskflow behaves exactly as before")), qPrintable(box->toolTip())
+  );
+
+  // the tag is seen without reading the check box: it is the title of the group that it is in
+  const auto *group = dialog.findChild<QGroupBox *>(QStringLiteral("groupExperimental"));
+  QVERIFY(group != nullptr);
+  QVERIFY(group->title().contains(QStringLiteral("Experimental")));
+  QVERIFY(box->parentWidget() == group);
+}
+
+void ServerConfigDialogTests::experimentalMultiMonitor_isLoadedSavedAndRestoredToOff()
+{
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  {
+    ServerConfig config;
+    ServerConfigDialog dialog(nullptr, config);
+    auto *box = experimentalBox(dialog);
+    QVERIFY(box != nullptr);
+    QVERIFY(box->isChecked());
+
+    box->setChecked(false);
+    Q_EMIT buttons(dialog)->accepted();
+    QCOMPARE(Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool(), false);
+  }
+  {
+    ServerConfig config;
+    ServerConfigDialog dialog(nullptr, config);
+    auto *box = experimentalBox(dialog);
+    QVERIFY(!box->isChecked());
+    box->setChecked(true);
+    Q_EMIT buttons(dialog)->accepted();
+    QCOMPARE(Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool(), true);
+  }
+  {
+    ServerConfig config;
+    ServerConfigDialog dialog(nullptr, config);
+    QVERIFY(experimentalBox(dialog)->isChecked());
+    Q_EMIT buttons(dialog)->restoreDefault();
+    QVERIFY(!experimentalBox(dialog)->isChecked());
+  }
+}
+
+void ServerConfigDialogTests::experimentalMultiMonitor_makesTheDialogModified()
+{
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  auto *box = experimentalBox(dialog);
+  QVERIFY(box != nullptr);
+  QVERIFY(!saveIsEnabled(dialog));
+
+  box->setChecked(true);
+  QVERIFY(saveIsEnabled(dialog));
+
+  box->setChecked(false);
+  QVERIFY(!saveIsEnabled(dialog));
+}
+
+void ServerConfigDialogTests::experimentalMultiMonitor_isToldToTheComputerDialogsThatItOpens()
+{
+  // what the check box says before it is saved is what a computer's layout can be set for
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  QVERIFY(!dialog.property("experimentalMultiMonitor").toBool());
+  experimentalBox(dialog)->setChecked(true);
+  QVERIFY(dialog.property("experimentalMultiMonitor").toBool());
+  experimentalBox(dialog)->setChecked(false);
+  QVERIFY(!dialog.property("experimentalMultiMonitor").toBool());
 }
 
 void ServerConfigDialogTests::clipboardTextOnly_isOffByDefault()
