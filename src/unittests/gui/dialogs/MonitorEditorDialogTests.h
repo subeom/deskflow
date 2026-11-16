@@ -24,6 +24,7 @@ private Q_SLOTS:
   void problems_disableOk_andAreSaid();
   void numbers_areInStepWithTheDrawing_andCanBeUsed();
   void keys_rotateDeleteAndNudge();
+  void keys_deletingTheLastOne_leavesASelectionThatIsThere();
   void screenshots_areMadeOfTheEditor();
 
 private:

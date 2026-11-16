@@ -426,6 +426,21 @@ void MonitorEditorDialogTests::keys_rotateDeleteAndNudge()
   QCOMPARE(opened.dialog->drawing().monitors.size(), size_t{2});
 }
 
+void MonitorEditorDialogTests::keys_deletingTheLastOne_leavesASelectionThatIsThere()
+{
+  auto opened = open(twoApart());
+  opened.widget->setSelected(1);
+  opened.widget->setFocus();
+  QTest::keyClick(opened.widget, Qt::Key_Delete);
+  QCOMPARE(opened.dialog->drawing().monitors.size(), size_t{1});
+  // what is selected is the monitor that is left, and nothing is asked of one that is not there
+  QCOMPARE(opened.widget->selected(), 0);
+  QVERIFY(!child<QPushButton>(opened, "btnMakeMain")->isEnabled());
+  QVERIFY(!child<QPushButton>(opened, "btnRemoveMonitor")->isEnabled());
+  QTest::keyClick(opened.widget, Qt::Key_Right);
+  QCOMPARE(opened.dialog->drawing().monitors[0].x, 1.0);
+}
+
 void MonitorEditorDialogTests::screenshots_areMadeOfTheEditor()
 {
   // 1. a Windows PC of two monitors at different scales, and what it reports

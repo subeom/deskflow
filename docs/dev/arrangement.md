@@ -247,6 +247,18 @@ what is in it is the same layout.
 **History.** The editor keeps the states that it went through (200 at most): undo and redo are `Ctrl/Cmd+Z` and
 `Shift+Ctrl/Cmd+Z`.
 
+**The edges of a computer of one rectangle on the canvas.** A selected computer that is not the server and has one
+distinct monitor has handles on its edges and corners (resize cursors on hover). Dragging one uses the same
+`editor::resize` with the other computers as obstacles: the opposite edge stays, an edge snaps to the edges of the other
+computers, a side snaps to the common ratios, to the presets (pixels = units / zoom) and to the size that the computer
+reports (× zoom), and it is never put over another computer (the change is not made). The size is a whole number of
+the units of the computer, so the dragged edge is off by at most half a unit of the computer (`zoom / 2` units of the
+arrangement): an edge that was snapped to a neighbour then touches it within the tolerance of `kTouchTolerance` (0.5)
+as long as the zoom is not above 1; at a zoom above 1 (a display scale under 100 %) it can be a little off. It is saved
+as the typed size of the computer, or as its one monitor when it has a layout of one (`ServerConfig::setComputerSize`;
+the scales of a drawn layout are dropped then, the zoom is kept). There is no undo on the canvas: the monitor editor
+has it, and **Reset from classic grid** puts everything back.
+
 ## Verified, and not
 
 Verified by tests that run here: the library (tables, seeded property tests, the equivalence with the classic grid, the
@@ -255,7 +267,10 @@ before the change, the server's silhouette on the user's real T (leaving through
 display changes, the log), the canvas widget (drag, snap, keys), the dialogs (state, save, layout in three styles at two
 font sizes), the generated configuration (golden) and the settings round trip. Not verified: the feel of the canvas
 with a real mouse, a Windows PC or a Mac with several monitors, the pointer at an inner edge on a real macOS (the event
-tap was not run), Windows compiling and behaviour, a display that is plugged in while the server runs.
+tap was not run), Windows compiling and behaviour, a display that is plugged in while the server runs. For the monitor
+editor in particular: the feel of dragging with a real mouse, and what a real Windows client reports for monitors of
+different display scales (one scale for the whole desktop, or the physical pixels of each monitor): the model assumes
+the first and says *differs* for the second, see *Units of the computer*.
 
 ## Where it is
 
@@ -269,9 +284,13 @@ tap was not run), Windows compiling and behaviour, a display that is plugged in 
 | `src/lib/gui/widgets/ArrangementCanvas`, `ArrangementPanel` | the canvas and what goes with it |
 | `src/lib/gui/config/ServerConfig`, `Computer` | the arrangement of the grid's computers, link generation in `operator<<`, persistence |
 | `src/lib/gui/dialogs/ServerConfigDialog`, `ComputerSettingsDialog` | the panel and the offer; screen size and display scale |
+| `src/lib/server/MonitorEditor.{h,cpp}` | the pure geometry of the monitor editor: moving, resizing, snapping, presets, rotation, scales, the fit to the reported screen, undo history. No Qt, no platform |
+| `src/lib/gui/config/MonitorEditing.{h,cpp}` | a computer as a drawing for the editor, and what the editor made as the computer's monitors, zoom, scales and place |
+| `src/lib/gui/widgets/MonitorEditorWidget`, `dialogs/MonitorEditorDialog` | the drawing widget (mouse, handles, guides, the size while dragging) and the dialog (status, controls, "Advanced: numbers") |
 | `src/lib/gui/core/ReportedScreen`, `MainWindow` | the line of the core log that says the screen of a computer |
 
 The shared files that a Windows build compiles (everything but `OSXDisplays` and `OSXComputer`): `Arrangement.{h,cpp}`,
 `Server.{h,cpp}`, `PrimaryClient.{h,cpp}`, `Computer.{h,cpp}`, `IPlatformComputer.h`, `Settings.{h,cpp}`, and in the GUI
 `ArrangementCanvas`, `ArrangementPanel`, `ServerConfig`, `Computer`, `ServerConfigDialog`, `ComputerSettingsDialog`,
-`ReportedScreen` and `MainWindow`.
+`ReportedScreen` and `MainWindow`; and, for the monitor editor, `MonitorEditor.{h,cpp}` (pure), `MonitorEditing`,
+`MonitorEditorWidget` and `MonitorEditorDialog`. None of them calls a platform API.

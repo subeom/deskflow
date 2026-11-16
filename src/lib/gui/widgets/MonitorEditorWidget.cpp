@@ -457,13 +457,20 @@ void MonitorEditorWidget::commit(const Layout &layout)
     return;
   m_layout = layout;
   m_needsFit = true;
+  // a monitor that is gone cannot stay selected
+  const auto count = static_cast<int>(m_layout.monitors.size());
+  const auto selected = m_selected >= count ? count - 1 : m_selected;
+  if (selected != m_selected) {
+    m_selected = selected;
+    Q_EMIT selectionChanged(m_selected);
+  }
   Q_EMIT drawingChanged(m_layout);
   QWidget::update();
 }
 
 void MonitorEditorWidget::keyPressEvent(QKeyEvent *event)
 {
-  if (m_selected < 0 || m_drag.active) {
+  if (m_selected < 0 || m_selected >= static_cast<int>(m_layout.monitors.size()) || m_drag.active) {
     QWidget::keyPressEvent(event);
     return;
   }

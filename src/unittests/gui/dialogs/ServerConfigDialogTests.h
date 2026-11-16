@@ -38,6 +38,7 @@ private Q_SLOTS:
   void arrangement_firstUse_adoptsTheSizesThatComputersReported();
   void arrangement_withAnExternalConfig_canBeSavedWhateverTheArrangementIs();
   void arrangement_monitorsAreDrawnInTheEditor_andKeptOnOk_notOnCancel();
+  void arrangement_doubleClick_drawsTheMonitors_butTheServerHasItsSettings();
   void arrangement_aComputerResizedOnTheCanvas_hasItsSizeSaidAndSaved();
   void arrangement_screenshots_areMadeOfTheDialogs();
 

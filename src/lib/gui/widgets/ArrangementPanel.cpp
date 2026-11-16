@@ -121,7 +121,16 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   connect(m_btnEdit, &QPushButton::clicked, this, [this] { Q_EMIT editComputerRequested(m_canvas->selected()); });
   connect(m_btnRemove, &QPushButton::clicked, this, [this] { Q_EMIT removeComputerRequested(m_canvas->selected()); });
   connect(m_canvas, &ArrangementCanvas::selectedChanged, this, &ArrangementPanel::updateSelection);
-  connect(m_canvas, &ArrangementCanvas::editRequested, this, &ArrangementPanel::editMonitorsRequested);
+  // a double click draws the monitors of a computer; those of the server are the operating system's, so it has its
+  // settings
+  connect(m_canvas, &ArrangementCanvas::editRequested, this, [this](const QString &name) {
+    const auto &arrangement = m_canvas->arrangement();
+    const auto index = arrangement.indexOf(name.toStdString());
+    if (index >= 0 && arrangement.computers[static_cast<size_t>(index)].isServer)
+      Q_EMIT editComputerRequested(name);
+    else
+      Q_EMIT editMonitorsRequested(name);
+  });
   connect(m_canvas, &ArrangementCanvas::computerResized, this, [this](const QString &name, int, int, int w, int h) {
     m_config.setComputerSize(name, w, h);
     refresh();

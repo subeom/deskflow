@@ -745,6 +745,39 @@ void ServerConfigDialogTests::arrangement_monitorsAreDrawnInTheEditor_andKeptOnO
   QVERIFY(!panel->hasErrors());
 }
 
+void ServerConfigDialogTests::arrangement_doubleClick_drawsTheMonitors_butTheServerHasItsSettings()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  dialog.show();
+  auto *panel = panelOf(dialog);
+
+  // a computer: the editor of its monitors
+  QString opened;
+  QTimer::singleShot(0, [&] {
+    if (auto *modal = QApplication::activeModalWidget()) {
+      opened = QString::fromLatin1(modal->metaObject()->className());
+      modal->close();
+    }
+  });
+  Q_EMIT panel->canvas()->editRequested(QStringLiteral("PC"));
+  QCOMPARE(opened, QStringLiteral("MonitorEditorDialog"));
+
+  // the server: its monitors are the operating system's, so its settings
+  opened.clear();
+  QTimer::singleShot(0, [&] {
+    if (auto *modal = QApplication::activeModalWidget()) {
+      opened = QString::fromLatin1(modal->metaObject()->className());
+      modal->close();
+    }
+  });
+  Q_EMIT panel->canvas()->editRequested(QStringLiteral("srv"));
+  QCOMPARE(opened, QStringLiteral("ComputerSettingsDialog"));
+}
+
 void ServerConfigDialogTests::arrangement_aComputerResizedOnTheCanvas_hasItsSizeSaidAndSaved()
 {
   writeThreeComputers();
