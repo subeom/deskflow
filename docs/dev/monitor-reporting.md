@@ -1,0 +1,146 @@
+# Monitor reporting: design note (experimental)
+
+[multi-monitor.md](multi-monitor.md) maps the pointer around the holes of a computer whose monitors do not make up a
+rectangle, but the monitors have to be **typed in** by the user. This feature, stage 3 of that work, lets a **client
+tell the server its monitors** when it connects and again whenever they change, so that the server maps with them, and
+the arrangement canvas draws them, without anyone typing anything.
+
+It is **experimental, negotiated and off by default**. A link on which it has not been negotiated carries not one byte
+that it did not carry before and takes not one decision that it did not take.
+
+## Capability
+
+`kLayoutCapabilityMonitors = 1u << 12` (`src/lib/common/MonitorCapabilities.h`). Bits 0 to 3 are input
+(`InputCapabilities.h`) and 8 and 9 clipboard (`ClipboardCapabilities.h`); 10 to 11 stay free for the clipboard and 12
+was never used. It travels in the capability mask of `DIPC` and `CIPC`, like the clipboard bits: a peer that predates a
+bit ignores it, because it only tests the bits it knows. No protocol minor changes (still 1.9).
+
+| Who | Sets the bit | When |
+|---|---|---|
+| server, in `DIPC` | "I use a monitor report" | only when `server/experimentalMultiMonitor` is on when the computer connects. With it off, or for a legacy server, the mask is byte for byte what it is today, so a computer is never invited |
+| client, in `CIPC` | "I report my monitors" | only when it **received** the bit in `DIPC` **and** its platform can list its monitors. It is the acknowledgement; there is no other reply |
+
+The server accepts a `DMON` only from a computer that has the bit in its `CIPC` while it advertised it itself. The
+client sends a `DMON` only to a server that advertised it. Nothing waits for it: the handshake is **not** gated, the
+server maps with the one rectangle of `DINF` until a valid report arrives, which is a fraction of a second after the
+connection and long before anyone pushes against an edge.
+
+Why a capability is mandatory: a receiver that gets a message code it does not know **discards the whole buffered
+stream** (`ClientProxy1_0::handleData`, `ServerProxy::handleData`), so a stray `DMON` would eat the next key and mouse
+events of a peer that never heard of it.
+
+## The message
+
+`DMON`, client to server, only after negotiation. It is **not** a list with a length of its own: its size is fixed by
+its header, so a receiver always knows how much of the stream is the message, whatever it holds.
+
+```
+"DMON" version(1) generation(2) count(1)  then  count x monitor
+monitor = x(2) y(2) w(2) h(2) scale(2) flags(1)          (10 bytes, big endian)
+```
+
+- `version` is 1. A later layout of the records has to use another message code, because a receiver reads the size
+  that this version says; any other value of `version` is a bad report (dropped with an INFO line).
+- `generation` counts the reports of this connection, 1 on, wrapping at 65 535. The server keeps it and logs it at
+  DEBUG; a report that has the same monitors as the last one is not sent again, so a changed generation means a
+  changed list.
+- `count` is 0 to 255 on the wire and 1 to 16 when valid. **0 means "I have no monitors to report": forget the last
+  report** (sent when the monitors cannot be made to tile the shape, see below). A receiver always reads the
+  `count x 10` bytes, so even 255 leaves the stream where the sender left it.
+- `x y w h` are `int16` in **the coordinate space of the `DINF` shape** of the same client: points on macOS, physical
+  virtual-desktop pixels on Windows. They are not scaled for display.
+- `scale` is `uint16`, the display scale in percent (100, 125, 150, 200 ...), 0 if unknown. It is informational for
+  the canvas and not used for the pointer.
+- `flags`: bit 0 is the primary monitor. The other bits are 0 now and ignored by a reader.
+
+A report is at most 4 + 1 + 2 + 1 + 16 x 10 = 168 bytes in a valid message.
+
+### When the client sends it
+
+1. Right after its `CIPC`, which is after its `DINF` (the server asks for it first), so the server has the shape to
+   check the report against.
+2. After **every** `DINF` it sends (a shape change, or the server asking for it again).
+3. When the list of monitors changes **and the bounding box does not** (two monitors that swap places, a scale change):
+   the platform raises `ComputerMonitorsChanged`. A change of the box already sends `DINF`, so it also sends a report.
+4. The client compares with the report it sent last, and sends nothing if the monitors are the same.
+
+A client that **cannot** make its monitors tile exactly the shape of its `DINF` (the rectangles come from another
+system call than the shape, or a monitor is out of the range of 16 bits) **does not report** and logs one INFO line
+with the reason; if it had reported before it sends `count = 0`.
+
+## What the server does with it
+
+`ClientProxy1_9` reads the message, checks it, and keeps **one** report for the connection; it is gone when the
+connection is. Every failure below drops the report, writes **one INFO line**, and leaves the stream and the connection
+alone: a bad report is never a reason to disconnect a computer.
+
+| Check | |
+|---|---|
+| negotiated | no bit in the `CIPC`, or the server did not advertise it: the message is read and ignored (no INFO at all) |
+| version 1, `count` 1 to 16 | else dropped. `count` 0 is a valid "forget" |
+| each monitor `w > 0`, `h > 0`, no `int16` overflow | the wire has 16 bits; a `w` or `h` with the sign bit is a negative size |
+| no two monitors overlap, one connected shape | the rules of `MonitorLayout::create`, the same as for a typed layout |
+| the union box equals the latest `DINF` shape | else dropped |
+
+The report is checked again **when it is used**: it is used only while its box still equals the shape that the computer
+reports now. So a `DINF` that moves the box (and has no new report yet) puts the computer back on the legacy path at
+once, and the next valid report brings it back.
+
+### Which monitors the server uses
+
+`Server::monitorLayoutFor` stays the one predicate. In this order, the first that holds:
+
+1. `server/experimentalMultiMonitor` is off, or the computer is the server's own screen: **legacy**.
+2. The user's `computer_<name>/monitorLayout` (typed, imported or **drawn** in the monitor editor) parses and its box
+   equals the shape: **the user's layout wins** (`manual`).
+3. The computer's report is valid and its box equals the shape: **the report** (`reported`). This also holds for a
+   user's layout that no longer fits the shape (a monitor was plugged in): the real monitors are better than the legacy
+   rectangle.
+4. Otherwise: **legacy**, exactly as today.
+
+A computer whose monitors make up a rectangle is mapped as it always was, whatever the source.
+
+A computer that has a report while the experiment is off is not mapped by it and is not logged about: the master switch
+is read when the computer connects (for the invitation) and at every decision (for the use).
+
+### The log line the GUI reads
+
+```
+INFO: computer "<name>" reports <N> monitors: <x>,<y>,<w>,<h>[ scale=<S>][ primary];<x>,...
+```
+
+One line per **change** of a computer's report, and one when it connects, only while the experiment is on, with the name
+cleaned (a quote, a line end or another control character becomes `?`). `N` is the number of monitors; `monitors` is
+always plural. A report that is dropped says `computer "<name>" monitor report ignored: <reason>`. The GUI reads the
+first line only when it is the whole line as the core writes it, as it does for `reports its screen:`.
+
+## The GUI
+
+The GUI keeps **one new optional key**, `computer_<name>/reportedMonitors` (text, same notation as `monitorLayout`,
+empty by default; written only by the GUI, never read by the core, which always uses the live report). A computer that
+is offline is drawn from the last report. The arrangement canvas draws a computer with a report from its real monitors
+with a *reported by the computer* badge and refreshes at once when the line comes again. The monitor editor opens on
+the reported monitors read-only; the user may start from them as their own drawing, which then wins (rule 2).
+Computers that never report keep the manual path.
+
+## Compatibility matrix
+
+| Server | Client | Result |
+|---|---|---|
+| new, experiment on | new (this) | `DIPC` has bit 12, `CIPC` has bit 12, `DMON` after the handshake and on changes |
+| new, experiment on | legacy (Windows 1.27.0.45, the Mac mini 1.27.0.89) | `DIPC` has the bit, `CIPC` does not: the server never expects a `DMON`. A `DMON` that comes anyway is read and ignored, the stream is kept |
+| new, experiment **off** | any | `DIPC` is byte identical to today; no bit, no `DMON`; a `DMON` that comes anyway is read and ignored |
+| legacy (1.27.0.89 and older) | new | no bit in `DIPC`: the client sends no `DMON` and does not set bit 12 in its `CIPC` |
+| legacy | legacy | as today |
+| protocol 1.8 and older | new | no `DIPC`, so no negotiation: nothing changes |
+
+The tests run these with the real proxy classes, on the bytes: golden bytes for every link where the gate is not met.
+
+## Not done / not verified
+
+- Linux (X11, libei) does not report: `getMonitors()` is empty, the capability bit is not set, they stay on the legacy
+  path.
+- Nothing here was run on Windows. The Windows source is compile-checked with a cross compiler only
+  ([windows-build-checklist.md](windows-build-checklist.md) says what and how far).
+- A monitor on a different scale than the others is reported with its own scale, but the pointer does not use it.
+- Rotation, refresh rate and the physical size of a monitor are not reported.
