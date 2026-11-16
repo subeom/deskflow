@@ -37,6 +37,7 @@ private Q_SLOTS:
   void monitorEditing_drawsWhatIsStored_andStoresWhatIsMade();
   void setComputerSize_isTheSizeOfAComputerThatHasNone_andTheMonitorOfOneThatHasOne();
   void setComputerSize_neverStoresWhatALayoutCannotHave();
+  void setComputerZoom_scalesTheWholeComputer_andKeepsItsMonitorsAndItsSize();
   void reportedScreen_doesNotChangeWhatIsGenerated();
   void reportedScreen_isAdoptedAsTheSizeOfAComputerThatHasNone();
 

@@ -74,12 +74,16 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   useOneLine(m_lblTitle);
 
   m_lblHint->setText(
-      tr("Drag a computer to where its screen is. Green lines: where the pointer goes from one to the other.")
+      tr("Drag a computer by its middle, resize it by its outline; double-click to edit its monitors. Green lines: "
+         "where the pointer goes from one to the other.")
   );
   m_lblHint->setToolTip(
       tr("Drag a computer to where its screen is, the way the displays are arranged in the macOS settings: it snaps to "
-         "the edges of the others. The green lines are the edges that touch, and where the pointer goes from one "
-         "computer to the other. Double click a computer to set its monitors, its size and its display scale.")
+         "the edges of the others. Drag the outline of a computer to resize it: a computer whose size is not known is "
+         "resized freely (Shift keeps its shape); one that has several monitors or whose screen is known is scaled as "
+         "a whole, in its own shape, and keeps its pixels. Alt takes the snapping away, Esc cancels. The green lines "
+         "are the edges that touch, and where the pointer goes from one computer to the other. Double click a "
+         "computer to draw its monitors.")
   );
   useOneLine(m_lblHint);
   useOneLine(m_lblIssues);
@@ -108,8 +112,8 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   auto *layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
   layout->addLayout(header);
-  layout->addWidget(m_lblHint);
   layout->addWidget(m_canvas, 1);
+  layout->addWidget(m_lblHint);
   layout->addWidget(m_lblIssues);
   layout->addLayout(buttons);
 
@@ -130,6 +134,11 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
       Q_EMIT editComputerRequested(name);
     else
       Q_EMIT editMonitorsRequested(name);
+  });
+  connect(m_canvas, &ArrangementCanvas::computerScaled, this, [this](const QString &name, double zoom) {
+    m_config.setComputerZoom(name, zoom);
+    refresh();
+    Q_EMIT changed();
   });
   connect(m_canvas, &ArrangementCanvas::computerResized, this, [this](const QString &name, int, int, int w, int h) {
     m_config.setComputerSize(name, w, h);

@@ -778,6 +778,37 @@ void ServerConfigDialogTests::arrangement_doubleClick_drawsTheMonitors_butTheSer
   QCOMPARE(opened, QStringLiteral("ComputerSettingsDialog"));
 }
 
+void ServerConfigDialogTests::arrangement_aComputerScaledOnTheCanvas_hasItsZoomSaved_andTheHintSaysHow()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  for (const auto &[name, x, y] :
+       std::vector<std::tuple<QString, double, double>>{{"srv", 0, 0}, {"PC", -1920, 0}, {"MINI", 3440, 0}}) {
+    Settings::setValue(Settings::Computer::ArrangementX.arg(name), x);
+    Settings::setValue(Settings::Computer::ArrangementY.arg(name), y);
+  }
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  dialog.show();
+  auto *panel = panelOf(dialog);
+
+  // the hint under the canvas says how a computer is dragged and resized
+  auto *hint = panel->findChild<QLabel *>(QStringLiteral("lblArrangementHint"));
+  QVERIFY(hint->isVisibleTo(&dialog));
+  QVERIFY2(hint->text().contains(QStringLiteral("resize it by its outline")), qPrintable(hint->text()));
+  QVERIFY(hint->text().contains(QStringLiteral("double-click")));
+  QVERIFY(hint->geometry().top() >= panel->canvas()->geometry().bottom());
+
+  // a computer that is scaled on the canvas has the zoom, and is saved with it
+  Q_EMIT panel->canvas()->computerScaled(QStringLiteral("PC"), 0.8);
+  const auto &arrangement = panel->canvas()->arrangement();
+  QCOMPARE(arrangement.computers[static_cast<size_t>(arrangement.indexOf("PC"))].zoom, 0.8);
+  Q_EMIT buttons(dialog)->accepted();
+  QCOMPARE(Settings::value(Settings::Computer::ArrangementZoom.arg("PC")).toDouble(), 0.8);
+  QVERIFY(Settings::value(Settings::Computer::MonitorLayout.arg("PC")).toString().isEmpty());
+}
+
 void ServerConfigDialogTests::arrangement_aComputerResizedOnTheCanvas_hasItsSizeSaidAndSaved()
 {
   writeThreeComputers();

@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 
 using namespace deskflow::server::arrangement;
 
@@ -316,9 +317,11 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
     painter.drawLine(a, b);
   }
 
-  // the handles of the computer that can be resized
-  if (const auto selected = indexOf(m_selected); canResize(selected)) {
-    const auto r = toWidget(shown.computers[static_cast<size_t>(selected)].box());
+  // the outline of the computer that the pointer is at, and the handles of that one and of the selected one
+  const auto drawHandles = [&](int index) {
+    if (resizeKindOf(index) == ResizeKind::None)
+      return;
+    const auto r = toWidget(shown.computers[static_cast<size_t>(index)].box());
     const std::array<QPointF, 8> points = {
         r.topLeft(),
         QPointF(r.center().x(), r.top()),
@@ -336,7 +339,16 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
           QRectF(point.x() - kHandlePixels / 2, point.y() - kHandlePixels / 2, kHandlePixels, kHandlePixels)
       );
     }
+  };
+  if (const auto hovered = indexOf(m_hovered); hovered >= 0 && !m_drag.resizing && !dragging) {
+    const auto r = toWidget(shown.computers[static_cast<size_t>(hovered)].box());
+    painter.setPen(QPen(palette().color(QPalette::Highlight), 3));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), 4, 4);
+    drawHandles(hovered);
   }
+  if (const auto selected = indexOf(m_selected); selected >= 0 && selected != indexOf(m_hovered))
+    drawHandles(selected);
 
   // the guides of the edges that are in line, as macOS draws them while a display is dragged
   for (const auto &guide : resizing ? m_drag.resizeGuides : std::vector<deskflow::server::arrangement::Guide>()) {
@@ -356,6 +368,21 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
         painter.drawLine(toWidget(guide.from, guide.position), toWidget(guide.to, guide.position));
     }
   }
+
+  // the size, while the outline of a computer is dragged
+  if (m_drag.resizing && m_drag.moved && m_drag.previewValid && !m_drag.info.isEmpty()) {
+    const QFontMetricsF metrics(painter.font());
+    const QSizeF size(metrics.horizontalAdvance(m_drag.info) + 20, metrics.height() + 10);
+    auto at = m_drag.pointer + QPointF(16, 18);
+    at.setX(std::clamp(at.x(), 4.0, std::max(4.0, width() - size.width() - 4)));
+    at.setY(std::clamp(at.y(), 4.0, std::max(4.0, height() - size.height() - 4)));
+    const QRectF bubble(at, size);
+    painter.setPen(QPen(QColor(0, 0, 0, 90), 1));
+    painter.setBrush(QColor(32, 32, 32, 230));
+    painter.drawRoundedRect(bubble, 5, 5);
+    painter.setPen(QColor(255, 255, 255));
+    painter.drawText(bubble, Qt::AlignCenter, m_drag.info);
+  }
 }
 
 void ArrangementCanvas::setReportedSizes(const QHash<QString, QSize> &sizes)
@@ -365,12 +392,17 @@ void ArrangementCanvas::setReportedSizes(const QHash<QString, QSize> &sizes)
     m_reportedSizes.insert(it.key().toLower(), it.value());
 }
 
-bool ArrangementCanvas::canResize(int index) const
+ArrangementCanvas::ResizeKind ArrangementCanvas::resizeKindOf(int index) const
 {
   if (index < 0 || index >= static_cast<int>(m_arrangement.computers.size()))
-    return false;
+    return ResizeKind::None;
   const auto &computer = m_arrangement.computers[static_cast<size_t>(index)];
-  return !computer.isServer && computer.distinctMonitors().size() == 1 && computer.zoom > 0;
+  if (computer.isServer || !(computer.zoom > 0) || computer.monitorRects().empty())
+    return ResizeKind::None;
+  if (computer.distinctMonitors().size() > 1)
+    return ResizeKind::Scale;
+  const auto reported = m_reportedSizes.value(QString::fromStdString(computer.name).toLower());
+  return reported.width() > 0 && reported.height() > 0 ? ResizeKind::Scale : ResizeKind::Free;
 }
 
 QPointF ArrangementCanvas::toUnits(const QPointF &point) const
@@ -379,36 +411,62 @@ QPointF ArrangementCanvas::toUnits(const QPointF &point) const
   return {(point.x() - m_offset.x()) / m_scale, (point.y() - m_offset.y()) / m_scale};
 }
 
-std::optional<editor::Handle> ArrangementCanvas::handleAt(const QPointF &point) const
+std::optional<ArrangementCanvas::Hit> ArrangementCanvas::outlineAt(const QPointF &point) const
 {
-  const auto index = indexOf(m_selected);
-  if (!canResize(index))
-    return std::nullopt;
-  const auto r = toWidget(m_arrangement.computers[static_cast<size_t>(index)].box());
-  const bool nearLeft = std::abs(point.x() - r.left()) <= kGrabPixels;
-  const bool nearRight = std::abs(point.x() - r.right()) <= kGrabPixels;
-  const bool nearTop = std::abs(point.y() - r.top()) <= kGrabPixels;
-  const bool nearBottom = std::abs(point.y() - r.bottom()) <= kGrabPixels;
-  const bool withinX = point.x() >= r.left() - kGrabPixels && point.x() <= r.right() + kGrabPixels;
-  const bool withinY = point.y() >= r.top() - kGrabPixels && point.y() <= r.bottom() + kGrabPixels;
   using enum editor::Handle;
-  if (nearTop && nearLeft)
-    return TopLeft;
-  if (nearTop && nearRight)
-    return TopRight;
-  if (nearBottom && nearLeft)
-    return BottomLeft;
-  if (nearBottom && nearRight)
-    return BottomRight;
-  if (nearLeft && withinY)
-    return Left;
-  if (nearRight && withinY)
-    return Right;
-  if (nearTop && withinX)
-    return Top;
-  if (nearBottom && withinX)
-    return Bottom;
-  return std::nullopt;
+  std::optional<Hit> best;
+  double bestScore = std::numeric_limits<double>::max();
+  for (size_t i = 0; i < m_arrangement.computers.size(); ++i) {
+    const auto &computer = m_arrangement.computers[i];
+    if (resizeKindOf(static_cast<int>(i)) == ResizeKind::None)
+      continue;
+    const auto r = toWidget(computer.box());
+    // a small computer keeps a middle that it is dragged by
+    const double tolerance = std::min(kGrabPixels, std::min(r.width(), r.height()) / 3.0);
+    const double dl = std::abs(point.x() - r.left());
+    const double dr = std::abs(point.x() - r.right());
+    const double dt = std::abs(point.y() - r.top());
+    const double db = std::abs(point.y() - r.bottom());
+    const bool withinX = point.x() >= r.left() - tolerance && point.x() <= r.right() + tolerance;
+    const bool withinY = point.y() >= r.top() - tolerance && point.y() <= r.bottom() + tolerance;
+    std::optional<editor::Handle> handle;
+    double distance = 0;
+    if (dt <= tolerance && dl <= tolerance) {
+      handle = TopLeft;
+      distance = std::max(dt, dl);
+    } else if (dt <= tolerance && dr <= tolerance) {
+      handle = TopRight;
+      distance = std::max(dt, dr);
+    } else if (db <= tolerance && dl <= tolerance) {
+      handle = BottomLeft;
+      distance = std::max(db, dl);
+    } else if (db <= tolerance && dr <= tolerance) {
+      handle = BottomRight;
+      distance = std::max(db, dr);
+    } else if (dl <= tolerance && withinY) {
+      handle = Left;
+      distance = dl;
+    } else if (dr <= tolerance && withinY) {
+      handle = Right;
+      distance = dr;
+    } else if (dt <= tolerance && withinX) {
+      handle = Top;
+      distance = dt;
+    } else if (db <= tolerance && withinX) {
+      handle = Bottom;
+      distance = db;
+    }
+    if (!handle)
+      continue;
+    // the nearer outline, then the computer that the pointer is in, then the selected one
+    const double score =
+        distance + (r.contains(point) ? 0.0 : 0.3) + (QString::fromStdString(computer.name) == m_selected ? 0.0 : 0.1);
+    if (score < bestScore) {
+      bestScore = score;
+      best = Hit{static_cast<int>(i), *handle};
+    }
+  }
+  return best;
 }
 
 void ArrangementCanvas::setAssumedSizes(const QStringList &computers)
@@ -550,18 +608,25 @@ void ArrangementCanvas::mousePressEvent(QMouseEvent *event)
   setFocus();
   const auto name = computerAt(event->position());
   m_drag = {};
-  if (const auto handle = handleAt(event->position()); handle && event->button() == Qt::LeftButton) {
-    const auto index = indexOf(m_selected);
-    const auto &computer = m_arrangement.computers[static_cast<size_t>(index)];
+  m_hovered.clear();
+  const auto hit = event->button() == Qt::LeftButton ? outlineAt(event->position()) : std::nullopt;
+  if (hit) {
+    // the outline of a computer is dragged to resize it, without the computer being selected first
+    const auto &computer = m_arrangement.computers[static_cast<size_t>(hit->index)];
+    setSelected(QString::fromStdString(computer.name));
     const auto box = computer.box();
     const auto units = toUnits(event->position());
-    m_drag.index = index;
+    m_drag.index = hit->index;
     m_drag.resizing = true;
-    m_drag.handle = *handle;
+    m_drag.scaleMode = resizeKindOf(hit->index) == ResizeKind::Scale;
+    m_drag.handle = hit->handle;
     m_drag.button = event->button();
     m_drag.pressed = event->position();
-    m_drag.grabX = units.x() - (isLeftHandle(*handle) ? box.x : box.right());
-    m_drag.grabY = units.y() - (isTopHandle(*handle) ? box.y : box.bottom());
+    m_drag.pointer = event->position();
+    m_drag.grabX = units.x() - (isLeftHandle(hit->handle) ? box.x : box.right());
+    m_drag.grabY = units.y() - (isTopHandle(hit->handle) ? box.y : box.bottom());
+    m_drag.shape = computer.shape();
+    m_drag.ratio = box.h > 0 ? box.w / box.h : 1.0;
     editor::Monitor monitor;
     monitor.x = box.x;
     monitor.y = box.y;
@@ -601,6 +666,7 @@ void ArrangementCanvas::mouseMoveEvent(QMouseEvent *event)
     return;
   }
   if (m_drag.index >= 0 && m_drag.resizing) {
+    m_drag.pointer = event->position();
     const auto delta = event->position() - m_drag.pressed;
     if (!m_drag.moved && std::hypot(delta.x(), delta.y()) < kDragPixels)
       return;
@@ -608,28 +674,99 @@ void ArrangementCanvas::mouseMoveEvent(QMouseEvent *event)
     setCursor(cursorOf(m_drag.handle));
     const auto index = static_cast<size_t>(m_drag.index);
     const auto &computer = m_arrangement.computers[index];
+    // Shift keeps the shape, Alt takes the snapping away
+    const bool shift = event->modifiers().testFlag(Qt::ShiftModifier);
+    const bool alt = event->modifiers().testFlag(Qt::AltModifier);
     editor::Constraints constraints;
+    constraints.snapAspect = !alt;
+    constraints.snapPresets = !alt;
+    if (m_drag.scaleMode || shift)
+      constraints.lockAspect = m_drag.ratio;
+    // a computer that is scaled is over another when one of its monitors is: its box has notches that others may be in
+    constraints.refuseOverlap = !m_drag.scaleMode;
     for (size_t i = 0; i < m_arrangement.computers.size(); ++i) {
       if (i == index)
         continue;
       for (const auto &r : m_arrangement.computers[i].monitorRects())
         constraints.obstacles.push_back(r);
     }
-    if (const auto reported = m_reportedSizes.value(QString::fromStdString(computer.name).toLower());
-        reported.width() > 0 && reported.height() > 0)
-      constraints.targetSize = std::make_pair(reported.width() * computer.zoom, reported.height() * computer.zoom);
     const auto units = toUnits(event->position());
     const auto result = editor::resize(
-        m_drag.startLayout, 0, m_drag.handle, units.x() - m_drag.grabX, units.y() - m_drag.grabY, kSnapPixels / m_scale,
-        constraints
+        m_drag.startLayout, 0, m_drag.handle, units.x() - m_drag.grabX, units.y() - m_drag.grabY,
+        alt ? 0.0 : kSnapPixels / m_scale, constraints
     );
-    if (!result.refused) {
-      const auto &m = result.layout.monitors.front();
-      const auto &start = m_drag.startLayout.monitors.front();
+    if (result.refused) {
+      update();
+      return;
+    }
+    const auto &m = result.layout.monitors.front();
+    const auto &start = m_drag.startLayout.monitors.front();
+    auto preview = computer;
+    if (m_drag.scaleMode) {
+      // the whole computer is scaled: the monitors and the pixels are what they were, the zoom is what changes
+      if (m_drag.shape.w <= 0 || m_drag.shape.h <= 0) {
+        update();
+        return;
+      }
+      double zoom = m.w / m_drag.shape.w;
+      double x = m.x;
+      double y = m.y;
+      // whether a monitor of the computer, at this zoom and with the top left of its box here, is over another computer
+      const auto overOthers = [&](double scaleZoom, double left, double top) {
+        for (const auto &monitor : computer.monitors) {
+          const double mx = left + scaleZoom * (monitor.x - m_drag.shape.x);
+          const double my = top + scaleZoom * (monitor.y - m_drag.shape.y);
+          const double mw = scaleZoom * monitor.w;
+          const double mh = scaleZoom * monitor.h;
+          for (const auto &o : constraints.obstacles) {
+            if (std::min(mx + mw, o.right()) - std::max(mx, o.x) > deskflow::server::arrangement::kTouchTolerance &&
+                std::min(my + mh, o.bottom()) - std::max(my, o.y) > deskflow::server::arrangement::kTouchTolerance)
+              return true;
+          }
+        }
+        return false;
+      };
+      if (!alt && result.guides.empty()) {
+        // near a display scale that there is, it is that one
+        for (const auto percent : editor::commonScales()) {
+          const double wanted = 100.0 / percent;
+          if (std::abs(zoom - wanted) / wanted > 0.015)
+            continue;
+          const double w2 = wanted * m_drag.shape.w;
+          const double h2 = wanted * m_drag.shape.h;
+          const double x2 = isLeftHandle(m_drag.handle) ? start.right() - w2 : start.x;
+          const double y2 = isTopHandle(m_drag.handle) ? start.bottom() - h2 : start.y;
+          const bool over = overOthers(wanted, x2, y2);
+          if (!over) {
+            zoom = wanted;
+            x = x2;
+            y = y2;
+          }
+          break;
+        }
+      }
+      if (!(zoom >= deskflow::server::arrangement::kMinZoom && zoom <= deskflow::server::arrangement::kMaxZoom)) {
+        update();
+        return;
+      }
+      if (overOthers(zoom, x, y)) {
+        update();
+        return;
+      }
+      preview.zoom = zoom;
+      preview.originX = x - zoom * m_drag.shape.x;
+      preview.originY = y - zoom * m_drag.shape.y;
+      m_drag.info =
+          tr("%1 × %2 · scale %3 %")
+              .arg(m_drag.shape.w)
+              .arg(m_drag.shape.h)
+              .arg(
+                  QString::number(100.0 / zoom, 'f', std::abs(100.0 / zoom - std::round(100.0 / zoom)) < 0.05 ? 0 : 1)
+              );
+    } else {
       const auto monitor = computer.distinctMonitors().front();
       const auto w = std::max(1, static_cast<int>(std::lround(m.w / computer.zoom)));
       const auto h = std::max(1, static_cast<int>(std::lround(m.h / computer.zoom)));
-      auto preview = computer;
       preview.monitors = {{monitor.x, monitor.y, w, h}};
       // a size that a layout cannot have (its numbers are 16 bits) is not one that a computer can be given
       if (!deskflow::server::MonitorLayout::create(preview.monitors)) {
@@ -641,10 +778,18 @@ void ArrangementCanvas::mouseMoveEvent(QMouseEvent *event)
                                                     : m.x - computer.zoom * monitor.x;
       preview.originY = isTopHandle(m_drag.handle) ? start.bottom() - computer.zoom * (monitor.y + h)
                                                    : m.y - computer.zoom * monitor.y;
-      m_drag.preview = preview;
-      m_drag.previewValid = true;
-      m_drag.resizeGuides = result.guides;
+      QString info = QStringLiteral("%1 × %2").arg(w).arg(h);
+      if (!result.aspect.empty())
+        info += QStringLiteral(" · ") + QString::fromStdString(result.aspect);
+      else if (const auto aspect = editor::aspectNameOf(w, h); !aspect.empty() && shift)
+        info += QStringLiteral(" · ") + QString::fromStdString(aspect);
+      if (result.preset)
+        info += QStringLiteral(" · ") + tr("standard size");
+      m_drag.info = info;
     }
+    m_drag.preview = preview;
+    m_drag.previewValid = true;
+    m_drag.resizeGuides = result.guides;
     update();
     return;
   }
@@ -661,11 +806,28 @@ void ArrangementCanvas::mouseMoveEvent(QMouseEvent *event)
     update();
     return;
   }
-  if (const auto handle = handleAt(event->position())) {
-    setCursor(cursorOf(*handle));
+  // nothing is held: the outline of a computer under the pointer is shown, and the cursor says what a drag does
+  const auto hit = outlineAt(event->position());
+  const auto hovered =
+      hit ? QString::fromStdString(m_arrangement.computers[static_cast<size_t>(hit->index)].name) : QString();
+  if (hovered != m_hovered) {
+    m_hovered = hovered;
+    update();
+  }
+  if (hit) {
+    setCursor(cursorOf(hit->handle));
     return;
   }
   setCursor(computerAt(event->position()).isEmpty() ? Qt::ArrowCursor : Qt::OpenHandCursor);
+}
+
+void ArrangementCanvas::leaveEvent(QEvent *event)
+{
+  if (!m_hovered.isEmpty()) {
+    m_hovered.clear();
+    update();
+  }
+  QWidget::leaveEvent(event);
 }
 
 void ArrangementCanvas::mouseReleaseEvent(QMouseEvent *event)
@@ -684,8 +846,12 @@ void ArrangementCanvas::mouseReleaseEvent(QMouseEvent *event)
       recompute();
       m_needsFit = !m_manualView;
       Q_EMIT arrangementChanged();
-      const auto &r = drag.preview.monitors.front();
-      Q_EMIT computerResized(QString::fromStdString(drag.preview.name), r.x, r.y, r.w, r.h);
+      if (drag.scaleMode) {
+        Q_EMIT computerScaled(QString::fromStdString(drag.preview.name), drag.preview.zoom);
+      } else {
+        const auto &r = drag.preview.monitors.front();
+        Q_EMIT computerResized(QString::fromStdString(drag.preview.name), r.x, r.y, r.w, r.h);
+      }
     }
     update();
     return;
