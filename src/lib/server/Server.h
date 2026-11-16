@@ -339,10 +339,24 @@ private:
   void setMonitorGeometry(bool on);
 
   // the layout to map the pointer by on \p client: when the experiment is on, the computer has a layout, that is valid,
-  // is of the screen that the computer reports, and is not a rectangle. Otherwise nullptr, which is the mapping that
-  // there always was; \p reason says why, if given (and is empty when there is nothing to say about the computer).
+  // is of the screen that the computer reports, and is not a rectangle. The layout that the user set for the computer
+  // is that layout while it fits the screen of the computer; when it does not, or there is none, it is the monitors
+  // that the computer reported (see docs/dev/monitor-reporting.md). Otherwise nullptr, which is the mapping that there
+  // always was; \p reason says why, if given (and is empty when there is nothing to say about the computer).
   const deskflow::server::MonitorLayout *
   monitorLayoutFor(const BaseClientProxy *client, std::string *reason = nullptr) const;
+
+  // the layout that the user set for \p client, when it is valid, is of the screen of the computer and is not a
+  // rectangle; \p fits is true when the layout is valid and of the screen, which is when it is the user's choice
+  const deskflow::server::MonitorLayout *
+  typedLayoutFor(const BaseClientProxy *client, std::string *reason, bool *fits) const;
+
+  // the monitors that \p client reports, when they are of the screen that it reports and are not a rectangle
+  const deskflow::server::MonitorLayout *reportedLayoutFor(const BaseClientProxy *client, std::string *reason) const;
+
+  // say the monitors that \p client reports, if they are not what was said last, while the experiment is on: the GUI
+  // reads it
+  void sayReportedMonitors(const BaseClientProxy *client);
 
   // say what is decided for \p client, if it is not what was said last
   void sayMonitorGeometry(const BaseClientProxy *client);
@@ -374,6 +388,7 @@ private:
 
   // event handlers
   void handleShapeChanged(BaseClientProxy *client);
+  void handleMonitorsReported(BaseClientProxy *client);
   void handleClipboardGrabbed(const Event &event, BaseClientProxy *client);
   void handleClipboardChanged(const Event &event, BaseClientProxy *client);
   void handleKeyDownEvent(const Event &event);
@@ -568,6 +583,9 @@ private:
 
   // the screen that each computer was last said to report, by name
   std::map<std::string, std::string> m_reportedScreenSaid;
+
+  // the monitors that each computer was last said to report, by name; empty when it was said to report none
+  std::map<std::string, std::string> m_reportedMonitorsSaid;
 
   // the side and fraction of the last edge that the pointer was taken over, for what is said about a switch
   struct Crossing

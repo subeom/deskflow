@@ -343,6 +343,20 @@ void MonitorReportTests::prepare_sixteenMonitorsAreTheMost()
   QVERIFY2(QString::fromStdString(tooMany.problem).contains(QStringLiteral("16")), tooMany.problem.c_str());
 }
 
+void MonitorReportTests::format_isTheTextThatTheGuiReads()
+{
+  QCOMPARE(
+      QString::fromStdString(formatMonitorEntries({{0, 0, 2560, 1440, 150, true}, {2560, 0, 1920, 1080, 100, false}})),
+      QStringLiteral("0,0,2560,1440 scale=150 primary;2560,0,1920,1080 scale=100")
+  );
+  // a scale that is not known is not written, a negative origin is
+  QCOMPARE(
+      QString::fromStdString(formatMonitorEntries({{-1920, -1080, 1920, 1080, 0, false}})),
+      QStringLiteral("-1920,-1080,1920,1080")
+  );
+  QCOMPARE(QString::fromStdString(formatMonitorEntries({})), QString());
+}
+
 // Windows says the corners of a monitor and the first pixel outside it
 void MonitorReportTests::native_rectIsMadeOfTheCorners()
 {

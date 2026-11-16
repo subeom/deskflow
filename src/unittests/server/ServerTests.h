@@ -111,6 +111,18 @@ private Q_SLOTS:
   void monitorGeometry_everySwitch_isSaidAtInfoLevel();
   void monitorGeometry_theScreenOfTheServer_isMappedAsItAlwaysWas();
   void monitorGeometry_nothingIsAddedToWhatAComputerIsTold();
+  void reportedMonitors_areUsedWhenNoLayoutIsTyped();
+  void reportedMonitors_aTypedLayoutThatFits_wins();
+  void reportedMonitors_aTypedLayoutThatDoesNotFit_givesWayToTheReport();
+  void reportedMonitors_ofAnotherShape_areNotUsed();
+  void reportedMonitors_aSecondReport_isUsedAtOnce();
+  void reportedMonitors_aRectangle_isMappedAsItAlwaysWas();
+  void reportedMonitors_withTheExperimentOff_changeNothing();
+  void reportedMonitors_aComputerThatConnectsAgain_isDecidedAgain();
+  void reportedMonitors_areSaidInTheLineTheGuiReads();
+  void reportedMonitors_aReportThatIsGone_isSaidOnce();
+  void reportedMonitors_nothingIsAddedToWhatAComputerIsTold();
+  void reportedMonitors_namesInTheLog_areCleaned();
   void monitorGeometry_cornersThatLockTheCursor_stillDo_data();
   void monitorGeometry_cornersThatLockTheCursor_stillDo();
 

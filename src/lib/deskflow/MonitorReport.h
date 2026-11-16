@@ -87,6 +87,13 @@ Empty when the stream ended in the middle of the message.
 */
 std::optional<ReceivedReport> readReport(deskflow::IStream *stream);
 
+//! The monitors as the server writes them in its log: \c x,y,w,h, then \c scale=S unless it is not known and \c primary
+/*!
+The items are joined by \c ; and have no space after it: \c "0,0,2560,1440 scale=150 primary;2560,0,1920,1080
+scale=100". This is the text that the GUI reads from the log of the core.
+*/
+std::string formatMonitorEntries(const std::vector<MonitorEntry> &monitors);
+
 //! What a computer can report of its monitors
 struct PreparedMonitors
 {

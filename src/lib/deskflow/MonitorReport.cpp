@@ -78,6 +78,24 @@ std::optional<ReceivedReport> readReport(deskflow::IStream *stream)
   return report;
 }
 
+std::string formatMonitorEntries(const std::vector<MonitorEntry> &monitors)
+{
+  std::string text;
+  for (const auto &monitor : monitors) {
+    if (!text.empty()) {
+      text += ';';
+    }
+    text += std::format("{},{},{},{}", monitor.x, monitor.y, monitor.w, monitor.h);
+    if (monitor.scalePercent != 0) {
+      text += std::format(" scale={}", monitor.scalePercent);
+    }
+    if (monitor.primary) {
+      text += " primary";
+    }
+  }
+  return text;
+}
+
 PreparedMonitors prepareMonitors(const std::vector<MonitorInfo> &monitors, const deskflow::server::MonitorRect &shape)
 {
   PreparedMonitors prepared;

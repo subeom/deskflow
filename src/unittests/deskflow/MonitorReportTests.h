@@ -31,6 +31,7 @@ private Q_SLOTS:
   void prepare_mirroredMonitorsAreOne();
   void prepare_keepsScaleAndPrimary();
   void prepare_sixteenMonitorsAreTheMost();
+  void format_isTheTextThatTheGuiReads();
   void native_rectIsMadeOfTheCorners();
   void native_scaleFromDpi_data();
   void native_scaleFromDpi();

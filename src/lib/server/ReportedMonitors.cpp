@@ -66,4 +66,15 @@ ReportCheck checkReport(const deskflow::monitors::ReceivedReport &report, const 
   return check;
 }
 
+std::string loggableName(std::string_view name)
+{
+  std::string clean(name);
+  for (auto &c : clean) {
+    if (c == '"' || static_cast<unsigned char>(c) < 0x20 || c == 0x7f) {
+      c = '?';
+    }
+  }
+  return clean;
+}
+
 } // namespace deskflow::server

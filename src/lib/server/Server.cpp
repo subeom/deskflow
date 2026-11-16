@@ -15,6 +15,7 @@
 #include "deskflow/Computer.h"
 #include "deskflow/DeskflowException.h"
 #include "deskflow/IPlatformComputer.h"
+#include "deskflow/MonitorReport.h"
 #include "deskflow/OptionTypes.h"
 #include "deskflow/PacketStreamFilter.h"
 #include "deskflow/ProtocolTypes.h"
@@ -25,6 +26,7 @@
 #include "server/ClientProxy.h"
 #include "server/ClientProxyUnknown.h"
 #include "server/PrimaryClient.h"
+#include "server/ReportedMonitors.h"
 #include "server/ServerCursorEdges.h"
 #include "server/ServerNeighborTraversal.h"
 
@@ -1309,6 +1311,7 @@ void Server::setMonitorGeometry(bool on)
     m_multiMonitor = on;
     m_monitorGeometrySaid.clear();
     m_reportedScreenSaid.clear();
+    m_reportedMonitorsSaid.clear();
     m_crossing.known = false;
     LOG_INFO("experimental multi-monitor aware cursor mapping is %s", on ? "on" : "off");
   }
@@ -1329,13 +1332,49 @@ const MonitorLayout *Server::monitorLayoutFor(const BaseClientProxy *client, std
   if (client == m_primaryClient && m_useArrangement)
     return primaryLayout(reason);
 
-  const auto *setting = m_config->getMonitorLayout(getName(client));
   if (client == m_primaryClient) {
-    if (reason != nullptr && setting != nullptr) {
+    if (reason != nullptr && m_config->getMonitorLayout(getName(client)) != nullptr) {
       *reason = "the screen of the server itself is not supported yet";
     }
     return nullptr;
   }
+
+  // what the user set for the computer is the user's choice, and wins while it fits the screen of the computer
+  // (this runs for every move of the pointer: the texts are made only when they are asked for)
+  bool fits = false;
+  std::string typedReason;
+  const auto *typed = typedLayoutFor(client, reason != nullptr ? &typedReason : nullptr, &fits);
+  if (fits) {
+    if (reason != nullptr) {
+      *reason = typedReason;
+    }
+    return typed;
+  }
+
+  // otherwise the monitors that the computer reported, which are better than the one rectangle that there is without
+  std::string reportedReason;
+  const auto *reported = reportedLayoutFor(client, reason != nullptr ? &reportedReason : nullptr);
+  if (reported != nullptr) {
+    if (reason != nullptr) {
+      *reason = "reported by the computer, " + reportedReason;
+      if (m_config->getMonitorLayout(getName(client)) != nullptr) {
+        *reason += " (the layout that is set is not used: " + typedReason + ")";
+      }
+    }
+    return reported;
+  }
+
+  // a report that cannot be used says why; with none, it is the layout that the user set, or the absence of one
+  if (reason != nullptr) {
+    *reason = reportedReason.empty() ? typedReason : reportedReason;
+  }
+  return nullptr;
+}
+
+const MonitorLayout *Server::typedLayoutFor(const BaseClientProxy *client, std::string *reason, bool *fits) const
+{
+  *fits = false;
+  const auto *setting = m_config->getMonitorLayout(getName(client));
   if (setting == nullptr) {
     if (reason != nullptr) {
       *reason = "no monitor layout is set";
@@ -1362,6 +1401,49 @@ const MonitorLayout *Server::monitorLayoutFor(const BaseClientProxy *client, std
       *reason = std::format(
           "the monitor layout does not match the screen size the computer reported (layout {},{} {}x{}, reported "
           "{},{} {}x{})",
+          box.x, box.y, box.w, box.h, x, y, w, h
+      );
+    }
+    return nullptr;
+  }
+
+  // it is the layout of the screen of the computer: the choice of the user, which says that the monitors are these
+  *fits = true;
+
+  // a rectangle is mapped as it always was
+  if (layout.isPlainRectangle()) {
+    if (reason != nullptr) {
+      *reason = "the monitors make up a rectangle, nothing to correct";
+    }
+    return nullptr;
+  }
+
+  if (reason != nullptr) {
+    *reason = std::format("{} monitors, {},{} {}x{}", layout.monitors().size(), box.x, box.y, box.w, box.h);
+  }
+  return &layout;
+}
+
+const MonitorLayout *Server::reportedLayoutFor(const BaseClientProxy *client, std::string *reason) const
+{
+  const auto *reported = client->reportedMonitors();
+  if (reported == nullptr) {
+    return nullptr;
+  }
+
+  // the report is of the screen that the computer reports now, or of another one (its shape changed after it)
+  const auto &layout = reported->layout;
+  const auto box = layout.boundingBox();
+  int32_t x;
+  int32_t y;
+  int32_t w;
+  int32_t h;
+  client->getShape(x, y, w, h);
+  if (box.x != x || box.y != y || box.w != w || box.h != h) {
+    if (reason != nullptr) {
+      *reason = std::format(
+          "the monitors that the computer reports do not match the screen size it reported (monitors {},{} {}x{}, "
+          "screen {},{} {}x{})",
           box.x, box.y, box.w, box.h, x, y, w, h
       );
     }
@@ -1450,6 +1532,38 @@ void Server::sayReportedScreen(const BaseClientProxy *client)
   }
 }
 
+void Server::sayReportedMonitors(const BaseClientProxy *client)
+{
+  // the screen of the server itself is its own
+  if (!m_multiMonitor || client == m_primaryClient) {
+    return;
+  }
+
+  const auto name = deskflow::server::loggableName(getName(client));
+  const auto *reported = client->reportedMonitors();
+  auto &said = m_reportedMonitorsSaid[getName(client)];
+  if (reported == nullptr) {
+    // a computer that never reported has nothing to take back
+    if (!said.empty()) {
+      said.clear();
+      LOG_INFO("computer \"%s\" reports no monitors", name.c_str());
+    }
+    return;
+  }
+
+  const auto monitors = deskflow::monitors::formatMonitorEntries(reported->monitors);
+  if (said != monitors) {
+    said = monitors;
+    LOG_INFO("computer \"%s\" reports %zu monitors: %s", name.c_str(), reported->monitors.size(), monitors.c_str());
+  }
+}
+
+void Server::handleMonitorsReported(BaseClientProxy *client)
+{
+  LOG_DEBUG("computer \"%s\" reported its monitors", getName(client).c_str());
+  sayMonitorGeometry(client);
+}
+
 void Server::sayMonitorGeometry(const BaseClientProxy *client)
 {
   if (!m_multiMonitor) {
@@ -1457,6 +1571,7 @@ void Server::sayMonitorGeometry(const BaseClientProxy *client)
   }
 
   sayReportedScreen(client);
+  sayReportedMonitors(client);
 
   std::string reason;
   const bool on = monitorLayoutFor(client, &reason) != nullptr;
@@ -2496,6 +2611,9 @@ bool Server::addClient(BaseClientProxy *client)
   m_events->addHandler(EventTypes::ComputerShapeChanged, client->getEventTarget(), [this, client](const auto &) {
     handleShapeChanged(client);
   });
+  m_events->addHandler(EventTypes::ClientProxyMonitorsReported, client->getEventTarget(), [this, client](const auto &) {
+    handleMonitorsReported(client);
+  });
   m_events->addHandler(EventTypes::ClipboardGrabbed, client->getEventTarget(), [this, client](const auto &e) {
     handleClipboardGrabbed(e, client);
   });
@@ -2532,12 +2650,14 @@ bool Server::removeClient(BaseClientProxy *client)
 
   // remove event handlers
   m_events->removeHandler(ComputerShapeChanged, client->getEventTarget());
+  m_events->removeHandler(ClientProxyMonitorsReported, client->getEventTarget());
   m_events->removeHandler(ClipboardGrabbed, client->getEventTarget());
   m_events->removeHandler(ClipboardChanged, client->getEventTarget());
 
   // remove from list
   m_monitorGeometrySaid.erase(getName(client));
   m_reportedScreenSaid.erase(getName(client));
+  m_reportedMonitorsSaid.erase(getName(client));
   m_clients.erase(getName(client));
   m_clientSet.erase(i);
 

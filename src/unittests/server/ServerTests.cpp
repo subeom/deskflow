@@ -625,11 +625,31 @@ public:
     moved.push_back({x, y});
   }
 
+  // what the computer reports of its monitors; handed out as it is, so that the Server's own check is what is tested
+  const deskflow::server::ReportedMonitors *reportedMonitors() const override
+  {
+    return reported ? &*reported : nullptr;
+  }
+
   Box shape;
   Pos cursor;
   std::vector<Pos> entered;
   std::vector<Pos> moved;
+  std::optional<deskflow::server::ReportedMonitors> reported;
 };
+
+// the monitors that a computer reports, as the proxy of a client keeps them
+std::optional<deskflow::server::ReportedMonitors>
+reportedOf(const std::vector<deskflow::monitors::MonitorEntry> &entries, uint16_t generation = 1)
+{
+  std::vector<deskflow::server::MonitorRect> rects;
+  for (const auto &entry : entries)
+    rects.push_back(entry.rect());
+  auto made = deskflow::server::MonitorLayout::create(rects);
+  if (!made)
+    return std::nullopt;
+  return deskflow::server::ReportedMonitors{generation, entries, *made.layout};
+}
 
 constexpr auto kSteps = 6000;
 
@@ -759,6 +779,30 @@ struct PointerRig
     clients[name] = connected;
     server->adoptClient(connected);
     return *connected;
+  }
+
+  // the remote computer goes away, and one that has reported its monitors already connects (it sent them right after
+  // its handshake, before the Server knew it)
+  PointerClient &reconnectReporting(
+      const std::string &name, const Box &shape, const std::vector<deskflow::monitors::MonitorEntry> &monitors
+  )
+  {
+    events.dispatchEvent(Event(EventTypes::ClientProxyDisconnected, client(name).getEventTarget()));
+    auto *connected = new PointerClient(name, shape);
+    connected->reported = reportedOf(monitors);
+    clients[name] = connected;
+    server->adoptClient(connected);
+    return *connected;
+  }
+
+  // the remote computer reports its monitors (or, with none, that it has none), and the proxy says so
+  void reportMonitors(
+      const std::string &name, const std::vector<deskflow::monitors::MonitorEntry> &monitors, uint16_t generation = 1
+  )
+  {
+    auto &remote = client(name);
+    remote.reported = monitors.empty() ? std::nullopt : reportedOf(monitors, generation);
+    events.dispatchEvent(Event(EventTypes::ClientProxyMonitorsReported, remote.getEventTarget()));
   }
 
 private:
@@ -2857,6 +2901,239 @@ void ServerTests::monitorGeometry_nothingIsAddedToWhatAComputerIsTold()
   QVERIFY(!without.empty());
   QCOMPARE(with, without);
   QVERIFY(std::ranges::find(with, static_cast<uint32_t>(kOptionClipboardSharing)) != with.end());
+}
+
+namespace {
+
+// the desktop of "C" (kStaggered): 2560x1440 and, to its right, 1920x1080
+const std::vector<deskflow::monitors::MonitorEntry> kStaggeredReport{
+    {0, 0, 2560, 1440, 150, true}, {2560, 0, 1920, 1080, 100, false}
+};
+// the same box, the monitors the other way round: the small one on the left
+const std::vector<deskflow::monitors::MonitorEntry> kSwappedReport{
+    {0, 0, 1920, 1080, 100, false}, {1920, 0, 2560, 1440, 150, true}
+};
+
+// "C" in the experiment, with no monitor layout typed, and "R" on its right
+std::unique_ptr<PointerRig> staggeredWithNothingTyped()
+{
+  auto rig = staggeredWithNeighbourOnTheRight(false);
+  rig->configureExperiment(true);
+  return rig;
+}
+
+} // namespace
+
+// a computer that reports its monitors is mapped around its holes without anyone typing them
+void ServerTests::reportedMonitors_areUsedWhenNoLayoutIsTyped()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = staggeredWithNothingTyped();
+
+  // before a report it is what it always was
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"C\": no monitor layout is set")), 1);
+  QCOMPARE(pushRightOnC(*rig, {2559, 1300}).moves, 113);
+
+  rig->reportMonitors("C", kStaggeredReport);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry on for \"C\": reported by the computer, 2 monitors")), 1);
+  const auto after = pushRightOnC(*rig, {2559, 1300});
+  QCOMPARE(after.moves, 1);
+  QCOMPARE(landingText(after), QStringLiteral("R at 16,975"));
+
+  // and it is entered on a monitor where it would have been put in a hole
+  auto entering = neighbours(kPrimaryShapes[0], kStaggered, Direction::Left);
+  entering->configureExperiment(true);
+  QCOMPARE(text(*crossToC(*entering, Direction::Left, 1000)), text(Pos{4479, 1289}));
+  entering->reportMonitors("C", kStaggeredReport);
+  QCOMPARE(text(*crossToC(*entering, Direction::Left, 1000)), text(Pos{2559, 1289}));
+}
+
+// what the user typed, drawn or imported is the user's choice, and wins while it fits the screen
+void ServerTests::reportedMonitors_aTypedLayoutThatFits_wins()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = neighbours(kPrimaryShapes[0], kStaggered, Direction::Left);
+  rig->configureExperiment(true, {{"C", kStaggeredLayout}});
+  // another arrangement of the same box is reported: the small monitor on the left
+  rig->reportMonitors("C", kSwappedReport);
+
+  QCOMPARE(info.count(QStringLiteral("monitor geometry on for \"C\": 2 monitors")), 1);
+  QCOMPARE(info.count(QStringLiteral("reported by the computer")), 0);
+  // below the small monitor of the typed layout the way in is its big monitor, not the report's
+  QCOMPARE(text(*crossToC(*rig, Direction::Left, 1000)), text(Pos{2559, 1289}));
+}
+
+// a typed layout of a screen that the computer does not have any more is no better than none: the real monitors are
+void ServerTests::reportedMonitors_aTypedLayoutThatDoesNotFit_givesWayToTheReport()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = neighbours(kPrimaryShapes[0], kStaggered, Direction::Left);
+  rig->configureExperiment(true, {{"C", "0,0,1920,1080;1920,0,1920,1080"}});
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"C\": the monitor layout does not match")), 1);
+  QCOMPARE(text(*crossToC(*rig, Direction::Left, 1000)), text(Pos{4479, 1289}));
+
+  rig->reportMonitors("C", kStaggeredReport);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry on for \"C\": reported by the computer")), 1);
+  QVERIFY(info.lines.last().contains(QStringLiteral("the layout that is set is not used")));
+  QVERIFY(info.lines.last().contains(QStringLiteral("the monitor layout does not match")));
+  QCOMPARE(text(*crossToC(*rig, Direction::Left, 1000)), text(Pos{2559, 1289}));
+}
+
+// a report is of a screen: when the computer says that its screen is another, the report is not used
+void ServerTests::reportedMonitors_ofAnotherShape_areNotUsed()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = staggeredWithNothingTyped();
+  rig->reportMonitors("C", kStaggeredReport);
+  QCOMPARE(pushRightOnC(*rig, {2559, 1300}).moves, 1);
+
+  // the proxy of a real client hands out nothing then; one that would is not believed either
+  rig->reportShape(rig->client("C"), Box{0, 0, 4480, 1441});
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"C\"")), 2);
+  QVERIFY(info.lines.last().contains(QStringLiteral("do not match the screen")));
+  QVERIFY(pushRightOnC(*rig, {2559, 1300}).moves > 100);
+
+  // and when it is the same again, they are used again
+  rig->reportShape(rig->client("C"), kStaggered);
+  QCOMPARE(pushRightOnC(*rig, {2559, 1300}).moves, 1);
+}
+
+void ServerTests::reportedMonitors_aSecondReport_isUsedAtOnce()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = neighbours(kPrimaryShapes[0], kStaggered, Direction::Left);
+  rig->configureExperiment(true);
+  rig->reportMonitors("C", kStaggeredReport, 1);
+  QCOMPARE(text(*crossToC(*rig, Direction::Left, 1000)), text(Pos{2559, 1289}));
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports 2 monitors")), 1);
+
+  // the monitors swap places: the box is the same and the way in is not
+  rig->reportMonitors("C", kSwappedReport, 2);
+  QCOMPARE(text(*crossToC(*rig, Direction::Left, 1000)), text(Pos{4479, 1289}));
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports 2 monitors")), 2);
+
+  // the same monitors again (another generation) change nothing, and say nothing
+  rig->reportMonitors("C", kSwappedReport, 3);
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports 2 monitors")), 2);
+  QCOMPARE(text(*crossToC(*rig, Direction::Left, 1000)), text(Pos{4479, 1289}));
+}
+
+void ServerTests::reportedMonitors_aRectangle_isMappedAsItAlwaysWas()
+{
+  ScopedInfoLines info(m_log);
+  PointerRig rig(kPrimaryShapes[0], {{"C", {0, 0, 3840, 1080}}});
+  rig.configureExperiment(true);
+  rig.reportMonitors("C", {{0, 0, 1920, 1080, 100, true}, {1920, 0, 1920, 1080, 100, false}});
+
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports 2 monitors")), 1);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"C\": the monitors make up a rectangle")), 1);
+}
+
+// the experiment off: the computers are not invited and what is sent anyway is not used or said
+void ServerTests::reportedMonitors_withTheExperimentOff_changeNothing()
+{
+  ScopedInfoLines info(m_log);
+  auto legacy = neighbours(kPrimaryShapes[0], kStaggered, Direction::Left);
+  legacy->configureExperiment(false);
+  const auto without = text(*crossToC(*legacy, Direction::Left, 1000));
+
+  auto rig = neighbours(kPrimaryShapes[0], kStaggered, Direction::Left);
+  rig->configureExperiment(false);
+  rig->reportMonitors("C", kStaggeredReport);
+
+  QCOMPARE(text(*crossToC(*rig, Direction::Left, 1000)), without);
+  QCOMPARE(without, text(Pos{4479, 1289}));
+  QCOMPARE(info.count(QStringLiteral("reports")), 0);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry")), 0);
+
+  // switched on later, what was reported is read and said
+  rig->configureExperiment(true);
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports 2 monitors")), 1);
+  QCOMPARE(text(*crossToC(*rig, Direction::Left, 1000)), text(Pos{2559, 1289}));
+}
+
+// a report is of a connection: it is gone with it, and a computer that has reported before the Server knew it is
+// decided at once
+void ServerTests::reportedMonitors_aComputerThatConnectsAgain_isDecidedAgain()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = neighbours(kPrimaryShapes[0], kStaggered, Direction::Left);
+  rig->configureExperiment(true);
+  rig->reportMonitors("C", kStaggeredReport);
+  QCOMPARE(text(*crossToC(*rig, Direction::Left, 1000)), text(Pos{2559, 1289}));
+
+  // it comes back and has not reported: as it always was
+  rig->reconnect("C", kStaggered);
+  QCOMPARE(text(*crossToC(*rig, Direction::Left, 1000)), text(Pos{4479, 1289}));
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports 2 monitors")), 1);
+
+  // it comes back, and its report was there when the Server adopted it: said and used
+  rig->reconnectReporting("C", kStaggered, kStaggeredReport);
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports 2 monitors")), 2);
+  QCOMPARE(text(*crossToC(*rig, Direction::Left, 1000)), text(Pos{2559, 1289}));
+}
+
+// the line that the GUI reads: the whole line, once for each change
+void ServerTests::reportedMonitors_areSaidInTheLineTheGuiReads()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = staggeredWithNothingTyped();
+  rig->reportMonitors("C", kStaggeredReport);
+
+  QCOMPARE(
+      info.count(QStringLiteral(
+          "computer \"C\" reports 2 monitors: 0,0,2560,1440 scale=150 primary;2560,0,1920,1080 scale=100"
+      )),
+      1
+  );
+  // not the screen of the server itself
+  QCOMPARE(info.count(QStringLiteral("computer \"primary\" reports")), 0);
+}
+
+void ServerTests::reportedMonitors_aReportThatIsGone_isSaidOnce()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = staggeredWithNothingTyped();
+
+  // a computer that never reported says nothing, however often its shape changes
+  rig->reportShape(rig->client("C"), kStaggered);
+  QCOMPARE(info.count(QStringLiteral("reports no monitors")), 0);
+
+  rig->reportMonitors("C", kStaggeredReport);
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports 2 monitors")), 1);
+  rig->reportMonitors("C", {});
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports no monitors")), 1);
+  rig->reportMonitors("C", {});
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports no monitors")), 1);
+  QVERIFY(pushRightOnC(*rig, {2559, 1300}).moves > 100);
+}
+
+void ServerTests::reportedMonitors_nothingIsAddedToWhatAComputerIsTold()
+{
+  const auto optionsOf = [](bool report) {
+    PointerRig rig(kPrimaryShapes[0], {{"C", kStaggered}});
+    rig.config.addOption("C", kOptionClipboardSharing, 0);
+    rig.configureExperiment(true);
+    if (report)
+      rig.reportMonitors("C", kStaggeredReport);
+    return rig.client("C").options();
+  };
+
+  const auto without = optionsOf(false);
+  QVERIFY(!without.empty());
+  QCOMPARE(optionsOf(true), without);
+}
+
+void ServerTests::reportedMonitors_namesInTheLog_areCleaned()
+{
+  using deskflow::server::loggableName;
+  QCOMPARE(QString::fromStdString(loggableName("Windows PC")), QStringLiteral("Windows PC"));
+  QCOMPARE(QString::fromStdString(loggableName("a\"b")), QStringLiteral("a?b"));
+  QCOMPARE(
+      QString::fromStdString(loggableName("one\r\nINFO: computer \"x\" reports 1 monitors: 0,0,1,1")),
+      QStringLiteral("one??INFO: computer ?x? reports 1 monitors: 0,0,1,1")
+  );
+  QCOMPARE(QString::fromStdString(loggableName(std::string("nul\0byte", 8))), QStringLiteral("nul?byte"));
 }
 
 void ServerTests::monitorGeometry_cornersThatLockTheCursor_stillDo_data()

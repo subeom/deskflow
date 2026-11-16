@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace deskflow::server {
@@ -45,5 +46,9 @@ are none. Monitors that are exactly the same rectangle (a mirrored display) are 
 nothing here disconnects anyone.
 */
 ReportCheck checkReport(const deskflow::monitors::ReceivedReport &report, const MonitorRect &shape);
+
+//! A computer name that is safe to write in a line of the log that the GUI reads: a quote and every control character
+//! (a line end among them) become \c ?
+std::string loggableName(std::string_view name);
 
 } // namespace deskflow::server
