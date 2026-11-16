@@ -205,6 +205,7 @@ void MainWindow::setupControls()
 
   ui->btnConfigureServer->setIcon(QIcon::fromTheme(QStringLiteral("configure")));
   ui->btnConfigureClient->setIcon(QIcon::fromTheme(QStringLiteral("configure")));
+  ui->cbHostname->lineEdit()->setPlaceholderText(tr("LAN address first, then the VPN address, separated by commas"));
 
   if (Settings::value(Settings::Core::LastVersion).toString() != kVersion) {
     Settings::setValue(Settings::Core::LastVersion, kVersion);
@@ -414,7 +415,7 @@ void MainWindow::startCore()
   }
 
   // Invalid client settings
-  if (m_coreProcess.mode() == CoreMode::Client && Settings::value(Settings::Client::RemoteHost).toString().isEmpty()) {
+  if (m_coreProcess.mode() == CoreMode::Client && Settings::textValue(Settings::Client::RemoteHost).isEmpty()) {
     qDebug().noquote() << "skipping core start, undefined remotehost";
     return;
   }
@@ -715,7 +716,7 @@ void MainWindow::applyConfig()
     setWindowTitle(kAppName);
   }
 
-  const auto host = Settings::value(Settings::Client::RemoteHost).toString();
+  const auto host = Settings::textValue(Settings::Client::RemoteHost);
   QSignalBlocker hostnameBlocker(ui->cbHostname);
   ui->cbHostname->clear();
   ui->cbHostname->addItems(Settings::value(Settings::Client::RecentRemoteHosts).toStringList());
@@ -827,7 +828,7 @@ void MainWindow::handleConnectionRefused(deskflow::core::ConnectionRefusal reaso
   m_clientErrorVisible = true;
   showAndActivate();
 
-  const auto address = Settings::value(Settings::Client::RemoteHost).toString();
+  const auto address = Settings::textValue(Settings::Client::RemoteHost);
   QMessageBox::warning(
       this, tr("%1 Connection Error").arg(kAppName),
       tr("<p>Failed to connect to the server '%1'.</p>"

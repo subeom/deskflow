@@ -413,7 +413,7 @@
                 </size>
                </property>
                <property name="toolTip">
-                <string>&lt;html&gt;Hostname or IP address of the server computer.&lt;br/&gt;May contain a comma seperated list.&lt;/html&gt;</string>
+                <string>&lt;html&gt;Hostname or IP address of the server computer.&lt;br/&gt;May contain a comma separated list: the addresses are tried in turn, the first one that answers is used. Put the one on the LAN first and the VPN address after it.&lt;/html&gt;</string>
                </property>
                <property name="editable">
                 <bool>true</bool>
