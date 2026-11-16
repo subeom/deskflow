@@ -1,0 +1,475 @@
+/*
+ * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2026 Deskflow Developers
+ * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
+ */
+
+#include "MonitorEditorDialog.h"
+
+#include "gui/config/MonitorEditing.h"
+#include "gui/widgets/MonitorEditorWidget.h"
+
+#include <QComboBox>
+#include <QDialogButtonBox>
+#include <QFile>
+#include <QFileDialog>
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QShortcut>
+#include <QSignalBlocker>
+#include <QSpinBox>
+#include <QVBoxLayout>
+
+#include <algorithm>
+#include <cmath>
+
+using namespace deskflow::server;
+using namespace deskflow::server::editor;
+
+namespace {
+
+constexpr auto kGreen = "color: #1e8e3e;";
+constexpr auto kAmber = "color: #b26a00;";
+constexpr auto kRed = "color: #d93025;";
+
+void useOneLine(QLabel *label)
+{
+  label->setWordWrap(true);
+  label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
+}
+
+} // namespace
+
+MonitorEditorDialog::MonitorEditorDialog(
+    QWidget *parent, const QString &computerName, const Layout &drawing, const std::optional<QRect> &reported
+)
+    : QDialog(parent),
+      m_name(computerName),
+      m_reported(reported),
+      m_history(drawing),
+      m_widget(new MonitorEditorWidget(this)),
+      m_status(new QLabel(this)),
+      m_resolution(new QComboBox(this)),
+      m_pixelsW(new QSpinBox(this)),
+      m_pixelsH(new QSpinBox(this)),
+      m_times(new QLabel(QStringLiteral("×"), this)),
+      m_scale(new QComboBox(this)),
+      m_rotate(new QPushButton(tr("Rotate"), this)),
+      m_makeMain(new QPushButton(tr("Make main"), this)),
+      m_add(new QPushButton(tr("Add monitor"), this)),
+      m_remove(new QPushButton(tr("Remove monitor"), this)),
+      m_undo(new QPushButton(tr("Undo"), this)),
+      m_redo(new QPushButton(tr("Redo"), this)),
+      m_stretchButton(new QPushButton(tr("Stretch to the reported size"), this)),
+      m_advanced(new QGroupBox(tr("Advanced: numbers"), this)),
+      m_advancedContent(new QWidget(this)),
+      m_numbers(new QPlainTextEdit(this)),
+      m_numbersStatus(new QLabel(this)),
+      m_import(new QPushButton(tr("Import from diagnostic file..."), this)),
+      m_apply(new QPushButton(tr("Use these numbers"), this)),
+      m_buttons(new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this))
+{
+  setWindowTitle(tr("Monitors of %1").arg(computerName));
+  setSizeGripEnabled(true);
+
+  m_widget->setObjectName(QStringLiteral("monitorEditorWidget"));
+  m_status->setObjectName(QStringLiteral("lblMonitorStatus"));
+  m_resolution->setObjectName(QStringLiteral("cbResolution"));
+  m_pixelsW->setObjectName(QStringLiteral("sbPixelsW"));
+  m_pixelsH->setObjectName(QStringLiteral("sbPixelsH"));
+  m_scale->setObjectName(QStringLiteral("cbScale"));
+  m_rotate->setObjectName(QStringLiteral("btnRotate"));
+  m_makeMain->setObjectName(QStringLiteral("btnMakeMain"));
+  m_add->setObjectName(QStringLiteral("btnAddMonitor"));
+  m_remove->setObjectName(QStringLiteral("btnRemoveMonitor"));
+  m_undo->setObjectName(QStringLiteral("btnUndo"));
+  m_redo->setObjectName(QStringLiteral("btnRedo"));
+  m_stretchButton->setObjectName(QStringLiteral("btnStretchToReported"));
+  m_advanced->setObjectName(QStringLiteral("groupAdvancedNumbers"));
+  m_numbers->setObjectName(QStringLiteral("textNumbers"));
+  m_numbersStatus->setObjectName(QStringLiteral("lblNumbersStatus"));
+  m_import->setObjectName(QStringLiteral("btnImportNumbers"));
+  m_apply->setObjectName(QStringLiteral("btnApplyNumbers"));
+  m_buttons->setObjectName(QStringLiteral("monitorEditorButtons"));
+
+  useOneLine(m_status);
+  useOneLine(m_numbersStatus);
+  m_widget->setToolTip(
+      tr("Drag a monitor to move it, and the edges or the corners of the selected one to resize it. R rotates it, "
+         "Delete removes it, the arrow keys move it.")
+  );
+
+  for (const auto &preset : presets())
+    m_resolution->addItem(QString::fromUtf8(preset.name), QPoint(preset.w, preset.h));
+  m_resolution->addItem(tr("Other size..."), QPoint(0, 0));
+  m_resolution->setToolTip(tr("The resolution of the selected monitor, in its own pixels."));
+  for (const auto percent : commonScales())
+    m_scale->addItem(QStringLiteral("%1 %").arg(percent));
+  m_scale->setEditable(true);
+  m_scale->setInsertPolicy(QComboBox::NoInsert);
+  m_scale->setToolTip(
+      tr("The display scale of the selected monitor, as it is in the display settings of the computer.")
+  );
+  for (auto *box : {m_pixelsW, m_pixelsH}) {
+    box->setRange(320, 16384);
+    box->setKeyboardTracking(false);
+  }
+  m_stretchButton->setToolTip(
+      tr("Make the drawing exactly the size that the computer reports, even though its shape is not the same.")
+  );
+  m_numbers->setToolTip(
+      tr("The monitors in the coordinates that the computer reports: x,y,w,h for each, separated by ; or by lines.")
+  );
+  m_numbers->setLineWrapMode(QPlainTextEdit::NoWrap);
+  m_numbers->setMinimumHeight(60);
+
+  auto *top = new QHBoxLayout;
+  top->addWidget(new QLabel(tr("Monitor"), this));
+  top->addWidget(m_resolution, 1);
+  top->addWidget(m_pixelsW);
+  top->addWidget(m_times);
+  top->addWidget(m_pixelsH);
+  top->addWidget(new QLabel(tr("Display scale"), this));
+  top->addWidget(m_scale);
+  top->addWidget(m_rotate);
+  top->addWidget(m_makeMain);
+
+  auto *bottom = new QHBoxLayout;
+  bottom->addWidget(m_add);
+  bottom->addWidget(m_remove);
+  bottom->addWidget(m_undo);
+  bottom->addWidget(m_redo);
+  bottom->addStretch(1);
+  bottom->addWidget(m_stretchButton);
+
+  auto *numbersButtons = new QHBoxLayout;
+  numbersButtons->addWidget(m_import);
+  numbersButtons->addWidget(m_apply);
+  numbersButtons->addStretch(1);
+  auto *numbersLayout = new QVBoxLayout(m_advancedContent);
+  numbersLayout->setContentsMargins(0, 0, 0, 0);
+  numbersLayout->addWidget(m_numbers);
+  numbersLayout->addLayout(numbersButtons);
+  numbersLayout->addWidget(m_numbersStatus);
+  auto *advancedLayout = new QVBoxLayout(m_advanced);
+  advancedLayout->addWidget(m_advancedContent);
+  m_advanced->setFlat(true);
+  m_advanced->setCheckable(true);
+  m_advanced->setChecked(false);
+  m_advancedContent->setVisible(false);
+
+  auto *layout = new QVBoxLayout(this);
+  layout->addWidget(m_status);
+  layout->addWidget(m_widget, 1);
+  layout->addLayout(top);
+  layout->addLayout(bottom);
+  layout->addWidget(m_advanced);
+  layout->addWidget(m_buttons);
+
+  connect(m_widget, &MonitorEditorWidget::drawingChanged, this, [this](const Layout &layout) {
+    m_history.push(layout);
+    m_stretch = false;
+    refresh();
+  });
+  connect(m_widget, &MonitorEditorWidget::selectionChanged, this, [this] { refresh(); });
+  connect(m_resolution, &QComboBox::activated, this, [this] { chooseResolution(); });
+  for (auto *box : {m_pixelsW, m_pixelsH}) {
+    connect(box, &QSpinBox::editingFinished, this, [this] {
+      const auto selected = m_widget->selected();
+      if (selected >= 0 && m_pixelsW->isEnabled())
+        changeTo(
+            withResolution(m_history.current(), static_cast<size_t>(selected), m_pixelsW->value(), m_pixelsH->value())
+        );
+    });
+  }
+  connect(m_scale, &QComboBox::activated, this, [this] { chooseScale(); });
+  connect(m_scale->lineEdit(), &QLineEdit::editingFinished, this, [this] { chooseScale(); });
+  connect(m_rotate, &QPushButton::clicked, this, [this] {
+    if (m_widget->selected() >= 0)
+      changeTo(rotated(m_history.current(), static_cast<size_t>(m_widget->selected())));
+  });
+  connect(m_makeMain, &QPushButton::clicked, this, [this] {
+    if (m_widget->selected() > 0)
+      changeTo(withMain(m_history.current(), static_cast<size_t>(m_widget->selected())), 0);
+  });
+  connect(m_add, &QPushButton::clicked, this, [this] {
+    const auto next = added(m_history.current());
+    changeTo(next, static_cast<int>(next.monitors.size()) - 1);
+  });
+  connect(m_remove, &QPushButton::clicked, this, [this] {
+    const auto selected = m_widget->selected();
+    if (selected < 0)
+      return;
+    const auto next = removed(m_history.current(), static_cast<size_t>(selected));
+    changeTo(next, std::min(selected, static_cast<int>(next.monitors.size()) - 1));
+  });
+  connect(m_undo, &QPushButton::clicked, this, [this] { undo(); });
+  connect(m_redo, &QPushButton::clicked, this, [this] { redo(); });
+  new QShortcut(QKeySequence::Undo, this, [this] { undo(); });
+  new QShortcut(QKeySequence::Redo, this, [this] { redo(); });
+  connect(m_stretchButton, &QPushButton::clicked, this, [this] {
+    m_stretch = true;
+    refresh();
+  });
+  connect(m_advanced, &QGroupBox::toggled, this, [this](bool on) { m_advancedContent->setVisible(on); });
+  connect(m_apply, &QPushButton::clicked, this, [this] { applyNumbers(); });
+  connect(m_import, &QPushButton::clicked, this, [this] { importNumbers(); });
+  connect(m_buttons, &QDialogButtonBox::accepted, this, [this] {
+    if (canSave())
+      accept();
+  });
+  connect(m_buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+  m_widget->setDrawing(drawing);
+  m_widget->setSelected(0);
+  refresh();
+}
+
+const Layout &MonitorEditorDialog::drawing() const
+{
+  return m_history.current();
+}
+
+Realised MonitorEditorDialog::realised() const
+{
+  return realise(m_history.current(), deskflow::gui::toMonitorRect(m_reported), m_stretch);
+}
+
+bool MonitorEditorDialog::canSave() const
+{
+  return check(m_history.current()).empty() && realised().fit != Fit::Invalid;
+}
+
+void MonitorEditorDialog::changeTo(const Layout &layout, int selected)
+{
+  m_stretch = false;
+  m_history.push(layout);
+  m_widget->setDrawing(layout);
+  if (selected != -2)
+    m_widget->setSelected(selected);
+  refresh();
+}
+
+void MonitorEditorDialog::undo()
+{
+  if (!m_history.canUndo())
+    return;
+  m_history.undo();
+  m_stretch = false;
+  m_widget->setDrawing(m_history.current());
+  refresh();
+}
+
+void MonitorEditorDialog::redo()
+{
+  if (!m_history.canRedo())
+    return;
+  m_history.redo();
+  m_stretch = false;
+  m_widget->setDrawing(m_history.current());
+  refresh();
+}
+
+QString MonitorEditorDialog::describeProblem(const Problem &problem) const
+{
+  using enum Problem::Kind;
+  switch (problem.kind) {
+  case NoMonitors:
+    return tr("There is no monitor.");
+  case TooMany:
+    return tr("At most %1 monitors are supported.").arg(MonitorLayout::kMaxMonitors);
+  case BadSize:
+    return tr("Monitor %1 has a size that a monitor cannot have.").arg(problem.first + 1);
+  case BadScale:
+    return tr("Monitor %1 has a display scale that is not between %2 and %3 %.")
+        .arg(problem.first + 1)
+        .arg(static_cast<int>(kMinScale))
+        .arg(static_cast<int>(kMaxScale));
+  case Overlap:
+    return tr("Monitors %1 and %2 overlap: drag them apart.").arg(problem.first + 1).arg(problem.second + 1);
+  case NotConnected:
+    return tr("Monitor %1 does not touch the others: monitors have to share part of an edge.").arg(problem.first + 1);
+  }
+  return {};
+}
+
+void MonitorEditorDialog::syncControls()
+{
+  const auto selected = m_widget->selected();
+  const auto &layout = m_history.current();
+  const bool has = selected >= 0 && selected < static_cast<int>(layout.monitors.size());
+  for (QWidget *w :
+       {static_cast<QWidget *>(m_resolution), static_cast<QWidget *>(m_scale), static_cast<QWidget *>(m_rotate)})
+    w->setEnabled(has);
+  const QSignalBlocker blockResolution(m_resolution);
+  const QSignalBlocker blockScale(m_scale);
+  const QSignalBlocker blockW(m_pixelsW);
+  const QSignalBlocker blockH(m_pixelsH);
+  bool other = false;
+  if (has) {
+    const auto &monitor = layout.monitors[static_cast<size_t>(selected)];
+    const QPoint pixels(monitor.pixelsW(), monitor.pixelsH());
+    int found = m_resolution->findData(pixels);
+    other = found < 0;
+    m_resolution->setCurrentIndex(found >= 0 ? found : m_resolution->count() - 1);
+    m_pixelsW->setValue(std::clamp(pixels.x(), m_pixelsW->minimum(), m_pixelsW->maximum()));
+    m_pixelsH->setValue(std::clamp(pixels.y(), m_pixelsH->minimum(), m_pixelsH->maximum()));
+    m_scale->setCurrentText(QStringLiteral("%1 %").arg(std::lround(monitor.scale)));
+  } else {
+    m_resolution->setCurrentIndex(-1);
+  }
+  other = other || (m_resolution->currentIndex() == m_resolution->count() - 1);
+  for (QWidget *w :
+       {static_cast<QWidget *>(m_pixelsW), static_cast<QWidget *>(m_times), static_cast<QWidget *>(m_pixelsH)}) {
+    w->setVisible(has && other);
+    w->setEnabled(has && other);
+  }
+}
+
+void MonitorEditorDialog::chooseResolution()
+{
+  const auto selected = m_widget->selected();
+  if (selected < 0)
+    return;
+  const auto pixels = m_resolution->currentData().toPoint();
+  if (pixels.x() <= 0) {
+    // another size: the spin boxes are for it
+    syncControls();
+    for (QWidget *w :
+         {static_cast<QWidget *>(m_pixelsW), static_cast<QWidget *>(m_times), static_cast<QWidget *>(m_pixelsH)}) {
+      w->setVisible(true);
+      w->setEnabled(true);
+    }
+    return;
+  }
+  changeTo(withResolution(m_history.current(), static_cast<size_t>(selected), pixels.x(), pixels.y()));
+}
+
+void MonitorEditorDialog::chooseScale()
+{
+  const auto selected = m_widget->selected();
+  if (selected < 0)
+    return;
+  auto text = m_scale->currentText();
+  text.remove(QLatin1Char('%'));
+  bool ok = false;
+  const auto percent = text.trimmed().toDouble(&ok);
+  const auto &current = m_history.current().monitors[static_cast<size_t>(selected)];
+  if (!ok || percent < kMinScale || percent > kMaxScale) {
+    syncControls();
+    return;
+  }
+  if (std::abs(percent - current.scale) < 1e-9)
+    return;
+  changeTo(withScale(m_history.current(), static_cast<size_t>(selected), percent));
+}
+
+void MonitorEditorDialog::refresh()
+{
+  const auto &layout = m_history.current();
+  const auto problems = check(layout);
+  const auto made = realised();
+  if (made.fit != Fit::Invalid)
+    m_numbersZoom = made.zoom;
+
+  QString text;
+  const char *style = kGreen;
+  const auto reported = m_reported;
+  if (!problems.empty()) {
+    text = QStringLiteral("✖ ") + describeProblem(problems.front());
+    style = kRed;
+  } else if (made.fit == Fit::Invalid) {
+    text = QStringLiteral("✖ ") + QString::fromStdString(made.error);
+    style = kRed;
+  } else if (made.fit == Fit::Matches) {
+    text = tr("✔ Matches what %1 reports: %2 × %3.").arg(m_name).arg(reported->width()).arg(reported->height());
+    if (m_stretch)
+      text += QStringLiteral(" ") + tr("The drawing is stretched to it.");
+  } else if (made.fit == Fit::Differs) {
+    text = tr("⚠ Does not match what %1 reports (%2 × %3): your drawing is %4 × %5, %6 % different in shape. Change "
+              "the monitors so that they add up to that shape, or stretch the drawing to it.")
+               .arg(m_name)
+               .arg(reported->width())
+               .arg(reported->height())
+               .arg(made.drawingW)
+               .arg(made.drawingH)
+               .arg(QString::number(made.differsPercent, 'f', 1));
+    style = kAmber;
+  } else {
+    text = tr("Not verified yet: %1 has not told the server its screen size. The layout is saved, and checked when it "
+              "connects.")
+               .arg(m_name);
+    style = kAmber;
+  }
+  m_status->setText(text);
+  m_status->setStyleSheet(QString::fromLatin1(style));
+
+  syncControls();
+  const auto selected = m_widget->selected();
+  m_remove->setEnabled(selected >= 0 && layout.monitors.size() > 1);
+  m_makeMain->setEnabled(selected > 0);
+  m_add->setEnabled(layout.monitors.size() < MonitorLayout::kMaxMonitors);
+  m_undo->setEnabled(m_history.canUndo());
+  m_redo->setEnabled(m_history.canRedo());
+  m_stretchButton->setEnabled(reported.has_value() && problems.empty() && made.fit == Fit::Differs);
+  m_buttons->button(QDialogButtonBox::Ok)->setEnabled(canSave());
+
+  // the only monitor snaps to the screen that the computer reports, in the units that it is drawn in
+  if (reported && layout.monitors.size() == 1) {
+    const double k = 100.0 / layout.monitors.front().scale;
+    m_widget->setTargetSize(std::make_pair(reported->width() * k, reported->height() * k));
+  } else {
+    m_widget->setTargetSize(std::nullopt);
+  }
+
+  const QSignalBlocker blockNumbers(m_numbers);
+  if (made.fit != Fit::Invalid)
+    m_numbers->setPlainText(QString::fromStdString(made.text));
+  m_numbersStatus->clear();
+}
+
+void MonitorEditorDialog::applyNumbers()
+{
+  const auto parsed = MonitorLayout::parse(m_numbers->toPlainText().trimmed().toStdString());
+  if (!parsed) {
+    m_numbersStatus->setText(QString::fromStdString(parsed.error));
+    m_numbersStatus->setStyleSheet(QString::fromLatin1(kRed));
+    return;
+  }
+  const auto &rects = parsed.layout->monitors();
+  const auto box = m_history.current().box();
+  int minX = rects.front().x;
+  int minY = rects.front().y;
+  for (const auto &r : rects) {
+    minX = std::min(minX, r.x);
+    minY = std::min(minY, r.y);
+  }
+  const double zoom = m_numbersZoom;
+  changeTo(fromStored(rects, zoom, box.x - zoom * minX, box.y - zoom * minY, {}), 0);
+}
+
+void MonitorEditorDialog::importNumbers()
+{
+  const auto path = QFileDialog::getOpenFileName(
+      this, tr("Import monitor layout"), QString(), tr("Text files (*.txt *.log);;All files (*)")
+  );
+  if (path.isEmpty())
+    return;
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    m_numbersStatus->setText(tr("%1 could not be read.").arg(path));
+    m_numbersStatus->setStyleSheet(QString::fromLatin1(kRed));
+    return;
+  }
+  const auto text = QString::fromUtf8(file.readAll());
+  const auto block = MonitorLayout::extractPasteBlock(text.toStdString());
+  m_numbers->setPlainText(block.empty() ? text : QString::fromStdString(block));
+  // the display scale that the diagnostic of a Windows PC says is the zoom that the numbers are in
+  if (const auto scale = arrangement::windowsDisplayScale(text.toStdString()))
+    m_numbersZoom = 1.0 / *scale;
+  applyNumbers();
+}

@@ -11,15 +11,20 @@
 #include "gui/config/ServerConfig.h"
 #include "gui/dialogs/ClientConfigDialog.h"
 #include "gui/dialogs/ComputerSettingsDialog.h"
+#include "gui/dialogs/MonitorEditorDialog.h"
 #include "gui/dialogs/ServerConfigDialog.h"
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
+#include "gui/widgets/MonitorEditorWidget.h"
+#include "server/MonitorEditor.h"
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDir>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLayout>
 #include <QLayoutItem>
@@ -406,6 +411,61 @@ void DialogLayoutTests::serverConfigDialog_advancedTab_isLaidOutWithoutSqueezing
       qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
   );
   Settings::setValue(Settings::Server::EnableClipboard);
+}
+
+void DialogLayoutTests::monitorEditorDialog_isLaidOutWithoutSqueezing_data()
+{
+  addScenarios();
+}
+
+// The editor that draws the monitors has a status line that is long when the drawing does not match the screen that the
+// computer reports, the canvas, two rows of controls, and the numbers: none of it may be squeezed or overlap
+void DialogLayoutTests::monitorEditorDialog_isLaidOutWithoutSqueezing()
+{
+  QFETCH(QString, style);
+  QFETCH(qreal, fontScale);
+  QFETCH(int, sizeMode);
+
+  QVERIFY(QApplication::setStyle(style) != nullptr);
+  using deskflow::server::editor::Layout;
+  using deskflow::server::editor::Monitor;
+  Monitor main;
+  main.w = 2560 / 1.5;
+  main.h = 960;
+  main.scale = 150;
+  Monitor left;
+  left.x = -1920;
+  left.y = -120;
+  left.w = 1920;
+  left.h = 1080;
+  MonitorEditorDialog dialog(
+      nullptr, QStringLiteral("a-computer-with-a-long-name"), Layout{{main, left}}, QRect(-1920, 0, 4480, 1440)
+  );
+  auto *numbers = dialog.findChild<QGroupBox *>(QStringLiteral("groupAdvancedNumbers"));
+  QVERIFY(numbers != nullptr);
+  numbers->setChecked(true);
+  showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
+  QVERIFY(dialog.isVisible());
+  for (const auto *name :
+       {"lblMonitorStatus", "monitorEditorWidget", "cbResolution", "cbScale", "btnRotate", "btnMakeMain",
+        "btnAddMonitor", "btnRemoveMonitor", "btnUndo", "btnRedo", "btnStretchToReported", "textNumbers",
+        "btnApplyNumbers", "btnImportNumbers"}) {
+    auto *widget = dialog.findChild<QWidget *>(QString::fromLatin1(name));
+    QVERIFY2(widget != nullptr, name);
+    QVERIFY2(widget->isVisibleTo(&dialog), name);
+  }
+  // the canvas has room to be a canvas, and the numbers are a few lines of their own font
+  auto *canvas = dialog.editorWidget();
+  QVERIFY2(canvas->height() >= 150, qPrintable(describe(canvas->geometry())));
+  auto *edit = dialog.findChild<QPlainTextEdit *>(QStringLiteral("textNumbers"));
+  QVERIFY2(edit->height() >= edit->fontMetrics().lineSpacing() * 3, qPrintable(describe(edit->geometry())));
+  grabIfRequested(QStringLiteral("MonitorEditorDialog"), dialog);
+
+  const auto violations = findLayoutViolations(dialog);
+  QVERIFY2(
+      violations.isEmpty(),
+      qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+  );
 }
 
 void DialogLayoutTests::serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing_data()

@@ -16,6 +16,9 @@
 #include "dialogs/ActionDialog.h"
 #include "dialogs/ComputerSettingsDialog.h"
 #include "dialogs/HotkeyDialog.h"
+#include "dialogs/MonitorEditorDialog.h"
+#include "gui/config/MonitorEditing.h"
+#include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
 #include "gui/widgets/SettingsDialogButtonBox.h"
 
@@ -76,6 +79,9 @@ ServerConfigDialog::ServerConfigDialog(QWidget *parent, ServerConfig &config)
   );
   connect(
       m_arrangementPanel, &ArrangementPanel::editComputerRequested, this, &ServerConfigDialog::editArrangementComputer
+  );
+  connect(
+      m_arrangementPanel, &ArrangementPanel::editMonitorsRequested, this, &ServerConfigDialog::editArrangementMonitors
   );
   connect(
       m_arrangementPanel, &ArrangementPanel::removeComputerRequested, this,
@@ -533,6 +539,30 @@ void ServerConfigDialog::editArrangementComputer(const QString &name)
     refreshArrangement();
     setButtonBoxEnabledButtons();
   }
+}
+
+void ServerConfigDialog::editArrangementMonitors(const QString &name)
+{
+  auto &computers = model().m_computers;
+  const auto computer = std::ranges::find_if(computers, [&](const Computer &c) { return c.name() == name; });
+  if (name.isEmpty() || computer == computers.end() || computer->isServer())
+    return;
+  // where the computer is on the canvas now, which is not where it is saved when it was not put anywhere yet
+  const auto &arrangement = m_arrangementPanel->canvas()->arrangement();
+  const auto index = arrangement.indexOf(name.toStdString());
+  const double originX = index >= 0 ? arrangement.computers[static_cast<size_t>(index)].originX : 0.0;
+  const double originY = index >= 0 ? arrangement.computers[static_cast<size_t>(index)].originY : 0.0;
+  const auto reported = serverConfig().reportedScreen(name);
+  MonitorEditorDialog dlg(this, name, deskflow::gui::drawingOf(*computer, originX, originY, reported), reported);
+  if (dlg.exec() != QDialog::Accepted)
+    return;
+  const auto made = dlg.realised();
+  if (made.fit == deskflow::server::editor::Fit::Invalid)
+    return;
+  deskflow::gui::apply(*computer, made);
+  ui->computerSetupView->reset();
+  refreshArrangement();
+  setButtonBoxEnabledButtons();
 }
 
 void ServerConfigDialog::removeArrangementComputer(const QString &name)

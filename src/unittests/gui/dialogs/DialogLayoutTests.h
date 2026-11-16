@@ -24,6 +24,8 @@ private Q_SLOTS:
   void computerSettingsDialog_monitorLayout_isLaidOutWithoutSqueezing();
   void serverConfigDialog_advancedTab_isLaidOutWithoutSqueezing_data();
   void serverConfigDialog_advancedTab_isLaidOutWithoutSqueezing();
+  void monitorEditorDialog_isLaidOutWithoutSqueezing_data();
+  void monitorEditorDialog_isLaidOutWithoutSqueezing();
   void serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing_data();
   void serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing();
 

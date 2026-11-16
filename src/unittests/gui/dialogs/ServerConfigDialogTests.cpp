@@ -6,6 +6,7 @@
 #include "ServerConfigDialogTests.h"
 
 #include "common/Settings.h"
+#include "dialogs/MonitorEditorDialog.h"
 #include "gui/config/Computer.h"
 #include "gui/config/ServerConfig.h"
 #include "gui/dialogs/ComputerSettingsDialog.h"
@@ -22,6 +23,7 @@
 #include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRect>
 #include <QSignalSpy>
@@ -678,6 +680,69 @@ void ServerConfigDialogTests::arrangement_withAnExternalConfig_canBeSavedWhateve
   line->setText(file.fileName());
   external->setChecked(true);
   QVERIFY(saveIsEnabled(dialog));
+}
+
+void ServerConfigDialogTests::arrangement_monitorsAreDrawnInTheEditor_andKeptOnOk_notOnCancel()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  for (const auto &[name, x, y] :
+       std::vector<std::tuple<QString, double, double>>{{"srv", 0, 0}, {"PC", -3840, 0}, {"MINI", 3440, 0}}) {
+    Settings::setValue(Settings::Computer::ArrangementX.arg(name), x);
+    Settings::setValue(Settings::Computer::ArrangementY.arg(name), y);
+  }
+  ServerConfig config;
+  // the PC tells the server that it is 3840 x 1080
+  config.setReportedScreen("PC", QRect(0, 0, 3840, 1080));
+  ServerConfigDialog dialog(nullptr, config);
+  dialog.show();
+  auto *panel = panelOf(dialog);
+  const auto monitorsOfPc = [&] {
+    const auto &arrangement = panel->canvas()->arrangement();
+    return arrangement.computers[static_cast<size_t>(arrangement.indexOf("PC"))].monitors;
+  };
+  const auto modal = [] { return qobject_cast<MonitorEditorDialog *>(QApplication::activeModalWidget()); };
+  using Monitors = std::vector<deskflow::server::MonitorRect>;
+
+  // the button and the double click are for the monitors of the computer that is selected, and not for the server's
+  panel->canvas()->setSelected(QStringLiteral("PC"));
+  QVERIFY(buttonNamed(dialog, "btnArrangementMonitors")->isEnabled());
+  panel->canvas()->setSelected(QStringLiteral("srv"));
+  QVERIFY(!buttonNamed(dialog, "btnArrangementMonitors")->isEnabled());
+  // asked for the server, nothing opens (this would not return if it did)
+  Q_EMIT panel->editMonitorsRequested(QStringLiteral("srv"));
+
+  // Cancel leaves it as it was
+  QCOMPARE(monitorsOfPc(), (Monitors{{0, 0, 1920, 1080}}));
+  QTimer::singleShot(0, [&] {
+    QVERIFY(modal() != nullptr);
+    modal()->reject();
+  });
+  Q_EMIT panel->editMonitorsRequested(QStringLiteral("PC"));
+  QCOMPARE(monitorsOfPc(), (Monitors{{0, 0, 1920, 1080}}));
+
+  // OK keeps what was drawn, in the coordinates that it reports: two monitors that make up its screen
+  QTimer::singleShot(0, [&] {
+    auto *editor = modal();
+    QVERIFY(editor != nullptr);
+    QVERIFY(
+        editor->findChild<QLabel *>(QStringLiteral("lblMonitorStatus"))->text().contains(QStringLiteral("Matches"))
+    );
+    editor->findChild<QGroupBox *>(QStringLiteral("groupAdvancedNumbers"))->setChecked(true);
+    editor->findChild<QPlainTextEdit *>(QStringLiteral("textNumbers"))
+        ->setPlainText(QStringLiteral("0,0,1920,1080;1920,0,1920,1080"));
+    editor->findChild<QPushButton *>(QStringLiteral("btnApplyNumbers"))->click();
+    editor->accept();
+  });
+  Q_EMIT panel->editMonitorsRequested(QStringLiteral("PC"));
+  QCOMPARE(monitorsOfPc(), (Monitors{{0, 0, 1920, 1080}, {1920, 0, 1920, 1080}}));
+  // where it was on the canvas, it is
+  const auto &arrangement = panel->canvas()->arrangement();
+  const auto &pc = arrangement.computers[static_cast<size_t>(arrangement.indexOf("PC"))];
+  QCOMPARE(pc.originX, -3840.0);
+  QCOMPARE(pc.zoom, 1.0);
+  QVERIFY(!panel->hasErrors());
 }
 
 void ServerConfigDialogTests::arrangement_screenshots_areMadeOfTheDialogs()

@@ -71,6 +71,8 @@ protected:
   //! Use the arrangement of the computers (experimental) or the classic grid
   void toggleUseArrangement(bool use);
   void editArrangementComputer(const QString &name);
+  //! Draw the monitors of a computer with the mouse
+  void editArrangementMonitors(const QString &name);
   void removeArrangementComputer(const QString &name);
 
   void toggleHeartbeat(bool enabled);

@@ -40,6 +40,7 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
       m_btnClassicGrid(new QPushButton(tr("Use the classic grid"), this)),
       m_btnFit(new QPushButton(tr("Zoom to fit"), this)),
       m_btnReset(new QPushButton(tr("Reset from classic grid"), this)),
+      m_btnMonitors(new QPushButton(tr("Edit monitors..."), this)),
       m_btnEdit(new QPushButton(tr("Edit computer..."), this)),
       m_btnRemove(new QPushButton(tr("Remove computer"), this)),
       m_btnAdd(new QPushButton(tr("Add computer..."), this))
@@ -53,6 +54,11 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   m_btnFit->setObjectName(QStringLiteral("btnArrangementFit"));
   m_btnReset->setObjectName(QStringLiteral("btnArrangementReset"));
   m_btnEdit->setObjectName(QStringLiteral("btnArrangementEdit"));
+  m_btnMonitors->setObjectName(QStringLiteral("btnArrangementMonitors"));
+  m_btnMonitors->setToolTip(
+      tr("Draw the monitors of the selected computer with the mouse: their sizes, their places, and their display "
+         "scales.")
+  );
   m_btnRemove->setObjectName(QStringLiteral("btnArrangementRemove"));
   m_btnAdd->setObjectName(QStringLiteral("btnArrangementAdd"));
   m_btnAdd->setToolTip(tr("Add a computer. It is put beside the others, where nothing touches it, until you drag it."));
@@ -83,7 +89,7 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   );
   m_btnFit->setToolTip(tr("Show all of the computers, as big as they fit."));
   m_btnReset->setToolTip(tr("Put the computers where the classic grid has them, with the size of their screens."));
-  m_btnEdit->setToolTip(tr("The monitors, the size and the display scale of the selected computer."));
+  m_btnEdit->setToolTip(tr("The settings of the selected computer, and its monitors and size as numbers."));
   m_btnRemove->setToolTip(tr("Take the selected computer out of the configuration."));
 
   auto *header = new QHBoxLayout;
@@ -95,6 +101,7 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   buttons->addWidget(m_btnReset);
   buttons->addStretch(1);
   buttons->addWidget(m_btnAdd);
+  buttons->addWidget(m_btnMonitors);
   buttons->addWidget(m_btnEdit);
   buttons->addWidget(m_btnRemove);
 
@@ -110,10 +117,11 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   connect(m_btnFit, &QPushButton::clicked, m_canvas, &ArrangementCanvas::zoomToFit);
   connect(m_btnReset, &QPushButton::clicked, this, &ArrangementPanel::resetFromClassicGrid);
   connect(m_btnAdd, &QPushButton::clicked, this, &ArrangementPanel::addComputerRequested);
+  connect(m_btnMonitors, &QPushButton::clicked, this, [this] { Q_EMIT editMonitorsRequested(m_canvas->selected()); });
   connect(m_btnEdit, &QPushButton::clicked, this, [this] { Q_EMIT editComputerRequested(m_canvas->selected()); });
   connect(m_btnRemove, &QPushButton::clicked, this, [this] { Q_EMIT removeComputerRequested(m_canvas->selected()); });
   connect(m_canvas, &ArrangementCanvas::selectedChanged, this, &ArrangementPanel::updateSelection);
-  connect(m_canvas, &ArrangementCanvas::editRequested, this, &ArrangementPanel::editComputerRequested);
+  connect(m_canvas, &ArrangementCanvas::editRequested, this, &ArrangementPanel::editMonitorsRequested);
   connect(m_canvas, &ArrangementCanvas::arrangementChanged, this, [this] {
     m_config.setArrangement(m_canvas->arrangement());
     updateIssues();
@@ -147,6 +155,8 @@ void ArrangementPanel::updateSelection()
   m_btnEdit->setEnabled(selected);
   const auto &arrangement = m_canvas->arrangement();
   const auto index = arrangement.indexOf(m_canvas->selected().toStdString());
+  // the monitors of the server are what the operating system says
+  m_btnMonitors->setEnabled(selected && index >= 0 && !arrangement.computers[static_cast<size_t>(index)].isServer);
   // the server is the screen of this computer: it is not taken out
   m_btnRemove->setEnabled(selected && index >= 0 && !arrangement.computers[static_cast<size_t>(index)].isServer);
 }

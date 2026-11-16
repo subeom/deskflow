@@ -37,6 +37,7 @@ private Q_SLOTS:
   void arrangement_saveKeepsWhatComputersReportedWhileTheDialogWasOpen();
   void arrangement_firstUse_adoptsTheSizesThatComputersReported();
   void arrangement_withAnExternalConfig_canBeSavedWhateverTheArrangementIs();
+  void arrangement_monitorsAreDrawnInTheEditor_andKeptOnOk_notOnCancel();
   void arrangement_screenshots_areMadeOfTheDialogs();
 
 private:

@@ -67,6 +67,8 @@ add_library(${target} STATIC
   dialogs/HotkeyDialog.cpp
   dialogs/HotkeyDialog.h
   dialogs/HotkeyDialog.ui
+  dialogs/MonitorEditorDialog.cpp
+  dialogs/MonitorEditorDialog.h
   dialogs/ServerConfigDialog.cpp
   dialogs/ServerConfigDialog.h
   dialogs/ServerConfigDialog.ui
@@ -103,6 +105,8 @@ add_library(${target} STATIC
   widgets/ArrangementCanvas.h
   widgets/ArrangementPanel.cpp
   widgets/ArrangementPanel.h
+  widgets/MonitorEditorWidget.cpp
+  widgets/MonitorEditorWidget.h
   widgets/ComputerSetupView.cpp
   widgets/ComputerSetupView.h
   widgets/FingerprintPreview.cpp

@@ -43,6 +43,8 @@ Q_SIGNALS:
   void changed();
   void useClassicGridRequested();
   void editComputerRequested(const QString &computer);
+  //! The monitors of a computer are to be drawn: a double click on the computer, or the button
+  void editMonitorsRequested(const QString &computer);
   void removeComputerRequested(const QString &computer);
   void addComputerRequested();
 
@@ -59,6 +61,7 @@ private:
   QPushButton *m_btnClassicGrid = nullptr;
   QPushButton *m_btnFit = nullptr;
   QPushButton *m_btnReset = nullptr;
+  QPushButton *m_btnMonitors = nullptr;
   QPushButton *m_btnEdit = nullptr;
   QPushButton *m_btnRemove = nullptr;
   QPushButton *m_btnAdd = nullptr;
