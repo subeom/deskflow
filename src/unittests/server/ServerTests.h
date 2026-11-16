@@ -63,6 +63,19 @@ private Q_SLOTS:
   void clipboardOffForAComputer_aPrimaryThatDoesNotShare_doesNotEmptyTheOthers();
   void clipboardOffForAComputer_isOffForAllComputersWhenNoneIsSetOff();
   void clipboardOffForAComputer_isToldWithAnOptionThatWinsOverTheGlobalOne();
+  void pointerPin_primaryToRemote_entersWhereItAlwaysDid_data();
+  void pointerPin_primaryToRemote_entersWhereItAlwaysDid();
+  void pointerPin_remoteToPrimary_leavesWhereItAlwaysDid_data();
+  void pointerPin_remoteToPrimary_leavesWhereItAlwaysDid();
+  void pointerPin_everyEdgePixel_entersWhereItAlwaysDid_data();
+  void pointerPin_everyEdgePixel_entersWhereItAlwaysDid();
+  void pointerPin_everyWayOutOfARemote_leavesWhereItAlwaysDid_data();
+  void pointerPin_everyWayOutOfARemote_leavesWhereItAlwaysDid();
+  void pointerPin_aFlick_landsWhereItAlwaysDid_data();
+  void pointerPin_aFlick_landsWhereItAlwaysDid();
+  void pointerPin_acrossAnOfflineComputer_landsWhereItAlwaysDid();
+  void pointerPin_linkIntervals_landWhereTheyAlwaysDid();
+  void pointerPin_cornersOfThePrimary_horizontalIsTriedFirst();
 
 private:
   Log m_log;
