@@ -216,6 +216,8 @@ struct Candidate
   double to;
   // how far in from the edge of their computers the touching edges are: the outer ones win
   double depth;
+  // where the edges are
+  double line;
 
   double length() const
   {
@@ -458,7 +460,9 @@ DerivedLinks deriveLinks(const Arrangement &arrangement)
             const auto to = std::min(sa.to, sb.to);
             if (to - from < kMinLink - kSame)
               continue;
-            candidates.push_back({a, sideA, b, sideB, from, to, depthOf(boxes[a], sa) + depthOf(boxes[b], sb)});
+            candidates.push_back(
+                {a, sideA, b, sideB, from, to, depthOf(boxes[a], sa) + depthOf(boxes[b], sb), sa.line}
+            );
           }
         }
       }
@@ -489,6 +493,9 @@ DerivedLinks deriveLinks(const Arrangement &arrangement)
     if (!clashed)
       accepted.push_back(candidate);
   }
+
+  for (const auto &c : accepted)
+    result.contacts.push_back({computers[c.a].name, c.sideA, computers[c.b].name, c.sideB, c.line, c.from, c.to});
 
   // stretches that continue each other, of the same two computers, are one link
   std::ranges::sort(accepted, [](const Candidate &x, const Candidate &y) {

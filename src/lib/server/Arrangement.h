@@ -142,10 +142,26 @@ struct Link
   bool operator==(const Link &) const = default;
 };
 
+//! A place where an exposed edge of one computer touches an exposed edge of another, in the arrangement
+struct Contact
+{
+  std::string a;
+  Direction sideA = Direction::NoDirection;
+  std::string b;
+  Direction sideB = Direction::NoDirection;
+  //! The x of the touching edges for left and right, the y for top and bottom
+  double line = 0;
+  //! The stretch of the edge that touches
+  double from = 0;
+  double to = 0;
+};
+
 struct DerivedLinks
 {
   //! In the order of the computers, then right, left, up, down, then along the edge
   std::vector<Link> links;
+  //! Where the links are, for drawing: one for each stretch that touches, whichever way it is linked
+  std::vector<Contact> contacts;
   //! The warnings of the derivation
   std::vector<Issue> issues;
 

@@ -320,6 +320,17 @@ void ArrangementTests::derive_theServerOfTheUserWithThreePcs()
                                                               )
   );
 
+  // where they touch, for drawing: five stretches, one of them the MacBook part's edge beside the PC at x = 753
+  const auto derived = deriveLinks(arrangement);
+  QCOMPARE(derived.contacts.size(), size_t(5));
+  const auto beside = std::ranges::find_if(derived.contacts, [](const Contact &c) {
+    return c.a == "srv" && c.b == "PC2" && c.sideA == Direction::Left;
+  });
+  QVERIFY(beside != derived.contacts.end());
+  QCOMPARE(beside->line, 753.0);
+  QCOMPARE(beside->from, 1440.0);
+  QCOMPARE(beside->to, 2340.0);
+
   // and the text of the configuration is the same as the classic grid writes it
   const auto text = formatLinks(arrangement, deriveLinks(arrangement));
   QVERIFY(text.starts_with("section: links\n\tsrv:\n\t\tright(0,38.7513) = MINI\n"));
