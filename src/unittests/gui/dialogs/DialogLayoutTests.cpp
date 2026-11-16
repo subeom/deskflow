@@ -12,6 +12,8 @@
 #include "gui/dialogs/ClientConfigDialog.h"
 #include "gui/dialogs/ComputerSettingsDialog.h"
 #include "gui/dialogs/ServerConfigDialog.h"
+#include "gui/widgets/ArrangementCanvas.h"
+#include "gui/widgets/ArrangementPanel.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -34,6 +36,9 @@
 #include <QTabWidget>
 #include <QTest>
 #include <QWidget>
+
+#include <optional>
+#include <vector>
 
 namespace {
 
@@ -401,6 +406,86 @@ void DialogLayoutTests::serverConfigDialog_advancedTab_isLaidOutWithoutSqueezing
       qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
   );
   Settings::setValue(Settings::Server::EnableClipboard);
+}
+
+void DialogLayoutTests::serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing_data()
+{
+  addScenarios();
+}
+
+// The computers tab has the canvas of the arrangement in the place of the classic grid, with a title, a hint, the
+// issues that there are, and the buttons: none of it may be squeezed or overlap. And when it is only offered, the line
+// and the button that offer it have to fit as well.
+void DialogLayoutTests::serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing()
+{
+  QFETCH(QString, style);
+  QFETCH(qreal, fontScale);
+  QFETCH(int, sizeMode);
+
+  QVERIFY(QApplication::setStyle(style) != nullptr);
+  // three computers, the first of them on top of the server, so that an issue is said
+  Settings::setValue(Settings::Core::ComputerName, QStringLiteral("srv"));
+  auto &proxy = Settings::proxy();
+  proxy.beginGroup(QStringLiteral("internalConfig"));
+  proxy.remove(QString());
+  proxy.beginWriteArray(QStringLiteral("screens"));
+  for (int i = 0; i < 15; ++i) {
+    proxy.setArrayIndex(i);
+    proxy.setValue(
+        QStringLiteral("name"), i == 6   ? QStringLiteral("PC-with-a-long-name")
+                                : i == 7 ? QStringLiteral("srv")
+                                         : QString()
+    );
+  }
+  proxy.endArray();
+  proxy.endGroup();
+  ServerConfig::overrideServerMonitors(
+      std::vector<deskflow::server::MonitorRect>{{0, 0, 3440, 1440}, {753, 1440, 2064, 1347}}
+  );
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Computer::ArrangementX.arg("srv"), 0.0);
+  Settings::setValue(Settings::Computer::ArrangementY.arg("srv"), 0.0);
+  Settings::setValue(Settings::Computer::ArrangementX.arg("PC-with-a-long-name"), 500.0);
+  Settings::setValue(Settings::Computer::ArrangementY.arg("PC-with-a-long-name"), 500.0);
+
+  for (const bool used : {true, false}) {
+    Settings::setValue(Settings::Server::UseArrangement, used);
+    ServerConfig config;
+    ServerConfigDialog dialog(nullptr, config);
+    auto *tabs = dialog.findChild<QTabWidget *>(QStringLiteral("tabWidget"));
+    auto *computers = dialog.findChild<QWidget *>(QStringLiteral("tabComputers"));
+    QVERIFY(tabs != nullptr && computers != nullptr);
+    tabs->setCurrentWidget(computers);
+    showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
+    QVERIFY(dialog.isVisible());
+    auto *panel = dialog.findChild<ArrangementPanel *>();
+    QVERIFY(panel != nullptr);
+    QCOMPARE(panel->isVisibleTo(&dialog), used);
+    auto *offer = dialog.findChild<QPushButton *>(QStringLiteral("btnUseArrangement"));
+    QVERIFY(offer != nullptr);
+    QCOMPARE(offer->isVisibleTo(&dialog), !used);
+    if (used) {
+      // the canvas has room to be a canvas
+      QVERIFY2(panel->canvas()->height() >= 150, qPrintable(describe(panel->canvas()->geometry())));
+      QVERIFY(panel->hasErrors());
+    }
+    grabIfRequested(
+        used ? QStringLiteral("ServerConfigDialogArrangement") : QStringLiteral("ServerConfigDialogOffer"), dialog
+    );
+
+    const auto violations = findLayoutViolations(dialog);
+    QVERIFY2(
+        violations.isEmpty(),
+        qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+    );
+  }
+  Settings::setValue(Settings::Server::UseArrangement);
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+  ServerConfig::overrideServerMonitors(std::nullopt);
+  for (const auto *name : {"srv", "PC-with-a-long-name"}) {
+    Settings::setValue(Settings::Computer::ArrangementX.arg(QString::fromLatin1(name)));
+    Settings::setValue(Settings::Computer::ArrangementY.arg(QString::fromLatin1(name)));
+  }
 }
 
 QTEST_MAIN(DialogLayoutTests)

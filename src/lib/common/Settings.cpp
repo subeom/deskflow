@@ -546,6 +546,13 @@ QVariant Settings::computerDefaults(const QString &key)
   // a configuration that predates the setting has no monitor layout for a computer: it is mapped as it always was
   if (key == "monitorLayout")
     return QString();
+  // and no arrangement: a computer that is not placed has no position
+  if (key == "arrangementZoom")
+    return 1.0;
+  if (key == "arrangementWidth" || key == "arrangementHeight")
+    return 0;
+  if (key == "arrangementX" || key == "arrangementY")
+    return QVariant();
   if (key.contains(QStringLiteral("halfDuplex")) || key.contains("xtestIsXineramaUnaware") || key.contains("X11") ||
       key.contains("Left") || key.contains("Right"))
     return false;

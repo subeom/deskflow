@@ -65,7 +65,8 @@ ArrangementCanvas::ArrangementCanvas(QWidget *parent) : QWidget(parent)
 
 QSize ArrangementCanvas::sizeHint() const
 {
-  return {720, 400};
+  // it takes whatever room there is; what it asks for must not make the tab that has it taller than the others are
+  return {640, 260};
 }
 
 QSize ArrangementCanvas::minimumSizeHint() const

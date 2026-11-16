@@ -12,8 +12,12 @@
 #include "common/Hotkey.h"
 #include "gui/config/ComputerConfig.h"
 #include "gui/config/ComputerList.h"
+#include "server/Arrangement.h"
 
 #include <QList>
+
+#include <optional>
+#include <vector>
 
 class QTextStream;
 class QSettings;
@@ -57,6 +61,37 @@ public:
   bool useExternalConfig() const;
   void addClient(const QString &clientName);
 
+  //! @name Experimental: the arrangement of the computers
+  //@{
+
+  //! Whether the links are made from the arrangement: the experiment is on, and so is the use of the arrangement
+  bool usesArrangement() const;
+
+  //! Whether the computers have been put in the arrangement
+  bool hasArrangement() const;
+
+  //! The computers of the grid, with their monitors, zoom and place in the arrangement
+  /*!
+  A server has the displays of this computer, a computer that has a monitor layout has those monitors, a computer that
+  has neither is one monitor of the size that was said (1920 x 1080 if none was). A computer that has no place is put
+  beside the others, apart from them; if none has one, this is the classic grid as an arrangement.
+  */
+  deskflow::server::arrangement::Arrangement arrangement() const;
+
+  //! The classic grid as an arrangement, which is where the arrangement begins
+  deskflow::server::arrangement::GridConversion classicGridAsArrangement() const;
+
+  //! Take the places of the computers from \p arrangement
+  void setArrangement(const deskflow::server::arrangement::Arrangement &arrangement);
+
+  //! The displays of this computer, as the operating system says: nothing if it does not
+  static std::vector<deskflow::server::MonitorRect> serverMonitors();
+
+  //! Say what the displays of this computer are, or that the operating system is asked again; for the tests
+  static void overrideServerMonitors(const std::optional<std::vector<deskflow::server::MonitorRect>> &monitors);
+
+  //@}
+
 private:
   void recall();
   void setupComputers();
@@ -80,6 +115,7 @@ private:
     return m_Hotkeys;
   }
   int adjacentComputerIndex(int idx, int deltaColumn, int deltaRow) const;
+  std::vector<deskflow::server::arrangement::Computer> arrangementComputers() const;
   bool findComputerName(const QString &name, int &index);
   bool fixNoServer(const QString &name, int &index);
 

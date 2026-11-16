@@ -11,6 +11,7 @@
 
 class QWidget;
 class QString;
+class QSpinBox;
 
 class Computer;
 class ComputerList;
@@ -53,4 +54,10 @@ private:
   Computer *m_computer;
   // the experiment is on, so the layout can be set
   bool m_monitorLayoutAvailable = false;
+  // the size of the screen, when there are no monitors, and the display scale: for the arrangement of the computers
+  QSpinBox *m_sbArrangementWidth = nullptr;
+  QSpinBox *m_sbArrangementHeight = nullptr;
+  QSpinBox *m_sbDisplayScale = nullptr;
+  // the scale that the dialog was opened with
+  int m_scaleShown = 100;
 };

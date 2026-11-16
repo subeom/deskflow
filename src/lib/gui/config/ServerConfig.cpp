@@ -12,7 +12,15 @@
 #include "common/Settings.h"
 
 #include <QAbstractButton>
+#include <QGuiApplication>
 #include <QPushButton>
+#include <QScreen>
+
+#ifdef Q_OS_MACOS
+#include "platform/OSXDisplays.h"
+#endif
+
+#include <algorithm>
 
 using enum ComputerConfig::SwitchCorner;
 using enum ComputerConfig::Fix;
@@ -31,6 +39,39 @@ static const struct
 };
 
 const int serverDefaultIndex = 7;
+
+namespace {
+
+using namespace deskflow::server;
+
+// the size of a computer that has no monitors and no size that was said
+constexpr int kDefaultWidth = 1920;
+constexpr int kDefaultHeight = 1080;
+// what is between a computer that is put aside and the others
+constexpr double kGapOfNewComputers = 200.0;
+
+std::optional<std::vector<MonitorRect>> &monitorsOverride()
+{
+  static std::optional<std::vector<MonitorRect>> override;
+  return override;
+}
+
+std::vector<MonitorRect> monitorsOf(const ::Computer &computer, const std::vector<MonitorRect> &display)
+{
+  // the screen of this computer is what the operating system says it is
+  if (computer.isServer() && !display.empty() && MonitorLayout::create(display))
+    return display;
+  if (!computer.monitorLayout().isEmpty()) {
+    if (const auto parsed = MonitorLayout::parse(computer.monitorLayout().toStdString()); parsed)
+      return parsed.layout->monitors();
+  }
+  return {
+      {0, 0, computer.arrangementWidth() > 0 ? computer.arrangementWidth() : kDefaultWidth,
+       computer.arrangementHeight() > 0 ? computer.arrangementHeight() : kDefaultHeight}
+  };
+}
+
+} // namespace
 
 ServerConfig::ServerConfig(int columns, int rows) : m_computers(columns), m_columns(columns), m_rows(rows)
 {
@@ -157,6 +198,19 @@ int ServerConfig::adjacentComputerIndex(int idx, int deltaColumn, int deltaRow) 
 
 QTextStream &operator<<(QTextStream &outStream, const ServerConfig &config)
 {
+  // Experimental: the links are where the exposed edges of the computers in the arrangement touch
+  if (config.usesArrangement()) {
+    const auto arrangement = config.arrangement();
+    outStream << QString::fromStdString(
+        deskflow::server::arrangement::formatLinks(arrangement, deskflow::server::arrangement::deriveLinks(arrangement))
+    );
+    outStream << "section: options" << Qt::endl;
+    for (const Hotkey &hotkey : config.hotkeys())
+      outStream << hotkey;
+    outStream << "end" << Qt::endl << Qt::endl;
+    return outStream;
+  }
+
   outStream << "section: links" << Qt::endl;
 
   for (int i = 0; const auto &computer : config.computers()) {
@@ -301,4 +355,130 @@ bool ServerConfig::fixNoServer(const QString &name, int &index)
 QSettingsProxy &ServerConfig::settings()
 {
   return Settings::proxy();
+}
+
+//
+// The arrangement (experimental)
+//
+
+bool ServerConfig::usesArrangement() const
+{
+  return Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool() &&
+         Settings::value(Settings::Server::UseArrangement).toBool();
+}
+
+bool ServerConfig::hasArrangement() const
+{
+  return std::ranges::any_of(computers(), [](const Computer &c) { return !c.isNull() && c.arrangementPlaced(); });
+}
+
+std::vector<MonitorRect> ServerConfig::serverMonitors()
+{
+  if (monitorsOverride())
+    return *monitorsOverride();
+#ifdef Q_OS_MACOS
+  return deskflow::platform::osxActiveDisplays();
+#else
+  // The operating system is asked for the size of the screen only: the monitors of this computer are not known here
+  if (const auto *screen = QGuiApplication::primaryScreen()) {
+    const auto size = screen->virtualSize() * screen->devicePixelRatio();
+    if (size.width() >= 1 && size.height() >= 1)
+      return {{0, 0, size.width(), size.height()}};
+  }
+  return {};
+#endif
+}
+
+void ServerConfig::overrideServerMonitors(const std::optional<std::vector<MonitorRect>> &monitors)
+{
+  monitorsOverride() = monitors;
+}
+
+std::vector<arrangement::Computer> ServerConfig::arrangementComputers() const
+{
+  const auto display = serverMonitors();
+  std::vector<arrangement::Computer> result;
+  for (const auto &computer : computers()) {
+    if (computer.isNull())
+      continue;
+    arrangement::Computer entry;
+    entry.name = computer.name().toStdString();
+    entry.isServer = computer.isServer();
+    entry.zoom = computer.arrangementZoom();
+    entry.monitors = monitorsOf(computer, display);
+    entry.originX = computer.arrangementX();
+    entry.originY = computer.arrangementY();
+    result.push_back(entry);
+  }
+  return result;
+}
+
+arrangement::Arrangement ServerConfig::arrangement() const
+{
+  if (!hasArrangement())
+    return classicGridAsArrangement().arrangement;
+
+  arrangement::Arrangement result;
+  result.computers = arrangementComputers();
+  std::vector<size_t> unplaced;
+  size_t index = 0;
+  arrangement::Rect bounds;
+  bool anyPlaced = false;
+  for (const auto &computer : computers()) {
+    if (computer.isNull())
+      continue;
+    if (!computer.arrangementPlaced()) {
+      unplaced.push_back(index);
+    } else {
+      const auto box = result.computers[index].box();
+      bounds = anyPlaced ? arrangement::Rect{std::min(bounds.x, box.x), std::min(bounds.y, box.y),
+                                std::max(bounds.right(), box.right()) - std::min(bounds.x, box.x),
+                                std::max(bounds.bottom(), box.bottom()) - std::min(bounds.y, box.y)}
+                         : box;
+      anyPlaced = true;
+    }
+    ++index;
+  }
+
+  // a computer that has not been put anywhere is beside the others, so that it touches none of them
+  for (const auto at : unplaced) {
+    auto &computer = result.computers[at];
+    const auto shape = computer.shape();
+    computer.originX = bounds.right() + kGapOfNewComputers - computer.zoom * shape.x;
+    computer.originY = bounds.y - computer.zoom * shape.y;
+    const auto box = computer.box();
+    bounds.w = box.right() - bounds.x;
+    bounds.h = std::max(bounds.bottom(), box.bottom()) - bounds.y;
+  }
+  return result;
+}
+
+arrangement::GridConversion ServerConfig::classicGridAsArrangement() const
+{
+  const auto entries = arrangementComputers();
+  std::vector<arrangement::GridCell> cells;
+  size_t entry = 0;
+  std::string server;
+  for (int i = 0; i < computers().size(); ++i) {
+    if (computers()[i].isNull())
+      continue;
+    arrangement::GridCell cell;
+    cell.column = i % m_columns;
+    cell.row = i / m_columns;
+    cell.computer = entries[entry++];
+    if (cell.computer.isServer)
+      server = cell.computer.name;
+    cells.push_back(cell);
+  }
+  return arrangement::arrangementFromGrid(cells, server);
+}
+
+void ServerConfig::setArrangement(const arrangement::Arrangement &arrangement)
+{
+  for (const auto &placed : arrangement.computers) {
+    for (auto &computer : computers()) {
+      if (!computer.isNull() && computer.name().compare(QString::fromStdString(placed.name), Qt::CaseInsensitive) == 0)
+        computer.setArrangementOrigin(placed.originX, placed.originY);
+    }
+  }
 }

@@ -14,8 +14,11 @@
 
 #include <QDialog>
 
+class ArrangementPanel;
 class SettingsDialogButtonBox;
 class QItemSelection;
+class QLabel;
+class QPushButton;
 
 namespace Ui {
 class ServerConfigDialog;
@@ -65,6 +68,11 @@ protected:
 
   void toggleExperimentalMultiMonitor(bool enabled);
 
+  //! Use the arrangement of the computers (experimental) or the classic grid
+  void toggleUseArrangement(bool use);
+  void editArrangementComputer(const QString &name);
+  void removeArrangementComputer(const QString &name);
+
   void toggleHeartbeat(bool enabled);
   void setHeartbeat(int rate);
 
@@ -88,6 +96,8 @@ protected:
   }
 
 private:
+  void updateArrangementMode();
+  void refreshArrangement();
   void save();
   void cancel();
   void loadFromConfig();
@@ -110,6 +120,9 @@ private:
   bool m_enableClipboard;
   bool m_clipboardTextOnly = false;
   bool m_experimentalMultiMonitor = false;
+  bool m_useArrangement = false;
+  ArrangementPanel *m_arrangementPanel = nullptr;
+  QWidget *m_arrangementBanner = nullptr;
   bool m_enableHeartbeat;
   int m_heartbeatRate;
   int m_switchDelay;

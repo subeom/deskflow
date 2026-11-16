@@ -10,6 +10,8 @@
 #include "config/ComputerConfig.h"
 #include <common/Settings.h>
 
+#include <algorithm>
+
 using enum KeyboardModifier;
 using enum ComputerConfig::SwitchCorner;
 using enum ComputerConfig::Fix;
@@ -46,6 +48,20 @@ void Computer::loadSettings(QSettingsProxy &settings)
   m_CrossOSSemanticMedia = Settings::value(Settings::Computer::CrossOSSemanticMedia.arg(name)).toBool();
   m_ShareClipboard = Settings::value(Settings::Computer::ShareClipboard.arg(name)).toBool();
   m_MonitorLayout = Settings::textValue(Settings::Computer::MonitorLayout.arg(name)).trimmed();
+
+  const auto arrangementX = Settings::value(Settings::Computer::ArrangementX.arg(name));
+  const auto arrangementY = Settings::value(Settings::Computer::ArrangementY.arg(name));
+  bool xIsNumber = false;
+  bool yIsNumber = false;
+  const auto x = arrangementX.toDouble(&xIsNumber);
+  const auto y = arrangementY.toDouble(&yIsNumber);
+  m_ArrangementPlaced = arrangementX.isValid() && arrangementY.isValid() && xIsNumber && yIsNumber;
+  m_ArrangementX = m_ArrangementPlaced ? x : 0;
+  m_ArrangementY = m_ArrangementPlaced ? y : 0;
+  const auto zoom = Settings::value(Settings::Computer::ArrangementZoom.arg(name)).toDouble();
+  m_ArrangementZoom = zoom > 0 ? zoom : 1.0;
+  m_ArrangementWidth = std::max(0, Settings::value(Settings::Computer::ArrangementWidth.arg(name)).toInt());
+  m_ArrangementHeight = std::max(0, Settings::value(Settings::Computer::ArrangementHeight.arg(name)).toInt());
 
   setSwitchCornerSize(Settings::value(Settings::Computer::SwitchCornerSize.arg(name)).toInt());
 
@@ -97,6 +113,25 @@ void Computer::saveSettings(QSettingsProxy &settings) const
   Settings::setValue(
       Settings::Computer::MonitorLayout.arg(computerName),
       m_MonitorLayout.isEmpty() ? QVariant() : QVariant(m_MonitorLayout)
+  );
+  // a computer that is not placed has no position, and what is the default has no key
+  Settings::setValue(
+      Settings::Computer::ArrangementX.arg(computerName), m_ArrangementPlaced ? QVariant(m_ArrangementX) : QVariant()
+  );
+  Settings::setValue(
+      Settings::Computer::ArrangementY.arg(computerName), m_ArrangementPlaced ? QVariant(m_ArrangementY) : QVariant()
+  );
+  Settings::setValue(
+      Settings::Computer::ArrangementZoom.arg(computerName),
+      m_ArrangementZoom == 1.0 ? QVariant() : QVariant(m_ArrangementZoom)
+  );
+  Settings::setValue(
+      Settings::Computer::ArrangementWidth.arg(computerName),
+      m_ArrangementWidth == 0 ? QVariant() : QVariant(m_ArrangementWidth)
+  );
+  Settings::setValue(
+      Settings::Computer::ArrangementHeight.arg(computerName),
+      m_ArrangementHeight == 0 ? QVariant() : QVariant(m_ArrangementHeight)
   );
   Settings::setValue(Settings::Computer::SwitchCornerSize.arg(computerName), switchCornerSize());
   Settings::setValue(
@@ -151,6 +186,9 @@ bool Computer::operator==(const Computer &computer) const
          m_CrossOSInvertX == computer.m_CrossOSInvertX && m_CrossOSInvertY == computer.m_CrossOSInvertY &&
          m_CrossOSInvertScope == computer.m_CrossOSInvertScope &&
          m_CrossOSSemanticMedia == computer.m_CrossOSSemanticMedia && m_ShareClipboard == computer.m_ShareClipboard &&
-         m_MonitorLayout == computer.m_MonitorLayout && m_Swapped == computer.m_Swapped &&
+         m_MonitorLayout == computer.m_MonitorLayout && m_ArrangementPlaced == computer.m_ArrangementPlaced &&
+         m_ArrangementX == computer.m_ArrangementX && m_ArrangementY == computer.m_ArrangementY &&
+         m_ArrangementZoom == computer.m_ArrangementZoom && m_ArrangementWidth == computer.m_ArrangementWidth &&
+         m_ArrangementHeight == computer.m_ArrangementHeight && m_Swapped == computer.m_Swapped &&
          m_isServer == computer.m_isServer;
 }

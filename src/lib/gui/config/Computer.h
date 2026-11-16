@@ -37,7 +37,9 @@ class Computer : public ComputerConfig
                      << static_cast<quint8>(computer.m_F18Action) << computer.m_CrossOSInvertX
                      << computer.m_CrossOSInvertY << computer.m_CrossOSSemanticMedia
                      << static_cast<quint8>(computer.m_CrossOSInvertScope) << computer.m_ShareClipboard
-                     << computer.m_MonitorLayout;
+                     << computer.m_MonitorLayout << computer.m_ArrangementPlaced << computer.m_ArrangementX
+                     << computer.m_ArrangementY << computer.m_ArrangementZoom << computer.m_ArrangementWidth
+                     << computer.m_ArrangementHeight;
   }
 
   friend QDataStream &operator>>(QDataStream &inStream, Computer &computer)
@@ -47,7 +49,9 @@ class Computer : public ComputerConfig
     inStream >> computer.m_Name >> computer.m_SwitchCornerSize >> computer.m_Aliases >> computer.m_Modifiers >>
         computer.m_SwitchCorners >> computer.m_Fixes >> computer.m_isServer >> f18Action >> computer.m_CrossOSInvertX >>
         computer.m_CrossOSInvertY >> computer.m_CrossOSSemanticMedia >> crossOSInvertScope >>
-        computer.m_ShareClipboard >> computer.m_MonitorLayout;
+        computer.m_ShareClipboard >> computer.m_MonitorLayout >> computer.m_ArrangementPlaced >>
+        computer.m_ArrangementX >> computer.m_ArrangementY >> computer.m_ArrangementZoom >>
+        computer.m_ArrangementWidth >> computer.m_ArrangementHeight;
     computer.m_F18Action =
         f18Action == static_cast<quint8>(F18Action::Hangul) ? F18Action::Hangul : F18Action::PassThrough;
     computer.m_CrossOSInvertScope = crossOSInvertScope == static_cast<quint8>(ScrollInvertScope::MouseWheelOnly)
@@ -132,6 +136,56 @@ public:
   [[nodiscard]] const QString &monitorLayout() const
   {
     return m_MonitorLayout;
+  }
+
+  //! Whether the computer has a place in the arrangement (experimental)
+  [[nodiscard]] bool arrangementPlaced() const
+  {
+    return m_ArrangementPlaced;
+  }
+  //! Where the origin of the coordinates of the computer is in the arrangement
+  [[nodiscard]] double arrangementX() const
+  {
+    return m_ArrangementX;
+  }
+  [[nodiscard]] double arrangementY() const
+  {
+    return m_ArrangementY;
+  }
+  //! Arrangement units per unit of the computer: 1 for a Mac, 100 / the display scale in percent for Windows
+  [[nodiscard]] double arrangementZoom() const
+  {
+    return m_ArrangementZoom;
+  }
+  //! The size of the screen that is said for a computer that has no monitor layout; 0 when it is not said
+  [[nodiscard]] int arrangementWidth() const
+  {
+    return m_ArrangementWidth;
+  }
+  [[nodiscard]] int arrangementHeight() const
+  {
+    return m_ArrangementHeight;
+  }
+  void setArrangementOrigin(double x, double y)
+  {
+    m_ArrangementPlaced = true;
+    m_ArrangementX = x;
+    m_ArrangementY = y;
+  }
+  void clearArrangementOrigin()
+  {
+    m_ArrangementPlaced = false;
+    m_ArrangementX = 0;
+    m_ArrangementY = 0;
+  }
+  void setArrangementZoom(double zoom)
+  {
+    m_ArrangementZoom = zoom;
+  }
+  void setArrangementSize(int width, int height)
+  {
+    m_ArrangementWidth = width;
+    m_ArrangementHeight = height;
   }
 
   void loadSettings(QSettingsProxy &settings);
@@ -243,6 +297,12 @@ private:
   bool m_CrossOSSemanticMedia = false;
   bool m_ShareClipboard = true;
   QString m_MonitorLayout = {};
+  bool m_ArrangementPlaced = false;
+  double m_ArrangementX = 0;
+  double m_ArrangementY = 0;
+  double m_ArrangementZoom = 1.0;
+  int m_ArrangementWidth = 0;
+  int m_ArrangementHeight = 0;
   bool m_Swapped = false;
   bool m_isServer = false;
 };

@@ -26,6 +26,12 @@ private Q_SLOTS:
   void clipboardTextOnly_isTurnedOffByRestoringDefaults();
   void clipboardTextOnly_makesTheDialogModified();
   void clipboardTextOnly_explainsWhatIsNotShared();
+  void arrangement_isNotThereWhileTheExperimentIsOff();
+  void arrangement_isOfferedWhenTheExperimentIsOn_andTheClassicGridStays();
+  void arrangement_isUsedOnRequest_savedWithThePlaces_andLeftAgain();
+  void arrangement_withComputersOnTopOfEachOther_cannotBeSaved();
+  void arrangement_aComputerIsRemovedFromTheCanvas_theServerIsNot();
+  void arrangement_screenshots_areMadeOfTheDialogs();
 
 private:
   QTemporaryDir m_settingsDir;

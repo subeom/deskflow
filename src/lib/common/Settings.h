@@ -143,6 +143,14 @@ public:
     inline static const auto ModifierMeta = QStringLiteral("computer_%1/modifierMeta");
     inline static const auto ModifierShift = QStringLiteral("computer_%1/modifierShift");
     inline static const auto ModifierSuper = QStringLiteral("computer_%1/modifierSuper");
+    // experimental: the arrangement of the computers. Where the origin of the coordinates of the computer is in the
+    // arrangement (no key: not placed yet), how many units of the arrangement a unit of the computer is, and the size of
+    // its screen when it has no monitor layout (0: not said)
+    inline static const auto ArrangementHeight = QStringLiteral("computer_%1/arrangementHeight");
+    inline static const auto ArrangementWidth = QStringLiteral("computer_%1/arrangementWidth");
+    inline static const auto ArrangementX = QStringLiteral("computer_%1/arrangementX");
+    inline static const auto ArrangementY = QStringLiteral("computer_%1/arrangementY");
+    inline static const auto ArrangementZoom = QStringLiteral("computer_%1/arrangementZoom");
     // experimental: the monitors of the computer, x,y,w,h;x,y,w,h in the coordinates of the shape that it reports
     inline static const auto MonitorLayout = QStringLiteral("computer_%1/monitorLayout");
     inline static const auto ShareClipboard = QStringLiteral("computer_%1/shareClipboard");

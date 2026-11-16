@@ -20,6 +20,17 @@ private Q_SLOTS:
   void classicGrid_generatesTheConfigItAlwaysDid_data();
   void classicGrid_generatesTheConfigItAlwaysDid();
 
+  // The server configuration that the arrangement makes (experimental)
+  void arrangement_isUsedOnlyWhenTheExperimentAndTheUseAreOn_data();
+  void arrangement_isUsedOnlyWhenTheExperimentAndTheUseAreOn();
+  void arrangement_ofEqualComputersInTheClassicGrid_isTheClassicText_data();
+  void arrangement_ofEqualComputersInTheClassicGrid_isTheClassicText();
+  void arrangement_theServerOfTheUser_makesPartialLinks();
+  void arrangement_aComputerThatIsNotPlaced_isBesideTheOthers();
+  void arrangement_isSavedAndLoaded();
+  void arrangement_oldConfigurationsLoadAsTheyWere();
+  void arrangement_classicGridConversion_keepsTheLinks();
+
 private:
   QTemporaryDir m_settingsDir;
 };

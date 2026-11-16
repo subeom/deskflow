@@ -9,6 +9,7 @@
 #include "ui_ComputerSettingsDialog.h"
 
 #include "gui/config/Computer.h"
+#include "server/Arrangement.h"
 #include "server/MonitorGeometry.h"
 #include "validators/AliasValidator.h"
 #include "validators/ComputerLineNameValidator.h"
@@ -17,9 +18,13 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFontDatabase>
+#include <QGridLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QSpinBox>
 #include <QTextStream>
+
+#include <cmath>
 
 #include <optional>
 
@@ -86,6 +91,56 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
   ui->textMonitorLayout->setEnabled(m_monitorLayoutAvailable);
   ui->btnImportMonitorLayout->setEnabled(m_monitorLayoutAvailable);
   updateMonitorLayoutStatus();
+
+  // the size of the screen when there are no monitors, and the display scale: what the arrangement of the computers has
+  // to know of a computer
+  auto *arrangement = new QGridLayout;
+  m_sbArrangementWidth = new QSpinBox(this);
+  m_sbArrangementHeight = new QSpinBox(this);
+  m_sbDisplayScale = new QSpinBox(this);
+  m_sbArrangementWidth->setObjectName(QStringLiteral("sbArrangementWidth"));
+  m_sbArrangementHeight->setObjectName(QStringLiteral("sbArrangementHeight"));
+  m_sbDisplayScale->setObjectName(QStringLiteral("sbDisplayScale"));
+  for (auto *box : {m_sbArrangementWidth, m_sbArrangementHeight}) {
+    box->setRange(0, 32767);
+    box->setSpecialValueText(tr("not said"));
+    box->setSuffix(tr(" px"));
+  }
+  m_sbArrangementWidth->setValue(m_computer->arrangementWidth());
+  m_sbArrangementHeight->setValue(m_computer->arrangementHeight());
+  m_sbDisplayScale->setRange(25, 500);
+  m_sbDisplayScale->setSuffix(QStringLiteral(" %"));
+  m_scaleShown = static_cast<int>(std::lround(100.0 / m_computer->arrangementZoom()));
+  m_sbDisplayScale->setValue(m_scaleShown);
+  const auto sizeTip = tr(
+      "The size of the screen of this computer in its own pixels, for the arrangement of the computers, when you have "
+      "not set monitors above. Not said: 1920 x 1080."
+  );
+  const auto scaleTip =
+      tr("The display scale of this computer: 100 % on a Mac (its units are already points), the scale of Windows "
+         "(150 % for a screen that is drawn 1.5 times as big). The arrangement shows it at its size on the screen, "
+         "which is its pixels divided by this.");
+  auto *lblSize = new QLabel(tr("Screen size (no monitors above):"), this);
+  auto *lblTimes = new QLabel(QStringLiteral("×"), this);
+  auto *lblScale = new QLabel(tr("Display scale:"), this);
+  lblSize->setBuddy(m_sbArrangementWidth);
+  lblScale->setBuddy(m_sbDisplayScale);
+  for (QWidget *widget :
+       {static_cast<QWidget *>(lblSize), static_cast<QWidget *>(m_sbArrangementWidth),
+        static_cast<QWidget *>(m_sbArrangementHeight)})
+    widget->setToolTip(sizeTip);
+  for (QWidget *widget : {static_cast<QWidget *>(lblScale), static_cast<QWidget *>(m_sbDisplayScale)})
+    widget->setToolTip(scaleTip);
+  arrangement->addWidget(lblSize, 0, 0);
+  arrangement->addWidget(m_sbArrangementWidth, 0, 1);
+  arrangement->addWidget(lblTimes, 0, 2);
+  arrangement->addWidget(m_sbArrangementHeight, 0, 3);
+  arrangement->addWidget(lblScale, 1, 0);
+  arrangement->addWidget(m_sbDisplayScale, 1, 1);
+  arrangement->setColumnStretch(4, 1);
+  ui->layoutMonitorLayout->addLayout(arrangement);
+  for (auto *box : {m_sbArrangementWidth, m_sbArrangementHeight, m_sbDisplayScale})
+    box->setEnabled(m_monitorLayoutAvailable);
 
   const auto valNameError = new validators::ValidationError(this, ui->lblNameError);
   const auto valName = new validators::ComputerLineNameValidator(ui->lineNameEdit, valNameError, computers);
@@ -188,6 +243,12 @@ void ComputerSettingsDialog::accept()
 
   if (monitorLayout)
     m_computer->setMonitorLayout(*monitorLayout);
+  if (m_monitorLayoutAvailable) {
+    m_computer->setArrangementSize(m_sbArrangementWidth->value(), m_sbArrangementHeight->value());
+    // a scale that was not touched keeps the zoom that was set, which may not be a whole number of percent
+    if (m_sbDisplayScale->value() != m_scaleShown)
+      m_computer->setArrangementZoom(deskflow::server::arrangement::zoomForScale(m_sbDisplayScale->value()));
+  }
 
   m_computer->setModifier(KeyboardModifier::Shift, ui->comboShift->currentIndex());
   m_computer->setModifier(KeyboardModifier::Ctrl, ui->comboCtrl->currentIndex());
@@ -328,5 +389,10 @@ bool ComputerSettingsDialog::importMonitorLayout(const QString &path)
 
   // one monitor to a line, to read it
   ui->textMonitorLayout->setPlainText(QString::fromStdString(parsed.layout->format()).replace(QLatin1Char(';'), u'\n'));
+
+  // the scale that Windows says its primary monitor has is how big the computer is drawn in the arrangement (a Mac says
+  // pixels per point, which does not change its points)
+  if (const auto scale = deskflow::server::arrangement::windowsDisplayScale(content.toStdString()); scale)
+    m_sbDisplayScale->setValue(static_cast<int>(std::lround(*scale * 100.0)));
   return true;
 }

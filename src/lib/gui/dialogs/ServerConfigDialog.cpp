@@ -16,10 +16,14 @@
 #include "dialogs/ActionDialog.h"
 #include "dialogs/ComputerSettingsDialog.h"
 #include "dialogs/HotkeyDialog.h"
+#include "gui/widgets/ArrangementPanel.h"
 #include "gui/widgets/SettingsDialogButtonBox.h"
 
 #include <QFileDialog>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QMessageBox>
+#include <QPushButton>
 
 using enum ComputerConfig::SwitchCorner;
 
@@ -38,6 +42,42 @@ ServerConfigDialog::ServerConfigDialog(QWidget *parent, ServerConfig &config)
   ui->setupUi(this);
   ui->tabWidget->setCurrentIndex(0);
   layout()->addWidget(m_buttonBox);
+
+  // the arrangement of the computers is an experiment: it is in the tab of the computers, in the place of the classic
+  // grid when it is used, and offered when the experiment is on and it is not
+  m_arrangementPanel = new ArrangementPanel(m_serverConfig, ui->tabComputers);
+  m_arrangementBanner = new QWidget(ui->tabComputers);
+  m_arrangementBanner->setObjectName(QStringLiteral("arrangementBanner"));
+  auto *bannerLayout = new QHBoxLayout(m_arrangementBanner);
+  bannerLayout->setContentsMargins(0, 0, 0, 0);
+  auto *bannerText = new QLabel(
+      tr("Experimental: arrange the computers on a canvas, like the displays in the macOS settings."),
+      m_arrangementBanner
+  );
+  bannerText->setObjectName(QStringLiteral("lblArrangementOffer"));
+  bannerText->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  bannerText->setToolTip(
+      tr("The links between the computers are made from where their screens touch, with the real size of the screens. "
+         "The classic grid is kept and can be used again.")
+  );
+  auto *useButton = new QPushButton(tr("Use the arrangement"), m_arrangementBanner);
+  useButton->setObjectName(QStringLiteral("btnUseArrangement"));
+  bannerLayout->addWidget(bannerText, 1);
+  bannerLayout->addWidget(useButton);
+  ui->tabComputers->layout()->addWidget(m_arrangementBanner);
+  ui->tabComputers->layout()->addWidget(m_arrangementPanel);
+  connect(useButton, &QPushButton::clicked, this, [this] { toggleUseArrangement(true); });
+  connect(m_arrangementPanel, &ArrangementPanel::changed, this, &ServerConfigDialog::setButtonBoxEnabledButtons);
+  connect(m_arrangementPanel, &ArrangementPanel::useClassicGridRequested, this, [this] {
+    toggleUseArrangement(false);
+  });
+  connect(
+      m_arrangementPanel, &ArrangementPanel::editComputerRequested, this, &ServerConfigDialog::editArrangementComputer
+  );
+  connect(
+      m_arrangementPanel, &ArrangementPanel::removeComputerRequested, this,
+      &ServerConfigDialog::removeArrangementComputer
+  );
 
   loadFromConfig();
 
@@ -70,6 +110,10 @@ void ServerConfigDialog::save()
       return;
     }
   }
+  // the computers that were not put anywhere are, where the arrangement shows them
+  if (m_experimentalMultiMonitor && m_useArrangement)
+    serverConfig().setArrangement(serverConfig().arrangement());
+
   // now that the dialog has been accepted, copy the new server config to the
   // original one, which is a reference to the one in MainWindow.
   setOriginalServerConfig(serverConfig());
@@ -82,6 +126,7 @@ void ServerConfigDialog::save()
   Settings::setValue(Settings::Server::ClipboardSize, m_clipboardSize);
   Settings::setValue(Settings::Server::ClipboardTextOnly, m_clipboardTextOnly);
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor, m_experimentalMultiMonitor);
+  Settings::setValue(Settings::Server::UseArrangement, m_useArrangement);
   Settings::setValue(Settings::Server::EnableHeartbeat, m_enableHeartbeat);
   Settings::setValue(Settings::Server::Heartbeat, m_heartbeatRate);
   Settings::setValue(Settings::Server::EnableSwitchDelay, m_enableSwitchDelay);
@@ -406,6 +451,85 @@ void ServerConfigDialog::toggleExperimentalMultiMonitor(bool enabled)
   m_experimentalMultiMonitor = enabled;
   // the computer dialogs that this one opens take it from here, before it is saved
   setProperty("experimentalMultiMonitor", enabled);
+  updateArrangementMode();
+  setButtonBoxEnabledButtons();
+}
+
+void ServerConfigDialog::toggleUseArrangement(bool use)
+{
+  if (m_useArrangement == use)
+    return;
+
+  m_useArrangement = use;
+  // the first time, the computers are where the classic grid has them, with the size of their screens
+  if (use && !serverConfig().hasArrangement()) {
+    const auto conversion = serverConfig().classicGridAsArrangement();
+    serverConfig().setArrangement(conversion.arrangement);
+    if (!conversion.notKept.empty()) {
+      QStringList lost;
+      for (const auto &link : conversion.notKept)
+        lost << tr("%1 (%2) to %3")
+                    .arg(
+                        QString::fromStdString(link.from),
+                        QString::fromLatin1(deskflow::server::arrangement::directionName(link.side)),
+                        QString::fromStdString(link.to)
+                    );
+      QMessageBox::information(
+          this, tr("Arrangement"),
+          tr("These links of the classic grid could not be kept, because the screens do not touch there:\n%1")
+              .arg(lost.join(QLatin1Char('\n')))
+      );
+    }
+  }
+  updateArrangementMode();
+  setButtonBoxEnabledButtons();
+}
+
+// the canvas takes the place of the classic grid while the experiment is on and the arrangement is used; when the
+// experiment is on and it is not used, it is offered; and with the experiment off nothing of it is seen
+void ServerConfigDialog::updateArrangementMode()
+{
+  if (m_arrangementPanel == nullptr)
+    return;
+  const bool canvas = m_experimentalMultiMonitor && m_useArrangement;
+  ui->computerSetupView->setVisible(!canvas);
+  m_arrangementPanel->setVisible(canvas);
+  m_arrangementBanner->setVisible(m_experimentalMultiMonitor && !m_useArrangement);
+  m_arrangementBanner->setEnabled(Settings::isWritable());
+  if (canvas)
+    m_arrangementPanel->refresh();
+}
+
+void ServerConfigDialog::refreshArrangement()
+{
+  if (m_arrangementPanel != nullptr && m_arrangementPanel->isVisibleTo(this))
+    m_arrangementPanel->refresh();
+}
+
+void ServerConfigDialog::editArrangementComputer(const QString &name)
+{
+  auto &computers = model().m_computers;
+  const auto computer = std::ranges::find_if(computers, [&](const Computer &c) { return c.name() == name; });
+  if (name.isEmpty() || computer == computers.end())
+    return;
+  ComputerSettingsDialog dlg(this, &*computer, &computers);
+  if (dlg.exec() == QDialog::Accepted) {
+    ui->computerSetupView->reset();
+    refreshArrangement();
+    setButtonBoxEnabledButtons();
+  }
+}
+
+void ServerConfigDialog::removeArrangementComputer(const QString &name)
+{
+  auto &computers = model().m_computers;
+  const auto computer = std::ranges::find_if(computers, [&](const Computer &c) { return c.name() == name; });
+  if (name.isEmpty() || computer == computers.end() || computer->isServer())
+    return;
+  *computer = Computer();
+  ui->computerSetupView->reset();
+  ui->lblNewComputer->setEnabled(!model().isFull());
+  refreshArrangement();
   setButtonBoxEnabledButtons();
 }
 
@@ -426,6 +550,7 @@ void ServerConfigDialog::loadFromConfig()
   m_clipboardSize = Settings::value(Settings::Server::ClipboardSize).toUInt();
   m_clipboardTextOnly = Settings::value(Settings::Server::ClipboardTextOnly).toBool();
   m_experimentalMultiMonitor = Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool();
+  m_useArrangement = Settings::value(Settings::Server::UseArrangement).toBool();
   setProperty("experimentalMultiMonitor", m_experimentalMultiMonitor);
 
   ui->lineConfigFile->setText(serverConfig().configFile());
@@ -452,6 +577,7 @@ void ServerConfigDialog::loadFromConfig()
     server->markAsServer();
   }
   updateControls();
+  updateArrangementMode();
 }
 
 void ServerConfigDialog::resetFromSettings()
@@ -551,6 +677,7 @@ void ServerConfigDialog::initConnections() const
       &m_computerSetupModel, &ComputerSetupModel::computersChanged, this,
       &ServerConfigDialog::setButtonBoxEnabledButtons
   );
+  connect(&m_computerSetupModel, &ComputerSetupModel::computersChanged, this, &ServerConfigDialog::refreshArrangement);
   connect(Settings::instance(), &Settings::settingsWritableChanged, this, &ServerConfigDialog::updateControls);
 }
 
@@ -600,7 +727,9 @@ void ServerConfigDialog::restoreFromDefaults()
   m_clipboardSize = Settings::defaultValue(Settings::Server::ClipboardSize).toUInt();
   m_clipboardTextOnly = Settings::defaultValue(Settings::Server::ClipboardTextOnly).toBool();
   m_experimentalMultiMonitor = Settings::defaultValue(Settings::Server::ExperimentalMultiMonitor).toBool();
+  m_useArrangement = Settings::defaultValue(Settings::Server::UseArrangement).toBool();
   setProperty("experimentalMultiMonitor", m_experimentalMultiMonitor);
+  updateArrangementMode();
 
   ui->groupExternalConfig->setChecked(Settings::defaultValue(Settings::Server::ExternalConfig).toBool());
   ui->lineConfigFile->setText(Settings::defaultValue(Settings::Server::ExternalConfigFile).toString());
@@ -644,6 +773,7 @@ bool ServerConfigDialog::isGeneralConfigModified() const
          m_clipboardSize != Settings::value(Settings::Server::ClipboardSize).toUInt() ||
          m_clipboardTextOnly != Settings::value(Settings::Server::ClipboardTextOnly).toBool() ||
          m_experimentalMultiMonitor != Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool() ||
+         m_useArrangement != Settings::value(Settings::Server::UseArrangement).toBool() ||
          m_enableHeartbeat != Settings::value(Settings::Server::EnableHeartbeat).toBool() ||
          m_heartbeatRate != Settings::value(Settings::Server::Heartbeat).toInt() ||
          m_enableSwitchDelay != Settings::value(Settings::Server::EnableSwitchDelay).toBool() ||
@@ -665,6 +795,7 @@ bool ServerConfigDialog::isGeneralConfigDefault() const
          m_clipboardSize == Settings::defaultValue(Settings::Server::ClipboardSize).toUInt() &&
          m_clipboardTextOnly == Settings::defaultValue(Settings::Server::ClipboardTextOnly).toBool() &&
          m_experimentalMultiMonitor == Settings::defaultValue(Settings::Server::ExperimentalMultiMonitor).toBool() &&
+         m_useArrangement == Settings::defaultValue(Settings::Server::UseArrangement).toBool() &&
          m_enableHeartbeat == Settings::defaultValue(Settings::Server::EnableHeartbeat).toBool() &&
          m_heartbeatRate == Settings::defaultValue(Settings::Server::Heartbeat).toInt() &&
          m_enableSwitchDelay == Settings::defaultValue(Settings::Server::EnableSwitchDelay).toBool() &&
@@ -680,7 +811,13 @@ bool ServerConfigDialog::isGeneralConfigDefault() const
 void ServerConfigDialog::setButtonBoxEnabledButtons() const
 {
   const bool writable = Settings::isWritable();
-  m_buttonBox->enableSave(writable && (isGeneralConfigModified() || !(m_originalServerConfig == m_serverConfig)));
+  // a configuration that has computers on top of each other in the arrangement is not saved
+  const bool arrangementIsFine =
+      !(m_experimentalMultiMonitor && m_useArrangement && m_arrangementPanel != nullptr &&
+        m_arrangementPanel->hasErrors());
+  m_buttonBox->enableSave(
+      writable && arrangementIsFine && (isGeneralConfigModified() || !(m_originalServerConfig == m_serverConfig))
+  );
   m_buttonBox->enableReset(writable && (isGeneralConfigModified() || !(m_originalServerConfig == m_serverConfig)));
   m_buttonBox->enableRestoreDefaults(writable && !isGeneralConfigDefault() && ui->tabWidget->currentIndex() == 2);
 }
