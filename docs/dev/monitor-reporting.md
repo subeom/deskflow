@@ -63,6 +63,9 @@ A valid report is at most 4 + 1 + 2 + 1 + 16 x 11 = 184 bytes.
 3. When the list of monitors changes **and the bounding box does not** (two monitors that swap places, a scale change):
    the platform raises `ComputerMonitorsChanged`. A change of the box already sends `DINF`, so it also sends a report.
 4. The client compares with the report it sent last, and sends nothing if the monitors are the same.
+5. A report is only sent when the shape of the computer is the one of the last `DINF` that was sent: if the shape changed
+   and its `DINF` is still to be sent (two display events in a row), the `DINF` brings the report, so a server never gets a
+   report for a shape that it has not been told.
 
 A client that **cannot** make its monitors tile exactly the shape of its `DINF` (the rectangles come from another
 system call than the shape, or a monitor is out of the range of 16 bits) **does not report** and logs one INFO line
@@ -78,7 +81,7 @@ on every platform and unit tested with fake enumerations.
 | Platform | Source | Coordinates | Notes |
 |---|---|---|---|
 | macOS | `CGGetActiveDisplayList` + `CGDisplayBounds` (`OSXDisplays.cpp`, already read for the server's own screen) | points, Quartz global space: exactly the space of `DINF` | scale = pixels of the display mode per point (200 on a Retina display); main display is primary; a mirror set is one monitor. `displayReconfigurationCallback` already raises `ComputerShapeChanged` for every change, so a report follows every `DINF` |
-| Windows | `EnumDisplayMonitors` + `GetMonitorInfoW` (`rcMonitor`, `MONITORINFOF_PRIMARY`) + `GetDpiForMonitor(MDT_EFFECTIVE_DPI)` loaded from `shcore.dll` (`MSWindowsMonitors.cpp`; 100 % when it is missing) | the virtual-screen pixels of the calling thread: the same space as `GetSystemMetrics(SM_*VIRTUALSCREEN)` that makes the shape | The DPI awareness of the process is **not** changed. When the box of the monitors is not the shape (a process that is not per-monitor aware sees a virtualised space) nothing is reported and one INFO line says so. `WM_DISPLAYCHANGE` re-reads the list with the shape; when the box did not change but the list did, `ComputerMonitorsChanged` is raised |
+| Windows | `EnumDisplayMonitors` + `GetMonitorInfoW` (`rcMonitor`, `MONITORINFOF_PRIMARY`) + `GetDpiForMonitor(MDT_EFFECTIVE_DPI)` loaded from `shcore.dll` (`MSWindowsMonitors.cpp`; 100 % when it is missing) | the virtual-screen pixels of the calling thread: the same space as `GetSystemMetrics(SM_*VIRTUALSCREEN)` that makes the shape | The DPI awareness of the process is **not** changed. When the box of the monitors is not the shape (a process that is not per-monitor aware sees a virtualised space) nothing is reported and one INFO line says so. The list is read the first time a server that invited the computer asks for it (a link that did not negotiate monitors never calls Windows for them), and with every `WM_DISPLAYCHANGE` after that; when the box did not change but the list did, `ComputerMonitorsChanged` is raised |
 | Linux (X11, libei) | none | | `getMonitors()` is empty: no acknowledgement, the legacy rectangle |
 
 ## What the server does with it

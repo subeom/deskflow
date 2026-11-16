@@ -1342,7 +1342,7 @@ bool MSWindowsComputer::onDisplayChange()
     sendEvent(EventTypes::ComputerShapeChanged);
 
     LOG_DEBUG("computer shape: %d,%d %dx%d %s", m_x, m_y, m_w, m_h, m_multimon ? "(multi-monitor)" : "");
-  } else if (m_monitorInfo != monitorsOld) {
+  } else if (m_monitorsWanted && m_monitorInfo != monitorsOld) {
     // the monitors moved about and the shape did not: a server that asked for the monitors is told, nobody else
     sendEvent(EventTypes::ComputerMonitorsChanged);
     LOG_DEBUG("monitors changed, the shape did not: %d,%d %dx%d", m_x, m_y, m_w, m_h);
@@ -1448,8 +1448,10 @@ void MSWindowsComputer::updateComputerShape()
   // check for multiple monitors
   m_multimon = (m_w != GetSystemMetrics(SM_CXSCREEN) || m_h != GetSystemMetrics(SM_CYSCREEN));
 
-  // the monitors, in the space of the shape; a client reports them when the shape is the box that they make
-  m_monitorInfo = deskflow::monitors::monitorsFromNative(deskflow::platform::listWindowsMonitors());
+  // the monitors, in the space of the shape, once a server has asked for them
+  if (m_monitorsWanted) {
+    m_monitorInfo = deskflow::monitors::monitorsFromNative(deskflow::platform::listWindowsMonitors());
+  }
 
   // tell the desks
   m_desks->setShape(m_x, m_y, m_w, m_h, m_xCenter, m_yCenter, m_multimon);
@@ -1457,6 +1459,11 @@ void MSWindowsComputer::updateComputerShape()
 
 std::vector<deskflow::monitors::MonitorInfo> MSWindowsComputer::getMonitorInfo() const
 {
+  // the first time, they are listed now, and from then on with every change of the shape
+  if (!m_monitorsWanted) {
+    m_monitorsWanted = true;
+    m_monitorInfo = deskflow::monitors::monitorsFromNative(deskflow::platform::listWindowsMonitors());
+  }
   return m_monitorInfo;
 }
 

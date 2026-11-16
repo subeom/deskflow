@@ -361,6 +361,11 @@ protected:
     return {m_shape, m_monitors};
   }
 
+  deskflow::server::MonitorRect localShape() const override
+  {
+    return m_shape;
+  }
+
   ClientInfo currentInfo() const override
   {
     ClientInfo info;
@@ -780,6 +785,9 @@ struct DestinationLink
         undereferenceableClient(), &stream, &events, deskflow::platform::currentInputCapabilities()
     );
     proxy->setLocal(shape, monitors);
+    // the server asks for the shape of the computer first, as it always does, and gets it
+    receive(messageBytes(kMsgQInfo));
+    (void)written();
   }
 
   void receive(const QByteArray &bytes)
@@ -877,6 +885,34 @@ void ServerProxyTests::monitorReport_monitorsChangedButNotTheShape_sendsJustTheR
   QCOMPARE(link.written(), reportBytes(2, {{0, 0, 2560, 1440, 200, true}, {2560, 0, 1920, 1080, 100, false}}));
 }
 
+// the shape and the monitors change together, and the event of the monitors is dispatched before the one of the shape
+// (Windows can do that): the report is of a shape that the server does not have yet, so it waits for the DINF
+void ServerProxyTests::monitorReport_monitorsEventBeforeTheShapeEvent_waitsForTheDinf()
+{
+  DestinationLink link(kTwoMonitorsShape, kTwoMonitors);
+  link.sourceSays(kLayoutCapabilityMonitors);
+  (void)link.written();
+
+  const MonitorRect threeShape{0, 0, 6400, 1440};
+  link.proxy->setLocal(
+      threeShape,
+      {{{0, 0, 2560, 1440}, 150, true}, {{2560, 0, 1920, 1080}, 100, false}, {{4480, 0, 1920, 1440}, 100, false}}
+  );
+  link.proxy->tellMonitorsChanged();
+  // nothing: a report of 0,0 6400x1440 would be thrown away by a server that has the DINF of 0,0 4480x1440
+  QCOMPARE(link.written(), QByteArray());
+
+  // the DINF of the new shape, and the report right behind it
+  link.proxy->onInfoChanged();
+  QCOMPARE(
+      link.written(),
+      infoBytes(threeShape) +
+          reportBytes(
+              2, {{0, 0, 2560, 1440, 150, true}, {2560, 0, 1920, 1080, 100, false}, {4480, 0, 1920, 1440, 100, false}}
+          )
+  );
+}
+
 void ServerProxyTests::monitorReport_monitorsThatDoNotTileTheShape_areNotReportedAndForgotten()
 {
   CapturingOutputter outputter;
@@ -960,7 +996,10 @@ void ServerProxyTests::monitorReport_matrix()
   QCOMPARE(serverSide.reportedMonitors() != nullptr, reportReachesTheServer);
   if (reportReachesTheServer) {
     QCOMPARE(serverSide.reportedMonitors()->monitors.size(), static_cast<size_t>(2));
-    QCOMPARE(serverEvents.addedEvents().empty(), false);
+    // the proxy of the server said that the monitors were reported
+    QVERIFY(std::ranges::any_of(serverEvents.addedEvents(), [](const Event &event) {
+      return event.getType() == EventTypes::ClientProxyMonitorsReported;
+    }));
   }
   // the capability mask in the CIPC that went to the server: the bit is there only when it is reported
   const auto cipc = toServer.indexOf("CIPC");

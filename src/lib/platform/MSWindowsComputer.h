@@ -276,8 +276,10 @@ private:
   // true if system appears to have multiple monitors
   bool m_multimon = false;
 
-  // the monitors of the virtual screen, for a server that asked for them; read with the shape
-  std::vector<deskflow::monitors::MonitorInfo> m_monitorInfo;
+  // The monitors of the virtual screen, for a server that asked for them. Windows is not asked for them until a server
+  // has (a link that did not negotiate monitors never lists any); from then on they are read with the shape.
+  mutable bool m_monitorsWanted = false;
+  mutable std::vector<deskflow::monitors::MonitorInfo> m_monitorInfo;
 
   // last mouse position
   int32_t m_xCursor = 0;

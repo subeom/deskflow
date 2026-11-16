@@ -31,6 +31,7 @@ private Q_SLOTS:
   void monitorReport_clientThatCannotListItsMonitors_doesNotAcknowledge();
   void monitorReport_afterEveryDinf_butOnlyWhenTheMonitorsChanged();
   void monitorReport_monitorsChangedButNotTheShape_sendsJustTheReport();
+  void monitorReport_monitorsEventBeforeTheShapeEvent_waitsForTheDinf();
   void monitorReport_monitorsThatDoNotTileTheShape_areNotReportedAndForgotten();
   void monitorReport_matrix_data();
   void monitorReport_matrix();

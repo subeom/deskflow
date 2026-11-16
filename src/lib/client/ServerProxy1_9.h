@@ -37,6 +37,8 @@ protected:
   };
 
   virtual LocalMonitors localMonitors() const;
+  //! The shape that the computer reports now, which is what a DINF that is sent now says
+  virtual deskflow::server::MonitorRect localShape() const;
   void onInfoSent() override;
   ConnectionResult parseHandshakeMessage(const uint8_t *code) override;
   ConnectionResult parseMessage(const uint8_t *code) override;
@@ -74,6 +76,10 @@ private:
   bool m_reportsMonitors = false;
   // what the server was last told: nothing yet, or the monitors, or (an empty list) that there are none to tell
   std::optional<std::vector<deskflow::monitors::MonitorEntry>> m_monitorsTold;
+  // The shape of the last DINF that was sent. A report is checked by the server against the DINF that it has, so it is
+  // only sent when its shape is that one: when the shape changed and its DINF is still to be sent, that DINF is what
+  // brings the report.
+  std::optional<deskflow::server::MonitorRect> m_shapeSent;
   uint16_t m_monitorGeneration = 0;
   std::string m_lastMonitorProblem;
   bool m_invertScrollX = false;

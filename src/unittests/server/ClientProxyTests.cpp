@@ -737,15 +737,44 @@ void ClientProxyTests::monitorCapability_experimentOn_dipcHasOneBitMore()
   QCOMPARE(kLayoutCapabilityMonitors, InputCapabilityMask{1} << 12);
 }
 
-// protocols before 1.9 have no capability handshake: with the experiment on, a computer is told nothing
+// protocols before 1.9 have no capability handshake: with the experiment on, a computer is told what it was told with
+// it off, and no DIPC
 void ClientProxyTests::monitorCapability_olderProtocols_neverAdvertise()
 {
-  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  const auto greeting = [](int minor, bool experiment) {
+    Settings::setValue(Settings::Server::ExperimentalMultiMonitor, experiment);
+    MockEventQueue events;
+    auto *stream = new CapturingStream;
+    auto *server = reinterpret_cast<Server *>(0x1);
+    QByteArray bytes;
+    switch (minor) {
+    case 6: {
+      ClientProxy1_6 proxy("client", stream, server, &events);
+      bytes = stream->take();
+      break;
+    }
+    case 7: {
+      ClientProxy1_7 proxy("client", stream, server, &events);
+      bytes = stream->take();
+      break;
+    }
+    default: {
+      ClientProxy1_8 proxy("client", stream, server, &events);
+      bytes = stream->take();
+      break;
+    }
+    }
+    Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+    return bytes;
+  };
+
   for (const int minor : {6, 7, 8}) {
-    ProxyUnderTest test(minor);
-    QVERIFY(test.stream->take().isEmpty());
+    const auto off = greeting(minor, false);
+    const auto on = greeting(minor, true);
+    QVERIFY2(!off.isEmpty(), "the greeting has at least the query of the info");
+    QCOMPARE(on, off);
+    QVERIFY(!on.contains("DIPC"));
   }
-  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
 }
 
 void ClientProxyTests::monitorReport_negotiated_isKeptAndAnnounced()

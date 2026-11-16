@@ -61,17 +61,19 @@ bool ServerProxy1_9::receiveInputCapabilities()
   return true;
 }
 
-ServerProxy1_9::LocalMonitors ServerProxy1_9::localMonitors() const
+deskflow::server::MonitorRect ServerProxy1_9::localShape() const
 {
-  LocalMonitors local;
   int32_t x;
   int32_t y;
   int32_t w;
   int32_t h;
   m_client->getShape(x, y, w, h);
-  local.shape = {x, y, w, h};
-  local.monitors = m_client->monitorInfo();
-  return local;
+  return {x, y, w, h};
+}
+
+ServerProxy1_9::LocalMonitors ServerProxy1_9::localMonitors() const
+{
+  return {localShape(), m_client->monitorInfo()};
 }
 
 void ServerProxy1_9::onMonitorsChanged()
@@ -82,6 +84,7 @@ void ServerProxy1_9::onMonitorsChanged()
 void ServerProxy1_9::onInfoSent()
 {
   // the server checks the report against the shape that it has just been sent
+  m_shapeSent = localShape();
   sendMonitorReport();
 }
 
@@ -92,6 +95,10 @@ void ServerProxy1_9::sendMonitorReport()
   }
 
   const auto local = localMonitors();
+  if (!m_shapeSent || *m_shapeSent != local.shape) {
+    // the shape of the computer is not the one that the server was told: its DINF is on its way and brings the report
+    return;
+  }
   const auto prepared = deskflow::monitors::prepareMonitors(local.monitors, local.shape);
   if (!prepared.ok()) {
     // the server is not told of monitors that it cannot use; one that it was told of before is not valid any more
