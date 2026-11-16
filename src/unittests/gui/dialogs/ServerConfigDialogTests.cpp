@@ -22,6 +22,7 @@
 #include <QGroupBox>
 #include <QLabel>
 #include <QPushButton>
+#include <QRect>
 #include <QSpinBox>
 #include <QTest>
 
@@ -471,6 +472,32 @@ void ServerConfigDialogTests::arrangement_aComputerIsRemovedFromTheCanvas_theSer
   QCOMPARE(canvas->arrangement().computers.size(), size_t(2));
   QCOMPARE(canvas->arrangement().indexOf("PC"), -1);
   QVERIFY(saveIsEnabled(dialog));
+}
+
+void ServerConfigDialogTests::arrangement_aComputerThatReportsAnotherScreen_isWarnedOf()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  Settings::setValue(Settings::Computer::ArrangementWidth.arg("MINI"), 1920);
+  Settings::setValue(Settings::Computer::ArrangementHeight.arg("MINI"), 1080);
+  for (const auto &[name, x, y] :
+       std::vector<std::tuple<QString, double, double>>{{"srv", 0, 0}, {"PC", -1920, 0}, {"MINI", 3440, 0}}) {
+    Settings::setValue(Settings::Computer::ArrangementX.arg(name), x);
+    Settings::setValue(Settings::Computer::ArrangementY.arg(name), y);
+  }
+  ServerConfig config;
+  // the Mac mini says it is 2560x1440, the arrangement has it as 1920x1080; the PC says what the arrangement has
+  config.setReportedScreen("MINI", QRect(0, 0, 2560, 1440));
+  config.setReportedScreen("PC", QRect(0, 0, 1920, 1080));
+  ServerConfigDialog dialog(nullptr, config);
+  dialog.show();
+  auto *issues = panelOf(dialog)->findChild<QLabel *>(QStringLiteral("lblArrangementIssues"));
+  QVERIFY(issues->isVisibleTo(&dialog));
+  QVERIFY2(issues->text().contains(QStringLiteral("MINI reports a screen of 2560 × 1440")), qPrintable(issues->text()));
+  QVERIFY(!issues->text().contains(QStringLiteral("PC reports")));
+  // a warning does not stop it from being saved
+  QVERIFY(!panelOf(dialog)->hasErrors());
 }
 
 namespace {

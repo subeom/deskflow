@@ -16,6 +16,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <optional>
 
 namespace {
 
@@ -149,6 +150,31 @@ void ArrangementPanel::updateIssues()
     const bool error = issue.severity() == deskflow::server::arrangement::Issue::Severity::Error;
     m_errors = m_errors || error;
     lines << (error ? tr("Error: %1") : tr("Warning: %1")).arg(text);
+    tips << text;
+  }
+  // what a computer that is connected says its screen is, when the arrangement has another: the server does not use
+  // monitors that are not of it, and a size that is not its size draws it wrong
+  for (const auto &computer : m_canvas->arrangement().computers) {
+    const auto name = QString::fromStdString(computer.name);
+    const auto reported = computer.isServer ? std::nullopt : m_config.reportedScreen(name);
+    if (!reported)
+      continue;
+    const auto shape = computer.shape();
+    if (shape.x == reported->x() && shape.y == reported->y() && shape.w == reported->width() &&
+        shape.h == reported->height())
+      continue;
+    const auto text = tr("%1 reports a screen of %2 × %3 at %4,%5, but the arrangement has %6 × %7 at %8,%9: set its "
+                         "monitors or its size.")
+                          .arg(name)
+                          .arg(reported->width())
+                          .arg(reported->height())
+                          .arg(reported->x())
+                          .arg(reported->y())
+                          .arg(shape.w)
+                          .arg(shape.h)
+                          .arg(shape.x)
+                          .arg(shape.y);
+    lines << tr("Warning: %1").arg(text);
     tips << text;
   }
   m_lblIssues->setText(lines.join(QLatin1Char('\n')));

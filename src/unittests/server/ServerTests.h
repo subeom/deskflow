@@ -96,6 +96,8 @@ private Q_SLOTS:
   void primaryMonitors_aScreenThatChanges_isDecidedAgain();
   void primaryMonitors_decisions_areSaidOncePerChange();
   void primaryMonitors_nothingIsAddedToWhatAComputerIsTold();
+  void primaryMonitors_doubleTap_isArmedAsFarFromAnInnerEdgeAsFromAnOuterOne();
+  void reportedScreens_areSaidAtInfoLevelWhileTheExperimentIsOn();
   void monitorGeometry_enteringAHole_landsOnAMonitor();
   void monitorGeometry_theExampleOfTheDocumentation();
   void monitorGeometry_leavingThroughAnInnerEdge_happensAtOnce();

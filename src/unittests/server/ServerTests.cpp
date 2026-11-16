@@ -3208,4 +3208,61 @@ void ServerTests::primaryMonitors_nothingIsAddedToWhatAComputerIsTold()
   QCOMPARE(optionsOf(true), optionsOf(false));
 }
 
+void ServerTests::primaryMonitors_doubleTap_isArmedAsFarFromAnInnerEdgeAsFromAnOuterOne()
+{
+  const QuietLog quiet;
+  // The pointer taps the edge, goes \p away pixels from it, one at a time, and taps it again: whether the second tap
+  // switched. The double tap is armed when the pointer was 3 pixels from the edge.
+  const auto secondTapSwitches = [](int32_t edgeX, int32_t y, int32_t away) {
+    auto rig = surrounded(kTShapedPrimary, Mode::Off, false);
+    rig->config.addOption("", kOptionComputerSwitchTwoTap, 5000);
+    rig->configureArrangement(true, true);
+    rig->moveOnPrimary(edgeX, y);
+    for (int32_t i = 1; i <= away; ++i)
+      rig->moveOnPrimary(edgeX + i, y);
+    const EntryWatch watch(*rig);
+    rig->moveOnPrimary(edgeX, y);
+    return watch.landing().has_value();
+  };
+  // an edge of the box, which is what it always was
+  QVERIFY(!secondTapSwitches(0, 700, 2));
+  QVERIFY(secondTapSwitches(0, 700, 3));
+  // an inner edge of the screen is the same: the MacBook's left edge
+  QVERIFY(!secondTapSwitches(753, 1500, 2));
+  QVERIFY(secondTapSwitches(753, 1500, 3));
+}
+
+void ServerTests::reportedScreens_areSaidAtInfoLevelWhileTheExperimentIsOn()
+{
+  // what a computer told the server its screen is, in a line that the GUI reads, once for each change and each
+  // connection
+  ScopedInfoLines info(m_log);
+  PointerRig rig(kPrimaryShapes[0], {{"C", {-1920, 0, 4480, 1440}}, {"D", {0, 0, 1920, 1080}}});
+  rig.configureExperiment(false);
+  QCOMPARE(info.count(QStringLiteral("reports its screen")), 0);
+
+  rig.configureExperiment(true);
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports its screen: -1920,0 4480x1440")), 1);
+  QCOMPARE(info.count(QStringLiteral("computer \"D\" reports its screen: 0,0 1920x1080")), 1);
+  // not the screen of the server itself
+  QCOMPARE(info.count(QStringLiteral("computer \"primary\" reports")), 0);
+
+  // read again, or the same shape again, says nothing more
+  rig.configureExperiment(true);
+  rig.reportShape(rig.client("C"));
+  QCOMPARE(info.count(QStringLiteral("reports its screen")), 2);
+
+  // another screen is said, and a computer that connects again says it again
+  rig.reportShape(rig.client("C"), Box{0, 0, 2560, 1440});
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports its screen: 0,0 2560x1440")), 1);
+  rig.reconnect("D", {0, 0, 1920, 1080});
+  QCOMPARE(info.count(QStringLiteral("computer \"D\" reports its screen: 0,0 1920x1080")), 2);
+
+  // off, it is not in the log at all
+  const auto lines = info.count(QStringLiteral("reports its screen"));
+  rig.configureExperiment(false);
+  rig.reportShape(rig.client("C"), Box{0, 0, 1280, 720});
+  QCOMPARE(info.count(QStringLiteral("reports its screen")), lines);
+}
+
 QTEST_MAIN(ServerTests)

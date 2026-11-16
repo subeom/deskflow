@@ -297,6 +297,13 @@ message through which a client reports its monitors would have to be negotiated 
 because a receiver that gets a message code it does not know discards the whole buffered stream; that is
 not part of it.
 
+The experimental **arrangement of the computers** (see [arrangement.md](arrangement.md)) changes
+nothing on the wire either. The arrangement lives in the server's GUI settings and the server configuration
+file that it writes (the `left(0,38.7513) = Name(0,100)` links that the core has always read); the server's
+own monitors are read from its operating system. Nothing about it is sent to a computer, and the size that a
+computer reported with `DINF` is only read (the GUI learns it from a line of the server log, not from a new
+message).
+
 #### F18 to Hangul Mapping
 
 On a negotiated macOS-to-Windows protocol 1.9 link, the F18 key can be sent as the Korean-English

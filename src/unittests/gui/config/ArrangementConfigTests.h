@@ -30,6 +30,9 @@ private Q_SLOTS:
   void arrangement_isSavedAndLoaded();
   void arrangement_oldConfigurationsLoadAsTheyWere();
   void arrangement_classicGridConversion_keepsTheLinks();
+  void reportedScreen_isParsedFromTheLogOfTheCore_data();
+  void reportedScreen_isParsedFromTheLogOfTheCore();
+  void reportedScreen_isWhatAComputerWithNoSizeIsDrawnAs();
 
 private:
   QTemporaryDir m_settingsDir;

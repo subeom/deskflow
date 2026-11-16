@@ -347,6 +347,10 @@ private:
   // say what is decided for \p client, if it is not what was said last
   void sayMonitorGeometry(const BaseClientProxy *client);
 
+  // say the screen that \p client reports, if it is not what was said last, while the experiment is on: the GUI reads
+  // it
+  void sayReportedScreen(const BaseClientProxy *client);
+
   // say about a switch of computers, when the experiment is on
   void sayMonitorGeometrySwitch(const BaseClientProxy *destination, int32_t x, int32_t y);
 
@@ -561,6 +565,9 @@ private:
 
   // what was said last about each computer, by name: on or off, and why
   std::map<std::string, std::string> m_monitorGeometrySaid;
+
+  // the screen that each computer was last said to report, by name
+  std::map<std::string, std::string> m_reportedScreenSaid;
 
   // the side and fraction of the last edge that the pointer was taken over, for what is said about a switch
   struct Crossing

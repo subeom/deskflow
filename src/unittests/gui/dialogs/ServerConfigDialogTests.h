@@ -31,6 +31,7 @@ private Q_SLOTS:
   void arrangement_isUsedOnRequest_savedWithThePlaces_andLeftAgain();
   void arrangement_withComputersOnTopOfEachOther_cannotBeSaved();
   void arrangement_aComputerIsRemovedFromTheCanvas_theServerIsNot();
+  void arrangement_aComputerThatReportsAnotherScreen_isWarnedOf();
   void arrangement_screenshots_areMadeOfTheDialogs();
 
 private:

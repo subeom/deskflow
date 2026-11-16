@@ -7,7 +7,9 @@
 
 #include "common/Settings.h"
 #include "gui/config/ServerConfig.h"
+#include "gui/core/ReportedScreen.h"
 
+#include <QRect>
 #include <QTextStream>
 
 #include <optional>
@@ -364,7 +366,6 @@ void ArrangementConfigTests::arrangement_theServerOfTheUser_makesPartialLinks()
                              "end\n\nsection: options\nend\n\n"
                          )
   );
-
 }
 
 void ArrangementConfigTests::arrangement_aComputerThatIsNotPlaced_isBesideTheOthers()
@@ -464,6 +465,66 @@ void ArrangementConfigTests::arrangement_classicGridConversion_keepsTheLinks()
   QCOMPARE(conversion.arrangement.computers[1].originX, 0.0);
   QCOMPARE(conversion.arrangement.computers[1].originY, 0.0);
   forget({"SUBEOM-COPILOT", "9800X3D-5080"});
+}
+
+void ArrangementConfigTests::reportedScreen_isParsedFromTheLogOfTheCore_data()
+{
+  QTest::addColumn<QString>("line");
+  QTest::addColumn<bool>("parsed");
+  QTest::addColumn<QString>("computer");
+  QTest::addColumn<QRect>("shape");
+  QTest::newRow(
+      "a plain screen"
+  ) << QStringLiteral("[2026-11-16T13:30:00] INFO: computer \"SUBEOM-COPILOT\" reports its screen: 0,0 1920x1080")
+    << true << "SUBEOM-COPILOT" << QRect(0, 0, 1920, 1080);
+  QTest::newRow("monitors on the left, a negative position")
+      << QStringLiteral("INFO: computer \"9800X3D-5080\" reports its screen: -1920,0 4480x1440\r") << true
+      << "9800X3D-5080" << QRect(-1920, 0, 4480, 1440);
+  QTest::newRow("a name with a space and a dot")
+      << QStringLiteral("computer \"Subeoms Mac-mini.local\" reports its screen: 0,-300 2560x1440") << true
+      << "Subeoms Mac-mini.local" << QRect(0, -300, 2560, 1440);
+  QTest::newRow("another line") << QStringLiteral("INFO: client \"x\" has connected") << false << "" << QRect();
+  QTest::newRow("a size of nothing") << QStringLiteral("computer \"x\" reports its screen: 0,0 0x1080") << false << ""
+                                     << QRect();
+  QTest::newRow("not numbers") << QStringLiteral("computer \"x\" reports its screen: a,0 10x10") << false << ""
+                               << QRect();
+}
+
+void ArrangementConfigTests::reportedScreen_isParsedFromTheLogOfTheCore()
+{
+  QFETCH(QString, line);
+  QFETCH(bool, parsed);
+  QFETCH(QString, computer);
+  QFETCH(QRect, shape);
+  const auto screen = deskflow::gui::parseReportedScreen(line);
+  QCOMPARE(screen.has_value(), parsed);
+  if (parsed) {
+    QCOMPARE(screen->computer, computer);
+    QCOMPARE(screen->shape, shape);
+  }
+}
+
+void ArrangementConfigTests::reportedScreen_isWhatAComputerWithNoSizeIsDrawnAs()
+{
+  writeGrid({{6, "A"}, {7, "B"}, {8, "C"}}, "A");
+  ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{});
+  // B has a size that was said, C has none; A is the server
+  Settings::setValue(Settings::Computer::ArrangementWidth.arg("B"), 1600);
+  Settings::setValue(Settings::Computer::ArrangementHeight.arg("B"), 900);
+  ServerConfig config;
+  config.setReportedScreen("b", QRect(0, 0, 2560, 1440));
+  config.setReportedScreen("C", QRect(-1920, 0, 4480, 1440));
+  const auto arrangement = config.classicGridAsArrangement().arrangement;
+  const auto shapeOf = [&](const char *name) {
+    return arrangement.computers[static_cast<size_t>(arrangement.indexOf(name))].shape();
+  };
+  // a size that was said wins over what the computer reports, which is what the dialog warns of
+  QCOMPARE(shapeOf("B"), (deskflow::server::MonitorRect{0, 0, 1600, 900}));
+  QCOMPARE(shapeOf("C"), (deskflow::server::MonitorRect{-1920, 0, 4480, 1440}));
+  // and one that nothing was said of is the usual monitor
+  QCOMPARE(shapeOf("A"), (deskflow::server::MonitorRect{0, 0, 1920, 1080}));
+  QVERIFY(!config.reportedScreen("A"));
+  QVERIFY(config.reportedScreen("c"));
 }
 
 QTEST_MAIN(ArrangementConfigTests)

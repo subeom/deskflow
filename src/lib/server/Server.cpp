@@ -986,7 +986,13 @@ void Server::armSwitchTwoTap(int32_t x, int32_t y)
       if (tapZone < m_switchTwoTapZone) {
         tapZone = m_switchTwoTapZone;
       }
-      if (x >= ax + tapZone && x < ax + aw - tapZone && y >= ay + tapZone && y < ay + ah - tapZone) {
+      // the tap zone is as far from an edge of the screen that is an inner edge as from one on the bounding box
+      const auto *layout = monitorLayoutFor(m_active);
+      const bool awayFromTheEdges =
+          layout != nullptr ? layout->contains(x - tapZone, y) && layout->contains(x + tapZone, y) &&
+                                  layout->contains(x, y - tapZone) && layout->contains(x, y + tapZone)
+                            : x >= ax + tapZone && x < ax + aw - tapZone && y >= ay + tapZone && y < ay + ah - tapZone;
+      if (awayFromTheEdges) {
         // win32 can generate bogus mouse events that appear to
         // move in the opposite direction that the mouse actually
         // moved.  try to ignore that crap here.
@@ -1298,6 +1304,7 @@ void Server::setMonitorGeometry(bool on)
   if (m_multiMonitor != on) {
     m_multiMonitor = on;
     m_monitorGeometrySaid.clear();
+    m_reportedScreenSaid.clear();
     m_crossing.known = false;
     LOG_INFO("experimental multi-monitor aware cursor mapping is %s", on ? "on" : "off");
   }
@@ -1418,11 +1425,34 @@ const MonitorLayout *Server::primaryLayout(std::string *reason) const
   return &layout;
 }
 
+void Server::sayReportedScreen(const BaseClientProxy *client)
+{
+  // the screen of the server itself is its own
+  if (!m_multiMonitor || client == m_primaryClient) {
+    return;
+  }
+
+  int32_t x;
+  int32_t y;
+  int32_t w;
+  int32_t h;
+  client->getShape(x, y, w, h);
+  const auto name = getName(client);
+  const auto screen = std::format("{},{} {}x{}", x, y, w, h);
+  auto &said = m_reportedScreenSaid[name];
+  if (said != screen) {
+    said = screen;
+    LOG_INFO("computer \"%s\" reports its screen: %s", name.c_str(), screen.c_str());
+  }
+}
+
 void Server::sayMonitorGeometry(const BaseClientProxy *client)
 {
   if (!m_multiMonitor) {
     return;
   }
+
+  sayReportedScreen(client);
 
   std::string reason;
   const bool on = monitorLayoutFor(client, &reason) != nullptr;
@@ -2177,7 +2207,8 @@ bool Server::onMouseMovePrimary(int32_t x, int32_t y)
   int32_t yc = y;
   int32_t xh = x;
   int32_t yv = y;
-  if (const auto *layout = monitorLayoutFor(m_active); layout != nullptr) {
+  // the layout of the screen of the server is only asked for when it can be used
+  if (const auto *layout = m_multiMonitor && m_useArrangement ? primaryLayout() : nullptr; layout != nullptr) {
     // The screen is not a rectangle. A pointer on an exposed edge of it, which is a pixel that has no monitor zoneSize
     // away on one side, is where the pointer leaves, whether that edge is on the bounding box or not; the computer on
     // that side is found from where the pointer would be beyond the bounding box, as it always is. The system keeps
@@ -2502,6 +2533,7 @@ bool Server::removeClient(BaseClientProxy *client)
 
   // remove from list
   m_monitorGeometrySaid.erase(getName(client));
+  m_reportedScreenSaid.erase(getName(client));
   m_clients.erase(getName(client));
   m_clientSet.erase(i);
 

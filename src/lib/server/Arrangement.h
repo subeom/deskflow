@@ -111,6 +111,9 @@ struct Issue
     //! A row of the \c side of \c computer has two exposed edges, each touching another computer; \c other lost its
     //! link
     AmbiguousSide,
+    //! The link of \c side of \c computer to \c other covers rows in which another exposed edge of that side touches
+    //! nothing: the pointer leaves there too
+    EdgeInTheSameRows,
   };
   enum class Severity
   {

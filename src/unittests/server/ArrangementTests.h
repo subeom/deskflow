@@ -23,6 +23,8 @@ private Q_SLOTS:
   void derive_aNotchIsNoOverlap_andIsLinkedOnBothSides();
   void derive_aRowWithTwoExposedEdges_keepsTheOuterOneAndWarns();
   void derive_linksOfComputersThatAreNotValid_areLeftOut();
+  void derive_anEdgeThatTouchesNothingInTheRowsOfALink_isWarnedOf();
+  void derive_neighboursStackedWithRoundedPositions_areTwoLinks();
 
   void validation_data();
   void validation();
@@ -33,6 +35,7 @@ private Q_SLOTS:
   void snap_aComputerOnAnotherIsPushedOff();
   void snap_aGroupThatIsNotARectangle_snapsByAnyOfItsMonitors();
   void snap_whatCannotBeSnapped_isRefused();
+  void snap_aComputerThatIsNotValid_isRefused();
   void snap_guides_saySnappedEdges();
 
   void grid_equalSizes_deriveTheLinksOfTheClassicGrid_data();

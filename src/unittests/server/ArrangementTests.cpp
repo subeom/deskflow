@@ -69,9 +69,9 @@ std::string dump(const DerivedLinks &derived)
 
 std::string describe(const Issue &issue)
 {
-  static constexpr std::array<const char *, 8> kinds = {"NameIsEmpty",  "DuplicateName",   "InvalidMonitors",
+  static constexpr std::array<const char *, 9> kinds = {"NameIsEmpty",  "DuplicateName",   "InvalidMonitors",
                                                         "InvalidZoom",  "InvalidPosition", "Overlap",
-                                                        "NotConnected", "AmbiguousSide"};
+                                                        "NotConnected", "AmbiguousSide",   "EdgeInTheSameRows"};
   std::string text = kinds.at(static_cast<size_t>(issue.kind));
   text += " " + issue.computer;
   if (!issue.other.empty())
@@ -381,7 +381,8 @@ void ArrangementTests::derive_aRowWithTwoExposedEdges_keepsTheOuterOneAndWarns()
       QString::fromStdString(dump(derived)),
       QStringLiteral("U right(0,53.3333) = C\nU left(0,53.3333) = B\nB right = U(0,53.3333)\nC left = U(0,53.3333)\n")
   );
-  QCOMPARE(describe(derived.issues), std::string("AmbiguousSide U B right\n"));
+  // the right side is ambiguous; the left edge of the left arm is in the rows of the link of the notch
+  QCOMPARE(describe(derived.issues), std::string("AmbiguousSide U B right\nEdgeInTheSameRows U B left\n"));
   QVERIFY(std::ranges::none_of(derived.issues, [](const Issue &i) { return i.severity() == Issue::Severity::Error; }));
 }
 
@@ -540,6 +541,52 @@ void ArrangementTests::snap_whatCannotBeSnapped_isRefused()
   QVERIFY(nan.refused);
   QCOMPARE(nan.originX, 5000.0);
   QCOMPARE(nan.originY, 5000.0);
+}
+
+void ArrangementTests::derive_anEdgeThatTouchesNothingInTheRowsOfALink_isWarnedOf()
+{
+  // a U with a computer in its notch only: the left edge of the left arm and the right edge of the right arm are in the
+  // same rows as the links of the notch, and touch nothing, so the pointer would leave there to the computer in the
+  // notch
+  const Arrangement u{
+      {pc("U", "0,0,1000,1000;0,1000,3000,500;2000,0,1000,1000", 0, 0), pc("B", "0,0,1000,800", 1000, 0)}
+  };
+  const auto derived = deriveLinks(u);
+  const auto text = describe(derived.issues);
+  QVERIFY2(text.find("EdgeInTheSameRows U B left") != std::string::npos, text.c_str());
+  QVERIFY2(text.find("EdgeInTheSameRows U B right") != std::string::npos, text.c_str());
+  QVERIFY(std::ranges::none_of(derived.issues, [](const Issue &i) { return i.severity() == Issue::Severity::Error; }));
+
+  // the screen of the user is not one of these: its edges on a side are in rows of their own
+  QCOMPARE(describe(check(serverWithThreePcs())), std::string());
+}
+
+void ArrangementTests::derive_neighboursStackedWithRoundedPositions_areTwoLinks()
+{
+  // B and C are stacked beside A. C is where B ends, to three decimals, which is how it is stored: 3 / 10000 of a unit
+  // too high. That is not an overlap of the links, and not an ambiguity.
+  const Arrangement arrangement{{
+      pc("A", "0,0,1000,2000", 0, 0),
+      pc("B", "0,0,1000,1001", 1000, 0, 2.0 / 3.0),
+      pc("C", "0,0,1000,1001", 1000, 667.333, 2.0 / 3.0),
+  }};
+  const auto derived = deriveLinks(arrangement);
+  QCOMPARE(describe(derived.issues), std::string());
+  const auto links = derived.of("A", Direction::Right);
+  QCOMPARE(links.size(), size_t(2));
+  QVERIFY(links[0].srcEnd <= links[1].srcStart);
+  QCOMPARE(links[0].to, std::string("B"));
+  QCOMPARE(links[1].to, std::string("C"));
+}
+
+void ArrangementTests::snap_aComputerThatIsNotValid_isRefused()
+{
+  auto broken = pc("B", kHd, 5000, 5000);
+  broken.zoom = std::nan("");
+  const Arrangement arrangement{{pc("A", kHd, 0, 0), broken}};
+  const auto snapped = snapMove(arrangement, 1, 100, 100, 20);
+  QVERIFY(snapped.refused);
+  QVERIFY(std::isfinite(snapped.originX) && std::isfinite(snapped.originY));
 }
 
 void ArrangementTests::snap_guides_saySnappedEdges()

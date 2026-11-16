@@ -14,7 +14,9 @@
 #include "gui/config/ComputerList.h"
 #include "server/Arrangement.h"
 
+#include <QHash>
 #include <QList>
+#include <QRect>
 
 #include <optional>
 #include <vector>
@@ -84,6 +86,14 @@ public:
   //! Take the places of the computers from \p arrangement
   void setArrangement(const deskflow::server::arrangement::Arrangement &arrangement);
 
+  //! What a computer that is connected said its screen is: its position and size in its own coordinates
+  /*!
+  Only known while the server runs and the computer is connected, and it is not saved. It is what a computer that has no
+  monitors and no size that was said is drawn as.
+  */
+  void setReportedScreen(const QString &computer, const QRect &shape);
+  std::optional<QRect> reportedScreen(const QString &computer) const;
+
   //! The displays of this computer, as the operating system says: nothing if it does not
   static std::vector<deskflow::server::MonitorRect> serverMonitors();
 
@@ -123,6 +133,8 @@ private:
   HotkeyList m_Hotkeys;
 
   ComputerList m_computers;
+  // by the name of the computer in lower case
+  QHash<QString, QRect> m_reportedScreens;
   int m_columns;
   int m_rows;
 };

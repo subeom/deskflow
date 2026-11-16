@@ -56,7 +56,8 @@ std::optional<std::vector<MonitorRect>> &monitorsOverride()
   return override;
 }
 
-std::vector<MonitorRect> monitorsOf(const ::Computer &computer, const std::vector<MonitorRect> &display)
+std::vector<MonitorRect>
+monitorsOf(const ::Computer &computer, const std::vector<MonitorRect> &display, const std::optional<QRect> &reported)
 {
   // the screen of this computer is what the operating system says it is
   if (computer.isServer() && !display.empty() && MonitorLayout::create(display))
@@ -65,6 +66,9 @@ std::vector<MonitorRect> monitorsOf(const ::Computer &computer, const std::vecto
     if (const auto parsed = MonitorLayout::parse(computer.monitorLayout().toStdString()); parsed)
       return parsed.layout->monitors();
   }
+  // the size that was said, then the size that the computer reported, then a monitor of the usual size
+  if (computer.arrangementWidth() <= 0 && computer.arrangementHeight() <= 0 && reported)
+    return {{reported->x(), reported->y(), reported->width(), reported->height()}};
   return {
       {0, 0, computer.arrangementWidth() > 0 ? computer.arrangementWidth() : kDefaultWidth,
        computer.arrangementHeight() > 0 ? computer.arrangementHeight() : kDefaultHeight}
@@ -389,6 +393,19 @@ std::vector<MonitorRect> ServerConfig::serverMonitors()
 #endif
 }
 
+void ServerConfig::setReportedScreen(const QString &computer, const QRect &shape)
+{
+  m_reportedScreens.insert(computer.toLower(), shape);
+}
+
+std::optional<QRect> ServerConfig::reportedScreen(const QString &computer) const
+{
+  const auto found = m_reportedScreens.constFind(computer.toLower());
+  if (found == m_reportedScreens.cend())
+    return std::nullopt;
+  return *found;
+}
+
 void ServerConfig::overrideServerMonitors(const std::optional<std::vector<MonitorRect>> &monitors)
 {
   monitorsOverride() = monitors;
@@ -405,7 +422,7 @@ std::vector<arrangement::Computer> ServerConfig::arrangementComputers() const
     entry.name = computer.name().toStdString();
     entry.isServer = computer.isServer();
     entry.zoom = computer.arrangementZoom();
-    entry.monitors = monitorsOf(computer, display);
+    entry.monitors = monitorsOf(computer, display, reportedScreen(computer.name()));
     entry.originX = computer.arrangementX();
     entry.originY = computer.arrangementY();
     result.push_back(entry);

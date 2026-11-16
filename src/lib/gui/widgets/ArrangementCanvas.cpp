@@ -634,6 +634,13 @@ QString ArrangementCanvas::describe(const Issue &issue)
     return tr("%1 and %2 overlap.").arg(computer, other);
   case Kind::NotConnected:
     return tr("%1 does not touch another computer: the pointer cannot get there.").arg(computer);
+  case Kind::EdgeInTheSameRows: {
+    const auto side = QString::fromLatin1(directionName(issue.side));
+    return tr("%1 has another edge on its %2 side in the same rows as the link to %3, that touches nothing: the "
+              "pointer "
+              "also leaves there, to %3.")
+        .arg(computer, side, other);
+  }
   case Kind::AmbiguousSide: {
     const auto side = QString::fromLatin1(directionName(issue.side));
     return tr("%1 has two edges in the same rows of its %2 side that touch computers: %3 is not linked.")

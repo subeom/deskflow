@@ -43,6 +43,8 @@ add_library(${target} STATIC
   core/CoreProcess.cpp
   core/CoreProcess.h
   core/NetworkMonitor.cpp
+  core/ReportedScreen.cpp
+  core/ReportedScreen.h
   core/NetworkMonitor.h
   dialogs/AboutDialog.cpp
   dialogs/AboutDialog.h

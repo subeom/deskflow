@@ -27,6 +27,9 @@ constexpr std::array<Direction, 4> kLinkOrder = {Direction::Right, Direction::Le
 
 // what is left of a number that should be the same
 constexpr double kSame = 1.0e-6;
+// Stretches of an edge that overlap, or are apart, by less than this are the same place: positions are kept to three
+// decimals, which makes edges that were snapped to each other miss by up to 5e-4
+constexpr double kHair = 0.01;
 
 bool isHorizontalSide(Direction side)
 {
@@ -232,7 +235,7 @@ std::vector<std::pair<size_t, Direction>> clashingHalves(const Candidate &x, con
     return std::array<std::pair<size_t, Direction>, 2>{{{c.a, c.sideA}, {c.b, c.sideB}}};
   };
   std::vector<std::pair<size_t, Direction>> clashing;
-  if (std::min(x.to, y.to) - std::max(x.from, y.from) <= kSame)
+  if (std::min(x.to, y.to) - std::max(x.from, y.from) <= kHair)
     return clashing;
   for (const auto &hx : halves(x)) {
     for (const auto &hy : halves(y)) {
@@ -343,7 +346,9 @@ int Arrangement::serverIndex() const
 
 Issue::Severity Issue::severity() const
 {
-  return kind == Kind::NotConnected || kind == Kind::AmbiguousSide ? Severity::Warning : Severity::Error;
+  return kind == Kind::NotConnected || kind == Kind::AmbiguousSide || kind == Kind::EdgeInTheSameRows
+             ? Severity::Warning
+             : Severity::Error;
 }
 
 std::vector<Link> DerivedLinks::of(std::string_view from, Direction side) const
@@ -494,6 +499,47 @@ DerivedLinks deriveLinks(const Arrangement &arrangement)
       accepted.push_back(candidate);
   }
 
+  // Links of one side that overlap by a hair meet in the middle, so that their intervals in the configuration do not
+  // overlap (the core refuses a file in which they do)
+  std::map<std::pair<size_t, Direction>, std::vector<size_t>> byHalf;
+  for (size_t i = 0; i < accepted.size(); ++i) {
+    byHalf[{accepted[i].a, accepted[i].sideA}].push_back(i);
+    byHalf[{accepted[i].b, accepted[i].sideB}].push_back(i);
+  }
+  for (auto &[half, members] : byHalf) {
+    std::ranges::sort(members, [&](size_t x, size_t y) { return accepted[x].from < accepted[y].from; });
+    for (size_t k = 0; k + 1 < members.size(); ++k) {
+      auto &first = accepted[members[k]];
+      auto &second = accepted[members[k + 1]];
+      if (second.from < first.to) {
+        const auto middle = (second.from + first.to) / 2;
+        first.to = middle;
+        second.from = middle;
+      }
+    }
+  }
+
+  // The pointer leaves through any exposed edge of a side, so a link covers the rows of that side that it is on, also
+  // where another edge of that side, that touches nothing, is in them
+  for (const auto &c : accepted) {
+    const std::array<std::pair<size_t, Direction>, 2> halves = {{{c.a, c.sideA}, {c.b, c.sideB}}};
+    for (const auto &[computer, side] : halves) {
+      const auto other = computer == c.a ? c.b : c.a;
+      for (const auto &segment : segments[computer][static_cast<size_t>(side)]) {
+        if (std::abs(segment.line - c.line) <= kTouchTolerance ||
+            std::min(segment.to, c.to) - std::max(segment.from, c.from) <= kHair)
+          continue;
+        const Issue issue{Issue::Kind::EdgeInTheSameRows, computers[computer].name, computers[other].name, side, {}};
+        const auto sameSide = [&](const Issue &i) { return i.computer == issue.computer && i.side == side; };
+        if (std::ranges::find(result.issues, issue) == result.issues.end() &&
+            std::ranges::none_of(result.issues, [&](const Issue &i) {
+              return i.kind == Issue::Kind::AmbiguousSide && sameSide(i);
+            }))
+          result.issues.push_back(issue);
+      }
+    }
+  }
+
   for (const auto &c : accepted)
     result.contacts.push_back({computers[c.a].name, c.sideA, computers[c.b].name, c.sideB, c.line, c.from, c.to});
 
@@ -505,7 +551,7 @@ DerivedLinks deriveLinks(const Arrangement &arrangement)
   for (const auto &candidate : accepted) {
     if (!merged.empty() && merged.back().a == candidate.a && merged.back().sideA == candidate.sideA &&
         merged.back().b == candidate.b && merged.back().sideB == candidate.sideB &&
-        std::abs(candidate.from - merged.back().to) <= kSame) {
+        std::abs(candidate.from - merged.back().to) <= kHair) {
       merged.back().to = candidate.to;
     } else {
       merged.push_back(candidate);
@@ -686,6 +732,13 @@ SnapResult snapMove(const Arrangement &arrangement, size_t moving, double origin
   if (moving >= computers.size() || !isNumber(originX) || !isNumber(originY)) {
     result.originX = moving < computers.size() ? computers[moving].originX : 0;
     result.originY = moving < computers.size() ? computers[moving].originY : 0;
+    result.refused = true;
+    return result;
+  }
+
+  if (!isUsable(computers[moving])) {
+    result.originX = isNumber(computers[moving].originX) ? computers[moving].originX : 0;
+    result.originY = isNumber(computers[moving].originY) ? computers[moving].originY : 0;
     result.refused = true;
     return result;
   }
