@@ -170,6 +170,16 @@ struct Constraints
   std::optional<std::pair<double, double>> targetSize;
   bool snapAspect = true;
   bool snapPresets = true;
+  /*!
+   * Keep this ratio (width over height): the side that is not dragged follows the one that is (for a corner, the side
+   * that was changed the most). The opposite edge stays, and for an edge that is dragged the near edge of the other
+   * side does too (the top of a monitor that is resized by its left or right edge, its left side when it is resized by
+   * the top or the bottom). The ratios and the presets are not snapped then, nor is the target size.
+   */
+  std::optional<double> lockAspect;
+  //! Refuse a rectangle that is over another monitor or over an obstacle. Off for a caller that decides it from the
+  //! individual monitors of what it resizes (a computer whose box has notches)
+  bool refuseOverlap = true;
 };
 
 struct ResizeResult

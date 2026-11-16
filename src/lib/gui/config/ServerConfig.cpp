@@ -419,6 +419,31 @@ void ServerConfig::setComputerSize(const QString &name, int width, int height)
   }
 }
 
+void ServerConfig::setComputerZoom(const QString &name, double zoom)
+{
+  using deskflow::server::arrangement::kMaxZoom;
+  using deskflow::server::arrangement::kMinZoom;
+  if (!(zoom >= kMinZoom && zoom <= kMaxZoom))
+    return;
+  for (auto &computer : computers()) {
+    if (computer.isNull() || computer.isServer() || computer.name().compare(name, Qt::CaseInsensitive) != 0)
+      continue;
+    // a monitor that is drawn at a scale is as big, in the drawing, as its pixels at that scale: with another zoom it
+    // is another scale. Scales that would not be scales are dropped, and every monitor follows the zoom.
+    const double ratio = computer.arrangementZoom() / zoom;
+    QList<double> scales;
+    bool fine = true;
+    for (const auto scale : computer.monitorScales()) {
+      const double scaled = scale * ratio;
+      if (std::isfinite(scale) && (scaled < 25.0 || scaled > 500.0))
+        fine = false;
+      scales.append(std::isfinite(scale) ? scaled : scale);
+    }
+    computer.setArrangementZoom(zoom);
+    computer.setMonitorScales(fine ? scales : QList<double>());
+  }
+}
+
 QStringList ServerConfig::assumedSizes() const
 {
   QStringList names;

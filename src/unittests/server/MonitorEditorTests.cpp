@@ -563,6 +563,87 @@ void MonitorEditorTests::resize_aPresetSnapOfASingleEdge_movesOnlyThatSide()
   QVERIFY2(check(resized.layout).empty(), "the monitors still touch, with the ratios");
 }
 
+void MonitorEditorTests::resize_withTheAspectLocked_theOtherSideFollows()
+{
+  const auto layout = layoutOf({mon(0, 0, 1600, 900)});
+  const auto lock = [](double ratio) {
+    Constraints c;
+    c.lockAspect = ratio;
+    return c;
+  };
+  const double ratio = 1600.0 / 900.0;
+  const auto rectOf = [&](Handle handle, double x, double y) -> Rect {
+    const auto r = resize(layoutOf({mon(0, 0, 1600, 900)}), 0, handle, x, y, 8, lock(ratio));
+    // a refusal is a rectangle that nothing is equal to
+    return r.refused ? Rect{-1e9, -1e9, -1, -1} : r.layout.monitors[0].rect();
+  };
+  const auto same = [](const Rect &a, const Rect &b) {
+    return std::abs(a.x - b.x) < 1e-6 && std::abs(a.y - b.y) < 1e-6 && std::abs(a.w - b.w) < 1e-6 &&
+           std::abs(a.h - b.h) < 1e-6;
+  };
+
+  // an edge: the opposite edge and the near edge of the other side stay
+  QVERIFY(same(rectOf(Handle::Right, 2000, 0), Rect{0, 0, 2000, 1125}));
+  QVERIFY(same(rectOf(Handle::Bottom, 0, 1350), Rect{0, 0, 2400, 1350}));
+  QVERIFY(same(rectOf(Handle::Left, -400, 0), Rect{-400, 0, 2000, 1125}));
+  QVERIFY(same(rectOf(Handle::Top, 0, -450), Rect{0, -450, 2400, 1350}));
+  // a corner: the side that was changed the most is the one that is followed, the opposite corner stays
+  QVERIFY(same(rectOf(Handle::BottomRight, 2000, 950), Rect{0, 0, 2000, 1125}));
+  QVERIFY(same(rectOf(Handle::BottomRight, 1650, 1350), Rect{0, 0, 2400, 1350}));
+  QVERIFY(same(rectOf(Handle::TopLeft, -400, -100), Rect{-400, -225, 2000, 1125}));
+  QVERIFY(same(rectOf(Handle::TopRight, 2000, -100), Rect{0, -225, 2000, 1125}));
+  QVERIFY(same(rectOf(Handle::BottomLeft, -400, 1000), Rect{-400, 0, 2000, 1125}));
+
+  // the ratios and the presets are not snapped, whatever is asked
+  const auto near = resize(layout, 0, Handle::Right, 1925, 0, 8, lock(ratio));
+  QVERIFY(!near.preset && near.aspect.empty() && !near.target);
+  QVERIFY(std::abs(near.layout.monitors[0].w - 1925) < 1e-9);
+  QVERIFY(std::abs(near.layout.monitors[0].h - 1925 / ratio) < 1e-9);
+
+  // not smaller than the minimum, in either side
+  const auto small = resize(layout, 0, Handle::Right, 10, 0, 8, lock(ratio));
+  QVERIFY(small.layout.monitors[0].w >= kMinSide - 1e-9 && small.layout.monitors[0].h >= kMinSide - 1e-9);
+  QVERIFY(std::abs(small.layout.monitors[0].w / small.layout.monitors[0].h - ratio) < 1e-9);
+
+  // an edge snaps to the edge of another monitor, and the other side follows
+  const auto two = layoutOf({mon(0, 0, 1600, 900), mon(1700, 0, 500, 900)});
+  const auto snapped = resize(two, 0, Handle::Right, 1695, 0, 8, lock(ratio));
+  QVERIFY(!snapped.refused);
+  QCOMPARE(snapped.layout.monitors[0].w, 1700.0);
+  QVERIFY(std::abs(snapped.layout.monitors[0].h - 1700 / ratio) < 1e-9);
+  QVERIFY(!snapped.guides.empty());
+
+  // and it is never put over another monitor, nor over an obstacle
+  QVERIFY(resize(two, 0, Handle::Right, 2000, 0, 8, lock(ratio)).refused);
+  Constraints among = lock(ratio);
+  among.obstacles = {Rect{0, 1000, 3000, 500}};
+  QVERIFY(resize(layout, 0, Handle::Bottom, 0, 1300, 8, among).refused);
+}
+
+void MonitorEditorTests::resize_withTheAspectLocked_aGuideIsOnlyOfAnEdgeThatIsWhereItSnapped()
+{
+  // a corner is dragged to near the left edge and the top edge of a neighbour: the lock lets the height lead, and the
+  // width follows it away from the left edge of the neighbour, so only the top edge is where it snapped
+  const auto layout = layoutOf({mon(0, 0, 1600, 900)});
+  Constraints locked;
+  locked.lockAspect = 1600.0 / 900.0;
+  locked.obstacles = {Rect{2100, 1185, 100, 100}};
+  const auto resized = resize(layout, 0, Handle::BottomRight, 2095, 1180, 8, locked);
+  QVERIFY(!resized.refused);
+  QCOMPARE(resized.layout.monitors[0].bottom(), 1185.0);
+  QVERIFY(std::abs(resized.layout.monitors[0].w - 1185 * 16 / 9.0) < 1e-9);
+  QCOMPARE(resized.guides.size(), size_t{1});
+  QVERIFY(!resized.guides[0].vertical);
+  QCOMPARE(resized.guides[0].position, 1185.0);
+
+  // and an overlap is not refused when the caller says that it decides it
+  Constraints notChecked;
+  notChecked.obstacles = {Rect{1000, 0, 2000, 2000}};
+  QVERIFY(resize(layout, 0, Handle::Right, 2000, 0, 8, notChecked).refused);
+  notChecked.refuseOverlap = false;
+  QVERIFY(!resize(layout, 0, Handle::Right, 2000, 0, 8, notChecked).refused);
+}
+
 void MonitorEditorTests::resize_neverSmallerThanTheMinimum_andNeverOverAnother()
 {
   Constraints none;

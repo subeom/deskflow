@@ -679,6 +679,52 @@ void ArrangementConfigTests::setComputerSize_neverStoresWhatALayoutCannotHave()
   forget({"C"});
 }
 
+void ArrangementConfigTests::setComputerZoom_scalesTheWholeComputer_andKeepsItsMonitorsAndItsSize()
+{
+  writeGrid({{6, "A"}, {7, "B"}, {8, "C"}}, "A");
+  ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{});
+  Settings::setValue(Settings::Computer::MonitorLayout.arg("B"), QStringLiteral("0,0,2560,1440;2560,0,1920,1080"));
+  Settings::setValue(Settings::Computer::MonitorScales.arg("B"), QStringLiteral("150,,100"));
+  Settings::setValue(Settings::Computer::ArrangementWidth.arg("C"), 1600);
+  Settings::setValue(Settings::Computer::ArrangementHeight.arg("C"), 900);
+  ServerConfig config;
+  const auto find = [&](const char *name) -> const ::Computer & {
+    for (const auto &c : std::as_const(config).computers()) {
+      if (c.name() == name)
+        return c;
+    }
+    qFatal("there is no %s", name);
+  };
+
+  // the layout is what it was, the zoom is the new one; a drawn scale follows the zoom (half the size: twice the scale)
+  config.setComputerZoom("B", 0.5);
+  QCOMPARE(find("B").arrangementZoom(), 0.5);
+  QCOMPARE(find("B").monitorLayout(), QStringLiteral("0,0,2560,1440;2560,0,1920,1080"));
+  QCOMPARE(find("B").monitorScales().size(), 3);
+  QCOMPARE(find("B").monitorScales()[0], 300.0);
+  QVERIFY(std::isnan(find("B").monitorScales()[1]));
+  QCOMPARE(find("B").monitorScales()[2], 200.0);
+  // scales that would not be scales are dropped, and every monitor follows the zoom
+  config.setComputerZoom("B", 0.05);
+  QCOMPARE(find("B").arrangementZoom(), 0.05);
+  QVERIFY(find("B").monitorScales().isEmpty());
+
+  // a size that was typed is what it was
+  config.setComputerZoom("c", 0.8);
+  QCOMPARE(find("C").arrangementZoom(), 0.8);
+  QCOMPARE(find("C").arrangementWidth(), 1600);
+  QCOMPARE(find("C").arrangementHeight(), 900);
+
+  // not the server's, and not a zoom that cannot be one
+  config.setComputerZoom("A", 2.0);
+  QCOMPARE(find("A").arrangementZoom(), 1.0);
+  for (const double zoom : {0.0, -1.0, 1000.0, 0.001, std::nan("")}) {
+    config.setComputerZoom("C", zoom);
+    QCOMPARE(find("C").arrangementZoom(), 0.8);
+  }
+  forget({"B", "C"});
+}
+
 void ArrangementConfigTests::reportedScreen_doesNotChangeWhatIsGenerated()
 {
   // what a computer reported is in memory only: the file that is written must be the same with it and without it
