@@ -36,6 +36,8 @@ add_library(server STATIC
   Config.h
   InputFilter.cpp
   InputFilter.h
+  MonitorGeometry.cpp
+  MonitorGeometry.h
   PrimaryClient.cpp
   PrimaryClient.h
   Server.cpp
