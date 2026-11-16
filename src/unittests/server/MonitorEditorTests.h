@@ -29,6 +29,7 @@ private Q_SLOTS:
   void resize_aPresetSnapOfASingleEdge_movesOnlyThatSide_data();
   void resize_aPresetSnapOfASingleEdge_movesOnlyThatSide();
   void resize_withTheAspectLocked_theOtherSideFollows();
+  void resize_withTheAspectLocked_aGuideIsOnlyOfAnEdgeThatIsWhereItSnapped();
   void resize_neverSmallerThanTheMinimum_andNeverOverAnother();
   void resize_aSingleRectangleAmongObstacles();
 

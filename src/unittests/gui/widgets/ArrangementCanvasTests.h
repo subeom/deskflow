@@ -26,6 +26,7 @@ private Q_SLOTS:
   void outline_escapeCancelsADrag();
   void scale_aClientWithAReportedSize_isScaledAndNotResized();
   void scale_aComputerOfSeveralMonitors_isScaledAsAWhole();
+  void scale_aComputerInTheNotchOfAnother_doesNotStopIt();
   void scale_neverOverAnotherComputer_andTheZoomStaysInItsLimits();
   void resize_aComputerThatIsZoomed_isSizedInItsOwnUnits();
   void resize_theServer_isPutAndNotResized();

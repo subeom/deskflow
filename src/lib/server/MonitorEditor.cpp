@@ -530,10 +530,14 @@ ResizeResult resize(
     const double w = right - left;
     const double h = bottom - top;
     const bool widthLeads = horizontalOnly || (!verticalOnly && std::abs(w - m.w) / m.w >= std::abs(h - m.h) / m.h);
-    if (widthLeads)
+    // the side that follows is where the ratio puts it, not where it may have snapped
+    if (widthLeads) {
       setHeight(w / ratio);
-    else
+      snapY.snapped = false;
+    } else {
       setWidth(h * ratio);
+      snapX.snapped = false;
+    }
     const double newW = right - left;
     const double newH = bottom - top;
     if (newW < kMinSide || newH < kMinSide) {
@@ -604,7 +608,7 @@ ResizeResult resize(
   }
 
   const Rect rect{left, top, right - left, bottom - top};
-  if (overlapsAny(rect, others))
+  if (constraints.refuseOverlap && overlapsAny(rect, others))
     return refused;
   result.layout.monitors[index].x = left;
   result.layout.monitors[index].y = top;

@@ -585,6 +585,39 @@ void ArrangementCanvasTests::scale_aComputerOfSeveralMonitors_isScaledAsAWhole()
   QVERIFY(std::abs(after.box().right() - before.box().right()) < 1e-6);
 }
 
+void ArrangementCanvasTests::scale_aComputerInTheNotchOfAnother_doesNotStopIt()
+{
+  // N is in the notch above the left monitor of the PC: inside its box, over none of its monitors
+  auto canvas = canvasOf({{
+      pc("Subeoms-MacBook-Pro.local", kServerShape, 0, 0, 1.0, true),
+      pc("9800X3D-5080", kWindowsShape, -2560, 0),
+      pc("N", "0,0,1000,300", -4000, 0),
+  }});
+  QVERIFY(canvas->issues().empty() || std::ranges::none_of(canvas->issues(), [](const auto &issue) {
+            return issue.kind == deskflow::server::arrangement::Issue::Kind::Overlap;
+          }));
+  QSignalSpy scaled(canvas.get(), &ArrangementCanvas::computerScaled);
+  const auto box = canvas->boxOf("9800X3D-5080");
+  const auto scale = box.width() / 4480.0;
+  // the left edge of the PC goes 200 units to the right: it is a little smaller, and its monitors still miss N
+  drag(*canvas, onBox(box, 0.0, 0.5), onBox(box, 0.0, 0.5, 200 * scale, 0));
+  QCOMPARE(scaled.count(), 1);
+  QVERIFY(scaled.at(0).at(1).toDouble() < 1.0);
+  // but not so that one of its monitors is over N: its left monitor rises towards N as it gets smaller
+  auto other = canvasOf({{
+      pc("Subeoms-MacBook-Pro.local", kServerShape, 0, 0, 1.0, true),
+      pc("9800X3D-5080", kWindowsShape, -2560, 0),
+      pc("N", "0,0,1000,355", -4000, 0),
+  }});
+  QSignalSpy refused(other.get(), &ArrangementCanvas::computerScaled);
+  const auto b = other->boxOf("9800X3D-5080");
+  QTest::mousePress(other.get(), Qt::LeftButton, {}, onBox(b, 0.0, 0.5));
+  const auto to = onBox(b, 0.0, 0.5, 600 * scale, 0);
+  QTest::mouseMove(other.get(), to);
+  QTest::mouseRelease(other.get(), Qt::LeftButton, {}, to);
+  QCOMPARE(refused.count(), 0);
+}
+
 void ArrangementCanvasTests::scale_neverOverAnotherComputer_andTheZoomStaysInItsLimits()
 {
   auto canvas = canvasOf(twoApart());

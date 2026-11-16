@@ -620,6 +620,30 @@ void MonitorEditorTests::resize_withTheAspectLocked_theOtherSideFollows()
   QVERIFY(resize(layout, 0, Handle::Bottom, 0, 1300, 8, among).refused);
 }
 
+void MonitorEditorTests::resize_withTheAspectLocked_aGuideIsOnlyOfAnEdgeThatIsWhereItSnapped()
+{
+  // a corner is dragged to near the left edge and the top edge of a neighbour: the lock lets the height lead, and the
+  // width follows it away from the left edge of the neighbour, so only the top edge is where it snapped
+  const auto layout = layoutOf({mon(0, 0, 1600, 900)});
+  Constraints locked;
+  locked.lockAspect = 1600.0 / 900.0;
+  locked.obstacles = {Rect{2100, 1185, 100, 100}};
+  const auto resized = resize(layout, 0, Handle::BottomRight, 2095, 1180, 8, locked);
+  QVERIFY(!resized.refused);
+  QCOMPARE(resized.layout.monitors[0].bottom(), 1185.0);
+  QVERIFY(std::abs(resized.layout.monitors[0].w - 1185 * 16 / 9.0) < 1e-9);
+  QCOMPARE(resized.guides.size(), size_t{1});
+  QVERIFY(!resized.guides[0].vertical);
+  QCOMPARE(resized.guides[0].position, 1185.0);
+
+  // and an overlap is not refused when the caller says that it decides it
+  Constraints notChecked;
+  notChecked.obstacles = {Rect{1000, 0, 2000, 2000}};
+  QVERIFY(resize(layout, 0, Handle::Right, 2000, 0, 8, notChecked).refused);
+  notChecked.refuseOverlap = false;
+  QVERIFY(!resize(layout, 0, Handle::Right, 2000, 0, 8, notChecked).refused);
+}
+
 void MonitorEditorTests::resize_neverSmallerThanTheMinimum_andNeverOverAnother()
 {
   Constraints none;

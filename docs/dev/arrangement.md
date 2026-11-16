@@ -249,17 +249,32 @@ what is in it is the same layout.
 **History.** The editor keeps the states that it went through (200 at most): undo and redo are `Ctrl/Cmd+Z` and
 `Shift+Ctrl/Cmd+Z`.
 
-**The edges of a computer of one rectangle on the canvas.** A selected computer that is not the server and has one
-distinct monitor has handles on its edges and corners (resize cursors on hover). Dragging one uses the same
-`editor::resize` with the other computers as obstacles: the opposite edge stays, an edge snaps to the edges of the other
-computers, a side snaps to the common ratios, to the presets (pixels = units / zoom) and to the size that the computer
-reports (× zoom), and it is never put over another computer (the change is not made). The size is a whole number of
-the units of the computer, so the dragged edge is off by at most half a unit of the computer (`zoom / 2` units of the
-arrangement): an edge that was snapped to a neighbour then touches it within the tolerance of `kTouchTolerance` (0.5)
-as long as the zoom is not above 1; at a zoom above 1 (a display scale under 100 %) it can be a little off. It is saved
-as the typed size of the computer, or as its one monitor when it has a layout of one (`ServerConfig::setComputerSize`;
-the scales of a drawn layout are dropped then, the zoom is kept). There is no undo on the canvas: the monitor editor
-has it, and **Reset from classic grid** puts everything back.
+**Resizing a client by its outline on the canvas.** Every computer except the server can be resized by dragging the
+outline of its box, without selecting it first. The pointer within 7 screen pixels (a constant, whatever the zoom of the
+view; a tiny box keeps its middle: at most a third of its smaller side) of an edge or a corner gets the matching resize
+cursor, the outline is highlighted and its handles are shown; a press there starts the resize (and selects the
+computer), a press anywhere else in the box moves it, as before. When two outlines are within reach (neighbours that
+share an edge) the nearer one wins, then the computer that the pointer is in, then the selected one. The drag has a live
+preview, the derived links and the problems are recomputed while it goes, and a bubble says the size. Shift keeps the
+shape of the box (a free resize), Alt takes the snapping away, Esc cancels, a change that would put the computer over
+another one is not made, and the keys still nudge. What a drag *means* depends on what is known of the computer:
+
+| The computer | A drag of its outline | What is stored |
+|---|---|---|
+| (a) one rectangle, no reported screen | resizes it, freely: the opposite edge stays; the edges snap to the edges of the other computers, the sides to the common ratios and to the presets (pixels = units / zoom) | its size in its own units (`arrangementWidth/Height`), or its one monitor when it has a layout of one (`monitorLayout`, its scales dropped); never a size that a layout cannot have (16-bit numbers) |
+| (b) one rectangle, the screen is known (the computer reported it) | **scales** it: the shape is what it is, so only the size on the canvas changes, uniformly (the opposite corner, or for an edge the opposite edge and the near edge of the other side, stays) | `arrangementZoom` (and the origin); the size and the pixels are never changed |
+| (c) several monitors | scales the whole computer in the same way: the monitors keep their relative layout; it is over another computer when one of its *monitors* is, not its box (another computer may be in a notch of the box) | `arrangementZoom` (and the origin); `monitorLayout` and the typed size are untouched; the drawn scales of the monitors follow the zoom (`scale × oldZoom / newZoom`, or are dropped if one would leave 25 to 500 %) |
+| the server's own displays | not at all: its outline moves it like its middle does | |
+
+In (b) and (c) the zoom is snapped to a display scale that there is (100, 125, 150 ... %, so `100 / percent`) within 1.5 %
+when no edge snapped, and must stay in `kMinZoom .. kMaxZoom`. The pure part is `editor::resize` with
+`Constraints::lockAspect`: the side that is not dragged follows (for a corner, the one that changed the most), the
+ratios, the presets and the target size are not snapped, and a side is never under `kMinSide`. A single monitor of a
+computer is not resized on the canvas: that is for the monitor editor (double-click), which can keep the layout valid and
+fitted to the reported screen; the hint under the canvas says so. For a zoom above 1 (a display scale under 100 %) the
+size of (a) is a whole number of the units of the computer, so a dragged edge can be off by up to `zoom / 2` units from
+the edge that it was snapped to. There is no undo on the canvas: the monitor editor has it, and **Reset from classic
+grid** puts everything back.
 
 ## Verified, and not
 

@@ -682,6 +682,8 @@ void ArrangementCanvas::mouseMoveEvent(QMouseEvent *event)
     constraints.snapPresets = !alt;
     if (m_drag.scaleMode || shift)
       constraints.lockAspect = m_drag.ratio;
+    // a computer that is scaled is over another when one of its monitors is: its box has notches that others may be in
+    constraints.refuseOverlap = !m_drag.scaleMode;
     for (size_t i = 0; i < m_arrangement.computers.size(); ++i) {
       if (i == index)
         continue;
@@ -709,6 +711,21 @@ void ArrangementCanvas::mouseMoveEvent(QMouseEvent *event)
       double zoom = m.w / m_drag.shape.w;
       double x = m.x;
       double y = m.y;
+      // whether a monitor of the computer, at this zoom and with the top left of its box here, is over another computer
+      const auto overOthers = [&](double scaleZoom, double left, double top) {
+        for (const auto &monitor : computer.monitors) {
+          const double mx = left + scaleZoom * (monitor.x - m_drag.shape.x);
+          const double my = top + scaleZoom * (monitor.y - m_drag.shape.y);
+          const double mw = scaleZoom * monitor.w;
+          const double mh = scaleZoom * monitor.h;
+          for (const auto &o : constraints.obstacles) {
+            if (std::min(mx + mw, o.right()) - std::max(mx, o.x) > deskflow::server::arrangement::kTouchTolerance &&
+                std::min(my + mh, o.bottom()) - std::max(my, o.y) > deskflow::server::arrangement::kTouchTolerance)
+              return true;
+          }
+        }
+        return false;
+      };
       if (!alt && result.guides.empty()) {
         // near a display scale that there is, it is that one
         for (const auto percent : editor::commonScales()) {
@@ -719,13 +736,7 @@ void ArrangementCanvas::mouseMoveEvent(QMouseEvent *event)
           const double h2 = wanted * m_drag.shape.h;
           const double x2 = isLeftHandle(m_drag.handle) ? start.right() - w2 : start.x;
           const double y2 = isTopHandle(m_drag.handle) ? start.bottom() - h2 : start.y;
-          const bool over =
-              std::ranges::any_of(constraints.obstacles, [&](const deskflow::server::arrangement::Rect &o) {
-                return std::min(x2 + w2, o.right()) - std::max(x2, o.x) >
-                           deskflow::server::arrangement::kTouchTolerance &&
-                       std::min(y2 + h2, o.bottom()) - std::max(y2, o.y) >
-                           deskflow::server::arrangement::kTouchTolerance;
-              });
+          const bool over = overOthers(wanted, x2, y2);
           if (!over) {
             zoom = wanted;
             x = x2;
@@ -735,6 +746,10 @@ void ArrangementCanvas::mouseMoveEvent(QMouseEvent *event)
         }
       }
       if (!(zoom >= deskflow::server::arrangement::kMinZoom && zoom <= deskflow::server::arrangement::kMaxZoom)) {
+        update();
+        return;
+      }
+      if (overOthers(zoom, x, y)) {
         update();
         return;
       }
