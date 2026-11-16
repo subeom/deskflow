@@ -1,6 +1,7 @@
 # GUI Config
 
  Deskflow will automatically figure out where to save settings and other files.
+ If two computers cannot reach each other, see [Connecting across networks](connecting-across-networks.md).
 
 ## Search paths
 

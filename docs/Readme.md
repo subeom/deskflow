@@ -7,6 +7,7 @@ Deskflow is a free and open source keyboard and mouse sharing app. Use the keybo
 ## Getting help online
 
  - View the [wiki](https://github.com/deskflow/deskflow/wiki) Online resource
+ - Two computers that cannot reach each other: [Connecting across networks](connecting-across-networks.md)
 
 ### Chat with us
  - Main discussion on Matrix: [`#deskflow:matrix.org`](https://matrix.to/#/#deskflow:matrix.org) ([Matrix clients](https://matrix.org/ecosystem/clients/))

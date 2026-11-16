@@ -6,6 +6,7 @@ Welcome to the Deskflow Help!
 
 ## User Guides
 * [Configuration] - Configuration files
+* [Connecting across networks] - When two computers cannot reach each other: tests, causes, options, a request for IT
 * [Raising Issues] - What to do if you have found an issue.
 * [Security Policy] - Our policy around security related topics
 
@@ -19,6 +20,7 @@ Welcome to the Deskflow Help!
 * Start a [new discussion](https://github.com/deskflow/deskflow/discussions) on our GitHub project.
 
 [Configuration]:Configuration.md
+[Connecting across networks]:connecting-across-networks.md
 [Raising Issues]:Issues.md
 [Security Policy]:Security.md
 
