@@ -100,6 +100,9 @@ A tag of four numbers, such as `v1.27.0.45` that marks an installed build, is **
 used to be read as `1.27.45.N`). The clone needs the tag `v1.27.0` (`git fetch --tags` brings it; a shallow clone has no
 tags and reports `1.27.0.9999`). The number is read when CMake configures, which `windows-build.ps1` does on every run.
 
+The exact steps for the commit that adds the monitor reporting, with the expected version, the files that changed since
+the installed build and a short test list, are in [windows-build-checklist.md](windows-build-checklist.md).
+
 ### Validation on the setup PC
 
 On 2026-11-15, Windows x64 Release at source revision `c4eb0426` built successfully
