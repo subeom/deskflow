@@ -206,6 +206,13 @@ public:
   static void clearState();
   static void setValue(const QString &key = QString(), const QVariant &value = QVariant());
   static QVariant value(const QString &key = QString());
+  /**
+   * @brief The value of a setting that is text, as text
+   *
+   * QSettings reads a value of a settings file that has a comma in it and no quotes, as a person types it, as a list
+   * of the parts. This joins them again, so that the text is what was written.
+   */
+  static QString textValue(const QString &key);
   static void restoreDefaultSettings();
   static QVariant defaultValue(const QString &key);
   static bool isServerConfigFileReadable();

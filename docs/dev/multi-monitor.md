@@ -90,6 +90,12 @@ configuration dialog restarts a running core, which reads the file again; `Serve
 on or off. A file that is edited by hand takes effect when the core is restarted. The layout is read
 for the computers of the settings in external config mode too, because `Config::read` adds them first.
 
+The text is read with `Settings::textValue`, not `value().toString()`: QSettings returns a value of a
+settings file that has a comma in it and no quotes as a `QStringList`, and `toString()` of a list of
+more than one part is empty, which silently dropped a hand-written layout. A `;` that is not in quotes
+starts a comment in a settings file and cannot be recovered by any reader, so a layout of more than one
+monitor has to be in double quotes there (the dialog writes it so); the tests pin both.
+
 ## Compatibility pins (tests)
 
 The golden values of the pointer pins were recorded from the **unmodified** server, in a real `Server`

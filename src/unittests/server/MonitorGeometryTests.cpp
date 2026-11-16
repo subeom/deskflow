@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <random>
 #include <string>
@@ -550,6 +551,20 @@ void MonitorGeometryTests::parse_rejectsWhatIsNotAShapeThatCanBeReported()
   QVERIFY(!wide);
   QVERIFY2(QString::fromStdString(wide.error).contains("fit"), wide.error.c_str());
   QVERIFY(!MonitorLayout::parse("0,0,100,20000;0,20000,100,20000"));
+}
+
+void MonitorGeometryTests::parse_aHugeListIsRefusedAtOnce()
+{
+  // a file that is not a list of monitors at all must not hold the dialog up while it is looked through
+  std::vector<MonitorRect> many;
+  for (int i = 0; i < 100000; ++i)
+    many.push_back({i % 1000, i / 1000, 1, 1});
+  const auto begin = std::chrono::steady_clock::now();
+  const auto result = MonitorLayout::create(many);
+  const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin);
+  QVERIFY(!result);
+  QVERIFY2(QString::fromStdString(result.error).contains("at most 16"), result.error.c_str());
+  QVERIFY2(took.count() < 500, qPrintable(QString::number(took.count())));
 }
 
 void MonitorGeometryTests::format_isWhatParseReads()

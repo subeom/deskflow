@@ -501,6 +501,13 @@ QVariant Settings::value(const QString &key)
   return settings->value(key, defaultValue(key));
 }
 
+QString Settings::textValue(const QString &key)
+{
+  const auto stored = value(key);
+  if (stored.metaType().id() == QMetaType::QStringList)
+    return stored.toStringList().join(QLatin1Char(','));
+  return stored.toString();
+}
 void Settings::restoreDefaultSettings()
 {
   for (const auto &key : m_validKeys) {

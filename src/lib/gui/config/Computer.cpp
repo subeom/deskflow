@@ -45,7 +45,7 @@ void Computer::loadSettings(QSettingsProxy &settings)
                              : ScrollInvertScope::All;
   m_CrossOSSemanticMedia = Settings::value(Settings::Computer::CrossOSSemanticMedia.arg(name)).toBool();
   m_ShareClipboard = Settings::value(Settings::Computer::ShareClipboard.arg(name)).toBool();
-  m_MonitorLayout = Settings::value(Settings::Computer::MonitorLayout.arg(name)).toString().trimmed();
+  m_MonitorLayout = Settings::textValue(Settings::Computer::MonitorLayout.arg(name)).trimmed();
 
   setSwitchCornerSize(Settings::value(Settings::Computer::SwitchCornerSize.arg(name)).toInt());
 

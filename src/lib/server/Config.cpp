@@ -144,7 +144,7 @@ bool Config::addComputer(const std::string &name)
   }
 
   // not an option, so nothing of it is sent: a computer that has no layout is configured as it always was
-  if (const auto layout = Settings::value(Settings::Computer::MonitorLayout.arg(computer)).toString();
+  if (const auto layout = Settings::textValue(Settings::Computer::MonitorLayout.arg(computer));
       !layout.trimmed().isEmpty()) {
     setMonitorLayout(name, layout.toStdString());
   }

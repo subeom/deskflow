@@ -11,6 +11,8 @@
 #include "deskflow/CrossPlatformInputPolicy.h"
 #include "server/Config.h"
 
+#include <QFile>
+
 #include <array>
 #include <cmath>
 #include <optional>
@@ -359,6 +361,43 @@ void ServerConfigTests::monitorLayout_isReadWhenTheConfigIsReadFromAFile()
   again >> config;
   QVERIFY(config.getMonitorLayout(name.toStdString()) == nullptr);
   Settings::setValue(Settings::Computer::Name.arg(name));
+}
+
+void ServerConfigTests::monitorLayout_isReadFromAFileThatWasEditedByHand_data()
+{
+  QTest::addColumn<QString>("line");
+  QTest::addColumn<int>("monitors");
+
+  // what a person types, and what the settings dialog writes (it quotes what has a comma in it)
+  QTest::newRow("one, unquoted") << QStringLiteral("monitorLayout=0,0,1920,1080") << 1;
+  QTest::newRow("two, quoted") << QStringLiteral("monitorLayout=\"0,0,2560,1440;-1920,360,1920,1080\"") << 2;
+  QTest::newRow("two, a line each") << QStringLiteral("monitorLayout=\"0,0,2560,1440\\n-1920,360,1920,1080\"") << 2;
+  // a settings file takes ; as the start of a comment: what follows is gone, so that the value has to be quoted
+  QTest::newRow("two, unquoted: only the first")
+      << QStringLiteral("monitorLayout=0,0,2560,1440;-1920,360,1920,1080") << 1;
+}
+
+void ServerConfigTests::monitorLayout_isReadFromAFileThatWasEditedByHand()
+{
+  QFETCH(QString, line);
+  QFETCH(int, monitors);
+
+  const auto file = m_settingsDir.filePath(QStringLiteral("by-hand.conf"));
+  QFile out(file);
+  QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+  out.write(QStringLiteral("[computer_byHand]\nname=byHand\n%1\n").arg(line).toUtf8());
+  out.close();
+
+  Settings::setSettingsFile(file);
+  Config config(nullptr);
+  std::istringstream input("section: options\nend\n");
+  input >> config;
+  const auto *layout = config.getMonitorLayout("byHand");
+  Settings::setSettingsFile(m_settingsFile);
+
+  QVERIFY(layout != nullptr);
+  QVERIFY2(layout->parsed, layout->parsed.error.c_str());
+  QCOMPARE(layout->parsed.layout->monitors().size(), static_cast<size_t>(monitors));
 }
 
 void ServerConfigTests::monitorLayout_isPartOfEquality()

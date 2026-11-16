@@ -424,6 +424,34 @@ void ComputerTests::monitorLayout_isSavedLoadedAndReadByTheServer()
   Settings::setValue(key);
 }
 
+void ComputerTests::monitorLayout_isLoadedFromAFileThatWasEditedByHand()
+{
+  QTemporaryDir dir;
+  QVERIFY(dir.isValid());
+  const auto file = dir.filePath(QStringLiteral("by-hand.conf"));
+  QFile out(file);
+  QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+  out.write("name=byHand\n[computer_byHand]\nmonitorLayout=\"0,0,2560,1440;-1920,360,1920,1080\"\n");
+  out.close();
+
+  Settings::setSettingsFile(file);
+  Computer computer;
+  computer.loadSettings(Settings::proxy());
+  Settings::setSettingsFile(m_settingsFile);
+
+  QCOMPARE(computer.monitorLayout(), QStringLiteral("0,0,2560,1440;-1920,360,1920,1080"));
+
+  // one that has no quotes, with one monitor in it, is a list of four numbers for a settings file
+  QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+  out.write("name=byHand\n[computer_byHand]\nmonitorLayout=0,0,1920,1080\n");
+  out.close();
+  Settings::setSettingsFile(file);
+  Computer unquoted;
+  unquoted.loadSettings(Settings::proxy());
+  Settings::setSettingsFile(m_settingsFile);
+  QCOMPARE(unquoted.monitorLayout(), QStringLiteral("0,0,1920,1080"));
+}
+
 void ComputerTests::monitorLayout_takesPartInEquality()
 {
   const auto name = QStringLiteral("layout-equality");

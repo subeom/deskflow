@@ -27,6 +27,8 @@ private Q_SLOTS:
   void monitorLayout_isReadFromTheSettings();
   void monitorLayout_addsNoOption();
   void monitorLayout_isReadWhenTheConfigIsReadFromAFile();
+  void monitorLayout_isReadFromAFileThatWasEditedByHand_data();
+  void monitorLayout_isReadFromAFileThatWasEditedByHand();
   void monitorLayout_isPartOfEquality();
   void neighborPositions_stayHalfOpenAndChain();
   void partialDestinationInterval_clampsInsideEndpoint();

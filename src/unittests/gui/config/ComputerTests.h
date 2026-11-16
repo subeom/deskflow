@@ -23,6 +23,7 @@ private Q_SLOTS:
   void monitorLayout_isEmptyAndAddsNothingByDefault();
   void monitorLayout_isSavedLoadedAndReadByTheServer_data();
   void monitorLayout_isSavedLoadedAndReadByTheServer();
+  void monitorLayout_isLoadedFromAFileThatWasEditedByHand();
   void monitorLayout_takesPartInEquality();
   void monitorLayoutDialog_isOffUntilTheExperimentIsOn();
   void monitorLayoutDialog_followsTheServerDialog();

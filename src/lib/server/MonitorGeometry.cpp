@@ -167,6 +167,8 @@ MonitorLayoutResult MonitorLayout::create(std::vector<MonitorRect> monitors)
       ++duplicates;
     } else {
       unique.push_back(monitor);
+      if (unique.size() > kMaxMonitors)
+        break; // refused below: no need to look through the rest of a list that is far too long
     }
   }
 

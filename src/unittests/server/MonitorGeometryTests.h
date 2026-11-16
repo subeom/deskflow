@@ -27,6 +27,7 @@ private Q_SLOTS:
   void parse_errors();
   void parse_aBlockToPaste_isTheSameAsAList();
   void parse_rejectsWhatIsNotAShapeThatCanBeReported();
+  void parse_aHugeListIsRefusedAtOnce();
   void format_isWhatParseReads();
   void extractPasteBlock_data();
   void extractPasteBlock();
