@@ -350,8 +350,20 @@ private:
   // say about a switch of computers, when the experiment is on
   void sayMonitorGeometrySwitch(const BaseClientProxy *destination, int32_t x, int32_t y);
 
-  // put the pointer on the monitor of \p layout that it enters on, entering through the side opposite to \p srcSide
-  void enterOnMonitor(const deskflow::server::MonitorLayout &layout, Direction srcSide, int32_t &x, int32_t &y) const;
+  // The layout of the screen of the server itself, from what its platform says its monitors are: when the experiment
+  // is on, the arrangement is used, the monitors are valid and are of the screen that the platform reports, and are not
+  // a rectangle. Otherwise nullptr, which is the mapping that there always was; \p reason says why, if given.
+  const deskflow::server::MonitorLayout *primaryLayout(std::string *reason = nullptr) const;
+
+  // put the pointer on the monitor of \p layout that it enters on, entering through the side opposite to \p srcSide, at
+  // least \p minDepth pixels in
+  void enterOnMonitor(
+      const deskflow::server::MonitorLayout &layout, Direction srcSide, int32_t &x, int32_t &y, int32_t minDepth = 0
+  ) const;
+
+  // how far in the pointer has to be taken, when it enters the primary computer, to be away from its jump zone: the
+  // size of the zone if the primary computer has a neighbour on the side that it is entered through, at that place
+  int32_t jumpZoneDepth(const deskflow::server::MonitorLayout &layout, Direction srcSide, int32_t x, int32_t y) const;
 
   // the pointer is moved by \p dx, \p dy on a computer that has a layout to map the pointer by
   void onMouseMoveSecondaryOnMonitors(const deskflow::server::MonitorLayout &layout, int32_t dx, int32_t dy);
@@ -538,6 +550,14 @@ private:
 
   // the experiment is on
   bool m_multiMonitor = false;
+
+  // the links come from the arrangement of the computers, and the server maps the pointer around the holes of its own
+  // screen; has an effect only while the experiment is on
+  bool m_useArrangement = false;
+
+  // the monitors of the screen of the server that the layout below is of, and the layout
+  mutable std::optional<std::vector<deskflow::server::MonitorRect>> m_primaryMonitors;
+  mutable deskflow::server::MonitorLayoutResult m_primaryLayout;
 
   // what was said last about each computer, by name: on or off, and why
   std::map<std::string, std::string> m_monitorGeometrySaid;

@@ -94,6 +94,8 @@ elseif(APPLE)
     OSXCocoaApp.m
     OSXComputer.h
     OSXComputer.mm
+    OSXDisplays.cpp
+    OSXDisplays.h
     OSXEventQueueBuffer.cpp
     OSXEventQueueBuffer.h
     OSXKeyLayoutResource.cpp

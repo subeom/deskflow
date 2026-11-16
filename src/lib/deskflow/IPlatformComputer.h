@@ -14,6 +14,9 @@
 #include "deskflow/IPrimaryComputer.h"
 #include "deskflow/ISecondaryComputer.h"
 #include "deskflow/OptionTypes.h"
+#include "server/MonitorGeometry.h"
+
+#include <vector>
 
 class IClipboard;
 
@@ -144,6 +147,17 @@ public:
   Return true iff this computer is a primary computer.
   */
   virtual bool isPrimary() const = 0;
+
+  //! Get the monitors of this computer (experimental)
+  /*!
+  The monitors that the desktop of this computer is made of, in the coordinates of \c getShape(). Empty when they are
+  not known, which is what every platform that does not tell says: the desktop is then the one rectangle of its shape,
+  as it always was. Read by the server for its own screen only; it never leaves the computer.
+  */
+  virtual std::vector<deskflow::server::MonitorRect> getMonitors() const
+  {
+    return {};
+  }
 
   //@}
   // IKeyState overrides

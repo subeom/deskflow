@@ -13,7 +13,10 @@
 #include "deskflow/MouseTypes.h"
 #include "deskflow/OptionTypes.h"
 
+#include "server/MonitorGeometry.h"
+
 #include <string>
+#include <vector>
 
 class IClipboard;
 class IPlatformComputer;
@@ -256,6 +259,9 @@ public:
   the edges of the computer, typically the center.
   */
   void getCursorCenter(int32_t &x, int32_t &y) const;
+
+  //! Get the monitors of the computer, empty when the platform does not tell
+  std::vector<deskflow::server::MonitorRect> getMonitors() const;
 
   //! Get the active modifiers
   /*!

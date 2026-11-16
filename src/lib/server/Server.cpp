@@ -800,16 +800,18 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, Direction srcSide, 
   assert(lastGoodComputer != nullptr);
   dst = lastGoodComputer;
 
-  // a computer that has a layout is entered on a monitor of it
-  if (const auto *layout = monitorLayoutFor(dst); layout != nullptr) {
-    enterOnMonitor(*layout, srcSide, x, y);
+  // a computer that has a layout is entered on a monitor of it, and the primary one away from the jump zone of its edge
+  const auto *layout = monitorLayoutFor(dst);
+  if (layout != nullptr) {
+    enterOnMonitor(*layout, srcSide, x, y, dst == m_primaryClient ? jumpZoneDepth(*layout, srcSide, x, y) : 0);
   }
 
   // if entering primary computer then be sure to move in far enough
   // to avoid the jump zone.  if entering a side that doesn't have
   // a neighbor (i.e. an asymmetrical side) then we don't need to
   // move inwards because that side can't provoke a jump.
-  avoidJumpZone(dst, srcSide, x, y);
+  if (layout == nullptr || dst != m_primaryClient)
+    avoidJumpZone(dst, srcSide, x, y);
 
   return dst;
 }
@@ -1216,6 +1218,12 @@ void Server::processOptions()
   m_relativeMoves = newRelativeMoves;
   m_protocol = Settings::networkProtocol();
   setClipboardTextOnly(Settings::value(Settings::Server::ClipboardTextOnly).toBool());
+  const auto useArrangement = Settings::value(Settings::Server::UseArrangement).toBool();
+  if (useArrangement != m_useArrangement) {
+    m_useArrangement = useArrangement;
+    // what is decided for the screen of the server is decided again, and said if it is another
+    m_monitorGeometrySaid.erase(getName(m_primaryClient));
+  }
   setMonitorGeometry(Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool());
 }
 
@@ -1307,6 +1315,9 @@ const MonitorLayout *Server::monitorLayoutFor(const BaseClientProxy *client, std
     return nullptr;
   }
 
+  if (client == m_primaryClient && m_useArrangement)
+    return primaryLayout(reason);
+
   const auto *setting = m_config->getMonitorLayout(getName(client));
   if (client == m_primaryClient) {
     if (reason != nullptr && setting != nullptr) {
@@ -1360,6 +1371,53 @@ const MonitorLayout *Server::monitorLayoutFor(const BaseClientProxy *client, std
   return &layout;
 }
 
+const MonitorLayout *Server::primaryLayout(std::string *reason) const
+{
+  // the monitors are asked for on every move of the pointer on the primary computer; they are only made into a layout
+  // again when they are others
+  const auto monitors = m_primaryClient->getMonitors();
+  if (monitors.empty()) {
+    if (reason != nullptr)
+      *reason = "the platform does not tell the monitors of the screen of this computer";
+    return nullptr;
+  }
+  if (!m_primaryMonitors || *m_primaryMonitors != monitors) {
+    m_primaryMonitors = monitors;
+    m_primaryLayout = MonitorLayout::create(monitors);
+  }
+  if (!m_primaryLayout) {
+    if (reason != nullptr)
+      *reason = "the monitors of the screen of this computer are not valid: " + m_primaryLayout.error;
+    return nullptr;
+  }
+
+  const auto &layout = *m_primaryLayout.layout;
+  const auto box = layout.boundingBox();
+  int32_t x;
+  int32_t y;
+  int32_t w;
+  int32_t h;
+  m_primaryClient->getShape(x, y, w, h);
+  if (box.x != x || box.y != y || box.w != w || box.h != h) {
+    if (reason != nullptr) {
+      *reason = std::format(
+          "the monitors do not match the screen size of this computer (monitors {},{} {}x{}, screen {},{} {}x{})",
+          box.x, box.y, box.w, box.h, x, y, w, h
+      );
+    }
+    return nullptr;
+  }
+  if (layout.isPlainRectangle()) {
+    if (reason != nullptr)
+      *reason = "the monitors make up a rectangle, nothing to correct";
+    return nullptr;
+  }
+
+  if (reason != nullptr)
+    *reason = std::format("{} monitors, {},{} {}x{}", layout.monitors().size(), box.x, box.y, box.w, box.h);
+  return &layout;
+}
+
 void Server::sayMonitorGeometry(const BaseClientProxy *client)
 {
   if (!m_multiMonitor) {
@@ -1404,7 +1462,9 @@ void Server::sayMonitorGeometrySwitch(const BaseClientProxy *destination, int32_
   LOG_INFO("%s", text.c_str());
 }
 
-void Server::enterOnMonitor(const MonitorLayout &layout, Direction srcSide, int32_t &x, int32_t &y) const
+void Server::enterOnMonitor(
+    const MonitorLayout &layout, Direction srcSide, int32_t &x, int32_t &y, int32_t minDepth
+) const
 {
   const auto entered = oppositeOf(srcSide);
   if (entered == Direction::NoDirection) {
@@ -1432,9 +1492,23 @@ void Server::enterOnMonitor(const MonitorLayout &layout, Direction srcSide, int3
     depth = box.bottom() - 1 - y;
     break;
   }
-  const auto at = layout.entryPoint(entered, layout.edgeFraction(entered, alongY ? y : x), std::max(depth, 0));
+  const auto at =
+      layout.entryPoint(entered, layout.edgeFraction(entered, alongY ? y : x), std::max({depth, minDepth, int32_t{0}}));
   x = at.x;
   y = at.y;
+}
+
+int32_t Server::jumpZoneDepth(const MonitorLayout &layout, Direction srcSide, int32_t x, int32_t y) const
+{
+  const auto entered = oppositeOf(srcSide);
+  if (entered == Direction::NoDirection)
+    return 0;
+  const bool alongY = srcSide == Direction::Left || srcSide == Direction::Right;
+  const auto fraction = layout.edgeFraction(entered, alongY ? y : x);
+  // the jump zone only matters where the pointer could jump out of it: the side it is entered through has a neighbour
+  if (m_config->getNeighbor(getName(m_primaryClient), entered, fraction, nullptr).empty())
+    return 0;
+  return getJumpZoneSize(m_primaryClient);
 }
 
 void Server::onMouseMoveSecondaryOnMonitors(const MonitorLayout &layout, int32_t dx, int32_t dy)
@@ -2096,41 +2170,67 @@ bool Server::onMouseMovePrimary(int32_t x, int32_t y)
   m_active->getShape(ax, ay, aw, ah);
   int32_t zoneSize = getJumpZoneSize(m_active);
 
-  // clamp position to computer
-  int32_t xc = x;
-  int32_t yc = y;
-  if (xc < ax + zoneSize) {
-    xc = ax;
-  } else if (xc >= ax + aw - zoneSize) {
-    xc = ax + aw - 1;
-  }
-  if (yc < ay + zoneSize) {
-    yc = ay;
-  } else if (yc >= ay + ah - zoneSize) {
-    yc = ay + ah - 1;
-  }
-
-  // see if we should change computers
-  // when the cursor is in a corner, there may be a computer either
-  // horizontally or vertically.  check both directions.
   using enum Direction;
   auto dirh = NoDirection;
   auto dirv = NoDirection;
+  int32_t xc = x;
+  int32_t yc = y;
   int32_t xh = x;
   int32_t yv = y;
-  if (x < ax + zoneSize) {
-    xh -= zoneSize;
-    dirh = Left;
-  } else if (x >= ax + aw - zoneSize) {
-    xh += zoneSize;
-    dirh = Right;
-  }
-  if (y < ay + zoneSize) {
-    yv -= zoneSize;
-    dirv = Top;
-  } else if (y >= ay + ah - zoneSize) {
-    yv += zoneSize;
-    dirv = Bottom;
+  if (const auto *layout = monitorLayoutFor(m_active); layout != nullptr) {
+    // The screen is not a rectangle. A pointer on an exposed edge of it, which is a pixel that has no monitor zoneSize
+    // away on one side, is where the pointer leaves, whether that edge is on the bounding box or not; the computer on
+    // that side is found from where the pointer would be beyond the bounding box, as it always is. The system keeps
+    // the pointer on a monitor, so a pointer that is pushed against an edge is on its pixel. A position that is in a
+    // hole is judged from the nearest pixel of a monitor.
+    const auto box = layout->boundingBox();
+    const auto pixel = layout->contains(x, y) ? MonitorPoint{x, y} : layout->nearest(x, y);
+    x = xc = xh = pixel.x;
+    y = yc = yv = pixel.y;
+    if (!layout->contains(pixel.x - zoneSize, pixel.y)) {
+      xh = box.x - zoneSize;
+      dirh = Left;
+    } else if (!layout->contains(pixel.x + zoneSize, pixel.y)) {
+      xh = box.right() - 1 + zoneSize;
+      dirh = Right;
+    }
+    if (!layout->contains(pixel.x, pixel.y - zoneSize)) {
+      yv = box.y - zoneSize;
+      dirv = Top;
+    } else if (!layout->contains(pixel.x, pixel.y + zoneSize)) {
+      yv = box.bottom() - 1 + zoneSize;
+      dirv = Bottom;
+    }
+  } else {
+    // clamp position to computer
+    if (xc < ax + zoneSize) {
+      xc = ax;
+    } else if (xc >= ax + aw - zoneSize) {
+      xc = ax + aw - 1;
+    }
+    if (yc < ay + zoneSize) {
+      yc = ay;
+    } else if (yc >= ay + ah - zoneSize) {
+      yc = ay + ah - 1;
+    }
+
+    // see if we should change computers
+    // when the cursor is in a corner, there may be a computer either
+    // horizontally or vertically.  check both directions.
+    if (x < ax + zoneSize) {
+      xh -= zoneSize;
+      dirh = Left;
+    } else if (x >= ax + aw - zoneSize) {
+      xh += zoneSize;
+      dirh = Right;
+    }
+    if (y < ay + zoneSize) {
+      yv -= zoneSize;
+      dirv = Top;
+    } else if (y >= ay + ah - zoneSize) {
+      yv += zoneSize;
+      dirv = Bottom;
+    }
   }
   if (dirh == NoDirection && dirv == NoDirection) {
     // still on local computer

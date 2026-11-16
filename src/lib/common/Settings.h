@@ -122,6 +122,9 @@ public:
     inline static const auto RelativeMouseMoves = QStringLiteral("server/relativeMouseMoves");
     inline static const auto SwitchDelay = QStringLiteral("server/switchDelay");
     inline static const auto SwitchDoubleTap = QStringLiteral("server/switchDoubleTap");
+    // experimental: the links of the server are derived from the arrangement of the computers, and the server maps the
+    // pointer around the holes of its own screen. Only has an effect when the experiment above is on
+    inline static const auto UseArrangement = QStringLiteral("server/useArrangement");
     inline static const auto Win32KeepForeground = QStringLiteral("server/win32KeepForeground");
     inline static const auto XdpClipboardRetried = QStringLiteral("server/xdpClipboardRetried");
     inline static const auto XdpRestoreToken = QStringLiteral("server/xdpRestoreToken");
@@ -356,6 +359,7 @@ private:
     , Server::RelativeMouseMoves
     , Server::SwitchDelay
     , Server::SwitchDoubleTap
+    , Server::UseArrangement
     , Server::Win32KeepForeground
   };
 
@@ -386,6 +390,7 @@ private:
     , Server::ExperimentalMultiMonitor
     , Server::ExternalConfig
     , Server::RelativeMouseMoves
+    , Server::UseArrangement
     , Server::XdpClipboardRetried
   };
 

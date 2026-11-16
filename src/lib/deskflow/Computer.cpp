@@ -395,6 +395,11 @@ void Computer::getCursorCenter(int32_t &x, int32_t &y) const
   m_computer->getCursorCenter(x, y);
 }
 
+std::vector<deskflow::server::MonitorRect> Computer::getMonitors() const
+{
+  return m_computer->getMonitors();
+}
+
 KeyModifierMask Computer::getActiveModifiers() const
 {
   return m_computer->getActiveModifiers();

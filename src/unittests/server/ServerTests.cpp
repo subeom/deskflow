@@ -525,6 +525,16 @@ struct Pos
   bool operator==(const Pos &) const = default;
 };
 
+// The desktop of the MacBook Pro of the user below a DELL ultrawide: a T whose bounding box has a hole on both sides of
+// the MacBook. Before the arrangement the server only knew this box.
+constexpr Box kTShapedPrimary{0, 0, 3440, 2787};
+constexpr auto kTShapedMonitors = "0,0,3440,1440;753,1440,2064,1347";
+
+std::vector<deskflow::server::MonitorRect> tShapedMonitors()
+{
+  return deskflow::server::MonitorLayout::parse(kTShapedMonitors).layout->monitors();
+}
+
 // The primary computer's platform with a shape of its own
 class ShapedPlatform : public MockPlatformComputer
 {
@@ -545,7 +555,14 @@ public:
     y = shape.y + shape.h / 2;
   }
 
+  std::vector<deskflow::server::MonitorRect> getMonitors() const override
+  {
+    return monitors;
+  }
+
   Box shape{0, 0, 1728, 1117};
+  // what the platform says the desktop is made of; nothing is what a platform that does not tell says
+  std::vector<deskflow::server::MonitorRect> monitors;
 };
 
 // Remembers where the pointer entered the primary computer
@@ -631,6 +648,8 @@ struct PointerRig
 
     platform = new ShapedPlatform(&events);
     platform->shape = primaryShape;
+    if (primaryShape == kTShapedPrimary)
+      platform->monitors = tShapedMonitors();
     computer = std::make_unique<deskflow::Computer>(platform, &events);
     primary = std::make_unique<PointerPrimary>("primary", computer.get());
     server = std::make_unique<Server>(config, primary.get(), computer.get(), &events);
@@ -703,6 +722,21 @@ struct PointerRig
     for (const auto &[name, layout] : layouts)
       config.setMonitorLayout(name, layout);
     server->setConfig(config);
+  }
+
+  // The experiment is on or off, and the arrangement is used or not; the Server reads both when it is configured
+  void configureArrangement(bool experiment, bool arrangement)
+  {
+    Settings::setValue(Settings::Server::UseArrangement, arrangement);
+    configureExperiment(experiment);
+  }
+
+  // the screen of the primary computer says that it changed, to \p monitors and the shape of their desktop
+  void changeScreenOfPrimary(const std::vector<deskflow::server::MonitorRect> &monitors, const Box &shape)
+  {
+    platform->monitors = monitors;
+    platform->shape = shape;
+    events.dispatchEvent(Event(EventTypes::ComputerShapeChanged, primary->getEventTarget()));
   }
 
   // the remote computer goes away, and one of the same name with another shape connects
@@ -835,10 +869,20 @@ enum class Mode
   OtherBox,
   // the experiment is on, and the layouts are the screens as they are: rectangles
   PlainRectangle,
+  // the experiment and the arrangement are on, and the screen of the server is a rectangle that its platform tells
+  // the monitors of
+  ArrangementOnAPlainScreen,
 };
 
-constexpr std::array<Mode, 6> kModes = {Mode::Off,         Mode::OffButConfigured, Mode::NoLayout,
-                                        Mode::WrongLayout, Mode::OtherBox,         Mode::PlainRectangle};
+constexpr std::array<Mode, 7> kModes = {
+    Mode::Off,
+    Mode::OffButConfigured,
+    Mode::NoLayout,
+    Mode::WrongLayout,
+    Mode::OtherBox,
+    Mode::PlainRectangle,
+    Mode::ArrangementOnAPlainScreen
+};
 
 const char *modeName(Mode mode)
 {
@@ -853,6 +897,8 @@ const char *modeName(Mode mode)
     return "the experiment on, a layout that is wrong";
   case Mode::OtherBox:
     return "the experiment on, a layout of another size";
+  case Mode::ArrangementOnAPlainScreen:
+    return "the experiment and the arrangement on, the screen of the server a rectangle";
   default:
     return "the experiment on, a layout that is a rectangle";
   }
@@ -863,6 +909,13 @@ void applyMode(PointerRig &rig, Mode mode)
 {
   if (mode == Mode::Off)
     return;
+
+  if (mode == Mode::ArrangementOnAPlainScreen) {
+    const auto &shape = rig.platform->shape;
+    rig.platform->monitors = {{shape.x, shape.y, shape.w, shape.h}};
+    rig.configureArrangement(true, true);
+    return;
+  }
 
   std::map<std::string, std::string> layouts;
   for (const auto &[name, client] : rig.clients) {
@@ -1115,6 +1168,7 @@ void ServerTests::cleanup()
 {
   Settings::setValue(Settings::Server::ClipboardTextOnly);
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+  Settings::setValue(Settings::Server::UseArrangement);
 }
 
 void ServerTests::SwitchToComputerInfo_alloc_computer()
@@ -2289,10 +2343,6 @@ void ServerTests::pointerPin_cornersOfThePrimary_horizontalIsTriedFirst()
 
 namespace {
 
-// The desktop of the MacBook Pro of the user below a DELL ultrawide: a T whose bounding box has a hole on both sides of
-// the MacBook. Server before the arrangement only knows this box.
-const Box kTShapedPrimary{0, 0, 3440, 2787};
-
 // A primary computer that has a neighbour on each of its sides: L, R, U and D. With \p partial each side has two,
 // each for part of the edge, as the links that an arrangement derives are.
 std::unique_ptr<PointerRig> surrounded(const Box &primary, Mode mode, bool partial)
@@ -2830,6 +2880,332 @@ void ServerTests::monitorGeometry_cornersThatLockTheCursor_stillDo()
   rig.placeCursor("C", 3, 400);
   rig.moveOnSecondary(-17, 0);
   QCOMPARE(rig.primary->entered.size(), before + 1);
+}
+
+namespace {
+
+// the neighbour that "surrounded" puts on a side of the primary computer
+std::string neighbourOn(Direction side)
+{
+  using enum Direction;
+  return side == Left ? "L" : side == Right ? "R" : side == Top ? "U" : "D";
+}
+
+// the primary computer is the T-shaped screen, with a neighbour on every side
+std::unique_ptr<PointerRig> tRig(bool experiment, bool arrangement, bool partial = false)
+{
+  auto rig = surrounded(kTShapedPrimary, Mode::Off, partial);
+  rig->configureArrangement(experiment, arrangement);
+  return rig;
+}
+
+// where the pointer went when the primary computer reported it at \p x, \p y; it is brought back to the primary after
+std::optional<Landing> leaveAt(PointerRig &rig, int32_t x, int32_t y)
+{
+  const EntryWatch watch(rig);
+  rig.moveOnPrimary(x, y);
+  const auto landing = watch.landing();
+  rig.switchTo("primary");
+  return landing;
+}
+
+// the side of the screen that a pointer on the pixel x, y is at the edge of, a horizontal one before a vertical one
+std::optional<Direction> exposedSide(const deskflow::server::MonitorLayout &layout, int32_t x, int32_t y)
+{
+  using enum Direction;
+  if (!layout.contains(x - 1, y))
+    return Left;
+  if (!layout.contains(x + 1, y))
+    return Right;
+  if (!layout.contains(x, y - 1))
+    return Top;
+  if (!layout.contains(x, y + 1))
+    return Bottom;
+  return std::nullopt;
+}
+
+// the pixel of the bounding box of the T-shaped screen that the same row or column is on, on its \p side
+Pos onTheBox(Direction side, int32_t x, int32_t y)
+{
+  using enum Direction;
+  return side == Left ? Pos{0, y} : side == Right ? Pos{3439, y} : side == Top ? Pos{x, 0} : Pos{x, 2786};
+}
+
+// The pointer is at \p start on the neighbour \p name, on the last pixel before its edge toward the primary computer,
+// and is moved one pixel over it: where it enters the primary computer, if it does
+std::optional<Pos> enterPrimaryFrom(PointerRig &rig, const std::string &name, Direction toward, const Pos &start)
+{
+  using enum Direction;
+  rig.switchTo(name.c_str());
+  rig.placeCursor(name, start.x, start.y);
+  const auto before = rig.primary->entered.size();
+  rig.moveOnSecondary(toward == Right ? 1 : toward == Left ? -1 : 0, toward == Bottom ? 1 : toward == Top ? -1 : 0);
+  if (rig.primary->entered.size() == before)
+    return std::nullopt;
+  return rig.primary->entered.back();
+}
+
+} // namespace
+
+void ServerTests::primaryMonitors_theTShape_leavesThroughAnyExposedEdge_data()
+{
+  using enum Direction;
+  QTest::addColumn<int>("x");
+  QTest::addColumn<int>("y");
+  QTest::addColumn<int>("side");
+  const auto row = [](const char *name, int x, int y, Direction side) {
+    QTest::newRow(name) << x << y << static_cast<int>(side);
+  };
+  row("the left edge of the MacBook", 753, 1500, Left);
+  row("the right edge of the MacBook", 2816, 1500, Right);
+  row("the bottom of the DELL, left of the MacBook", 300, 1439, Bottom);
+  row("the bottom of the DELL, right of the MacBook", 3000, 1439, Bottom);
+  row("the top left corner of the MacBook", 753, 1440, Left);
+  row("the top right corner of the MacBook", 2816, 1440, Right);
+  row("the DELL above the hole on the left", 752, 1439, Bottom);
+  row("the DELL above the hole on the right", 2817, 1439, Bottom);
+  row("the bottom left corner of the MacBook, where the box has its edge", 753, 2786, Left);
+  row("the bottom edge of the MacBook", 1500, 2786, Bottom);
+  row("the top edge of the DELL", 1700, 0, Top);
+  row("the left edge of the DELL", 0, 700, Left);
+  row("the right edge of the DELL", 3439, 700, Right);
+  row("the DELL above the MacBook is not an edge", 753, 1439, NoDirection);
+  row("the DELL above the right of the MacBook is not an edge", 2816, 1439, NoDirection);
+  row("the middle of the DELL", 1700, 700, NoDirection);
+  row("the middle of the MacBook", 1700, 2100, NoDirection);
+  row("one pixel in from the left edge of the MacBook", 754, 1500, NoDirection);
+  row("one pixel in from the bottom of the DELL", 300, 1438, NoDirection);
+}
+
+void ServerTests::primaryMonitors_theTShape_leavesThroughAnyExposedEdge()
+{
+  const QuietLog quiet;
+  QFETCH(int, x);
+  QFETCH(int, y);
+  QFETCH(int, side);
+  const auto expected = static_cast<Direction>(side);
+
+  auto rig = tRig(true, true);
+  const auto landing = leaveAt(*rig, x, y);
+  if (expected == Direction::NoDirection) {
+    QVERIFY2(!landing, qPrintable(text(landing)));
+    return;
+  }
+  QVERIFY(landing);
+  QCOMPARE(QString::fromStdString(landing->computer), QString::fromStdString(neighbourOn(expected)));
+
+  // it enters the neighbour where it would have if it had left through the edge of the bounding box in the same row or
+  // column: the same fraction of the side
+  auto legacy = tRig(false, false);
+  const auto at = onTheBox(expected, x, y);
+  const auto onTheEdge = leaveAt(*legacy, at.x, at.y);
+  QVERIFY(onTheEdge);
+  QCOMPARE(text(*landing), text(*onTheEdge));
+}
+
+void ServerTests::primaryMonitors_whenItIsNotAsked_theBoxIsTheScreen_data()
+{
+  QTest::addColumn<bool>("experiment");
+  QTest::addColumn<bool>("arrangement");
+  QTest::newRow("both off") << false << false;
+  QTest::newRow("the experiment on, the arrangement not used") << true << false;
+  QTest::newRow("the arrangement used, the experiment off") << false << true;
+}
+
+void ServerTests::primaryMonitors_whenItIsNotAsked_theBoxIsTheScreen()
+{
+  const QuietLog quiet;
+  QFETCH(bool, experiment);
+  QFETCH(bool, arrangement);
+  auto rig = tRig(experiment, arrangement);
+  for (const auto &[x, y] : std::vector<std::pair<int, int>>{{753, 1500}, {2816, 1500}, {300, 1439}, {3000, 1439}})
+    QVERIFY2(!leaveAt(*rig, x, y), qPrintable(QStringLiteral("%1,%2").arg(x).arg(y)));
+  // and the edges of the box lead where they always did
+  QCOMPARE(leaveAt(*rig, 0, 1500)->computer, std::string("L"));
+  QCOMPARE(leaveAt(*rig, 3439, 1500)->computer, std::string("R"));
+  QCOMPARE(leaveAt(*rig, 300, 2786)->computer, std::string("D"));
+  QCOMPARE(leaveAt(*rig, 300, 0)->computer, std::string("U"));
+}
+
+void ServerTests::primaryMonitors_everyPosition_leavesWhereTheEdgesAre()
+{
+  const QuietLog quiet;
+  const auto layout = *deskflow::server::MonitorLayout::parse(kTShapedMonitors).layout;
+  const std::array<int32_t, 20> xs = {0,    1,    2,    5,    300,  751,  752,  753,  754,  755,
+                                      1000, 1720, 2815, 2816, 2817, 2818, 3000, 3437, 3438, 3439};
+  const std::array<int32_t, 16> ys = {0,    1,    2,    5,    700,  1437, 1438, 1439,
+                                      1440, 1441, 1442, 1500, 2000, 2784, 2785, 2786};
+  auto rig = tRig(true, true);
+  int exits = 0;
+  for (const auto y : ys) {
+    for (const auto x : xs) {
+      // a position that the system reports in a hole is judged from the nearest pixel of a monitor
+      const auto pixel = layout.contains(x, y) ? deskflow::server::MonitorPoint{x, y} : layout.nearest(x, y);
+      const auto side = exposedSide(layout, pixel.x, pixel.y);
+      const auto landing = leaveAt(*rig, x, y);
+      const auto where = QStringLiteral("%1,%2").arg(x).arg(y);
+      if (!side) {
+        QVERIFY2(!landing, qPrintable(where));
+        continue;
+      }
+      ++exits;
+      QVERIFY2(landing, qPrintable(where));
+      QCOMPARE(QString::fromStdString(landing->computer), QString::fromStdString(neighbourOn(*side)));
+    }
+  }
+  QVERIFY(exits > 100);
+}
+
+void ServerTests::primaryMonitors_linkIntervals_pickTheNeighbourOfThePartOfTheEdge()
+{
+  const QuietLog quiet;
+  // links that cover part of the side of the bounding box, as the ones of an arrangement do
+  auto rig = tRig(true, true, true);
+  // the left side: L above half of it, D below
+  QCOMPARE(leaveAt(*rig, 0, 700)->computer, std::string("L"));
+  QCOMPARE(leaveAt(*rig, 753, 1500)->computer, std::string("D"));
+  QCOMPARE(leaveAt(*rig, 753, 2500)->computer, std::string("D"));
+  // the right side: R for 40 %, then U
+  QCOMPARE(leaveAt(*rig, 3439, 700)->computer, std::string("R"));
+  QCOMPARE(leaveAt(*rig, 2816, 1500)->computer, std::string("U"));
+  // the bottom side, along the bounding box: D for the first 20 %, then R, in the DELL part and in the MacBook part
+  QCOMPARE(leaveAt(*rig, 300, 1439)->computer, std::string("D"));
+  QCOMPARE(leaveAt(*rig, 3000, 1439)->computer, std::string("R"));
+  QCOMPARE(leaveAt(*rig, 2000, 2786)->computer, std::string("R"));
+}
+
+void ServerTests::primaryMonitors_comingBackLandsOnAMonitorAwayFromTheJumpZone_data()
+{
+  using enum Direction;
+  QTest::addColumn<QString>("from");
+  QTest::addColumn<int>("toward");
+  QTest::addColumn<int>("startX");
+  QTest::addColumn<int>("startY");
+  QTest::addColumn<int>("x");
+  QTest::addColumn<int>("y");
+  const auto row = [](const char *name, const char *from, Direction toward, Pos start, Pos expected) {
+    QTest::newRow(name) << from << static_cast<int>(toward) << start.x << start.y << expected.x << expected.y;
+  };
+  // the row of the primary computer that a row of the neighbour is, and the monitor that has it
+  row("from the left into the MacBook", "L", Right, {1919, 800}, {754, 2065});
+  row("from the left into the DELL", "L", Right, {1919, 300}, {1, 775});
+  row("from the right into the MacBook", "R", Left, {0, 1000}, {2815, 1936});
+  row("from the right into the DELL", "R", Left, {0, 200}, {3438, 388});
+  row("from above into the DELL", "U", Bottom, {100, 1439}, {1551, 1});
+  row("from below into the DELL part", "D", Top, {100, 0}, {180, 1438});
+  row("from below into the MacBook part", "D", Top, {1000, 0}, {1792, 2785});
+}
+
+void ServerTests::primaryMonitors_comingBackLandsOnAMonitorAwayFromTheJumpZone()
+{
+  const QuietLog quiet;
+  QFETCH(QString, from);
+  QFETCH(int, toward);
+  QFETCH(int, startX);
+  QFETCH(int, startY);
+  QFETCH(int, x);
+  QFETCH(int, y);
+  const auto layout = *deskflow::server::MonitorLayout::parse(kTShapedMonitors).layout;
+
+  auto rig = tRig(true, true);
+  const auto landed = enterPrimaryFrom(*rig, from.toStdString(), static_cast<Direction>(toward), {startX, startY});
+  QVERIFY(landed);
+  QVERIFY2(layout.contains(landed->x, landed->y), qPrintable(text(*landed)));
+  QCOMPARE(text(*landed), text(Pos{x, y}));
+}
+
+void ServerTests::primaryMonitors_withoutTheArrangement_comingBackIsAsItAlwaysWas()
+{
+  const QuietLog quiet;
+  // into the MacBook rows from the left: on the left edge of the bounding box, which is a hole
+  for (const auto &[experiment, arrangement] : std::vector<std::pair<bool, bool>>{{false, false}, {true, false}}) {
+    auto rig = tRig(experiment, arrangement);
+    const auto landed = enterPrimaryFrom(*rig, "L", Direction::Right, {1919, 800});
+    QVERIFY(landed);
+    QCOMPARE(text(*landed), text(Pos{1, 2065}));
+  }
+}
+
+void ServerTests::primaryMonitors_aRoundTrip_landsInTheSameRows()
+{
+  const QuietLog quiet;
+  auto rig = tRig(true, true);
+  for (const auto y : {1440, 1500, 2000, 2786}) {
+    rig->moveOnPrimary(753, y);
+    // the pointer is on L, at the edge it entered at; it is pushed back
+    const auto before = rig->primary->entered.size();
+    rig->moveOnSecondary(1, 0);
+    QCOMPARE(rig->primary->entered.size(), before + 1);
+    const auto back = rig->primary->entered.back();
+    QCOMPARE(back.x, 754);
+    QVERIFY2(std::abs(back.y - y) <= 3, qPrintable(text(back)));
+    rig->switchTo("primary");
+  }
+}
+
+void ServerTests::primaryMonitors_aScreenThatChanges_isDecidedAgain()
+{
+  const QuietLog quiet;
+  auto rig = tRig(true, true);
+  QVERIFY(leaveAt(*rig, 753, 1500));
+
+  // a display is plugged in that fills the holes: the screen is a rectangle
+  rig->changeScreenOfPrimary({{0, 0, 3440, 2787}}, kTShapedPrimary);
+  QVERIFY(!leaveAt(*rig, 753, 1500));
+  QVERIFY(leaveAt(*rig, 0, 1500));
+
+  // and unplugged
+  rig->changeScreenOfPrimary(tShapedMonitors(), kTShapedPrimary);
+  QVERIFY(leaveAt(*rig, 753, 1500));
+
+  // monitors that are not of the screen that the computer reports are not used, nor are none
+  rig->changeScreenOfPrimary({{0, 0, 3440, 1440}, {753, 1440, 2064, 1000}}, kTShapedPrimary);
+  QVERIFY(!leaveAt(*rig, 753, 1500));
+  rig->changeScreenOfPrimary({}, kTShapedPrimary);
+  QVERIFY(!leaveAt(*rig, 753, 1500));
+  QVERIFY(leaveAt(*rig, 0, 1500));
+
+  // a screen that is another T is used as it is
+  rig->changeScreenOfPrimary(
+      deskflow::server::MonitorLayout::parse("0,0,2000,1000;500,1000,1000,1000").layout->monitors(), {0, 0, 2000, 2000}
+  );
+  QVERIFY(leaveAt(*rig, 1999, 500));
+  QVERIFY(leaveAt(*rig, 1499, 1500));
+  QVERIFY(leaveAt(*rig, 500, 1500));
+  QVERIFY(!leaveAt(*rig, 1000, 1500));
+}
+
+void ServerTests::primaryMonitors_decisions_areSaidOncePerChange()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = tRig(true, true);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry on for \"primary\": 2 monitors, 0,0 3440x2787")), 1);
+
+  // read again with no change, and the pointer moving about, says nothing more
+  rig->configureArrangement(true, true);
+  for (int i = 0; i < 50; ++i)
+    leaveAt(*rig, 1000 + i, 700);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry on for \"primary\"")), 1);
+
+  // a switch of computers through an inner edge is said, with the screen of the server on
+  QVERIFY(leaveAt(*rig, 753, 1500));
+  QCOMPARE(info.count(QStringLiteral("monitor geometry: switch \"primary\" (0,0 3440x2787) -> \"L\"")), 1);
+  QCOMPARE(info.count(QStringLiteral("geometry of \"primary\" on, geometry of \"L\" off")), 1);
+
+  rig->changeScreenOfPrimary({{0, 0, 3440, 2787}}, kTShapedPrimary);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"primary\": the monitors make up a rectangle")), 1);
+  rig->changeScreenOfPrimary({}, kTShapedPrimary);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"primary\": the platform does not tell")), 1);
+}
+
+void ServerTests::primaryMonitors_nothingIsAddedToWhatAComputerIsTold()
+{
+  const QuietLog quiet;
+  const auto optionsOf = [](bool on) {
+    auto rig = tRig(on, on);
+    return rig->client("L").options();
+  };
+  QCOMPARE(optionsOf(true), optionsOf(false));
 }
 
 QTEST_MAIN(ServerTests)

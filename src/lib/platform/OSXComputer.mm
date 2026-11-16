@@ -27,6 +27,7 @@
 #include "mt/Mutex.h"
 #include "mt/Thread.h"
 #include "platform/OSXClipboard.h"
+#include "platform/OSXDisplays.h"
 #include "platform/OSXEventQueueBuffer.h"
 #include "platform/OSXKeyState.h"
 #include "platform/OSXMediaKeySupport.h"
@@ -1326,6 +1327,11 @@ IKeyState *OSXComputer::getKeyState() const
   return m_keyState;
 }
 
+std::vector<deskflow::server::MonitorRect> OSXComputer::getMonitors() const
+{
+  return m_monitors;
+}
+
 bool OSXComputer::updateComputerShape(const CGDirectDisplayID, const CGDisplayChangeSummaryFlags flags)
 {
   return updateComputerShape();
@@ -1374,6 +1380,9 @@ bool OSXComputer::updateComputerShape()
   m_yCenter = (rect.origin.y + rect.size.height) / 2;
 
   delete[] displays;
+  // the displays, for the server that maps the pointer around the holes of its own screen
+  m_monitors = deskflow::platform::osxActiveDisplays();
+
   // We want to notify the peer computer whether we are primary computer or not
   sendEvent(EventTypes::ComputerShapeChanged);
 

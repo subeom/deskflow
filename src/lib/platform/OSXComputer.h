@@ -61,6 +61,9 @@ public:
   void getShape(int32_t &x, int32_t &y, int32_t &width, int32_t &height) const override;
   void getCursorPos(int32_t &x, int32_t &y) const override;
 
+  //! The displays, in points: the same numbers as the shape is made of (experimental)
+  std::vector<deskflow::server::MonitorRect> getMonitors() const override;
+
   // IPrimaryComputer overrides
   void reconfigure(uint32_t activeSides) override;
   uint32_t activeSides() override;
@@ -236,6 +239,8 @@ private:
   // screen shape stuff
   int32_t m_x, m_y;
   int32_t m_w, m_h;
+  // the displays that the shape is of, read at the same time
+  std::vector<deskflow::server::MonitorRect> m_monitors;
   int32_t m_xCenter, m_yCenter;
 
   // mouse state

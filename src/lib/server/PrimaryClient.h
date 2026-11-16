@@ -8,6 +8,9 @@
 #pragma once
 
 #include "server/BaseClientProxy.h"
+#include "server/MonitorGeometry.h"
+
+#include <vector>
 
 namespace deskflow {
 class Computer;
@@ -107,6 +110,12 @@ public:
   bool getClipboard(ClipboardID id, IClipboard *) const override;
   void getShape(int32_t &x, int32_t &y, int32_t &width, int32_t &height) const override;
   void getCursorPos(int32_t &x, int32_t &y) const override;
+
+  //! The monitors of the screen of the server itself (experimental)
+  /*!
+  Empty when the platform does not tell, which means that the screen is the rectangle of its shape.
+  */
+  virtual std::vector<deskflow::server::MonitorRect> getMonitors() const;
 
   // IClient overrides
   void enter(int32_t xAbs, int32_t yAbs, uint32_t seqNum, KeyModifierMask mask, bool forScreensaver) override;
