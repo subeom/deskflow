@@ -53,6 +53,18 @@ public:
     m_handlers.erase({type, target});
   }
 
+  // A timer that is there, for the code that waits for one; the test runs its handler with a Timer event
+  EventQueueTimer *newOneShotTimer(double, void *) override
+  {
+    if (!timersExist)
+      return nullptr;
+    ++timersStarted;
+    return reinterpret_cast<EventQueueTimer *>(&timersStarted);
+  }
+
+  bool timersExist = false;
+  int timersStarted = 0;
+
   bool dispatchEvent(const Event &event) override
   {
     const auto handler = m_handlers.find({event.getType(), event.getTarget()});
@@ -3230,6 +3242,67 @@ void ServerTests::primaryMonitors_doubleTap_isArmedAsFarFromAnInnerEdgeAsFromAnO
   // an inner edge of the screen is the same: the MacBook's left edge
   QVERIFY(!secondTapSwitches(753, 1500, 2));
   QVERIFY(secondTapSwitches(753, 1500, 3));
+}
+
+void ServerTests::primaryMonitors_doubleTap_ofASecondaryWithALayout_isArmedAsItAlwaysWas()
+{
+  const QuietLog quiet;
+  // "C" is an L: there is a hole above its right half. The pointer taps the top edge at 958, where its first monitor
+  // ends, goes 3 pixels down, one at a time, and taps again: 3 pixels from the edge of the box, and 3 from the hole.
+  // The screen of a computer that is not the server is a box to the double tap, with or without the arrangement.
+  const auto secondTapSwitches = [](bool arrangement) {
+    PointerRig rig(kPrimaryShapes[0], {{"C", {0, 0, 1920, 1080}}});
+    rig.link("C", Direction::Top, "primary");
+    rig.config.addOption("", kOptionComputerSwitchTwoTap, 5000);
+    rig.config.setMonitorLayout("C", lShapeOf({0, 0, 1920, 1080}));
+    rig.configureArrangement(true, arrangement);
+    rig.switchTo("C");
+    rig.placeCursor("C", 958, 5);
+    rig.moveOnSecondary(0, -10);
+    for (int i = 0; i < 3; ++i)
+      rig.moveOnSecondary(0, 1);
+    const EntryWatch watch(rig);
+    rig.moveOnSecondary(0, -10);
+    return watch.landing().has_value();
+  };
+  QVERIFY(secondTapSwitches(false));
+  QVERIFY(secondTapSwitches(true));
+}
+
+void ServerTests::primaryMonitors_switchDelay_followsTheNeighbourThePointerSlidesTo()
+{
+  const QuietLog quiet;
+  // With a delay before a switch, the pointer pushes against the left edge of the server at rows that lead to "L" and
+  // slides along it to rows that lead to "D" (the DELL part of the screen, the top 1440 rows of 2787)
+  struct Result
+  {
+    std::optional<Landing> landing;
+    int timers = 0;
+  };
+  const auto slide = [](bool arrangement) {
+    auto rig = surrounded(kTShapedPrimary, Mode::Off, true);
+    rig->events.timersExist = true;
+    rig->config.addOption("", kOptionComputerSwitchDelay, 250);
+    rig->configureArrangement(arrangement, arrangement);
+    rig->moveOnPrimary(0, 100);
+    rig->moveOnPrimary(0, 300);
+    rig->moveOnPrimary(0, 1420);
+    const EntryWatch watch(*rig);
+    rig->events.dispatchEvent(Event(EventTypes::Timer, rig->server.get()));
+    return Result{watch.landing(), rig->events.timersStarted};
+  };
+
+  // the arrangement derives several links to a side: the wait is for the computer that the pointer is at now
+  const auto used = slide(true);
+  QCOMPARE(used.timers, 2);
+  QVERIFY(used.landing.has_value());
+  QCOMPARE(used.landing->computer, std::string("D"));
+
+  // as it always was: the wait is for the first one, and is not started again
+  const auto legacy = slide(false);
+  QCOMPARE(legacy.timers, 1);
+  QVERIFY(legacy.landing.has_value());
+  QCOMPARE(legacy.landing->computer, std::string("L"));
 }
 
 void ServerTests::reportedScreens_areSaidAtInfoLevelWhileTheExperimentIsOn()

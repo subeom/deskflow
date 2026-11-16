@@ -92,6 +92,10 @@ public:
   monitors and no size that was said is drawn as.
   */
   void setReportedScreen(const QString &computer, const QRect &shape);
+  //! The computers that the arrangement has to draw with a size that it assumed: they have no monitors and no size
+  QStringList assumedSizes() const;
+  //! Takes what a line of the log of the core says about the screen of a computer, if it does
+  bool takeReportedScreenFromLog(const QString &line);
   std::optional<QRect> reportedScreen(const QString &computer) const;
   const QHash<QString, QRect> &reportedScreens() const
   {

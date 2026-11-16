@@ -882,8 +882,11 @@ bool Server::isSwitchOkay(
   bool allowSwitch = false;
 
   // note if the switch direction has changed.  save the new
-  // direction and computer if so.
-  bool isNewDirection = (dir != m_switchDir);
+  // direction and computer if so.  with the arrangement used, a side has several neighbours, one for each part of the
+  // edge, and sliding along the edge into the rows of another one is as new as another direction.
+  const bool slidToAnother =
+      m_multiMonitor && m_useArrangement && m_switchComputer != nullptr && newComputer != m_switchComputer;
+  bool isNewDirection = (dir != m_switchDir) || slidToAnother;
   if (isNewDirection || m_switchComputer == nullptr) {
     m_switchDir = dir;
     m_switchComputer = newComputer;
@@ -986,8 +989,9 @@ void Server::armSwitchTwoTap(int32_t x, int32_t y)
       if (tapZone < m_switchTwoTapZone) {
         tapZone = m_switchTwoTapZone;
       }
-      // the tap zone is as far from an edge of the screen that is an inner edge as from one on the bounding box
-      const auto *layout = monitorLayoutFor(m_active);
+      // the tap zone is as far from an edge of the screen that is an inner edge as from one on the bounding box, for
+      // the screen of the server when the arrangement is used; every other computer is its bounding box, as it was
+      const auto *layout = m_active == m_primaryClient && m_useArrangement ? monitorLayoutFor(m_active) : nullptr;
       const bool awayFromTheEdges =
           layout != nullptr ? layout->contains(x - tapZone, y) && layout->contains(x + tapZone, y) &&
                                   layout->contains(x, y - tapZone) && layout->contains(x, y + tapZone)

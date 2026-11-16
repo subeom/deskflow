@@ -126,6 +126,7 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
 void ArrangementPanel::refresh()
 {
   m_canvas->setArrangement(m_config.arrangement());
+  m_canvas->setAssumedSizes(m_config.assumedSizes());
   updateIssues();
   updateSelection();
 }
@@ -160,6 +161,20 @@ void ArrangementPanel::updateIssues()
     const bool error = issue.severity() == deskflow::server::arrangement::Issue::Severity::Error;
     m_errors = m_errors || error;
     lines << (error ? tr("Error: %1") : tr("Warning: %1")).arg(text);
+    tips << text;
+  }
+  // a computer that has no monitors and no size is drawn with a size that is a guess: the screen that a computer
+  // reports is only in the log, which is not always on a level that has it
+  for (const auto &computer : m_canvas->arrangement().computers) {
+    const auto name = QString::fromStdString(computer.name);
+    if (computer.isServer || !m_canvas->assumedSizes().contains(name, Qt::CaseInsensitive))
+      continue;
+    const auto shape = computer.shape();
+    const auto text = tr("%1: size assumed %2 × %3. Set its monitors or its size in Edit computer.")
+                          .arg(name)
+                          .arg(shape.w)
+                          .arg(shape.h);
+    lines << tr("Warning: %1").arg(text);
     tips << text;
   }
   // what a computer that is connected says its screen is, when the arrangement has another: the server does not use

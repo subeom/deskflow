@@ -10,6 +10,7 @@
 
 #include "common/Hotkey.h"
 #include "common/Settings.h"
+#include "gui/core/ReportedScreen.h"
 
 #include <QAbstractButton>
 #include <QGuiApplication>
@@ -392,6 +393,39 @@ std::vector<MonitorRect> ServerConfig::serverMonitors()
 void ServerConfig::setReportedScreen(const QString &computer, const QRect &shape)
 {
   m_reportedScreens.insert(computer.toLower(), shape);
+}
+
+QStringList ServerConfig::assumedSizes() const
+{
+  QStringList names;
+  for (const auto &computer : computers()) {
+    if (computer.isNull() || computer.isServer())
+      continue;
+    const bool hasMonitors =
+        !computer.monitorLayout().isEmpty() && MonitorLayout::parse(computer.monitorLayout().toStdString());
+    if (!hasMonitors && (computer.arrangementWidth() <= 0 || computer.arrangementHeight() <= 0))
+      names << computer.name();
+  }
+  return names;
+}
+
+bool ServerConfig::takeReportedScreenFromLog(const QString &line)
+{
+  // the core writes the line only while the experiment is on
+  if (!Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool())
+    return false;
+  const auto screen = deskflow::gui::parseReportedScreen(line);
+  if (!screen)
+    return false;
+  // and for a computer that has connected, which is one of the configuration
+  const auto &known = std::as_const(*this).computers();
+  const auto computer = std::ranges::find_if(known, [&](const ::Computer &c) {
+    return !c.isNull() && c.name().compare(screen->computer, Qt::CaseInsensitive) == 0;
+  });
+  if (computer == known.cend())
+    return false;
+  setReportedScreen(screen->computer, screen->shape);
+  return true;
 }
 
 std::optional<QRect> ServerConfig::reportedScreen(const QString &computer) const

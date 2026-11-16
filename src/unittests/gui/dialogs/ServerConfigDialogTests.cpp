@@ -507,6 +507,40 @@ void ServerConfigDialogTests::arrangement_aComputerThatReportsAnotherScreen_isWa
   QVERIFY(!panelOf(dialog)->hasErrors());
 }
 
+void ServerConfigDialogTests::arrangement_aSizeThatIsAssumed_isSaidInTheStatusLine()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  const auto issuesOf = [](ServerConfigDialog &dialog) {
+    return panelOf(dialog)->findChild<QLabel *>(QStringLiteral("lblArrangementIssues"));
+  };
+  {
+    ServerConfig config;
+    ServerConfigDialog dialog(nullptr, config);
+    dialog.show();
+    QVERIFY(issuesOf(dialog)->isVisibleTo(&dialog));
+    const auto text = issuesOf(dialog)->text();
+    QVERIFY2(text.contains(QStringLiteral("PC: size assumed 1920 × 1080")), qPrintable(text));
+    QVERIFY2(text.contains(QStringLiteral("MINI: size assumed 1920 × 1080")), qPrintable(text));
+    // the screen of the server is the operating system's
+    QVERIFY(!text.contains(QStringLiteral("srv: size assumed")));
+    QCOMPARE(panelOf(dialog)->canvas()->assumedSizes(), QStringList({"PC", "MINI"}));
+    // it is a warning: the configuration can be saved
+    QVERIFY(!panelOf(dialog)->hasErrors());
+  }
+
+  // a size that is said is not assumed
+  Settings::setValue(Settings::Computer::ArrangementWidth.arg("MINI"), 1920);
+  Settings::setValue(Settings::Computer::ArrangementHeight.arg("MINI"), 1080);
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  dialog.show();
+  const auto text = issuesOf(dialog)->text();
+  QVERIFY2(text.contains(QStringLiteral("PC: size assumed")), qPrintable(text));
+  QVERIFY2(!text.contains(QStringLiteral("MINI: size assumed")), qPrintable(text));
+}
+
 namespace {
 
 // the row of the user's classic grid: a Windows laptop, this MacBook with its DELL (the server), the Windows PC with

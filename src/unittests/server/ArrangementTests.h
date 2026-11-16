@@ -47,6 +47,7 @@ private Q_SLOTS:
 
   void property_derivedLinks_areSymmetricPhysicalAndOnMonitors();
   void property_derivedLinks_areReadByTheCoreAsTheyAreMeant();
+  void text_decimals_areWrittenWithAPoint_andReadByTheCoreInTheCLocale();
   void property_equalGrids_areTheClassicGrid();
   void property_aSnappedComputer_neverOverlaps();
 

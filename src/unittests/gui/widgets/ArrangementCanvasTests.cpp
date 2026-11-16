@@ -172,6 +172,27 @@ void ArrangementCanvasTests::drag_aRightClickInTheMiddleOfIt_doesNotEndIt()
   QCOMPARE(computerOf(*canvas, "B").originX, 1920.0);
 }
 
+void ArrangementCanvasTests::assumedSize_isMarkedOnTheComputerThatHasIt()
+{
+  auto canvas = canvasOf(twoApart());
+  const auto plain = render(*canvas).toImage();
+  const auto inA = [&](const QImage &image) {
+    const auto box = canvas->boxOf("A");
+    return image.copy(QRect(box.topLeft().toPoint() * 2, box.size().toSize() * 2));
+  };
+
+  canvas->setAssumedSizes({"B"});
+  QCOMPARE(canvas->assumedSizes(), QStringList({"B"}));
+  const auto marked = render(*canvas).toImage();
+  QVERIFY(marked != plain);
+  // the computer that has its size is as it was
+  QCOMPARE(inA(marked), inA(plain));
+
+  // a computer that is not on the canvas is not marked
+  canvas->setAssumedSizes({"nobody"});
+  QCOMPARE(render(*canvas).toImage(), plain);
+}
+
 void ArrangementCanvasTests::drag_aBackgroundDrag_movesTheViewNotTheComputers()
 {
   auto canvas = canvasOf(twoApart());

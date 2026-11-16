@@ -11,9 +11,12 @@ namespace deskflow::gui {
 
 std::optional<ReportedScreen> parseReportedScreen(const QString &logLine)
 {
-  static const QRegularExpression pattern(
-      QStringLiteral(R"re(computer "(.+)" reports its screen: (-?\d+),(-?\d+) (\d+)x(\d+)\s*$)re")
-  );
+  // the whole line, as the core writes it: "[time] INFO: " and the text. A name that has a line end in it, as a
+  // computer that is not known may send, makes a line of the log that begins with the text and not with the time and
+  // the level.
+  static const QRegularExpression pattern(QStringLiteral(
+      R"re(^\[[^\]\r\n]+\] INFO: computer "([^"\r\n]+)" reports its screen: (-?\d+),(-?\d+) (\d+)x(\d+)\s*$)re"
+  ));
   const auto match = pattern.match(logLine);
   if (!match.hasMatch())
     return std::nullopt;

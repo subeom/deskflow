@@ -27,7 +27,6 @@
 #include "gui/Messages.h"
 #include "gui/TlsUtility.h"
 #include "gui/core/CoreProcess.h"
-#include "gui/core/ReportedScreen.h"
 #include "gui/ipc/DaemonIpcClient.h"
 #include "gui/widgets/LogDock.h"
 #include "net/FingerprintDatabase.h"
@@ -779,8 +778,7 @@ void MainWindow::handleLogLine(const QString &line)
   m_logDock->appendLine(line);
 
   // what a computer that connected says its screen is, for the arrangement of the computers
-  if (const auto screen = deskflow::gui::parseReportedScreen(line))
-    m_serverConfig.setReportedScreen(screen->computer, screen->shape);
+  m_serverConfig.takeReportedScreenFromLog(line);
 }
 
 void MainWindow::handleUnrecognisedClient(const QString &clientName)

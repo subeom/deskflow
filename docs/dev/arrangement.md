@@ -156,6 +156,19 @@ are reported ("not kept") and not silently lost. For computers of the same size 
 links are the old ones, line for line. There is no way back to the grid and none is needed: the classic grid stays
 stored, untouched, and **Use the classic grid** switches to it.
 
+**Several links of a side and the switch delay.** With a delay before a switch (`switchDelay`), `Server::isSwitchOkay`
+remembers the computer it waits to switch to. A side has several neighbours, one for each part of its edge, and the
+pointer can slide along the edge from the rows of one into the rows of another: with the arrangement used, that is as
+new as another direction (the wait and the double tap start again for the new computer). Without the arrangement,
+the code is as it was (the wait stays on the first one).
+
+**The numeric locale.** The GUI writes the intervals with a decimal point whatever the locale (`std::format`). The
+`Config` of the core reads them with `strtod`, which follows `LC_NUMERIC`: a process whose numeric locale has a decimal
+comma would read `(0,51.6685)` as an invalid interval. The core is a Qt application, and Qt takes the locale of the
+system on Unix; the machines that this was made for (Korean and English locales) have the point. The reader was not
+changed, because `strtod` also reads forms that another reader would not (so it is not provably the same for every
+file); tests pin that the text is the same in every locale and that the core reads it in the C locale.
+
 ### 6. Not in scope
 
 - The client **does not report its monitors** or its size to the GUI (a following stage may show the reported size).
@@ -167,14 +180,26 @@ stored, untouched, and **Use the classic grid** switches to it.
 
 A computer tells the server its screen in `DINF` as it always did. While the experiment is on the core logs it
 (`computer "X" reports its screen: x,y wxh`, at INFO, once for each change and each connection), the GUI reads that
-line from the output of the core (no IPC change, no new message), and uses it for a computer that has no monitors
-and no size that was said, instead of 1920 × 1080, and to **warn** when the arrangement has another screen for a
-computer (the core only uses the monitors of a computer when their bounding box is exactly what it reports).
+line from the output of the core (no IPC change, no new message). It is **not** what is drawn or written: it is taken
+as the size of a computer that has no monitors and no size when the arrangement is first used and on **Reset from
+classic grid**, and the dialog **warns** when the arrangement has another screen for a computer (the core only uses
+the monitors of a computer when their bounding box is exactly what it reports).
+
+The GUI takes the line only while the experiment is on, only when it is the whole line as the core writes it (`[time]
+INFO: computer "X" reports …`; a name that has a line end in it makes a line that begins with the text, which is not
+taken), and only for a computer of the current configuration. A computer that is not known could still send a name
+with a whole forged line in it; the worst that does is a wrong size that is adopted once or a warning, and it can be
+set again in **Edit computer**.
+
+**The size is assumed** when a computer has no monitors, no size (or only one of the two) and nothing was adopted: the
+canvas draws 1920 × 1080 for it and says so on the computer (a dashed border and *size assumed*) and in the status
+line, because the line of the log is not there when the level of the log is above INFO or the computer has not
+connected.
 
 ## Verified, and not
 
 Verified by tests that run here: the library (tables, seeded property tests, the equivalence with the classic grid, the
-text read back by the real core `Config`), the golden pins of the pointer decisions that were recorded from the code
+text read back by the real core `Config`, in the C numeric locale), the golden pins of the pointer decisions that were recorded from the code
 before the change, the server's silhouette on the user's real T (leaving through every exposed edge, coming back,
 display changes, the log), the canvas widget (drag, snap, keys), the dialogs (state, save, layout in three styles at two
 font sizes), the generated configuration (golden) and the settings round trip. Not verified: the feel of the canvas

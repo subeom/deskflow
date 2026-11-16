@@ -293,6 +293,11 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
   }
 }
 
+void ArrangementCanvas::setAssumedSizes(const QStringList &computers)
+{
+  m_assumed = computers;
+}
+
 void ArrangementCanvas::paintComputer(
     QPainter &painter, const Arrangement &shown, size_t index, bool overlapping, bool unconnected, bool dragged
 ) const
@@ -305,6 +310,8 @@ void ArrangementCanvas::paintComputer(
 
   const auto color = colorOf(index, computer.isServer);
   const auto border = color.darker(150);
+  // its size is a guess: nothing says what it is
+  const bool assumed = m_assumed.contains(name, Qt::CaseInsensitive);
   const auto text = luminance(color) > 0.6 ? QColor(24, 24, 24) : QColor(255, 255, 255);
 
   painter.save();
@@ -320,7 +327,7 @@ void ArrangementCanvas::paintComputer(
       painter.setBrush(QColor(0, 0, 0, 40));
       painter.drawRoundedRect(r.translated(3, 4), 4, 4);
     }
-    painter.setPen(QPen(border, 1.5));
+    painter.setPen(QPen(border, 1.5, assumed ? Qt::DashLine : Qt::SolidLine));
     painter.setBrush(color);
     painter.drawRoundedRect(r.adjusted(0.75, 0.75, -0.75, -0.75), 3, 3);
     if (monitors[i].contains(0, 0)) {
@@ -364,6 +371,8 @@ void ArrangementCanvas::paintComputer(
     if (computer.isServer)
       lines << tr("this computer");
     lines << sizeText(computer);
+    if (assumed)
+      lines << tr("size assumed");
     if (const auto zoom = zoomText(computer); !zoom.isEmpty())
       lines << zoom;
 

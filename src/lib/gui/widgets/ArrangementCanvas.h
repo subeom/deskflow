@@ -48,6 +48,12 @@ public:
     return m_issues;
   }
 
+  //! The computers whose size is not known: the canvas says so on them
+  void setAssumedSizes(const QStringList &computers);
+  QStringList assumedSizes() const
+  {
+    return m_assumed;
+  }
   void setStatus(const QString &computer, Status status);
   void setSelected(const QString &computer);
   QString selected() const
@@ -110,6 +116,7 @@ private:
   deskflow::server::arrangement::DerivedLinks m_derived;
   std::vector<deskflow::server::arrangement::Issue> m_issues;
   QHash<QString, Status> m_status;
+  QStringList m_assumed;
   QString m_selected;
 
   // arrangement to widget: scale and where the arrangement origin is

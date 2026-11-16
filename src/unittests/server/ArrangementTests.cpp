@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <clocale>
 #include <cmath>
 #include <format>
 #include <random>
@@ -931,6 +932,44 @@ void ArrangementTests::property_derivedLinks_areReadByTheCoreAsTheyAreMeant()
       }
     }
   }
+}
+
+void ArrangementTests::text_decimals_areWrittenWithAPoint_andReadByTheCoreInTheCLocale()
+{
+  const auto arrangement = serverWithThreePcs();
+  const auto derived = deriveLinks(arrangement);
+  const auto previous = std::string(std::setlocale(LC_NUMERIC, nullptr));
+  std::setlocale(LC_NUMERIC, "C");
+  const auto reference = formatLinks(arrangement, derived);
+  QVERIFY(reference.find("(0,51.6685)") != std::string::npos);
+  QVERIFY(reference.find(',') != std::string::npos);
+
+  // what is written does not depend on the numeric locale of the process, whatever one it has
+  for (const auto *name : {"de_DE.UTF-8", "fr_FR.UTF-8", "ko_KR.UTF-8"}) {
+    if (std::setlocale(LC_NUMERIC, name) != nullptr)
+      QCOMPARE(QString::fromStdString(formatLinks(arrangement, derived)), QString::fromStdString(reference));
+  }
+
+  // what reads it is the Config of the core, which reads the numbers with strtod: it follows LC_NUMERIC, and the
+  // decimal point is what it is given by the C locale (see the design note)
+  std::setlocale(LC_NUMERIC, "C");
+  for (const auto &computer : arrangement.computers) {
+    const auto name = QString::fromStdString(computer.name);
+    Settings::setValue(Settings::Computer::Name.arg(name), name);
+  }
+  Config config(nullptr);
+  std::istringstream input(reference + "section: options\nend\n");
+  try {
+    input >> config;
+  } catch (const std::exception &e) {
+    std::setlocale(LC_NUMERIC, previous.c_str());
+    QFAIL(e.what());
+  }
+  float out = -1;
+  QCOMPARE(QString::fromStdString(config.getNeighbor("srv", Direction::Left, 0.25f, &out)), QStringLiteral("PC1"));
+  QVERIFY(std::abs(out - 0.25f / 0.516685f) < 1.0e-4);
+  QCOMPARE(QString::fromStdString(config.getNeighbor("srv", Direction::Left, 0.6f, &out)), QStringLiteral("PC2"));
+  std::setlocale(LC_NUMERIC, previous.c_str());
 }
 
 void ArrangementTests::property_equalGrids_areTheClassicGrid()

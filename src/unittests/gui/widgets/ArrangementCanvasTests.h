@@ -16,6 +16,7 @@ private Q_SLOTS:
   void drag_ontoAnotherComputer_isPushedOff();
   void drag_escapeCancelsIt();
   void drag_aRightClickInTheMiddleOfIt_doesNotEndIt();
+  void assumedSize_isMarkedOnTheComputerThatHasIt();
   void drag_aBackgroundDrag_movesTheViewNotTheComputers();
   void keys_moveTheSelectedComputer();
   void doubleClick_asksToEditTheComputer();

@@ -72,7 +72,7 @@ void forget(const QStringList &names);
 void ArrangementConfigTests::cleanup()
 {
   // whatever a test said about the computers it used
-  forget({"A", "B", "C", "srv", "PC1", "PC2", "MINI", "SUBEOM-COPILOT", "9800X3D-5080"});
+  forget({"A", "B", "C", "D", "E", "srv", "PC1", "PC2", "MINI", "SUBEOM-COPILOT", "9800X3D-5080"});
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
   Settings::setValue(Settings::Server::UseArrangement);
   ServerConfig::overrideServerMonitors(std::nullopt);
@@ -483,11 +483,32 @@ void ArrangementConfigTests::reportedScreen_isParsedFromTheLogOfTheCore_data()
   ) << QStringLiteral("[2026-11-16T13:30:00] INFO: computer \"SUBEOM-COPILOT\" reports its screen: 0,0 1920x1080")
     << true << "SUBEOM-COPILOT" << QRect(0, 0, 1920, 1080);
   QTest::newRow("monitors on the left, a negative position")
-      << QStringLiteral("INFO: computer \"9800X3D-5080\" reports its screen: -1920,0 4480x1440\r") << true
-      << "9800X3D-5080" << QRect(-1920, 0, 4480, 1440);
+      << QStringLiteral(
+             "[2026-11-16T13:30:00.123] INFO: computer \"9800X3D-5080\" reports its screen: -1920,0 4480x1440\r"
+         )
+      << true << "9800X3D-5080" << QRect(-1920, 0, 4480, 1440);
   QTest::newRow("a name with a space and a dot")
-      << QStringLiteral("computer \"Subeoms Mac-mini.local\" reports its screen: 0,-300 2560x1440") << true
-      << "Subeoms Mac-mini.local" << QRect(0, -300, 2560, 1440);
+      << QStringLiteral(
+             "[2026-11-16T13:30:00.123] INFO: computer \"Subeoms Mac-mini.local\" reports its screen: 0,-300 2560x1440"
+         )
+      << true << "Subeoms Mac-mini.local" << QRect(0, -300, 2560, 1440);
+  // only the line that the core writes: the start of it is the time and the level, and nothing else is before the text
+  QTest::newRow("no time and level") << QStringLiteral("computer \"x\" reports its screen: 0,0 10x10") << false << ""
+                                     << QRect();
+  QTest::newRow("a level that is not INFO")
+      << QStringLiteral("[2026-11-16T13:30:00.123] DEBUG: computer \"x\" reports its screen: 0,0 10x10") << false << ""
+      << QRect();
+  QTest::newRow("a line that has the text in the middle")
+      << QStringLiteral(
+             "[2026-11-16T13:30:00.123] WARNING: unrecognised client name \"a computer \"x\" reports its screen: 0,0 "
+             "10x10"
+         )
+      << false << "" << QRect();
+  QTest::newRow("a quote in the name") << QStringLiteral(
+                                              "[2026-11-16T13:30:00.123] INFO: computer \"a\" reports its screen: 0,0 "
+                                              "1x1\" b\" reports its screen: 0,0 10x10"
+                                          )
+                                       << false << "" << QRect();
   QTest::newRow("another line") << QStringLiteral("INFO: client \"x\" has connected") << false << "" << QRect();
   QTest::newRow("a size of nothing") << QStringLiteral("computer \"x\" reports its screen: 0,0 0x1080") << false << ""
                                      << QRect();
@@ -507,6 +528,56 @@ void ArrangementConfigTests::reportedScreen_isParsedFromTheLogOfTheCore()
     QCOMPARE(screen->computer, computer);
     QCOMPARE(screen->shape, shape);
   }
+}
+
+void ArrangementConfigTests::
+    reportedScreen_isTakenFromTheLogOnlyWhileTheExperimentIsOnAndOnlyForTheComputersOfTheConfig()
+{
+  writeGrid({{6, "A"}, {7, "B"}}, "A");
+  const auto line = [](const char *name) {
+    return QStringLiteral("[2026-11-16T13:30:00.123] INFO: computer \"%1\" reports its screen: 0,0 2560x1440")
+        .arg(QString::fromLatin1(name));
+  };
+  ServerConfig config;
+
+  // the experiment is off: the core does not write the line, and a line that is there is not taken
+  QVERIFY(!config.takeReportedScreenFromLog(line("B")));
+  QVERIFY(!config.reportedScreen("B"));
+
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  QVERIFY(config.takeReportedScreenFromLog(line("B")));
+  QCOMPARE(*config.reportedScreen("B"), QRect(0, 0, 2560, 1440));
+
+  // a computer that the configuration does not have is not remembered
+  QVERIFY(!config.takeReportedScreenFromLog(line("stranger")));
+  QVERIFY(!config.reportedScreen("stranger"));
+
+  // a name that a computer that is not known sent, with a line in it: the log of the core has it as two lines
+  const auto hostile = QStringLiteral(
+      "[2026-11-16T13:30:01.000] WARNING: unrecognised client name \"evil\n"
+      "computer \"A\" reports its screen: 0,0 1x1\""
+  );
+  for (const auto &part : hostile.split(QLatin1Char('\n')))
+    QVERIFY(!config.takeReportedScreenFromLog(part));
+  QVERIFY(!config.reportedScreen("A"));
+}
+
+void ArrangementConfigTests::assumedSizes_areOfTheComputersThatHaveNoMonitorsAndNoSize()
+{
+  writeGrid({{6, "A"}, {7, "B"}, {8, "C"}, {9, "D"}, {10, "E"}}, "A");
+  ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{});
+  // B has a size, C has monitors, D has nothing, E has a width and no height; A is the server
+  Settings::setValue(Settings::Computer::ArrangementWidth.arg("B"), 1600);
+  Settings::setValue(Settings::Computer::ArrangementHeight.arg("B"), 900);
+  Settings::setValue(Settings::Computer::MonitorLayout.arg("C"), QStringLiteral("0,0,2560,1440"));
+  Settings::setValue(Settings::Computer::ArrangementWidth.arg("E"), 1600);
+  ServerConfig config;
+  QCOMPARE(config.assumedSizes(), QStringList({"D", "E"}));
+
+  // a size that a computer reported and that is adopted is not assumed any more
+  config.setReportedScreen("D", QRect(0, 0, 2560, 1440));
+  config.adoptReportedScreens();
+  QCOMPARE(config.assumedSizes(), QStringList({"E"}));
 }
 
 void ArrangementConfigTests::reportedScreen_doesNotChangeWhatIsGenerated()

@@ -32,6 +32,7 @@ private Q_SLOTS:
   void arrangement_withComputersOnTopOfEachOther_cannotBeSaved();
   void arrangement_aComputerIsRemovedFromTheCanvas_theServerIsNot();
   void arrangement_aComputerThatReportsAnotherScreen_isWarnedOf();
+  void arrangement_aSizeThatIsAssumed_isSaidInTheStatusLine();
   void arrangement_inCanvasMode_theGridOnlyWidgetsGiveWayToButtons_andAComputerIsAdded();
   void arrangement_saveKeepsWhatComputersReportedWhileTheDialogWasOpen();
   void arrangement_firstUse_adoptsTheSizesThatComputersReported();
