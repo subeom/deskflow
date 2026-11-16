@@ -521,8 +521,30 @@ ResizeResult resize(
       bottom = top + h;
   };
 
+  // the ratio is kept: the side that is not dragged follows the one that is
+  const bool locked = constraints.lockAspect && *constraints.lockAspect > 0;
+  if (locked) {
+    const double ratio = *constraints.lockAspect;
+    const bool horizontalOnly = (dragL || dragR) && !(dragT || dragB);
+    const bool verticalOnly = (dragT || dragB) && !(dragL || dragR);
+    const double w = right - left;
+    const double h = bottom - top;
+    const bool widthLeads = horizontalOnly || (!verticalOnly && std::abs(w - m.w) / m.w >= std::abs(h - m.h) / m.h);
+    if (widthLeads)
+      setHeight(w / ratio);
+    else
+      setWidth(h * ratio);
+    const double newW = right - left;
+    const double newH = bottom - top;
+    if (newW < kMinSide || newH < kMinSide) {
+      const double k = std::max(kMinSide / newW, kMinSide / newH);
+      setWidth(newW * k);
+      setHeight(newH * k);
+    }
+  }
+
   // a side goes to the ratio that the monitor is near
-  if (constraints.snapAspect) {
+  if (!locked && constraints.snapAspect) {
     const bool horizontalOnly = (dragL || dragR) && !(dragT || dragB);
     const bool verticalOnly = (dragT || dragB) && !(dragL || dragR);
     const bool adjustWidth = horizontalOnly ? !snapX.snapped : (!verticalOnly && snapY.snapped && !snapX.snapped);
@@ -552,7 +574,7 @@ ResizeResult resize(
   }
 
   // the pixels go to a preset when they are near it
-  if (constraints.snapPresets && !snapX.snapped && !snapY.snapped) {
+  if (!locked && constraints.snapPresets && !snapX.snapped && !snapY.snapped) {
     const double pw = (right - left) * m.scale / 100.0;
     const double ph = (bottom - top) * m.scale / 100.0;
     for (const auto &preset : kPresets) {
@@ -569,7 +591,7 @@ ResizeResult resize(
   }
 
   // the screen that the computer reports
-  if (constraints.targetSize) {
+  if (!locked && constraints.targetSize) {
     const auto [tw, th] = *constraints.targetSize;
     if ((dragL || dragR) && !snapX.snapped && std::abs((right - left) - tw) <= kPresetSnap * tw) {
       setWidth(tw);

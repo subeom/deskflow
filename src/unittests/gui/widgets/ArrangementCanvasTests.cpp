@@ -87,6 +87,27 @@ Arrangement twoApart()
   return {{pc("A", kHd, 0, 0), pc("B", kHd, 2600, 300)}};
 }
 
+// the pointer moves over the widget with \p buttons down and \p modifiers held
+void moveWith(QWidget *widget, const QPoint &point, Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers)
+{
+  QMouseEvent event(
+      QEvent::MouseMove, QPointF(point), widget->mapToGlobal(QPointF(point)), Qt::NoButton, buttons, modifiers
+  );
+  QApplication::sendEvent(widget, &event);
+}
+
+// a drag with a modifier held
+void dragWith(
+    QWidget *widget, const QPoint &from, const QPoint &to, Qt::KeyboardModifiers modifiers, bool release = true
+)
+{
+  QTest::mousePress(widget, Qt::LeftButton, modifiers, from);
+  for (int i = 1; i <= 8; ++i)
+    moveWith(widget, from + (to - from) * i / 8, Qt::LeftButton, modifiers);
+  if (release)
+    QTest::mouseRelease(widget, Qt::LeftButton, modifiers, to);
+}
+
 // the pointer moves over the widget with no button down
 void hover(QWidget *widget, const QPoint &point)
 {
@@ -113,6 +134,16 @@ void save(const QPixmap &pixmap, const QString &name)
   QVERIFY2(pixmap.save(QDir(directory).filePath(name)), qPrintable(name));
 }
 
+} // namespace
+
+namespace {
+QPoint onBox(const QRectF &r, double x, double y, double dx = 0, double dy = 0)
+{
+  return QPoint(
+      static_cast<int>(std::lround(r.left() + r.width() * x + dx)),
+      static_cast<int>(std::lround(r.top() + r.height() * y + dy))
+  );
+}
 } // namespace
 
 void ArrangementCanvasTests::drag_aComputerSnapsToTheEdgeOfAnother()
@@ -253,7 +284,7 @@ void ArrangementCanvasTests::resize_theEdgesOfTheOneRectangleOfAComputer_changeI
   QVERIFY(computerOf(*canvas, "B").originX > 2600.0);
 }
 
-void ArrangementCanvasTests::resize_anEdgeSnapsToTheNeighbour_theRatiosAndTheReportedSize()
+void ArrangementCanvasTests::resize_anEdgeSnapsToTheNeighbour_theRatiosAndThePresets()
 {
   auto canvas = canvasOf(twoApart());
   QSignalSpy resized(canvas.get(), &ArrangementCanvas::computerResized);
@@ -272,10 +303,9 @@ void ArrangementCanvasTests::resize_anEdgeSnapsToTheNeighbour_theRatiosAndTheRep
   QCOMPARE(computerOf(*canvas, "B").originX, 1920.0);
   QVERIFY(canvas->issues().empty());
 
-  // the corner, near 2560 x 1440 which is what the computer reports: that size, which is also a ratio
+  // the corner, near 2560 x 1440 (a preset, which is also a ratio): that size
   auto other = canvasOf(twoApart());
   QSignalSpy sized(other.get(), &ArrangementCanvas::computerResized);
-  other->setReportedSizes({{QStringLiteral("B"), QSize(2560, 1440)}});
   other->setSelected("B");
   box = other->boxOf("B");
   drag(
@@ -305,20 +335,23 @@ void ArrangementCanvasTests::resize_aComputerThatIsZoomed_isSizedInItsOwnUnits()
   QVERIFY(std::abs(computerOf(*canvas, "B").box().w - resized.at(0).at(3).toInt() * 0.8) < 1e-6);
 }
 
-void ArrangementCanvasTests::resize_theServerAndAComputerOfSeveralMonitors_arePutAndNotResized()
+void ArrangementCanvasTests::resize_theServer_isPutAndNotResized()
 {
   auto canvas = canvasOf(userArrangement());
   QSignalSpy resized(canvas.get(), &ArrangementCanvas::computerResized);
-  for (const char *name : {"Subeoms-MacBook-Pro.local", "9800X3D-5080"}) {
-    canvas->setSelected(name);
-    const auto box = canvas->boxOf(name);
-    const QPoint edge(
-        static_cast<int>(std::lround(box.right())), static_cast<int>(std::lround(box.top() + box.height() / 4))
-    );
-    hover(canvas.get(), edge);
-    QVERIFY(canvas->cursor().shape() != Qt::SizeHorCursor);
-  }
+  QSignalSpy scaled(canvas.get(), &ArrangementCanvas::computerScaled);
+  const char *name = "Subeoms-MacBook-Pro.local";
+  canvas->setSelected(name);
+  const auto box = canvas->boxOf(name);
+  // the bottom edge of the MacBook, which no other computer is at
+  const auto edge = onBox(box, 0.5, 1.0);
+  hover(canvas.get(), edge);
+  QVERIFY(canvas->cursor().shape() != Qt::SizeVerCursor);
+  QVERIFY(canvas->hoveredComputer().isEmpty());
+  // dragged by its outline it is moved, as by its middle, and not resized
+  drag(*canvas, edge, edge + QPoint(30, 0));
   QCOMPARE(resized.count(), 0);
+  QCOMPARE(scaled.count(), 0);
 }
 
 void ArrangementCanvasTests::resize_aPresetSnapOnOneEdge_doesNotMoveTheOtherOne()
@@ -380,6 +413,206 @@ void ArrangementCanvasTests::resize_overAnotherComputer_isNotDone()
   QCOMPARE(resized.count(), 0);
   QCOMPARE(computerOf(*canvas, "B").originX, 2600.0);
   QCOMPARE(computerOf(*canvas, "B").monitors.front().w, 1920);
+}
+
+void ArrangementCanvasTests::outline_aClient_hasResizeCursorsWithAToleranceInScreenPixels()
+{
+  // the same on a canvas that shows everything small and one that shows it big: the tolerance is in screen pixels
+  for (const auto &size : {QSize(900, 520), QSize(320, 200)}) {
+    auto canvas = canvasOf(twoApart(), size);
+    const auto box = canvas->boxOf("B");
+    QVERIFY(canvas->selected().isEmpty());
+    hover(canvas.get(), onBox(box, 1.0, 0.5));
+    QCOMPARE(canvas->cursor().shape(), Qt::SizeHorCursor);
+    QCOMPARE(canvas->hoveredComputer(), QStringLiteral("B"));
+    hover(canvas.get(), onBox(box, 1.0, 0.5, 5, 0));
+    QCOMPARE(canvas->cursor().shape(), Qt::SizeHorCursor);
+    hover(canvas.get(), onBox(box, 1.0, 0.5, -5, 0));
+    QCOMPARE(canvas->cursor().shape(), Qt::SizeHorCursor);
+    hover(canvas.get(), onBox(box, 1.0, 0.5, 14, 0));
+    QVERIFY(canvas->cursor().shape() != Qt::SizeHorCursor);
+    QVERIFY(canvas->hoveredComputer().isEmpty());
+    hover(canvas.get(), onBox(box, 1.0, 0.5, -14, 0));
+    QCOMPARE(canvas->cursor().shape(), Qt::OpenHandCursor);
+    hover(canvas.get(), onBox(box, 0.5, 1.0, 0, 4));
+    QCOMPARE(canvas->cursor().shape(), Qt::SizeVerCursor);
+    hover(canvas.get(), onBox(box, 1.0, 1.0, 3, 3));
+    QCOMPARE(canvas->cursor().shape(), Qt::SizeFDiagCursor);
+    hover(canvas.get(), onBox(box, 0.0, 1.0, -3, 3));
+    QCOMPARE(canvas->cursor().shape(), Qt::SizeBDiagCursor);
+    hover(canvas.get(), onBox(box, 0.5, 0.5));
+    QCOMPARE(canvas->cursor().shape(), Qt::OpenHandCursor);
+  }
+}
+
+void ArrangementCanvasTests::outline_pressSelectsTheComputer_andResizesIt()
+{
+  auto canvas = canvasOf(twoApart());
+  QSignalSpy resized(canvas.get(), &ArrangementCanvas::computerResized);
+  QVERIFY(canvas->selected().isEmpty());
+  const auto box = canvas->boxOf("B");
+  const auto scale = box.width() / 1920.0;
+  drag(*canvas, onBox(box, 1.0, 0.5), onBox(box, 1.0, 0.5, 200 * scale, 0));
+  QCOMPARE(canvas->selected(), QStringLiteral("B"));
+  QCOMPARE(resized.count(), 1);
+  QVERIFY(std::abs(resized.at(0).at(3).toInt() - 2120) <= 2.0 / scale);
+}
+
+void ArrangementCanvasTests::outline_isHighlightedUnderThePointer()
+{
+  auto canvas = canvasOf(twoApart());
+  const auto plain = render(*canvas).toImage();
+  const auto box = canvas->boxOf("B");
+  hover(canvas.get(), onBox(box, 1.0, 0.5));
+  const auto highlighted = render(*canvas).toImage();
+  QVERIFY(highlighted != plain);
+  // the pointer leaves: it is as it was
+  hover(canvas.get(), QPoint(2, 2));
+  QVERIFY(canvas->hoveredComputer().isEmpty());
+  QCOMPARE(render(*canvas).toImage(), plain);
+}
+
+void ArrangementCanvasTests::outline_shiftKeepsTheAspect_altTakesTheSnappingAway()
+{
+  auto canvas = canvasOf(twoApart());
+  QSignalSpy resized(canvas.get(), &ArrangementCanvas::computerResized);
+  const auto box = canvas->boxOf("B");
+  const auto scale = box.width() / 1920.0;
+
+  // Shift: 400 units wider, and the height follows (a free drag leaves it)
+  dragWith(canvas.get(), onBox(box, 1.0, 0.5), onBox(box, 1.0, 0.5, 400 * scale, 0), Qt::ShiftModifier);
+  QCOMPARE(resized.count(), 1);
+  const double w = resized.at(0).at(3).toInt();
+  const double h = resized.at(0).at(4).toInt();
+  QVERIFY(std::abs(w / h - 1920.0 / 1080.0) < 0.01);
+  QVERIFY(w > 2250);
+
+  // Alt: the left edge 25 units from the right edge of A is not snapped to it (it is, without Alt)
+  auto other = canvasOf(twoApart());
+  QSignalSpy resizedWithAlt(other.get(), &ArrangementCanvas::computerResized);
+  const auto b = other->boxOf("B");
+  const auto s = b.width() / 1920.0;
+  dragWith(other.get(), onBox(b, 0.0, 0.5), onBox(b, 0.0, 0.5, -655 * s, 0), Qt::AltModifier);
+  QCOMPARE(resizedWithAlt.count(), 1);
+  QVERIFY(std::abs(computerOf(*other, "B").originX - 1945.0) <= 8.0);
+  auto snapping = canvasOf(twoApart());
+  const auto c = snapping->boxOf("B");
+  drag(*snapping, onBox(c, 0.0, 0.5), onBox(c, 0.0, 0.5, -655 * s, 0));
+  QCOMPARE(computerOf(*snapping, "B").originX, 1920.0);
+}
+
+void ArrangementCanvasTests::outline_escapeCancelsADrag()
+{
+  auto canvas = canvasOf(twoApart());
+  QSignalSpy resized(canvas.get(), &ArrangementCanvas::computerResized);
+  QSignalSpy changed(canvas.get(), &ArrangementCanvas::arrangementChanged);
+  const auto box = canvas->boxOf("B");
+  const auto scale = box.width() / 1920.0;
+  const auto from = onBox(box, 1.0, 0.5);
+  const auto to = onBox(box, 1.0, 0.5, 200 * scale, 0);
+  dragWith(canvas.get(), from, to, Qt::NoModifier, false);
+  QTest::keyClick(canvas.get(), Qt::Key_Escape);
+  QTest::mouseRelease(canvas.get(), Qt::LeftButton, {}, to);
+  QCOMPARE(resized.count(), 0);
+  QCOMPARE(changed.count(), 0);
+  QCOMPARE(computerOf(*canvas, "B").monitors.front().w, 1920);
+}
+
+void ArrangementCanvasTests::scale_aClientWithAReportedSize_isScaledAndNotResized()
+{
+  auto canvas = canvasOf(twoApart());
+  QSignalSpy resized(canvas.get(), &ArrangementCanvas::computerResized);
+  QSignalSpy scaled(canvas.get(), &ArrangementCanvas::computerScaled);
+  canvas->setReportedSizes({{QStringLiteral("B"), QSize(1920, 1080)}});
+  const auto box = canvas->boxOf("B");
+  const auto scale = box.width() / 1920.0;
+  const auto before = computerOf(*canvas, "B").monitors;
+
+  // the corner goes 192 x 108 units: 10 % bigger on the canvas, in the same shape, and in the same pixels
+  drag(*canvas, onBox(box, 1.0, 1.0), onBox(box, 1.0, 1.0, 192 * scale, 108 * scale));
+  QCOMPARE(resized.count(), 0);
+  QCOMPARE(scaled.count(), 1);
+  QCOMPARE(scaled.at(0).at(0).toString(), QStringLiteral("B"));
+  QVERIFY(std::abs(scaled.at(0).at(1).toDouble() - 1.1) < 0.01);
+  QCOMPARE(computerOf(*canvas, "B").monitors, before);
+  QCOMPARE(computerOf(*canvas, "B").zoom, scaled.at(0).at(1).toDouble());
+  const auto drawn = computerOf(*canvas, "B").box();
+  QVERIFY(std::abs(drawn.w / drawn.h - 1920.0 / 1080.0) < 1e-9);
+  // the top left corner stays where it was
+  QCOMPARE(drawn.x, 2600.0);
+  QCOMPARE(drawn.y, 300.0);
+
+  // near a display scale that there is (125 %: 0.8) it is exactly that, and not with Alt
+  auto other = canvasOf(twoApart());
+  QSignalSpy sized(other.get(), &ArrangementCanvas::computerScaled);
+  other->setReportedSizes({{QStringLiteral("B"), QSize(1920, 1080)}});
+  const auto b = other->boxOf("B");
+  const auto s = b.width() / 1920.0;
+  drag(*other, onBox(b, 1.0, 1.0), onBox(b, 1.0, 1.0, -378 * s, -212 * s));
+  QCOMPARE(sized.count(), 1);
+  QCOMPARE(sized.at(0).at(1).toDouble(), 0.8);
+  auto free = canvasOf(twoApart());
+  QSignalSpy unsnapped(free.get(), &ArrangementCanvas::computerScaled);
+  free->setReportedSizes({{QStringLiteral("B"), QSize(1920, 1080)}});
+  const auto f = free->boxOf("B");
+  dragWith(free.get(), onBox(f, 1.0, 1.0), onBox(f, 1.0, 1.0, -378 * s, -212 * s), Qt::AltModifier);
+  QCOMPARE(unsnapped.count(), 1);
+  QVERIFY(unsnapped.at(0).at(1).toDouble() != 0.8);
+  QVERIFY(std::abs(unsnapped.at(0).at(1).toDouble() - 0.8) < 0.01);
+}
+
+void ArrangementCanvasTests::scale_aComputerOfSeveralMonitors_isScaledAsAWhole()
+{
+  auto canvas = canvasOf(userArrangement());
+  QSignalSpy resized(canvas.get(), &ArrangementCanvas::computerResized);
+  QSignalSpy scaled(canvas.get(), &ArrangementCanvas::computerScaled);
+  const char *name = "9800X3D-5080";
+  const auto before = computerOf(*canvas, name);
+  const auto box = canvas->boxOf(name);
+  const auto scale = box.width() / 4480.0;
+  // the left edge of the whole computer goes 400 units to the right
+  hover(canvas.get(), onBox(box, 0.0, 0.5));
+  QCOMPARE(canvas->cursor().shape(), Qt::SizeHorCursor);
+  drag(*canvas, onBox(box, 0.0, 0.5), onBox(box, 0.0, 0.5, 400 * scale, 0));
+  QCOMPARE(resized.count(), 0);
+  QCOMPARE(scaled.count(), 1);
+  const auto &after = computerOf(*canvas, name);
+  // the monitors are as they were, the zoom is smaller, and the shape is the same
+  QCOMPARE(after.monitors, before.monitors);
+  QVERIFY(after.zoom < before.zoom * 0.95);
+  QVERIFY(std::abs(after.box().w / after.box().h - before.box().w / before.box().h) < 1e-9);
+  // the right edge stays where it was
+  QVERIFY(std::abs(after.box().right() - before.box().right()) < 1e-6);
+}
+
+void ArrangementCanvasTests::scale_neverOverAnotherComputer_andTheZoomStaysInItsLimits()
+{
+  auto canvas = canvasOf(twoApart());
+  QSignalSpy scaled(canvas.get(), &ArrangementCanvas::computerScaled);
+  canvas->setReportedSizes({{QStringLiteral("B"), QSize(1920, 1080)}});
+  const auto box = canvas->boxOf("B");
+  const auto scale = box.width() / 1920.0;
+  // in one step over A
+  QTest::mousePress(canvas.get(), Qt::LeftButton, {}, onBox(box, 0.0, 0.0));
+  const auto over = onBox(box, 0.0, 0.0, -1900 * scale, -100 * scale);
+  QTest::mouseMove(canvas.get(), over);
+  QTest::mouseRelease(canvas.get(), Qt::LeftButton, {}, over);
+  QCOMPARE(scaled.count(), 0);
+  QCOMPARE(computerOf(*canvas, "B").zoom, 1.0);
+
+  // a size that no zoom can make
+  drag(*canvas, onBox(box, 1.0, 1.0), onBox(box, 1.0, 1.0, 200000 * scale, 200000 * scale));
+  for (const auto &args : scaled) {
+    QVERIFY(args.at(1).toDouble() >= deskflow::server::arrangement::kMinZoom);
+    QVERIFY(args.at(1).toDouble() <= deskflow::server::arrangement::kMaxZoom);
+  }
+  auto tiny = canvasOf(twoApart());
+  QSignalSpy shrunk(tiny.get(), &ArrangementCanvas::computerScaled);
+  tiny->setReportedSizes({{QStringLiteral("B"), QSize(1920, 1080)}});
+  const auto b = tiny->boxOf("B");
+  drag(*tiny, onBox(b, 1.0, 1.0), onBox(b, 0.0, 0.0, 5, 5));
+  for (const auto &args : shrunk)
+    QVERIFY(args.at(1).toDouble() >= deskflow::server::arrangement::kMinZoom);
 }
 
 void ArrangementCanvasTests::drag_aBackgroundDrag_movesTheViewNotTheComputers()
@@ -500,18 +733,36 @@ void ArrangementCanvasTests::screenshots_areMadeOfTheStatesTheUserSees()
   save(render(*dragging), QStringLiteral("3-canvas-dragging-with-guides.png"));
   QTest::mouseRelease(dragging.get(), Qt::LeftButton, {}, to);
 
-  // a computer of one rectangle, selected: the handles on its edges, and one of them dragged
+  // the pointer on the outline of a computer that was not selected: it is highlighted, with its handles
+  auto hovering = canvasOf(userArrangement());
+  const auto miniBox = hovering->boxOf("Subeoms-Mac-mini.local");
+  hover(hovering.get(), onBox(miniBox, 1.0, 0.5, 2, 0));
+  save(render(*hovering), QStringLiteral("14-canvas-hover-highlights-the-outline.png"));
+  QCOMPARE(hovering->hoveredComputer(), QStringLiteral("Subeoms-Mac-mini.local"));
+
+  // a computer of one rectangle, size not known: its corner is dragged, with the size, and the guide where it lines up
   auto resizing = canvasOf(userArrangement());
-  resizing->setSelected("Subeoms-Mac-mini.local");
-  const auto miniBox = resizing->boxOf("Subeoms-Mac-mini.local");
-  const QPoint corner(qRound(miniBox.right()), qRound(miniBox.bottom()));
-  save(render(*resizing), QStringLiteral("12-canvas-single-rectangle-resize-handles.png"));
+  const auto corner = onBox(miniBox, 1.0, 1.0);
   QTest::mousePress(resizing.get(), Qt::LeftButton, {}, corner);
   const auto grown = corner + QPoint(qRound(640 * scale), qRound(360 * scale));
   for (int i = 1; i <= 8; ++i)
     QTest::mouseMove(resizing.get(), corner + (grown - corner) * i / 8);
-  save(render(*resizing), QStringLiteral("13-canvas-resizing-a-computer.png"));
+  save(render(*resizing), QStringLiteral("15-canvas-resizing-a-computer-with-size-and-guide.png"));
   QTest::mouseRelease(resizing.get(), Qt::LeftButton, {}, grown);
+
+  // a computer of two monitors: its outline is dragged and the whole of it is scaled, in its own shape
+  auto scaling = canvasOf(userArrangement());
+  const auto windowsBox = scaling->boxOf("9800X3D-5080");
+  const auto edge = onBox(windowsBox, 0.0, 0.5);
+  QTest::mousePress(scaling.get(), Qt::LeftButton, {}, edge);
+  const auto shrunk = edge + QPoint(qRound(480 * scale), 0);
+  for (int i = 1; i <= 8; ++i)
+    QTest::mouseMove(scaling.get(), edge + (shrunk - edge) * i / 8);
+  save(render(*scaling), QStringLiteral("16-canvas-scaling-a-computer-of-two-monitors.png"));
+  QTest::mouseRelease(scaling.get(), Qt::LeftButton, {}, shrunk);
+
+  // the canvas as it is when it is done
+  save(render(*scaling), QStringLiteral("17-canvas-final.png"));
 
   // what is wrong: an overlap, and a computer that nothing touches
   auto wrong = canvasOf({{

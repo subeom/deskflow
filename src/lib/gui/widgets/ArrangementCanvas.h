@@ -61,6 +61,11 @@ public:
   }
   //! The size that each computer reports, in its own units: a side of a computer that is resized snaps to it
   void setReportedSizes(const QHash<QString, QSize> &sizes);
+  //! The computer that the pointer is at the outline of, or empty
+  QString hoveredComputer() const
+  {
+    return m_hovered;
+  }
   void setStatus(const QString &computer, Status status);
   void setSelected(const QString &computer);
   QString selected() const
@@ -92,6 +97,8 @@ Q_SIGNALS:
   void editRequested(const QString &computer);
   //! The one rectangle of a computer was resized: it is now this one, in the coordinates of the computer
   void computerResized(const QString &computer, int x, int y, int w, int h);
+  //! The whole of a computer was scaled on the canvas: its zoom is now this one, and its monitors are as they were
+  void computerScaled(const QString &computer, double zoom);
 
 protected:
   void paintEvent(QPaintEvent *event) override;
@@ -99,6 +106,7 @@ protected:
   void mouseMoveEvent(QMouseEvent *event) override;
   void mouseReleaseEvent(QMouseEvent *event) override;
   void mouseDoubleClickEvent(QMouseEvent *event) override;
+  void leaveEvent(QEvent *event) override;
   void keyPressEvent(QKeyEvent *event) override;
   void wheelEvent(QWheelEvent *event) override;
   void resizeEvent(QResizeEvent *event) override;
@@ -116,9 +124,23 @@ private:
       bool unconnected, bool dragged
   ) const;
   void cancelDrag();
-  //! A computer of one rectangle that is not the server has handles on its edges and corners
-  bool canResize(int index) const;
-  std::optional<deskflow::server::editor::Handle> handleAt(const QPointF &point) const;
+  //! How the outline of a computer is dragged: not at all (the server's own displays), as a rectangle whose size is
+  //! free, or as a whole that is scaled (a computer with several monitors, or whose screen is known)
+  enum class ResizeKind
+  {
+    None,
+    Free,
+    Scale
+  };
+  struct Hit
+  {
+    int index = -1;
+    deskflow::server::editor::Handle handle = deskflow::server::editor::Handle::Right;
+  };
+  ResizeKind resizeKindOf(int index) const;
+  //! The outline of the computer that is within a few pixels of \p point, wherever it is: no computer has to be
+  //! selected
+  std::optional<Hit> outlineAt(const QPointF &point) const;
   QPointF toUnits(const QPointF &point) const;
   void moveSelected(double dx, double dy);
   int indexOf(const QString &computer) const;
@@ -130,6 +152,7 @@ private:
   std::vector<deskflow::server::arrangement::Issue> m_issues;
   QHash<QString, Status> m_status;
   QStringList m_assumed;
+  QString m_hovered;
   QHash<QString, QSize> m_reportedSizes;
   QString m_selected;
 
@@ -157,6 +180,12 @@ private:
     double grabX = 0;
     double grabY = 0;
     deskflow::server::editor::Layout startLayout;
+    //! The screen of the computer in its own units, and its shape, for the scaling of a whole computer
+    deskflow::server::MonitorRect shape;
+    double ratio = 1.0;
+    bool scaleMode = false;
+    QString info;
+    QPointF pointer;
     deskflow::server::arrangement::Computer preview;
     bool previewValid = false;
     std::vector<deskflow::server::arrangement::Guide> resizeGuides;
