@@ -196,6 +196,57 @@ canvas draws 1920 × 1080 for it and says so on the computer (a dashed border an
 line, because the line of the log is not there when the level of the log is above INFO or the computer has not
 connected.
 
+## The monitor editor (draw the monitors of a computer with the mouse)
+
+Typing `x,y,w,h` in pixels does not work for people: every computer has another display scale, and nobody knows the
+pixels of their desktop. The editor draws the monitors of **one computer** in the units of the arrangement, and the
+program derives the numbers. All geometry is in `src/lib/server/MonitorEditor.{h,cpp}` (pure, no Qt; Windows compiles it
+as it is); the widget and the dialog only draw it and hand it the mouse.
+
+**Drawing.** A `Monitor` is a rectangle in arrangement units (logical pixels at 100 %) and a display *scale*. Its
+resolution is what it is drawn at times the scale (`2560 × 1440` at 150 % is `1707 × 960` units), so the proportions
+on the canvas are those of Windows' own *Display settings* picture and of macOS' *Displays* arrangement. The first
+monitor is the main display. Resolutions come from a preset list (HD to 8K, ultrawides, the MacBooks in points) or are
+dragged: dragging an edge or a corner resizes, with the opposite edge fixed; an edge snaps to the edges of the other
+monitors (and of the other computers on the canvas), a side snaps to the common ratios (16:9, 16:10, 21:9, 32:9, 4:3,
+3:2, 5:4 and their portrait variants) and the pixels snap to a preset, each within a small distance; a side is never
+smaller than 160 units, and a monitor is never dragged over another (the place is refused and it stays where it was).
+Changing the resolution, the scale or the orientation of a monitor keeps the corner that keeps most of the edges that
+touch the other monitors. Problems are overlaps, a monitor that touches none (monitors have to share part of an edge),
+more than 16, sizes and scales that cannot be.
+
+**What the server needs.** The monitors in the coordinates that the computer **reports** (`monitorLayout`, as before),
+and the box of them equal to the screen that the computer reports. The reported screen (the core's INFO line, stage D)
+is the ground truth, so the drawing is *fitted* to it: each distinct edge of the drawing (edges within half a unit are
+one) is put at its place in the box, `X0 + round((edge − left) · kx)`, with the first edge at the left of the screen
+and the last at its right. Rounding **edges**, not sizes, is what keeps the monitors that share an edge sharing it
+exactly: no gap and no overlap whatever the scale. `kx`, `ky` are the box of the screen over the box of the drawing;
+the shape of the drawing has to be within 3 % of the shape of the screen (`|ky/kx − 1|`), else it is not fitted (the
+status says by how much it *differs*, and the size the drawing would be in the pixels of the main display, to say what
+to change) unless the person asks to stretch it. The layout is then checked with `MonitorLayout::create`.
+
+**Units of the computer.** The fit does not need to know whether a platform reports pixels or points: it scales to
+what the computer reports. What it assumes is that the computer reports with **one scale for the whole desktop** (a
+Mac in points; a Windows client that is not aware of per-monitor DPI, whose coordinates are the desktop at the scale of
+its main display): then the layout is the drawing times one factor, and the factor is the zoom of the arrangement
+(`zoom = 1 / sqrt(kx · ky)`, Windows 150 % is 0.667). A Windows client that reports each monitor in its own physical
+pixels, with monitors of different scales, is not drawn right by one factor: the drawing of its monitors at their
+real scales is not the shape of what it reports, the status says *differs*, and drawing it at the scale of its pixels
+(100 % on every monitor) matches the box, at the price of a canvas size that is then set with the display scale of the
+computer. This is not verified against a real Windows machine with mixed scales (see *Verified, and not*).
+
+**Without a reported screen** (not connected yet) the drawing is made at the scale of its main display with the top
+left of the main display at 0,0, and the result is *not verified*: it is checked as soon as the screen arrives.
+
+**Storage.** `computer_<name>/monitorLayout` (the monitors, as before), `arrangementZoom`, `arrangementX/Y` (where the
+origin of the computer is: made so the drawing stays where it was on the canvas) and one optional key,
+`computer_<name>/monitorScales`, a list of the scales of the monitors in the order of the layout (missing: the scale
+of the zoom). An old configuration loads unchanged; the text field of the layout stays, as **Advanced: numbers**, and
+what is in it is the same layout.
+
+**History.** The editor keeps the states that it went through (200 at most): undo and redo are `Ctrl/Cmd+Z` and
+`Shift+Ctrl/Cmd+Z`.
+
 ## Verified, and not
 
 Verified by tests that run here: the library (tables, seeded property tests, the equivalence with the classic grid, the

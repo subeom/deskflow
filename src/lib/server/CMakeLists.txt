@@ -6,6 +6,8 @@
 add_library(server STATIC
   Arrangement.cpp
   Arrangement.h
+  MonitorEditor.cpp
+  MonitorEditor.h
   BaseClientProxy.cpp
   BaseClientProxy.h
   ClientListener.cpp
