@@ -400,6 +400,11 @@ std::vector<deskflow::server::MonitorRect> Computer::getMonitors() const
   return m_computer->getMonitors();
 }
 
+std::vector<deskflow::monitors::MonitorInfo> Computer::getMonitorInfo() const
+{
+  return m_computer->getMonitorInfo();
+}
+
 KeyModifierMask Computer::getActiveModifiers() const
 {
   return m_computer->getActiveModifiers();

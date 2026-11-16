@@ -10,6 +10,7 @@
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/IComputer.h"
 #include "deskflow/KeyTypes.h"
+#include "deskflow/MonitorReport.h"
 #include "deskflow/MouseTypes.h"
 #include "deskflow/OptionTypes.h"
 
@@ -262,6 +263,8 @@ public:
 
   //! Get the monitors of the computer, empty when the platform does not tell
   std::vector<deskflow::server::MonitorRect> getMonitors() const;
+  //! The same monitors with their display scale and the primary one, for a client to report
+  std::vector<deskflow::monitors::MonitorInfo> getMonitorInfo() const;
 
   //! Get the active modifiers
   /*!

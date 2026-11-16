@@ -9,9 +9,11 @@
 #include "../deskflow/MockEventQueue.h"
 #include "common/ClipboardCapabilities.h"
 #include "common/InputCapabilities.h"
+#include "common/MonitorCapabilities.h"
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
 #include "deskflow/AppUtil.h"
+#include "deskflow/MonitorReport.h"
 #include "deskflow/ProtocolUtil.h"
 #include "io/IStream.h"
 #include "server/ClientProxy1_0.h"
@@ -25,6 +27,7 @@
 #include <array>
 #include <cstring>
 #include <deque>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -273,6 +276,146 @@ struct V19Link
   }
 };
 
+// An event queue that runs the handlers that were added to it, for the tests that go through the proxy's own loop
+class DispatchingEventQueue : public MockEventQueue
+{
+public:
+  void addHandler(EventTypes type, void *target, const EventHandler &handler) override
+  {
+    m_handlers[{static_cast<uint32_t>(type), target}] = handler;
+  }
+
+  void removeHandler(EventTypes type, void *target) override
+  {
+    m_handlers.erase({static_cast<uint32_t>(type), target});
+  }
+
+  void removeHandlers(void *target) override
+  {
+    std::erase_if(m_handlers, [&](const auto &entry) { return entry.first.second == target; });
+  }
+
+  bool dispatchEvent(const Event &event) override
+  {
+    const auto handler = m_handlers.find({static_cast<uint32_t>(event.getType()), event.getTarget()});
+    if (handler == m_handlers.end()) {
+      return false;
+    }
+    const auto callback = handler->second;
+    callback(event);
+    return true;
+  }
+
+  void addEvent(Event &&event) override
+  {
+    ++m_added[static_cast<uint32_t>(event.getType())];
+  }
+
+  int added(EventTypes type) const
+  {
+    const auto it = m_added.find(static_cast<uint32_t>(type));
+    return it == m_added.end() ? 0 : it->second;
+  }
+
+private:
+  std::map<std::pair<uint32_t, void *>, EventHandler> m_handlers;
+  std::map<uint32_t, int> m_added;
+};
+
+QByteArray messageBytes(const char *format, auto... args)
+{
+  CapturingStream packet;
+  ProtocolUtil::writef(&packet, format, args...);
+  return packet.take();
+}
+
+QByteArray infoBytes(int x, int y, int w, int h)
+{
+  return messageBytes(
+      kMsgDInfo, static_cast<int16_t>(x), static_cast<int16_t>(y), static_cast<int16_t>(w), static_cast<int16_t>(h),
+      static_cast<int16_t>(0), static_cast<int16_t>(x + 1), static_cast<int16_t>(y + 1)
+  );
+}
+
+QByteArray capabilitiesBytes(InputCapabilityMask mask)
+{
+  return messageBytes(kMsgCInputCapabilities, static_cast<uint8_t>(InputPlatform::Windows), mask);
+}
+
+QByteArray reportBytes(const deskflow::monitors::MonitorReport &report)
+{
+  const auto message = deskflow::monitors::encodeReport(report);
+  return QByteArray(reinterpret_cast<const char *>(message.data()), static_cast<qsizetype>(message.size()));
+}
+
+// 2560x1440 and 1920x1080 side by side, top aligned: the shape is 0,0 4480x1440 and has a hole under the second
+deskflow::monitors::MonitorReport twoMonitors(uint16_t generation = 1)
+{
+  return {generation, {{0, 0, 2560, 1440, 150, true}, {2560, 0, 1920, 1080, 100, false}}};
+}
+
+constexpr InputCapabilityMask kWindowsMask = kInputCapabilityProtocolV19;
+
+// A protocol 1.9 proxy, read through its own loop (the bytes of the destination are pushed, and handleData reads them)
+struct MonitorLink
+{
+  DispatchingEventQueue events;
+  CapturingStream *stream = new CapturingStream;
+  std::unique_ptr<TestClientProxy1_9> proxy;
+  QByteArray greeting;
+
+  explicit MonitorLink(bool experiment)
+  {
+    Settings::setValue(Settings::Server::ExperimentalMultiMonitor, experiment);
+    auto *server = reinterpret_cast<Server *>(0x1);
+    proxy = std::make_unique<TestClientProxy1_9>("client", stream, server, &events);
+    greeting = stream->take();
+  }
+
+  ~MonitorLink()
+  {
+    Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+  }
+
+  // what the destination says in a handshake: its screen and its capabilities
+  void handshake(InputCapabilityMask mask, int w = 4480, int h = 1440)
+  {
+    push(infoBytes(0, 0, w, h));
+    push(capabilitiesBytes(mask));
+    run();
+  }
+
+  void push(const QByteArray &bytes)
+  {
+    stream->pushInput(bytes);
+  }
+
+  void run()
+  {
+    events.dispatchEvent(Event(EventTypes::StreamInputReady, stream->getEventTarget()));
+  }
+
+  bool open() const
+  {
+    return events.added(EventTypes::ClientProxyDisconnected) == 0;
+  }
+
+  void shape(int32_t &x, int32_t &y, int32_t &w, int32_t &h) const
+  {
+    proxy->getShape(x, y, w, h);
+  }
+};
+
+// the capability mask of the DIPC that was written, the last four bytes of the greeting
+InputCapabilityMask dipcMask(const QByteArray &greeting)
+{
+  const auto tail = greeting.right(4);
+  return (static_cast<InputCapabilityMask>(static_cast<uint8_t>(tail[0])) << 24) |
+         (static_cast<InputCapabilityMask>(static_cast<uint8_t>(tail[1])) << 16) |
+         (static_cast<InputCapabilityMask>(static_cast<uint8_t>(tail[2])) << 8) |
+         static_cast<InputCapabilityMask>(static_cast<uint8_t>(tail[3]));
+}
+
 const InputCapabilities kWindowsWithScroll{
     InputPlatform::Windows, kInputCapabilityProtocolV19 | kInputCapabilityCrossOSScroll
 };
@@ -434,6 +577,10 @@ void ClientProxyTests::initTestCase()
 {
   // the 1.8 constructor reads the keyboard layouts through AppUtil::instance()
   static TestAppUtil appUtil;
+  // the 1.9 constructor reads the experiment from the settings, which are not the ones of the user
+  static QTemporaryDir settingsDir;
+  QVERIFY(settingsDir.isValid());
+  Settings::setSettingsFile(settingsDir.filePath(QStringLiteral("Deskflow.conf")));
 }
 
 // These formats are frozen because shipped third-party clients parse them byte
@@ -526,14 +673,11 @@ void ClientProxyTests::inputCapabilities_v19_sendsSourcePlatformAndCapabilities(
   QVERIFY(actual.endsWith(expectedBytes));
 }
 
-// The experiment that maps the pointer around the holes of a desktop is the Server's alone: a computer is not told of
-// it, so the first bytes that it gets are the same, with it on and with it off, for every protocol that has a handshake
-void ClientProxyTests::handshake_monitorExperiment_changesNoByteOnTheWire()
+// The typed monitor layout of the multi-monitor experiment is the Server's alone: a computer is not told of it. What
+// the experiment puts on the wire is the invitation to report the monitors, one bit in the capability mask of the DIPC
+// of protocol 1.9 and nothing else; every other protocol, and the experiment off, give the same bytes
+void ClientProxyTests::handshake_monitorExperiment_changesOnlyTheMonitorBit()
 {
-  QTemporaryDir settingsDir;
-  QVERIFY(settingsDir.isValid());
-  Settings::setSettingsFile(settingsDir.filePath(QStringLiteral("Deskflow.conf")));
-
   const auto handshake = [](bool version19) {
     MockEventQueue events;
     auto *stream = new CapturingStream;
@@ -558,13 +702,306 @@ void ClientProxyTests::handshake_monitorExperiment_changesNoByteOnTheWire()
   const auto on18 = handshake(false);
 
   QVERIFY(!off19.isEmpty());
-  QCOMPARE(on19, off19);
   QCOMPARE(on18, off18);
-  // there is no message for monitors: a computer that was sent one would drop what is buffered after it
+  QCOMPARE(on19.size(), off19.size());
+  // everything but the last four bytes, the capability mask of the DIPC, is the same
+  QCOMPARE(on19.left(on19.size() - 4), off19.left(off19.size() - 4));
+  QCOMPARE(dipcMask(on19), dipcMask(off19) | kLayoutCapabilityMonitors);
+  QCOMPARE(dipcMask(off19) & kLayoutCapabilityMonitors, InputCapabilityMask{0});
+  // a server never sends the message for monitors, only a computer does
   QVERIFY(!on19.contains("DMON"));
   QVERIFY(!on19.contains("CMON"));
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
   Settings::setValue(Settings::Computer::MonitorLayout.arg(QStringLiteral("client")));
+}
+
+// the DIPC that every server before this one sent: pinned from the formula of the unmodified code
+void ClientProxyTests::monitorCapability_experimentOff_dipcIsWhatItAlwaysWas()
+{
+  MonitorLink link(false);
+
+  const auto local = deskflow::platform::currentInputCapabilities();
+  QCOMPARE(dipcMask(link.greeting), local.capabilities | kClipboardCapabilityPaced | kClipboardCapabilitySingleId);
+  QCOMPARE(dipcMask(link.greeting) & kLayoutCapabilityMonitors, InputCapabilityMask{0});
+}
+
+void ClientProxyTests::monitorCapability_experimentOn_dipcHasOneBitMore()
+{
+  MonitorLink link(true);
+
+  const auto local = deskflow::platform::currentInputCapabilities();
+  QCOMPARE(
+      dipcMask(link.greeting),
+      local.capabilities | kClipboardCapabilityPaced | kClipboardCapabilitySingleId | kLayoutCapabilityMonitors
+  );
+  QCOMPARE(kLayoutCapabilityMonitors, InputCapabilityMask{1} << 12);
+}
+
+// protocols before 1.9 have no capability handshake: with the experiment on, a computer is told nothing
+void ClientProxyTests::monitorCapability_olderProtocols_neverAdvertise()
+{
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  for (const int minor : {6, 7, 8}) {
+    ProxyUnderTest test(minor);
+    QVERIFY(test.stream->take().isEmpty());
+  }
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+}
+
+void ClientProxyTests::monitorReport_negotiated_isKeptAndAnnounced()
+{
+  MonitorLink link(true);
+  link.handshake(kWindowsMask | kLayoutCapabilityMonitors);
+  QVERIFY(link.proxy->reportedMonitors() == nullptr);
+
+  link.push(reportBytes(twoMonitors(7)));
+  link.run();
+
+  const auto *reported = link.proxy->reportedMonitors();
+  QVERIFY(reported != nullptr);
+  QCOMPARE(reported->generation, static_cast<uint16_t>(7));
+  QCOMPARE(reported->monitors.size(), static_cast<size_t>(2));
+  QVERIFY(reported->monitors[0].primary);
+  QCOMPARE(reported->monitors[0].scalePercent, static_cast<uint16_t>(150));
+  QVERIFY(reported->layout.boundingBox() == (deskflow::server::MonitorRect{0, 0, 4480, 1440}));
+  QVERIFY(!reported->layout.isPlainRectangle());
+  QCOMPARE(link.events.added(EventTypes::ClientProxyMonitorsReported), 1);
+  QVERIFY(link.open());
+}
+
+// a computer that did not acknowledge the bit, or a server that did not advertise it, is never expected to report; if
+// one does, the message is read in full, so the message behind it is still read, and nothing else happens
+void ClientProxyTests::monitorReport_notNegotiated_isReadAndIgnored_data()
+{
+  QTest::addColumn<bool>("experiment");
+  QTest::addColumn<bool>("acknowledges");
+
+  QTest::newRow("on, the computer did not acknowledge (Windows 1.27.0.45, Mac mini 1.27.0.89)") << true << false;
+  QTest::newRow("off, the computer says it can") << false << true;
+  QTest::newRow("off, the computer did not say") << false << false;
+}
+
+void ClientProxyTests::monitorReport_notNegotiated_isReadAndIgnored()
+{
+  QFETCH(bool, experiment);
+  QFETCH(bool, acknowledges);
+
+  MonitorLink link(experiment);
+  link.handshake(kWindowsMask | (acknowledges ? kLayoutCapabilityMonitors : 0));
+
+  link.push(reportBytes(twoMonitors()));
+  link.push(infoBytes(0, 0, 1920, 1080));
+  link.run();
+
+  QVERIFY(link.proxy->reportedMonitors() == nullptr);
+  QCOMPARE(link.events.added(EventTypes::ClientProxyMonitorsReported), 0);
+  QVERIFY(link.open());
+  // the message behind it was read as the message that it is
+  int32_t x, y, w, h;
+  link.shape(x, y, w, h);
+  QCOMPARE(w, 1920);
+  QCOMPARE(h, 1080);
+}
+
+void ClientProxyTests::monitorReport_notValid_isDroppedWithoutLosingTheStream_data()
+{
+  using deskflow::monitors::MonitorEntry;
+  using deskflow::monitors::MonitorReport;
+  QTest::addColumn<QByteArray>("report");
+
+  const auto raw = [](int version, int generation, int count, const QByteArray &records) {
+    QByteArray message("DMON");
+    message.append(static_cast<char>(version));
+    message.append(static_cast<char>(generation >> 8));
+    message.append(static_cast<char>(generation & 0xff));
+    message.append(static_cast<char>(count));
+    message.append(records);
+    return message;
+  };
+
+  // the shape is 0,0 4480x1440
+  QTest::newRow("overlap") << reportBytes({1, {{0, 0, 2560, 1440, 100, true}, {2000, 0, 2480, 1440, 100, false}}});
+  QTest::newRow("no width") << reportBytes({1, {{0, 0, 0, 1440, 100, true}, {0, 0, 4480, 1440, 100, false}}});
+  QTest::newRow("no height") << reportBytes({1, {{0, 0, 4480, 0, 100, true}}});
+  QTest::newRow("a size that is negative in 16 bits")
+      << reportBytes({1, {{0, 0, static_cast<int16_t>(0x8000), 1440, 100, true}}});
+  QTest::newRow("a right edge beyond 16 bits") << reportBytes({1, {{32767, 0, 4480, 1440, 100, true}}});
+  QTest::newRow("the monitors are not the shape") << reportBytes({1, {{0, 0, 1920, 1080, 100, true}}});
+  QTest::newRow("another origin") << reportBytes({1, {{1, 0, 4480, 1440, 100, true}}});
+  QTest::newRow("monitors that touch at a corner only")
+      << reportBytes({1, {{0, 0, 2240, 720, 100, true}, {2240, 720, 2240, 720, 100, false}}});
+  QTest::newRow("seventeen monitors") << [&] {
+    MonitorReport report{1, {}};
+    for (int i = 0; i < 17; ++i) {
+      report.monitors.push_back(MonitorEntry{static_cast<int16_t>(i * 100), 0, 100, 100, 100, i == 0});
+    }
+    return reportBytes(report);
+  }();
+  QTest::newRow("a count of 255, which says that a lot of bytes follow")
+      << raw(1, 3, 255, QByteArray(255 * 11, static_cast<char>(0x55)));
+  QTest::newRow("a version that does not exist") << raw(2, 1, 1, QByteArray(11, 0x01));
+  QTest::newRow("version 0") << raw(0, 1, 1, QByteArray(11, 0x01));
+  QTest::newRow("every byte set") << raw(255, 0xffff, 255, QByteArray(255 * 11, static_cast<char>(0xff)));
+}
+
+// whatever the report is, it is read to its end and the next message is the next message: no disconnect, no discarded
+// stream, no report
+void ClientProxyTests::monitorReport_notValid_isDroppedWithoutLosingTheStream()
+{
+  QFETCH(QByteArray, report);
+
+  MonitorLink link(true);
+  link.handshake(kWindowsMask | kLayoutCapabilityMonitors);
+  link.push(reportBytes(twoMonitors(1)));
+  link.run();
+  QVERIFY(link.proxy->reportedMonitors() != nullptr);
+
+  link.push(report);
+  link.push(infoBytes(0, 0, 4480, 1440));
+  link.push(messageBytes(kMsgCNoop));
+  link.run();
+
+  // the report that was there is not to be used either: what the computer says now is not valid
+  QVERIFY(link.proxy->reportedMonitors() == nullptr);
+  QVERIFY(link.open());
+  QCOMPARE(link.stream->getSize(), static_cast<uint32_t>(0));
+  // the DINF behind it was read as a DINF: a CIAK was written for it
+  QVERIFY(link.stream->take().contains("CIAK"));
+}
+
+void ClientProxyTests::monitorReport_truncated_isIgnored()
+{
+  MonitorLink link(true);
+  link.handshake(kWindowsMask | kLayoutCapabilityMonitors);
+  (void)link.stream->take();
+
+  // a report of two monitors that ends in the middle of the second
+  auto report = reportBytes(twoMonitors());
+  report.chop(5);
+  link.push(report);
+  link.run();
+
+  QVERIFY(link.proxy->reportedMonitors() == nullptr);
+  QVERIFY(link.open());
+
+  // and the link carries on: what is sent after it is read
+  link.push(infoBytes(0, 0, 1920, 1080));
+  link.run();
+  QVERIFY(link.stream->take().contains("CIAK"));
+  QVERIFY(link.open());
+}
+
+void ClientProxyTests::monitorReport_sameMonitors_areNotAnnouncedAgain()
+{
+  MonitorLink link(true);
+  link.handshake(kWindowsMask | kLayoutCapabilityMonitors);
+
+  link.push(reportBytes(twoMonitors(1)));
+  link.run();
+  QCOMPARE(link.events.added(EventTypes::ClientProxyMonitorsReported), 1);
+
+  // another generation, the same monitors: the server keeps the new number, and nothing changed for anyone
+  link.push(reportBytes(twoMonitors(2)));
+  link.run();
+  QCOMPARE(link.events.added(EventTypes::ClientProxyMonitorsReported), 1);
+  QCOMPARE(link.proxy->reportedMonitors()->generation, static_cast<uint16_t>(2));
+}
+
+void ClientProxyTests::monitorReport_changedMonitors_replaceTheLastReport()
+{
+  MonitorLink link(true);
+  link.handshake(kWindowsMask | kLayoutCapabilityMonitors);
+  link.push(reportBytes(twoMonitors(1)));
+  link.run();
+
+  // the monitors swap places: the same shape, other monitors
+  link.push(reportBytes({2, {{0, 0, 1920, 1080, 100, false}, {1920, 0, 2560, 1440, 150, true}}}));
+  link.run();
+
+  const auto *reported = link.proxy->reportedMonitors();
+  QVERIFY(reported != nullptr);
+  QCOMPARE(reported->monitors.size(), static_cast<size_t>(2));
+  QCOMPARE(static_cast<int>(reported->monitors[0].w), 1920);
+  QVERIFY(reported->monitors[1].primary);
+  QCOMPARE(link.events.added(EventTypes::ClientProxyMonitorsReported), 2);
+}
+
+void ClientProxyTests::monitorReport_noMonitors_forgetsTheLastReport()
+{
+  MonitorLink link(true);
+  link.handshake(kWindowsMask | kLayoutCapabilityMonitors);
+  link.push(reportBytes(twoMonitors(1)));
+  link.run();
+  QVERIFY(link.proxy->reportedMonitors() != nullptr);
+
+  link.push(reportBytes({2, {}}));
+  link.run();
+
+  QVERIFY(link.proxy->reportedMonitors() == nullptr);
+  QCOMPARE(link.events.added(EventTypes::ClientProxyMonitorsReported), 2);
+  QVERIFY(link.open());
+}
+
+// the report is of a shape; when the computer reports another shape, the report is stale and is not exposed, until a
+// report that fits is there
+void ClientProxyTests::monitorReport_shapeThatMoved_isNotUsedUntilReportedAgain()
+{
+  MonitorLink link(true);
+  link.handshake(kWindowsMask | kLayoutCapabilityMonitors);
+  link.push(reportBytes(twoMonitors(1)));
+  link.run();
+  QVERIFY(link.proxy->reportedMonitors() != nullptr);
+
+  // a third monitor is plugged in: the shape is another, the report is of the one before
+  link.push(infoBytes(0, 0, 6400, 1440));
+  link.run();
+  QVERIFY(link.proxy->reportedMonitors() == nullptr);
+
+  link.push(reportBytes(
+      {2, {{0, 0, 2560, 1440, 150, true}, {2560, 0, 1920, 1080, 100, false}, {4480, 0, 1920, 1440, 100, false}}}
+  ));
+  link.run();
+  QVERIFY(link.proxy->reportedMonitors() != nullptr);
+  QCOMPARE(link.proxy->reportedMonitors()->monitors.size(), static_cast<size_t>(3));
+}
+
+// a report before the computer has told its shape cannot be checked against it, and is not kept; it is still read
+void ClientProxyTests::monitorReport_beforeTheShapeIsKnown_isIgnored()
+{
+  MonitorLink link(true);
+  link.push(reportBytes(twoMonitors()));
+  link.push(infoBytes(0, 0, 1920, 1080));
+  link.run();
+
+  QVERIFY(link.proxy->reportedMonitors() == nullptr);
+  QVERIFY(link.open());
+  int32_t x, y, w, h;
+  link.shape(x, y, w, h);
+  QCOMPARE(w, 1920);
+}
+
+// the protocols before 1.9 know nothing of the message: for them it is as unknown as it ever was
+void ClientProxyTests::monitorReport_protocol18_isStillAnUnknownMessage()
+{
+  class Proxy18 : public ClientProxy1_8
+  {
+  public:
+    using ClientProxy1_8::ClientProxy1_8;
+    bool parseMessageForTest(const uint8_t *code)
+    {
+      return parseMessage(code);
+    }
+  };
+
+  MockEventQueue events;
+  auto *stream = new CapturingStream;
+  auto *server = reinterpret_cast<Server *>(0x1);
+  Proxy18 proxy("client", stream, server, &events);
+  (void)stream->take();
+
+  stream->pushInput(reportBytes(twoMonitors()).mid(4));
+  QVERIFY(!proxy.parseMessageForTest(reinterpret_cast<const uint8_t *>(kMsgDMonitors)));
+  QVERIFY(proxy.reportedMonitors() == nullptr);
 }
 
 void ClientProxyTests::inputCapabilities_v18_doesNotSendCapabilityMessage()

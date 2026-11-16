@@ -860,12 +860,18 @@ void ServerProxy::setOptions()
   }
 }
 
-void ServerProxy::queryInfo()
+ClientInfo ServerProxy::currentInfo() const
 {
   ClientInfo info;
   m_client->getShape(info.m_x, info.m_y, info.m_w, info.m_h);
   m_client->getCursorPos(info.m_mx, info.m_my);
-  sendInfo(info);
+  return info;
+}
+
+void ServerProxy::queryInfo()
+{
+  sendInfo(currentInfo());
+  onInfoSent();
 }
 
 void ServerProxy::infoAcknowledgment()

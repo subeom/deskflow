@@ -15,10 +15,12 @@
 #include "common/Enums.h"
 #include "common/InputCapabilities.h"
 #include "deskflow/IClipboard.h"
+#include "deskflow/MonitorReport.h"
 #include "net/NetworkAddress.h"
 
 #include <climits>
 #include <string>
+#include <vector>
 
 class Event;
 class EventQueueTimer;
@@ -165,6 +167,8 @@ public:
   size_t getMaximumClipboardReceiveSizeBytes() const;
   InputCapabilities inputCapabilities() const;
   bool semanticMediaKey(KeyID id);
+  //! The monitors of this computer, for the report to a server that asked for it; empty if it cannot tell
+  std::vector<deskflow::monitors::MonitorInfo> monitorInfo() const;
 
   //@}
 
@@ -215,6 +219,7 @@ private:
   void handleDisconnected();
   void handleDisconnectRequested(const Event &event);
   void handleShapeChanged();
+  void handleMonitorsChanged();
   void handleClipboardGrabbed(const Event &event);
   void handleHello();
   void handleSuspend();

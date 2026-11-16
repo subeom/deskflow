@@ -5,10 +5,15 @@
 
 #include "server/ClientProxy1_9.h"
 
+#include "base/Event.h"
+#include "base/IEventQueue.h"
 #include "base/Log.h"
 #include "common/ClipboardCapabilities.h"
+#include "common/MonitorCapabilities.h"
 #include "common/PlatformInfo.h"
+#include "common/Settings.h"
 #include "deskflow/ClipboardIdPolicy.h"
+#include "deskflow/MonitorReport.h"
 #include "deskflow/OptionTypes.h"
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
@@ -18,8 +23,11 @@
 ClientProxy1_9::ClientProxy1_9(
     const std::string &name, deskflow::IStream *adoptedStream, Server *server, IEventQueue *events
 )
-    : ClientProxy1_8(name, adoptedStream, server, events)
+    : ClientProxy1_8(name, adoptedStream, server, events),
+      m_monitorEvents(events)
 {
+  // the computer is invited to report its monitors only while the experiment is on; the bit is read when it connects
+  m_invitedToReportMonitors = Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool();
   sendInputCapabilities();
 }
 
@@ -27,6 +35,9 @@ bool ClientProxy1_9::parseHandshakeMessage(const uint8_t *code)
 {
   if (memcmp(code, kMsgCInputCapabilities, 4) == 0) {
     return receiveInputCapabilities();
+  }
+  if (memcmp(code, kMsgDMonitors, 4) == 0) {
+    return receiveMonitorReport();
   }
   return ClientProxy1_8::parseHandshakeMessage(code);
 }
@@ -36,6 +47,9 @@ bool ClientProxy1_9::parseMessage(const uint8_t *code)
   if (memcmp(code, kMsgCInputCapabilities, 4) == 0) {
     return receiveInputCapabilities();
   }
+  if (memcmp(code, kMsgDMonitors, 4) == 0) {
+    return receiveMonitorReport();
+  }
   return ClientProxy1_8::parseMessage(code);
 }
 
@@ -44,7 +58,8 @@ void ClientProxy1_9::sendInputCapabilities() const
   const auto local = deskflow::platform::currentInputCapabilities();
   ProtocolUtil::writef(
       getStream(), kMsgDInputCapabilities, static_cast<uint8_t>(local.platform),
-      local.capabilities | kClipboardCapabilityPaced | kClipboardCapabilitySingleId
+      local.capabilities | kClipboardCapabilityPaced | kClipboardCapabilitySingleId |
+          (m_invitedToReportMonitors ? kLayoutCapabilityMonitors : 0)
   );
 }
 
@@ -63,6 +78,79 @@ bool ClientProxy1_9::receiveInputCapabilities()
   m_receivedInputCapabilities = true;
   maybeCompleteHandshake();
   return true;
+}
+
+bool ClientProxy1_9::monitorsNegotiated() const
+{
+  return m_invitedToReportMonitors && m_receivedInputCapabilities &&
+         (m_destinationInputCapabilities.capabilities & kLayoutCapabilityMonitors) != 0;
+}
+
+const deskflow::server::ReportedMonitors *ClientProxy1_9::reportedMonitors() const
+{
+  if (!m_reportedMonitors) {
+    return nullptr;
+  }
+
+  // the report is of the screen that the computer reported with it; when it reports another, it is stale
+  int32_t x;
+  int32_t y;
+  int32_t w;
+  int32_t h;
+  getShape(x, y, w, h);
+  const auto box = m_reportedMonitors->layout.boundingBox();
+  if (box.x != x || box.y != y || box.w != w || box.h != h) {
+    return nullptr;
+  }
+  return &*m_reportedMonitors;
+}
+
+bool ClientProxy1_9::receiveMonitorReport()
+{
+  // The size of the message is the one its header says, whatever it holds, so it is read in full even when it is not
+  // wanted: what is behind it in the stream stays where it is. A message that ends too soon has nothing behind it.
+  const auto received = deskflow::monitors::readReport(getStream());
+  if (!received) {
+    LOG_DEBUG("monitor report from \"%s\" ends too soon, ignored", getName().c_str());
+    return true;
+  }
+  if (!monitorsNegotiated()) {
+    LOG_DEBUG("monitor report from \"%s\" ignored: it was not asked for", getName().c_str());
+    return true;
+  }
+
+  int32_t x;
+  int32_t y;
+  int32_t w;
+  int32_t h;
+  getShape(x, y, w, h);
+  auto check = deskflow::server::checkReport(*received, {x, y, w, h});
+
+  if (check.reported) {
+    const auto changed = !m_reportedMonitors || m_reportedMonitors->monitors != check.reported->monitors;
+    m_reportedMonitors = std::move(check.reported);
+    m_lastMonitorProblem.clear();
+    if (changed) {
+      m_monitorEvents->addEvent(Event(EventTypes::ClientProxyMonitorsReported, getEventTarget()));
+    }
+    return true;
+  }
+
+  dropMonitorReport(check.forget ? std::string() : check.problem);
+  return true;
+}
+
+void ClientProxy1_9::dropMonitorReport(const std::string &problem)
+{
+  if (!problem.empty() && problem != m_lastMonitorProblem) {
+    LOG_INFO("monitor report of computer \"%s\" ignored: %s", getName().c_str(), problem.c_str());
+  }
+  m_lastMonitorProblem = problem;
+
+  if (m_reportedMonitors) {
+    m_reportedMonitors.reset();
+    m_monitorEvents->addEvent(Event(EventTypes::ClientProxyMonitorsReported, getEventTarget()));
+  }
 }
 
 void ClientProxy1_9::keyDown(KeyID id, KeyModifierMask mask, KeyButton button, const std::string &language)

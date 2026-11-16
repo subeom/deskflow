@@ -53,6 +53,10 @@ public:
   //@{
 
   void onInfoChanged();
+  //! The monitors of the computer changed and its shape did not (experimental): a protocol that reports them says so
+  virtual void onMonitorsChanged()
+  {
+  }
   bool onGrabClipboard(ClipboardID);
   void onClipboardChanged(ClipboardID, const IClipboard *);
 
@@ -108,6 +112,14 @@ protected:
   deskflow::IStream *getStream() const
   {
     return m_stream;
+  }
+
+  //! What the client tells the server of its shape and cursor in DINF
+  virtual ClientInfo currentInfo() const;
+
+  //! Called after every DINF that was sent
+  virtual void onInfoSent()
+  {
   }
 
 private:

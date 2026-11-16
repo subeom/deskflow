@@ -13,6 +13,7 @@
 #include "deskflow/IKeyState.h"
 #include "deskflow/IPrimaryComputer.h"
 #include "deskflow/ISecondaryComputer.h"
+#include "deskflow/MonitorReport.h"
 #include "deskflow/OptionTypes.h"
 #include "server/MonitorGeometry.h"
 
@@ -157,6 +158,21 @@ public:
   virtual std::vector<deskflow::server::MonitorRect> getMonitors() const
   {
     return {};
+  }
+
+  //! The monitors of this computer with what a client reports of them (experimental)
+  /*!
+  The same monitors as \c getMonitors(), in the same coordinates, and the display scale of each and which one is the
+  primary one. A platform that knows only the rectangles does not need to override it; empty means that this computer
+  cannot report its monitors, and then it does not, whatever the server says.
+  */
+  virtual std::vector<deskflow::monitors::MonitorInfo> getMonitorInfo() const
+  {
+    std::vector<deskflow::monitors::MonitorInfo> info;
+    for (const auto &rect : getMonitors()) {
+      info.push_back({rect, 0, false});
+    }
+    return info;
   }
 
   //@}

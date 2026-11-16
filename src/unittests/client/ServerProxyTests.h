@@ -26,6 +26,14 @@ private Q_SLOTS:
   void crossOSScroll_v19TransformsDmwmBeforeDelivery();
   void crossOSScroll_mouseWheelOnlyScopeFailsClosedForPlainDmwm();
   void semanticMedia_v19HandlesOnlyEligibleKeys();
+  void monitorReport_serverWithoutTheBit_clientAnswersAsBeforeAndSaysNothing();
+  void monitorReport_serverWithTheBit_clientAcknowledgesAndReports();
+  void monitorReport_clientThatCannotListItsMonitors_doesNotAcknowledge();
+  void monitorReport_afterEveryDinf_butOnlyWhenTheMonitorsChanged();
+  void monitorReport_monitorsChangedButNotTheShape_sendsJustTheReport();
+  void monitorReport_monitorsThatDoNotTileTheShape_areNotReportedAndForgotten();
+  void monitorReport_matrix_data();
+  void monitorReport_matrix();
 
 private:
   Log m_log;

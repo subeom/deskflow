@@ -168,6 +168,7 @@ This table lists all protocol messages in alphabetical order. For a typical sequ
 | [**DKUP**](@ref kMsgDKeyUp1_0) | @ref kMsgDKeyUp1_0 | Data | Server→Client | Key up (legacy) | [MsgSize](#constraint-protocol-max-message-length), [KeyMap](#constraint-keymap) | 1.0 |
 | [**DMDN**](@ref kMsgDMouseDown) | @ref kMsgDMouseDown | Data | Server→Client | Mouse down | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
 | [**DMMV**](@ref kMsgDMouseMove) | @ref kMsgDMouseMove | Data | Server→Client | Mouse move (absolute) | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
+| [**DMON**](@ref kMsgDMonitors) | @ref kMsgDMonitors | Data | Client→Server | Monitors of the computer (experimental, negotiated by capability bit 12) | [MsgSize](#constraint-protocol-max-message-length) | 1.9+ (capability) |
 | [**DMRM**](@ref kMsgDMouseRelMove) | @ref kMsgDMouseRelMove | Data | Server→Client | Mouse move (relative) | [MsgSize](#constraint-protocol-max-message-length) | 1.2+ |
 | [**DMUP**](@ref kMsgDMouseUp) | @ref kMsgDMouseUp | Data | Server→Client | Mouse up | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
 | [**DMWM**](@ref kMsgDMouseWheel) | @ref kMsgDMouseWheel | Data | Server→Client | Mouse wheel | [MsgSize](#constraint-protocol-max-message-length) | 1.3+ |
@@ -276,6 +277,9 @@ Current capability bits:
 - bit 9: the peer takes the data of clipboard id 0 from a Windows or macOS sender as the selection (id 1)
   too (see [One Clipboard Id for Windows and macOS](#one-clipboard-id-for-windows-and-macos)); sent by
   both sides, not an input capability
+- bit 12 (`kLayoutCapabilityMonitors`, `common/MonitorCapabilities.h`): in `DIPC` the server invites the
+  computer to report its monitors; in `CIPC` the computer says it does (see
+  [Monitor Reporting](#monitor-reporting-dmon))
 
 The destination advertises bit 1 only if its current key-map inventory can synthesize
 `kKeyHangul` (on Windows only the Korean keyboard layout provides that key) and advertises bits 2
@@ -292,10 +296,9 @@ nothing on the wire: there is no message for it, no option id that a peer has to
 capability bit. The monitor layout of a computer is read from the server's settings and is never sent;
 it only changes which coordinates the server computes before it sends the existing @ref kMsgCEnter and
 @ref kMsgDMouseMove messages, which always lie inside the shape that the computer reported with
-`DINF`. Every client, including ones that never heard of it, works with a server that has it on. A
-message through which a client reports its monitors would have to be negotiated with a capability bit,
-because a receiver that gets a message code it does not know discards the whole buffered stream; that is
-not part of it.
+`DINF`. Every client, including ones that never heard of it, works with a server that has it on. The
+monitors can also be reported by the client, which is a message of its own and is negotiated (see
+[Monitor Reporting](#monitor-reporting-dmon)).
 
 The experimental **arrangement of the computers** (see [arrangement.md](arrangement.md)) changes
 nothing on the wire either. The arrangement lives in the server's GUI settings and the server configuration
@@ -303,6 +306,39 @@ file that it writes (the `left(0,38.7513) = Name(0,100)` links that the core has
 own monitors are read from its operating system. Nothing about it is sent to a computer, and the size that a
 computer reported with `DINF` is only read (the GUI learns it from a line of the server log, not from a new
 message).
+
+#### Monitor Reporting (DMON)
+<a id="monitor-reporting-dmon"></a>
+
+An experimental, negotiated message through which a client tells the server the monitors that its
+desktop is made of (see [monitor-reporting.md](monitor-reporting.md)). Nothing is sent unless both ends
+have capability bit 12 (`kLayoutCapabilityMonitors`):
+
+- the server sets it in `DIPC` only while `server/experimentalMultiMonitor` is on. With the setting off,
+  and for every server that predates the bit, the mask of `DIPC` is what it always was;
+- the client sets it in `CIPC` only when it saw it in `DIPC` **and** can list its monitors. It is the
+  acknowledgement, there is no other reply;
+- the client sends @ref kMsgDMonitors (`DMON`) only after that, and the server expects one only from a
+  client that acknowledged. The handshake does not wait for it: the server uses the rectangle of `DINF`
+  until a valid report arrives.
+
+The message is `"DMON%1i%2i%1i"` (version 1, generation, count) followed by `count` records of
+`"%2i%2i%2i%2i%2i%1i"` (x, y, width, height as signed 16-bit numbers in the coordinates of the `DINF`
+shape of the same client; the display scale in percent, 0 if unknown; flags, bit 0 is the primary
+monitor): 8 + 11 x count bytes. **The size of the message is fixed by its count and never by its values**,
+so a receiver always reads it in full, also when it ignores it, and what is behind it in the stream
+stays where it is: an unexpected or invalid `DMON` never costs the connection and never makes the receiver
+discard the buffer, which is what an unknown message code does. Because `ProtocolUtil` does not frame
+messages, a message that ends in the middle (a truncated one) cannot be told from one that is followed by
+others; a receiver reads what there is and goes on.
+
+A client sends a report after its `CIPC`, after every `DINF`, and when its monitors change while its shape
+does not (two monitors swap places); never when the monitors are the same as in the last report. A client
+whose monitors do not tile exactly the shape that it reports in `DINF` sends no report, and `count = 0`
+if it had sent one. The server accepts 1 to 16 monitors of a size that do not overlap, form one connected
+shape, fit in 16 bits and whose bounding box is the latest `DINF` shape, and uses the report only while that
+stays true; anything else is dropped with one INFO line. Protocol 1.8 and older never have the capability
+and treat `DMON` as the unknown message that it is for them.
 
 #### F18 to Hangul Mapping
 

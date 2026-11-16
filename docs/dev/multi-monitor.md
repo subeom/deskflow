@@ -108,7 +108,7 @@ server was changed, and are not to be re-recorded.
 | P1 experiment off: every pointer decision is the same | `ServerTests::pointerPin_*` with the experiment off, and off with layouts set |
 | P3 on with no layout, a layout that is wrong, or one of another size: legacy | the same tests in those modes |
 | P4 on with a rectangle: legacy; and the library maps a rectangle bit for bit | the same tests in that mode; `MonitorGeometryTests::plainRectangle_*` |
-| P2, P5 no byte on the wire, no new message | `ClientProxyTests::handshake_monitorExperiment_changesNoByteOnTheWire` |
+| P2, P5 no new message; the typed layout is never sent. (Stage 3 adds one invitation bit to `DIPC`, see [monitor-reporting.md](monitor-reporting.md)) | `ClientProxyTests::handshake_monitorExperiment_changesOnlyTheMonitorBit` |
 | P6 upgrade: an old configuration has it all off | `SettingsTests`, `ServerConfigTests::monitorLayout_*`, `ComputerTests::monitorLayout_*` |
 
 The behaviour tests (`ServerTests::monitorGeometry_*`) cover an entry into what is a hole today, leaving
@@ -122,9 +122,8 @@ desktop). The dialogs have layout tests in three styles at two font sizes.
 
 ## Not done
 
-- **The client does not report its monitors.** The layout is typed (or imported) by the user. A
-  negotiated capability and a message for it (stage 3 of the research) would need a new Windows and Mac
-  client, and is not part of this.
+- **The client reporting its monitors** is stage 3 and is described in [monitor-reporting.md](monitor-reporting.md): a
+  negotiated capability and a message, which needs a client that has them. This note is about the typed layout.
 - **The server's own screen** is not mapped by a layout: a layout for the primary computer is ignored (and the log
   says so). Its displays are read from the operating system and used with the arrangement of the computers (the
   `server/useArrangement` setting, see [arrangement.md](arrangement.md)); without it the edge detection of the

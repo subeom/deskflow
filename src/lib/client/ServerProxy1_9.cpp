@@ -5,12 +5,15 @@
 
 #include "client/ServerProxy1_9.h"
 
+#include "base/Log.h"
 #include "client/Client.h"
 #include "common/ClipboardCapabilities.h"
+#include "common/MonitorCapabilities.h"
 #include "deskflow/ClipboardIdPolicy.h"
 #include "deskflow/OptionTypes.h"
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
+#include "io/IStream.h"
 
 #include <cstring>
 
@@ -49,8 +52,71 @@ bool ServerProxy1_9::receiveInputCapabilities()
       isKnownInputPlatform(parsedPlatform) ? parsedPlatform : InputPlatform::Unknown, capabilities
   };
   m_receivedSourceCapabilities = true;
+  // The monitors are reported to a server that asked for them and to nobody else; a computer that cannot list its
+  // monitors does not acknowledge the bit, so the server never expects a report of it. The platform is not asked
+  // unless the server invited it: a link that did not negotiate this does exactly what it always did.
+  m_reportsMonitors = (capabilities & kLayoutCapabilityMonitors) != 0 && !localMonitors().monitors.empty();
   sendInputCapabilities();
+  sendMonitorReport();
   return true;
+}
+
+ServerProxy1_9::LocalMonitors ServerProxy1_9::localMonitors() const
+{
+  LocalMonitors local;
+  int32_t x;
+  int32_t y;
+  int32_t w;
+  int32_t h;
+  m_client->getShape(x, y, w, h);
+  local.shape = {x, y, w, h};
+  local.monitors = m_client->monitorInfo();
+  return local;
+}
+
+void ServerProxy1_9::onMonitorsChanged()
+{
+  sendMonitorReport();
+}
+
+void ServerProxy1_9::onInfoSent()
+{
+  // the server checks the report against the shape that it has just been sent
+  sendMonitorReport();
+}
+
+void ServerProxy1_9::sendMonitorReport()
+{
+  if (!m_reportsMonitors) {
+    return;
+  }
+
+  const auto local = localMonitors();
+  const auto prepared = deskflow::monitors::prepareMonitors(local.monitors, local.shape);
+  if (!prepared.ok()) {
+    // the server is not told of monitors that it cannot use; one that it was told of before is not valid any more
+    if (prepared.problem != m_lastMonitorProblem) {
+      m_lastMonitorProblem = prepared.problem;
+      LOG_INFO("monitors are not reported to the server: %s", prepared.problem.c_str());
+    }
+    if (m_monitorsTold && !m_monitorsTold->empty()) {
+      m_monitorsTold.emplace();
+      m_monitorGeneration = m_monitorGeneration == UINT16_MAX ? 1 : m_monitorGeneration + 1;
+      const auto none = deskflow::monitors::encodeReport({m_monitorGeneration, {}});
+      getStream()->write(none.data(), static_cast<uint32_t>(none.size()));
+    }
+    return;
+  }
+  m_lastMonitorProblem.clear();
+
+  if (m_monitorsTold && *m_monitorsTold == prepared.monitors) {
+    return;
+  }
+  m_monitorsTold = prepared.monitors;
+  m_monitorGeneration = m_monitorGeneration == UINT16_MAX ? 1 : m_monitorGeneration + 1;
+  const auto report = deskflow::monitors::encodeReport({m_monitorGeneration, prepared.monitors});
+  getStream()->write(report.data(), static_cast<uint32_t>(report.size()));
+  LOG_INFO("reported %zu monitors to the server", prepared.monitors.size());
 }
 
 void ServerProxy1_9::onOptionsChanged(const OptionsList &options)
@@ -126,7 +192,8 @@ void ServerProxy1_9::sendInputCapabilities() const
   const auto local = localInputCapabilities();
   ProtocolUtil::writef(
       getStream(), kMsgCInputCapabilities, static_cast<uint8_t>(local.platform),
-      local.capabilities | kClipboardCapabilityPaced | kClipboardCapabilitySingleId
+      local.capabilities | kClipboardCapabilityPaced | kClipboardCapabilitySingleId |
+          (m_reportsMonitors ? kLayoutCapabilityMonitors : 0)
   );
 }
 

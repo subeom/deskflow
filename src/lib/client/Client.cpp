@@ -213,6 +213,11 @@ InputCapabilities Client::inputCapabilities() const
   return capabilities;
 }
 
+std::vector<deskflow::monitors::MonitorInfo> Client::monitorInfo() const
+{
+  return m_computer != nullptr ? m_computer->getMonitorInfo() : std::vector<deskflow::monitors::MonitorInfo>{};
+}
+
 bool Client::semanticMediaKey(KeyID id)
 {
   return m_computer->semanticMediaKey(id);
@@ -534,6 +539,9 @@ bool Client::setupComputer(int16_t protocolMinor)
     m_events->addHandler(EventTypes::ComputerShapeChanged, getEventTarget(), [this](const auto &) {
       handleShapeChanged();
     });
+    m_events->addHandler(EventTypes::ComputerMonitorsChanged, getEventTarget(), [this](const auto &) {
+      handleMonitorsChanged();
+    });
     m_events->addHandler(EventTypes::ClipboardGrabbed, getEventTarget(), [this](const auto &e) {
       handleClipboardGrabbed(e);
     });
@@ -588,6 +596,7 @@ void Client::cleanupComputer()
       m_ready = false;
     }
     m_events->removeHandler(EventTypes::ComputerShapeChanged, getEventTarget());
+    m_events->removeHandler(EventTypes::ComputerMonitorsChanged, getEventTarget());
     m_events->removeHandler(EventTypes::ClipboardGrabbed, getEventTarget());
     delete m_server;
     m_server = nullptr;
@@ -682,6 +691,12 @@ void Client::handleShapeChanged()
 {
   LOG_DEBUG("resolution changed");
   m_server->onInfoChanged();
+}
+
+void Client::handleMonitorsChanged()
+{
+  LOG_DEBUG("monitors changed");
+  m_server->onMonitorsChanged();
 }
 
 void Client::handleClipboardGrabbed(const Event &event)

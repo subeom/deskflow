@@ -1019,6 +1019,49 @@ extern const char *const kMsgDClipboard;
 extern const char *const kMsgDInfo;
 
 /**
+ * @brief Monitors of the client computer (experimental)
+ *
+ * **Message Code**: `"DMON"`
+ * **Direction**: Secondary → Primary
+ * **Format**: `"DMON%1i%2i%1i"` and then `$3` records of @ref kMsgDMonitorsRecord
+ * **Parameters**:
+ * - `$1`: Version of the records, 1 (1 byte)
+ * - `$2`: Generation, counts the reports of one connection from 1, wrapping at 65535 (2 bytes)
+ * - `$3`: Count of monitors, 0 to 255 on the wire, 1 to 16 when valid; 0 means "forget the last report" (1 byte)
+ *
+ * Each record of a monitor is 11 bytes: `x`, `y`, `w`, `h` (2 bytes each, signed, in the coordinates of the
+ * kMsgDInfo shape of the same computer), the display scale in percent (2 bytes, 0 when unknown) and flags (1 byte,
+ * bit 0 is the primary monitor, the others are 0 and ignored).
+ *
+ * The size of the message is fixed by its count, not by its values, so a receiver reads it in full even when it
+ * ignores it.
+ *
+ * **Example**:
+ *
+ * One monitor at (0,0), 1920x1080 at 150 %, which is the primary one
+ * ```
+ * "DMON\x01\x00\x01\x01\x00\x00\x00\x00\x07\x80\x04\x38\x00\x96\x01"
+ * ```
+ *
+ * **When to Send**: only to a server that has advertised the monitors capability bit (kLayoutCapabilityMonitors) in
+ * kMsgDInputCapabilities, and only when the client has acknowledged it in kMsgCInputCapabilities: a receiver that does
+ * not know a message code discards everything that is buffered after it. After kMsgCInputCapabilities, after every
+ * kMsgDInfo, and when the monitors change while the shape does not. Nothing is sent when the monitors are the same
+ * as in the last report.
+ *
+ * @see kMsgDInfo, kMsgDInputCapabilities, kMsgCInputCapabilities, docs/dev/monitor-reporting.md
+ * @since Protocol version 1.9 (a capability, not a new minor version)
+ */
+extern const char *const kMsgDMonitors;
+
+/**
+ * @brief One monitor of kMsgDMonitors
+ *
+ * **Format**: `"%2i%2i%2i%2i%2i%1i"`: x, y, width, height, scale in percent, flags.
+ */
+extern const char *const kMsgDMonitorsRecord;
+
+/**
  * @brief Set client options
  *
  * **Message Code**: `"DSOP"`

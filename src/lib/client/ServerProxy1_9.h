@@ -8,6 +8,12 @@
 #include "client/ServerProxy1_8.h"
 #include "common/InputCapabilities.h"
 #include "deskflow/CrossPlatformInputPolicy.h"
+#include "deskflow/MonitorReport.h"
+#include "server/MonitorGeometry.h"
+
+#include <optional>
+#include <string>
+#include <vector>
 
 class ServerProxy1_9 : public ServerProxy1_8
 {
@@ -20,7 +26,18 @@ public:
     return m_sourceInputCapabilities;
   }
 
+  void onMonitorsChanged() override;
+
 protected:
+  //! The shape that the computer reports in DINF and its monitors, to be reported to a server that asked for them
+  struct LocalMonitors
+  {
+    deskflow::server::MonitorRect shape;
+    std::vector<deskflow::monitors::MonitorInfo> monitors;
+  };
+
+  virtual LocalMonitors localMonitors() const;
+  void onInfoSent() override;
   ConnectionResult parseHandshakeMessage(const uint8_t *code) override;
   ConnectionResult parseMessage(const uint8_t *code) override;
   void onOptionsChanged(const OptionsList &options) override;
@@ -46,11 +63,19 @@ protected:
 private:
   bool receiveInputCapabilities();
   void sendInputCapabilities() const;
+  void sendMonitorReport();
   CrossPlatformInputPolicy inputPolicy() const;
 
   Client *m_client = nullptr;
   InputCapabilities m_sourceInputCapabilities;
   bool m_receivedSourceCapabilities = false;
+  // the server advertised the monitors capability (the experiment is on) and this computer acknowledged it, so it
+  // reports its monitors; neither alone is enough
+  bool m_reportsMonitors = false;
+  // what the server was last told: nothing yet, or the monitors, or (an empty list) that there are none to tell
+  std::optional<std::vector<deskflow::monitors::MonitorEntry>> m_monitorsTold;
+  uint16_t m_monitorGeneration = 0;
+  std::string m_lastMonitorProblem;
   bool m_invertScrollX = false;
   bool m_invertScrollY = false;
   ScrollInvertScope m_scrollInvertScope = ScrollInvertScope::All;

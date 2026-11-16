@@ -44,6 +44,8 @@ add_library(server STATIC
   MonitorGeometry.h
   PrimaryClient.cpp
   PrimaryClient.h
+  ReportedMonitors.cpp
+  ReportedMonitors.h
   Server.cpp
   Server.h
   ServerCursorEdges.cpp

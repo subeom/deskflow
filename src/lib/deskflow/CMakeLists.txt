@@ -76,6 +76,8 @@ add_library(${lib_name} STATIC ${PLATFORM_CODE}
   KeyMap.h
   KeyState.cpp
   KeyState.h
+  MonitorReport.cpp
+  MonitorReport.h
   MouseTypes.h
   OptionTypes.h
   PacketStreamFilter.cpp

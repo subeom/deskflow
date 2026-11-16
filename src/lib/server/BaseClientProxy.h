@@ -8,6 +8,7 @@
 #pragma once
 
 #include "deskflow/IClient.h"
+#include "server/ReportedMonitors.h"
 
 namespace deskflow {
 class IStream;
@@ -54,6 +55,17 @@ public:
   //@}
 
   // IComputer
+  //! The monitors that this computer reports (experimental)
+  /*!
+  The last valid report of the computer, while its bounding box is the shape that the computer reports now. Null when
+  there is none, which is what a computer that does not report says: the desktop is then the one rectangle of its
+  shape, as it always was.
+  */
+  virtual const deskflow::server::ReportedMonitors *reportedMonitors() const
+  {
+    return nullptr;
+  }
+
   void *getEventTarget() const override = 0;
   bool getClipboard(ClipboardID id, IClipboard *) const override = 0;
   void getShape(int32_t &x, int32_t &y, int32_t &width, int32_t &height) const override = 0;

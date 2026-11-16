@@ -36,7 +36,7 @@ its header, so a receiver always knows how much of the stream is the message, wh
 
 ```
 "DMON" version(1) generation(2) count(1)  then  count x monitor
-monitor = x(2) y(2) w(2) h(2) scale(2) flags(1)          (10 bytes, big endian)
+monitor = x(2) y(2) w(2) h(2) scale(2) flags(1)          (11 bytes, big endian)
 ```
 
 - `version` is 1. A later layout of the records has to use another message code, because a receiver reads the size
@@ -46,14 +46,14 @@ monitor = x(2) y(2) w(2) h(2) scale(2) flags(1)          (10 bytes, big endian)
   changed list.
 - `count` is 0 to 255 on the wire and 1 to 16 when valid. **0 means "I have no monitors to report": forget the last
   report** (sent when the monitors cannot be made to tile the shape, see below). A receiver always reads the
-  `count x 10` bytes, so even 255 leaves the stream where the sender left it.
+  `count x 11` bytes, so even 255 leaves the stream where the sender left it.
 - `x y w h` are `int16` in **the coordinate space of the `DINF` shape** of the same client: points on macOS, physical
   virtual-desktop pixels on Windows. They are not scaled for display.
 - `scale` is `uint16`, the display scale in percent (100, 125, 150, 200 ...), 0 if unknown. It is informational for
   the canvas and not used for the pointer.
 - `flags`: bit 0 is the primary monitor. The other bits are 0 now and ignored by a reader.
 
-A report is at most 4 + 1 + 2 + 1 + 16 x 10 = 168 bytes in a valid message.
+A valid report is at most 4 + 1 + 2 + 1 + 16 x 11 = 184 bytes.
 
 ### When the client sends it
 
