@@ -25,6 +25,7 @@ private Q_SLOTS:
   void clipboardTextOnly_isOffByDefaultAndRoundTrips();
   void experimentalMultiMonitor_isOffByDefaultAndRoundTrips();
   void monitorLayout_isEmptyByDefaultAndRoundTrips();
+  void connectTimeout_defaultsToTwoSecondsAndRoundTrips();
   void checkCleanComputerName();
   void checkCleanComputerName_LongName();
   void checkClearState();

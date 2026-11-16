@@ -51,6 +51,7 @@ It will begin with `[client]`
 
 | Option                    |    Valid Values    | Description |
 |:--------------------------|:------------------:|:-----------|
+| connectTimeout            | Number 1 - 60      | Seconds the client waits for one connection attempt to finish: the TCP connection, the secure (TLS) handshake and the server's greeting together. Raise it on a slow or far away network. A value outside 1 - 60 or that is not a number is ignored with a warning and the default is used [default: 2] |
 | dynamicConnectionInterval | `true` or `false`  | Use dynamic connection retry times based on number of previously failed attempts [default: false] |
 | languageSync              | `true` or `false`  | Sync to server language [default: true] |
 | remoteHost                | `IP` or `hostname` | The remote host(s) to connect to. Use a comma separated list when you want to try several hosts |

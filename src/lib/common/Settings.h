@@ -36,6 +36,7 @@ public:
 
   struct Client
   {
+    inline static const auto ConnectTimeout = QStringLiteral("client/connectTimeout");
     inline static const auto DynamicConnectionRetry = QStringLiteral("client/dynamicConnectionInterval");
     inline static const auto InvertYScroll = QStringLiteral("client/invertYScroll");
     inline static const auto InvertXScroll = QStringLiteral("client/invertXScroll");
@@ -306,7 +307,8 @@ private:
   };
 
   inline static const QStringList m_validKeys = {
-      Client::DynamicConnectionRetry
+      Client::ConnectTimeout
+    , Client::DynamicConnectionRetry
     , Client::InvertYScroll
     , Client::InvertXScroll
     , Client::LanguageSync

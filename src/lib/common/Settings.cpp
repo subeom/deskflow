@@ -6,6 +6,7 @@
 
 #include "Settings.h"
 
+#include "ConnectionDiagnosis.h"
 #include "LogLevel.h"
 #include "NetworkProtocol.h"
 #include "UrlConstants.h"
@@ -368,6 +369,9 @@ QVariant Settings::defaultValue(const QString &key)
 
   if (key == Client::YScrollScale || key == Client::XScrollScale)
     return 1.0;
+
+  if (key == Client::ConnectTimeout)
+    return deskflow::diagnosis::kDefaultConnectTimeoutSeconds;
 
   if (key == Server::Protocol)
     return networkProtocolToOption(NetworkProtocol::Barrier);

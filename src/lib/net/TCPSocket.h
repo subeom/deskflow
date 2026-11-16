@@ -131,7 +131,9 @@ protected:
 private:
   void init();
 
-  void sendConnectionFailedEvent(const char *);
+  void sendConnectionFailedEvent(
+      const char *, deskflow::diagnosis::FailureKind kind = deskflow::diagnosis::FailureKind::Unknown
+  );
   void onConnected();
   void onInputShutdown();
   void onOutputShutdown();

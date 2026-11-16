@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "common/ConnectionDiagnosis.h"
 #include "io/IStream.h"
 #include "net/ISocket.h"
 
@@ -23,11 +24,17 @@ public:
   class ConnectionFailedInfo
   {
   public:
-    explicit ConnectionFailedInfo(const char *what) : m_what(what)
+    explicit ConnectionFailedInfo(
+        const char *what, deskflow::diagnosis::FailureKind kind = deskflow::diagnosis::FailureKind::Unknown
+    )
+        : m_what(what),
+          m_kind(kind)
     {
       // do nothing
     }
     std::string m_what;
+    //! What the failure means, as far as the operating system's error says; Unknown when it does not
+    deskflow::diagnosis::FailureKind m_kind;
   };
 
   explicit IDataSocket([[maybe_unused]] const IEventQueue *events)

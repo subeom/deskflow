@@ -129,6 +129,23 @@ void SettingsTests::monitorLayout_isEmptyByDefaultAndRoundTrips()
   QCOMPARE(Settings::value(key).toString(), QString());
 }
 
+void SettingsTests::connectTimeout_defaultsToTwoSecondsAndRoundTrips()
+{
+  const auto key = Settings::Client::ConnectTimeout;
+  QCOMPARE(key, QStringLiteral("client/connectTimeout"));
+  QVERIFY(Settings::validKeys().contains(key));
+
+  // a config from before the setting existed has no value for it: the limit stays the 2 s it always was
+  Settings::setValue(key);
+  QCOMPARE(Settings::defaultValue(key), QVariant(2.0));
+  QCOMPARE(Settings::value(key).toDouble(), 2.0);
+
+  Settings::setValue(key, 7.5);
+  QCOMPARE(Settings::value(key).toDouble(), 7.5);
+  Settings::setValue(key);
+  QCOMPARE(Settings::value(key).toDouble(), 2.0);
+}
+
 void SettingsTests::checkCleanComputerName()
 {
   const auto input = QStringLiteral("--!_ _-C@o#mpu$t%e^&*(r)= +Name\n[1]2|3?4--5>6<,7`~/8*90\\.lan--..    ..");

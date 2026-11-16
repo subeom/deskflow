@@ -13,6 +13,8 @@ add_library(common STATIC
   Action.cpp
   Action.h
   ClipboardCapabilities.h
+  ConnectionDiagnosis.cpp
+  ConnectionDiagnosis.h
   Coordinate.h
   Enums.h
   ExitCodes.h
