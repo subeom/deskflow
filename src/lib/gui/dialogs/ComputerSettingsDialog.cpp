@@ -169,8 +169,6 @@ void ComputerSettingsDialog::accept()
 
   m_computer->setName(ui->lineNameEdit->text());
   m_computer->setShareClipboard(ui->chkShareClipboard->isChecked());
-  if (monitorLayout)
-    m_computer->setMonitorLayout(*monitorLayout);
 
   m_computer->aliases().clear();
 
@@ -187,6 +185,9 @@ void ComputerSettingsDialog::accept()
     if (!m_computer->aliases().contains(alias))
       m_computer->addAlias(alias);
   }
+
+  if (monitorLayout)
+    m_computer->setMonitorLayout(*monitorLayout);
 
   m_computer->setModifier(KeyboardModifier::Shift, ui->comboShift->currentIndex());
   m_computer->setModifier(KeyboardModifier::Ctrl, ui->comboCtrl->currentIndex());

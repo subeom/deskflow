@@ -29,6 +29,8 @@ private Q_SLOTS:
   void monitorLayoutDialog_saysWhetherTheLayoutIsValid();
   void monitorLayoutDialog_savesTheLayoutAsTheServerReadsIt();
   void monitorLayoutDialog_doesNotSaveALayoutThatIsWrong();
+  void monitorLayoutDialog_anAcceptThatIsRefusedLeavesTheLayoutAlone();
+  void monitorLayoutDialog_tabLeavesTheTextBox();
   void monitorLayoutDialog_importsWhatTheDiagnosticToolsPrint_data();
   void monitorLayoutDialog_importsWhatTheDiagnosticToolsPrint();
   void monitorLayoutDialog_importOfAFileThatIsNotAFit_saysSoAndChangesNothing();

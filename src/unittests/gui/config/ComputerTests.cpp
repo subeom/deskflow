@@ -12,14 +12,17 @@
 #include "gui/dialogs/ComputerSettingsDialog.h"
 #include "server/Config.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDataStream>
 #include <QFile>
 #include <QLabel>
+#include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTemporaryDir>
+#include <QTimer>
 
 namespace {
 
@@ -570,6 +573,37 @@ void ComputerTests::monitorLayoutDialog_doesNotSaveALayoutThatIsWrong()
   QCOMPARE(dialog.result(), static_cast<int>(QDialog::Accepted));
   QCOMPARE(computer.monitorLayout(), QStringLiteral("0,0,1920,1080"));
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+}
+
+void ComputerTests::monitorLayoutDialog_anAcceptThatIsRefusedLeavesTheLayoutAlone()
+{
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Computer computer(QStringLiteral("layout-dialog-alias"));
+  ComputerSettingsDialog dialog(nullptr, &computer);
+  layoutEdit(dialog)->setPlainText(QStringLiteral("0,0,1920,1080"));
+  // an alias that is the name of the computer: the dialog says so and stays open
+  dialog.findChild<QListWidget *>(QStringLiteral("listAliases"))->addItem(computer.name());
+
+  QTimer closer;
+  closer.setInterval(10);
+  QObject::connect(&closer, &QTimer::timeout, [] {
+    if (auto *box = QApplication::activeModalWidget())
+      box->close();
+  });
+  closer.start();
+  dialog.accept();
+  closer.stop();
+
+  QCOMPARE(dialog.result(), static_cast<int>(QDialog::Rejected));
+  QVERIFY(computer.monitorLayout().isEmpty());
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+}
+
+void ComputerTests::monitorLayoutDialog_tabLeavesTheTextBox()
+{
+  Computer computer(QStringLiteral("layout-dialog-tab"));
+  ComputerSettingsDialog dialog(nullptr, &computer);
+  QVERIFY(layoutEdit(dialog)->tabChangesFocus());
 }
 
 void ComputerTests::monitorLayoutDialog_importsWhatTheDiagnosticToolsPrint_data()
