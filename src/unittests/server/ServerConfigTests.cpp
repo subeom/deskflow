@@ -338,6 +338,29 @@ void ServerConfigTests::monitorLayout_addsNoOption()
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
 }
 
+void ServerConfigTests::monitorLayout_isReadWhenTheConfigIsReadFromAFile()
+{
+  // the path of a core that starts, and of one that reloads its configuration, with a generated file or an external
+  // one: the computers are the ones of the settings
+  const auto name = QStringLiteral("monitorLayoutFile");
+  Settings::setValue(Settings::Computer::Name.arg(name), name);
+  Settings::setValue(Settings::Computer::MonitorLayout.arg(name), QStringLiteral("0,0,2560,1440;2560,0,1920,1080"));
+
+  Config config(nullptr);
+  std::istringstream input("section: options\nend\n");
+  input >> config;
+  const auto *layout = config.getMonitorLayout(name.toStdString());
+  QVERIFY(layout != nullptr);
+  QVERIFY(layout->parsed);
+
+  // a layout that is set again is read again, by the next read
+  Settings::setValue(Settings::Computer::MonitorLayout.arg(name));
+  std::istringstream again("section: options\nend\n");
+  again >> config;
+  QVERIFY(config.getMonitorLayout(name.toStdString()) == nullptr);
+  Settings::setValue(Settings::Computer::Name.arg(name));
+}
+
 void ServerConfigTests::monitorLayout_isPartOfEquality()
 {
   Config a(nullptr);

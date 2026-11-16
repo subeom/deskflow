@@ -285,6 +285,18 @@ Protocol 1.9 does not change the formats of @ref kMsgDKeyDown, @ref kMsgDKeyRepe
 @ref kMsgDKeyUp, or @ref kMsgDMouseWheel. A peer using protocol 1.8 or older never sends or receives
 `DIPC`/`CIPC` and continues to use the existing input packets unchanged.
 
+#### Multi-Monitor Aware Cursor Mapping (no wire change)
+
+The experimental multi-monitor aware cursor mapping (see [multi-monitor.md](multi-monitor.md)) changes
+nothing on the wire: there is no message for it, no option id that a peer has to understand and no
+capability bit. The monitor layout of a computer is read from the server's settings and is never sent;
+it only changes which coordinates the server computes before it sends the existing @ref kMsgCEnter and
+@ref kMsgDMouseMove messages, which always lie inside the shape that the computer reported with
+`DINF`. Every client, including ones that never heard of it, works with a server that has it on. A
+message through which a client reports its monitors would have to be negotiated with a capability bit,
+because a receiver that gets a message code it does not know discards the whole buffered stream; that is
+not part of it.
+
 #### F18 to Hangul Mapping
 
 On a negotiated macOS-to-Windows protocol 1.9 link, the F18 key can be sent as the Korean-English

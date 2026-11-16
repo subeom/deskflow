@@ -2362,6 +2362,46 @@ std::unique_ptr<PointerRig> staggeredWithNeighbourOnTheRight(bool experiment)
 
 } // namespace
 
+// The example of docs/Configuration.md: a Windows PC with a 2560x1440 primary monitor and a 1920x1080 monitor to its
+// left, bottom aligned, on the right of a MacBook (1728x1117)
+void ServerTests::monitorGeometry_theExampleOfTheDocumentation()
+{
+  const QuietLog quiet;
+  const Box desktop{-1920, 0, 4480, 1440};
+  const auto layout = "-1920,360,1920,1080;0,0,2560,1440";
+
+  struct Row
+  {
+    int32_t macY;
+    Pos today;
+    Pos withTheLayout;
+  };
+  // above the left monitor (rows 0 to 359 of the PC) the left edge of the desktop is a hole
+  for (const auto &row :
+       {Row{0, {-1920, 0}, {0, 0}}, Row{100, {-1920, 129}, {0, 129}}, Row{250, {-1920, 322}, {0, 322}},
+        Row{558, {-1920, 720}, {-1920, 720}}, Row{1000, {-1920, 1289}, {-1920, 1289}},
+        Row{1116, {-1920, 1439}, {-1920, 1439}}}) {
+    auto legacy = neighbours(kPrimaryShapes[0], desktop, Direction::Right);
+    QCOMPARE(text(*crossToC(*legacy, Direction::Right, row.macY)), text(row.today));
+
+    auto aware = neighbours(kPrimaryShapes[0], desktop, Direction::Right);
+    aware->configureExperiment(true, {{"C", layout}});
+    QCOMPARE(text(*crossToC(*aware, Direction::Right, row.macY)), text(row.withTheLayout));
+  }
+
+  // pushed to the left on the primary monitor above the left monitor: no 1920 pixels of travel in the hole before it
+  // leaves
+  const auto pushLeft = [&](bool experiment) {
+    PointerRig rig(kPrimaryShapes[0], {{"C", desktop}});
+    rig.link("C", Direction::Left, "primary");
+    if (experiment)
+      rig.configureExperiment(true, {{"C", layout}});
+    return pushOutOfC(rig, Direction::Left, {1280, 200}, 0).moves;
+  };
+  QCOMPARE(pushLeft(false), 189);
+  QCOMPARE(pushLeft(true), 76);
+}
+
 void ServerTests::monitorGeometry_enteringAHole_landsOnAMonitor()
 {
   const QuietLog quiet;

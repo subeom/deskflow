@@ -145,6 +145,7 @@ This section contains options used when in server mode it will begin with `[serv
 | enableHeartbeat    | `true` or `false` | Send a heartbeat to connected clients; this has been replaced by internal keep alive (default: false)|
 | enableSwitchDelay  | `true` or `false` | Switching will be delayed by the set value (default: false)|
 | enableSwitchDoubleTap  | `true` or `false` | Enables the doubletap to switch method (default: false)|
+| experimentalMultiMonitor | `true` or `false` | Experimental: map the pointer around the holes of the desktop of the computers that have a `monitorLayout`, see [Experimental: multi-monitor aware cursor mapping](#experimental-multi-monitor-aware-cursor-mapping). `false` behaves exactly as before. (default: false)|
 | externalConfig     | `true` or `false` | When true use the external config path |
 | externalConfigFile | Filepath          | Path the server config file if it does not exist the GUI will it generated based on the `internalConfig` section.|
 | gridHeight         | int               | Height of the server's intenal grid used for the computer layout (default: 3)|
@@ -181,6 +182,59 @@ What this does not do:
 
 Clipboard sharing can be turned off for a single computer, for example one whose clipboard is rewritten by another program all the time (**Share clipboard with this computer** in **Computer settings**, `shareClipboard` in its `[computer_...]` section). The server then does not tell that computer about a copy, does not send it a clipboard, ignores what the computer copies, and tells it to turn its own clipboard sharing off. The other computers keep sharing among themselves. Nothing is sent for a computer that shares (the default), so an existing configuration behaves as before.
 
+#### Experimental: multi-monitor aware cursor mapping
+
+Deskflow treats a computer as one rectangle, the bounding box of its monitors. When the monitors do not make up a rectangle (monitors of different heights side by side, an L shape, a portrait monitor next to a landscape one) the box has *holes*: a pointer that comes in across the edge of a hole is put on nothing, and the operating system moves it somewhere else, and a pointer that is pushed against a monitor edge that is not an edge of the box has to be pushed through the whole hole before the cursor goes on to the next computer (up to a screen width of "dead" travel). If all of your computers are rectangles, or no link leads to the side of a hole, this does nothing for you.
+
+With this on, the server is given the monitors of a computer by you, and then puts the pointer on a monitor when it comes in, lets it leave through any exposed edge, including the inner edges of an L, and moves it over the monitors, not into the holes. It is **experimental and off by default**; off, and for every computer that has no layout, Deskflow behaves exactly as before, and **nothing about it is sent to a computer**: the Windows and macOS clients you have need no new build.
+
+**Turn it on** with **Experimental: multi-monitor aware cursor mapping** in **Server Configuration > Advanced** (`experimentalMultiMonitor` in `[server]`), then give a computer its monitors in **Computer settings > Monitor layout** (`monitorLayout` in `[computer_<name>]`). The text field is available only while the check box is on.
+
+**The text** is the monitors of the computer as `x,y,w,h`, separated by `;` or by lines: the position of the top left corner and the size of each monitor, **in the coordinates that the computer reports its screen in**: physical pixels of the virtual desktop on Windows (the origin is the top left of the primary monitor, a monitor on its left or above it has a negative position), points on macOS. Spaces, empty items, a `;` at the end and Windows line ends are all right. It is checked as you type: 1 to 16 monitors, a width and a height greater than 0, none overlapping, all in one connected shape (they have to share part of an edge: monitors that only touch at a corner, or have a gap between them, are refused), and numbers that a screen size can have (-32768 to 32767). Monitors that are exactly the same (a mirrored display) count once. A layout that is not valid is not saved, and the line under the field says what is wrong with it.
+
+```
+0,0,2560,1440
+-1920,360,1920,1080
+```
+
+**The box has to fit.** The smallest rectangle that has all of the monitors in it has to be exactly the screen size the computer reports to the server (the server log says which it is when it does not fit: `monitor geometry off for "PC": the monitor layout does not match the screen size the computer reported (layout ..., reported ...)`). If it is not, the layout is not used, and the computer is mapped as it always was; it is used again when the sizes are the same again, so a resolution or monitor change cannot leave a stale layout in use. A layout whose monitors make up a rectangle changes nothing, and is not used.
+
+**Capturing a layout.** The layout can be written by hand from the display settings of the computer (the position and the size of each monitor in pixels, with the primary monitor at 0,0). The diagnostic helpers that were written for this feature print it, with the holes of each edge, as a block to paste, and **Import from diagnostic file...** (or pasting the block, with the `computer:` and `space:` lines and `scale=` and `primary` after the numbers) reads it; a block that has a monitor that is wrong is put in the field to be put right. They are not part of this repository, so these are the commands:
+
+- **macOS** (needs the Xcode command line tools): this prints the monitors in points, which is what Deskflow uses on a Mac:
+
+  ```
+  cat > /tmp/monitors.swift <<'EOF'
+  import CoreGraphics
+  var ids = [CGDirectDisplayID](repeating: 0, count: 16)
+  var count: UInt32 = 0
+  CGGetActiveDisplayList(16, &ids, &count)
+  for id in ids.prefix(Int(count)) {
+    let r = CGDisplayBounds(id)
+    print("monitor \(Int(r.origin.x)),\(Int(r.origin.y)),\(Int(r.size.width)),\(Int(r.size.height))")
+  }
+  EOF
+  swiftc -O /tmp/monitors.swift -o /tmp/monitors && /tmp/monitors
+  ```
+
+  It only reads the display list. A display that mirrors another has the same rectangle and counts once.
+- **Windows**: the helper script `mmdiag-windows.ps1` reads the virtual desktop in physical pixels and prints the block (`powershell -NoProfile -ExecutionPolicy Bypass -File .\mmdiag-windows.ps1 -OutFile "$env:USERPROFILE\Desktop\mmdiag.txt"`). It has not been run on Windows yet. Without it, work the numbers out from **Settings > System > Display**: the size of each monitor in pixels, with the primary monitor at 0,0 and the others placed by how they are lined up (a monitor on the left of the primary one has a negative x, one above it a negative y). Windows does not show positions as numbers, and at a scaling above 100 % the arrangement is drawn smaller than the pixels, so check the box of your numbers against the size that the server log gives for the computer (the log line above) and correct them until it fits.
+
+**Example.** A Windows PC with a 2560×1440 primary monitor and a 1920×1080 monitor on its left, with the bottoms of both on one line, so that the left one starts 360 pixels lower. The PC reports its screen as `-1920,0 4480x1440`, and the layout is
+
+```
+-1920,360,1920,1080
+0,0,2560,1440
+```
+
+Say the PC is on the right of a MacBook with a 1728×1117 screen, so that the pointer goes from the right edge of the Mac to the left edge of the PC. Above the left monitor (the first 360 rows of the PC) the left edge of the PC's box is a hole. Without the layout the pointer enters at `-1920,129` when it leaves the Mac 100 pixels from the top, which is on nothing, and Windows moves it. With the layout it enters at `0,129`, on the left edge of the primary monitor. From 360 rows down, at 558 pixels it enters at `-1920,720` on the left monitor, with and without the layout. And a pointer that is pushed to the left on the primary monitor above the left monitor goes to the Mac as soon as it reaches the left edge of the primary monitor, not 1920 pixels later at the edge of the box.
+
+**Link intervals** (`left(0,75) = PC(0,75)`, in an external config file) are still percentages of the side of the bounding box, for a computer that has a layout as for any other, so they do not shift when a layout is set. What differs is the pixel that a percentage leads to: the outermost monitor pixel of the row or column at that percentage, which, below a smaller monitor, is the inner edge of the monitor that is there and not the edge of the box.
+
+**When it takes effect.** The graphical interface and the core share the settings file. Saving the server configuration dialog restarts a running core, which reads the check box and every layout again. After a settings file that was edited by hand, restart the core (reloading the configuration reads them too). The core logs one INFO line each time what is decided for a computer changes, `monitor geometry on for "PC": 2 monitors, -1920,0 4480x1440` or `monitor geometry off for "PC": <why>`, and, while the experiment is on, one at every switch of computers with the shape of both, the edge and its fraction, and the pixel the pointer enters at.
+
+**What it does not do.** The client does not report its monitors; you give them to the server. The server's own screen is not mapped this way (a layout set for it is ignored, and the log says so). A layout is checked against the size of the box, so an arrangement that keeps the box but moves monitors in it is not noticed. Monitors are not screens of their own and cannot be linked one by one. Mouse speed is not changed. The design, the limits and the tests are in [docs/dev/multi-monitor.md](dev/multi-monitor.md).
+
 ### Computer Settings
 
 Each computer will have a section where its configuration will be stored, if the computer was named "foo" the section will be named `[computer_foo]`
@@ -198,6 +252,7 @@ Each computer will have a section where its configuration will be stored, if the
 | modifierMeta            | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's meta modifer to different key on this computer|
 | modifierShift           | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's shift modifer to different key on this computer|
 | modifierSuper           | `shift` `ctrl` `alt` `altgr` `meta` `super` or  `none` | Map the server's super modifer to different key on thist computer|
+| monitorLayout           | Text `x,y,w,h[;x,y,w,h...]` | Experimental: the monitors of this computer, see [Experimental: multi-monitor aware cursor mapping](#experimental-multi-monitor-aware-cursor-mapping). Empty (the default, and what a configuration from before has) means the computer is mapped as it always was. |
 | shareClipboard          | `true` or `false` | `false` keeps this computer out of clipboard sharing: its clipboard is not sent to the other computers, theirs is not sent to it, and the server tells it to switch its own clipboard sharing off (`CLPS`), so it does not read its clipboard either. It is **Share clipboard with this computer** in the **Computer settings** dialog. A missing value means `true`, so an existing configuration shares with every computer as before [default: true] |
 | f18Action               | `passthrough` or `hangul` | What the F18 key does when this computer is a Windows destination of a macOS server over a protocol 1.9 link: `passthrough` sends F18 unchanged, `hangul` sends the Korean-English (Hangul) key instead. A missing or unrecognised value means `passthrough` [default: passthrough] |
 | crossOSInvertX         | `true` or `false` | Invert horizontal wheel deltas only on a negotiated macOS-to-Windows protocol 1.9 link [default: false] |

@@ -80,6 +80,7 @@ private Q_SLOTS:
   void pointerPin_cornersOfThePrimary_horizontalIsTriedFirst_data();
   void pointerPin_cornersOfThePrimary_horizontalIsTriedFirst();
   void monitorGeometry_enteringAHole_landsOnAMonitor();
+  void monitorGeometry_theExampleOfTheDocumentation();
   void monitorGeometry_leavingThroughAnInnerEdge_happensAtOnce();
   void monitorGeometry_pushedAgainstAnInnerEdge_hasNoDeadTravel();
   void monitorGeometry_linkIntervals_areAlongTheBoundingBoxOfTheDesktop();
