@@ -15,6 +15,7 @@
 
 #include "dialogs/AboutDialog.h"
 #include "dialogs/ClientConfigDialog.h"
+#include "dialogs/ConnectionTestDialog.h"
 #include "dialogs/FingerprintDialog.h"
 #include "dialogs/HelpDialog.h"
 #include "dialogs/ServerConfigDialog.h"
@@ -291,6 +292,7 @@ void MainWindow::connectSlots()
   connect(ui->btnSaveServerConfig, &QPushButton::clicked, this, &MainWindow::saveServerConfig);
   connect(ui->btnConfigureServer, &QPushButton::clicked, this, [this] { showConfigureServer(""); });
   connect(ui->btnConfigureClient, &QPushButton::clicked, this, [this] { showConfigureClient(); });
+  connect(ui->btnTestConnection, &QPushButton::clicked, this, &MainWindow::showConnectionTest);
   connect(ui->lblComputerName, &QLabel::linkActivated, this, &MainWindow::openSettings);
 
   connect(ui->rbModeServer, &QRadioButton::toggled, this, &MainWindow::coreModeToggled);
@@ -717,6 +719,8 @@ void MainWindow::applyConfig()
   ui->cbHostname->addItems(Settings::value(Settings::Client::RecentRemoteHosts).toStringList());
   if (!host.isEmpty())
     ui->cbHostname->setCurrentText(host);
+  // the signals of the field are blocked here, so the button is not told about the text
+  ui->btnTestConnection->setEnabled(!ui->cbHostname->currentText().trimmed().isEmpty());
 
   updateFingerprintButton();
   setTrayIcon();
@@ -1137,6 +1141,14 @@ void MainWindow::showConfigureClient()
   }
 }
 
+void MainWindow::showConnectionTest()
+{
+  // what is typed in the field, which may not be what the core was started with
+  ConnectionTestDialog dialog(this, ui->cbHostname->currentText(), Settings::value(Settings::Core::Port).toInt());
+  dialog.runTest();
+  dialog.exec();
+}
+
 void MainWindow::secureSocket(bool secureSocket)
 {
   m_secureSocket = secureSocket;
@@ -1265,6 +1277,7 @@ void MainWindow::toggleCanRunCore(bool enableButtons)
 void MainWindow::remoteHostChanged(const QString &newRemoteHost)
 {
   m_coreProcess.setAddress(newRemoteHost);
+  ui->btnTestConnection->setEnabled(!newRemoteHost.trimmed().isEmpty());
   toggleCanRunCore(!newRemoteHost.isEmpty() && ui->rbModeClient->isChecked());
   if (newRemoteHost.isEmpty()) {
     Settings::setValue(Settings::Client::RemoteHost);

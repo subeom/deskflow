@@ -7,10 +7,21 @@
 #include "ClientConfigDialog.h"
 #include "ui_ClientConfigDialog.h"
 
+#include "common/ConnectionDiagnosis.h"
 #include "common/Settings.h"
 #include "gui/widgets/SettingsDialogButtonBox.h"
 
 #include <QPushButton>
+
+namespace {
+
+// what the client uses, which is the default when the settings file holds something that is not a time limit
+double connectTimeoutSeconds()
+{
+  return deskflow::diagnosis::connectTimeoutFromSetting(Settings::value(Settings::Client::ConnectTimeout)).seconds;
+}
+
+} // namespace
 
 ClientConfigDialog::ClientConfigDialog(QWidget *parent)
     : QDialog(parent),
@@ -43,6 +54,7 @@ void ClientConfigDialog::updateControls() const
   const auto writable = Settings::isWritable();
   ui->cbDynamicConnectTime->setEnabled(writable);
   ui->cbLanguageSync->setEnabled(writable);
+  ui->sbConnectTimeout->setEnabled(writable);
   ui->cbXScrollInvert->setEnabled(writable);
   ui->sbXScrollScale->setEnabled(writable);
   ui->cbYScrollInvert->setEnabled(writable);
@@ -64,6 +76,7 @@ void ClientConfigDialog::initConnections() const
   );
   connect(ui->btnClearServerHistory, &QPushButton::clicked, this, &ClientConfigDialog::clearServerHistory);
   connect(ui->cbLanguageSync, &QCheckBox::checkStateChanged, this, &ClientConfigDialog::setButtonBoxEnabledButtons);
+  connect(ui->sbConnectTimeout, &QDoubleSpinBox::valueChanged, this, &ClientConfigDialog::setButtonBoxEnabledButtons);
   connect(ui->cbYScrollInvert, &QCheckBox::checkStateChanged, this, &ClientConfigDialog::setButtonBoxEnabledButtons);
   connect(ui->sbYScrollScale, &QDoubleSpinBox::valueChanged, this, &ClientConfigDialog::setButtonBoxEnabledButtons);
   connect(ui->cbXScrollInvert, &QCheckBox::checkStateChanged, this, &ClientConfigDialog::setButtonBoxEnabledButtons);
@@ -73,9 +86,10 @@ void ClientConfigDialog::initConnections() const
 
 bool ClientConfigDialog::isModified() const
 {
-  return (ui->cbDynamicConnectTime->isChecked() != Settings::value(Settings::Client::DynamicConnectionRetry).toBool()
-         ) ||
+  return (ui->cbDynamicConnectTime->isChecked() !=
+          Settings::value(Settings::Client::DynamicConnectionRetry).toBool()) ||
          (ui->cbLanguageSync->isChecked() != Settings::value(Settings::Client::LanguageSync).toBool()) ||
+         (ui->sbConnectTimeout->value() != connectTimeoutSeconds()) ||
          (ui->cbYScrollInvert->isChecked() != Settings::value(Settings::Client::InvertYScroll).toBool()) ||
          (ui->sbYScrollScale->value() != Settings::value(Settings::Client::YScrollScale).toDouble()) ||
          (ui->cbXScrollInvert->isChecked() != Settings::value(Settings::Client::InvertXScroll).toBool()) ||
@@ -87,6 +101,7 @@ bool ClientConfigDialog::isDefault() const
   return (ui->cbDynamicConnectTime->isChecked() ==
           Settings::defaultValue(Settings::Client::DynamicConnectionRetry).toBool()) &&
          (ui->cbLanguageSync->isChecked() == Settings::defaultValue(Settings::Client::LanguageSync).toBool()) &&
+         (ui->sbConnectTimeout->value() == Settings::defaultValue(Settings::Client::ConnectTimeout).toDouble()) &&
          (ui->cbYScrollInvert->isChecked() == Settings::defaultValue(Settings::Client::InvertYScroll).toBool()) &&
          (ui->sbYScrollScale->value() == Settings::defaultValue(Settings::Client::YScrollScale).toDouble()) &&
          (ui->cbXScrollInvert->isChecked() == Settings::defaultValue(Settings::Client::InvertXScroll).toBool()) &&
@@ -105,6 +120,7 @@ void ClientConfigDialog::load()
 {
   ui->cbDynamicConnectTime->setChecked(Settings::value(Settings::Client::DynamicConnectionRetry).toBool());
   ui->cbLanguageSync->setChecked(Settings::value(Settings::Client::LanguageSync).toBool());
+  ui->sbConnectTimeout->setValue(connectTimeoutSeconds());
   ui->cbYScrollInvert->setChecked(Settings::value(Settings::Client::InvertYScroll).toBool());
   ui->sbYScrollScale->setValue(Settings::value(Settings::Client::YScrollScale).toDouble());
   ui->cbXScrollInvert->setChecked(Settings::value(Settings::Client::InvertXScroll).toBool());
@@ -116,6 +132,7 @@ void ClientConfigDialog::resetToDefault()
 {
   ui->cbDynamicConnectTime->setChecked(Settings::defaultValue(Settings::Client::DynamicConnectionRetry).toBool());
   ui->cbLanguageSync->setChecked(Settings::defaultValue(Settings::Client::LanguageSync).toBool());
+  ui->sbConnectTimeout->setValue(Settings::defaultValue(Settings::Client::ConnectTimeout).toDouble());
   ui->cbYScrollInvert->setChecked(Settings::defaultValue(Settings::Client::InvertYScroll).toBool());
   ui->sbYScrollScale->setValue(Settings::defaultValue(Settings::Client::YScrollScale).toDouble());
   ui->cbXScrollInvert->setChecked(Settings::defaultValue(Settings::Client::InvertXScroll).toBool());
@@ -126,6 +143,7 @@ void ClientConfigDialog::save()
 {
   Settings::setValue(Settings::Client::DynamicConnectionRetry, ui->cbDynamicConnectTime->isChecked());
   Settings::setValue(Settings::Client::LanguageSync, ui->cbLanguageSync->isChecked());
+  Settings::setValue(Settings::Client::ConnectTimeout, ui->sbConnectTimeout->value());
   Settings::setValue(Settings::Client::InvertYScroll, ui->cbYScrollInvert->isChecked());
   Settings::setValue(Settings::Client::YScrollScale, ui->sbYScrollScale->value());
   Settings::setValue(Settings::Client::InvertXScroll, ui->cbXScrollInvert->isChecked());

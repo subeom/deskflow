@@ -130,6 +130,7 @@ private:
   void saveSettings() const;
   void showConfigureServer(const QString &message);
   void showConfigureClient();
+  void showConnectionTest();
   void restoreWindow();
   void setupControls();
   void showFirstConnectedMessage();
