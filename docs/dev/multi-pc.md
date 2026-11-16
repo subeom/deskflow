@@ -92,6 +92,14 @@ just to check a build. For a read-only core smoke check and an optional GUI laun
 .\build\windows-Release\bin\deskflow.exe
 ```
 
+### The version a build reports
+
+The version comes from `git describe` at configure time (`cmake/GitVersion.cmake`): the last release tag of three
+numbers, `v1.27.0`, and the number of commits since it, so a commit builds `1.27.0.N` with the same `N` on every PC.
+A tag of four numbers, such as `v1.27.0.45` that marks an installed build, is **not** a release tag and is ignored (it
+used to be read as `1.27.45.N`). The clone needs the tag `v1.27.0` (`git fetch --tags` brings it; a shallow clone has no
+tags and reports `1.27.0.9999`). The number is read when CMake configures, which `windows-build.ps1` does on every run.
+
 ### Validation on the setup PC
 
 On 2026-11-15, Windows x64 Release at source revision `c4eb0426` built successfully
