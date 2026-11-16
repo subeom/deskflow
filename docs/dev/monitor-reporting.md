@@ -169,6 +169,34 @@ Computers that never report keep the manual path (`monitorLayout`, the size, the
 
 The tests run these with the real proxy classes, on the bytes: golden bytes for every link where the gate is not met.
 
+## Windows pointer accuracy: found, not changed
+
+Read again at this commit, `MSWindowsDesks::deskMouseMove` (the move of a **client**) sends
+`SendInput(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE)` with `v = (DWORD)((65535.0f * x) / (w - 1) + 0.5f)` where `w` and
+`h` are `SM_CXSCREEN` and `SM_CYSCREEN`, the **primary** monitor, **without** `MOUSEEVENTF_VIRTUALDESK`, while the
+shape it serves is the whole virtual desktop. Two things in it are not exact:
+
+1. `x` outside the primary monitor (right of it, below it) gives a value above 65 535, and a monitor on its left or above
+   it gives a **negative** value; Windows is relied on to extrapolate, which is what the code has always done and what
+   Deskflow, Synergy and Barrier users with a monitor on each side of the primary have worked with for years on x64.
+2. `(DWORD)` of a negative `float` is undefined in C++. MSVC for x64 converts through a signed 64-bit integer, so it
+   wraps to the right 32-bit pattern. A native **ARM64** build converts with a saturating instruction (clang on arm64
+   measured 0 for every negative value, the research of this feature); MSVC ARM64 is inferred, not measured.
+
+**Not changed here**, on purpose. The only Windows build in use is x64 (`windows-build.ps1` is x64 only, and an x64 build
+on a Windows-on-ARM PC is emulated with the x64 conversion), nothing says that a monitor next to the primary one
+lands wrong today, and the pointer must stay pixel for pixel what it is on every link that did not negotiate something
+new. Nothing of the monitor reporting depends on it: the server only sends positions that are on a monitor, in the space
+of `DINF`.
+
+**The fix that is proposed, gated, untested on Windows.** A pure function `normalizeAbsolute(position, origin, extent)`
+= `round((position - origin) * 65535 / (extent - 1))` in `int64`/`double` (no cast of a negative number to unsigned,
+clamped to 0..65 535), with the virtual-desktop origin and size (`SM_X/Y/CX/CYVIRTUALSCREEN`, which the shape already
+has) and `MOUSEEVENTF_VIRTUALDESK` added to the flags. It would be used **only** when its own capability bit was
+negotiated (never merely because the monitors are reported), with the experiment on, so a link that is not that link
+keeps the old formula. It needs a Windows PC with a monitor left of or above the primary one, and the two numbers that
+`mmdiag-windows.ps1` prints, to be called a fix and not a guess; until then it stays a proposal.
+
 ## Not done / not verified
 
 - Linux (X11, libei) does not report: `getMonitors()` is empty, the capability bit is not set, they stay on the legacy
