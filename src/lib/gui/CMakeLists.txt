@@ -44,6 +44,8 @@ add_library(${target} STATIC
   config/ServerConfig.h
   core/CoreProcess.cpp
   core/CoreProcess.h
+  core/ConnectionProbe.cpp
+  core/ConnectionProbe.h
   core/NetworkMonitor.cpp
   core/ReportedScreen.cpp
   core/ReportedScreen.h
@@ -60,6 +62,8 @@ add_library(${target} STATIC
   dialogs/ComputerSettingsDialog.cpp
   dialogs/ComputerSettingsDialog.h
   dialogs/ComputerSettingsDialog.ui
+  dialogs/ConnectionTestDialog.cpp
+  dialogs/ConnectionTestDialog.h
   dialogs/FingerprintDialog.cpp
   dialogs/FingerprintDialog.h
   dialogs/HelpDialog.cpp

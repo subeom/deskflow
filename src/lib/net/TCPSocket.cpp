@@ -12,6 +12,7 @@
 #include "base/IEventQueue.h"
 #include "base/Log.h"
 #include "mt/Lock.h"
+#include "net/ConnectFailureKind.h"
 #include "net/NetworkAddress.h"
 #include "net/SocketException.h"
 #include "net/SocketMultiplexer.h"
@@ -277,7 +278,7 @@ void TCPSocket::connect(const NetworkAddress &addr)
         m_writable = true;
       }
     } catch (const ArchNetworkException &e) {
-      throw SocketConnectException(e.what());
+      throw SocketConnectException(e.what(), deskflow::net::failureKindOf(e));
     }
   }
   setJob(newJob());
@@ -404,9 +405,9 @@ ISocketMultiplexerJob *TCPSocket::newJob()
   }
 }
 
-void TCPSocket::sendConnectionFailedEvent(const char *msg)
+void TCPSocket::sendConnectionFailedEvent(const char *msg, deskflow::diagnosis::FailureKind kind)
 {
-  auto *info = new ConnectionFailedInfo(msg);
+  auto *info = new ConnectionFailedInfo(msg, kind);
   m_events->addEvent(
       Event(EventTypes::DataSocketConnectionFailed, getEventTarget(), info, Event::EventFlags::DontFreeData)
   );
@@ -484,7 +485,7 @@ ISocketMultiplexerJob *TCPSocket::serviceConnecting(ISocketMultiplexerJob *job, 
       // connection may have failed or succeeded
       ARCH->throwErrorOnSocket(m_socket);
     } catch (const ArchNetworkException &e) {
-      sendConnectionFailedEvent(e.what());
+      sendConnectionFailedEvent(e.what(), deskflow::net::failureKindOf(e));
       onDisconnected();
       return newJob();
     }

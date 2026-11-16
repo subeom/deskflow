@@ -6,11 +6,13 @@
 
 #include "DialogLayoutTests.h"
 
+#include "../core/FakeProbeNetwork.h"
 #include "common/Settings.h"
 #include "gui/config/Computer.h"
 #include "gui/config/ServerConfig.h"
 #include "gui/dialogs/ClientConfigDialog.h"
 #include "gui/dialogs/ComputerSettingsDialog.h"
+#include "gui/dialogs/ConnectionTestDialog.h"
 #include "gui/dialogs/MonitorEditorDialog.h"
 #include "gui/dialogs/ServerConfigDialog.h"
 #include "gui/widgets/ArrangementCanvas.h"
@@ -40,6 +42,7 @@
 #include <QStyleFactory>
 #include <QTabWidget>
 #include <QTest>
+#include <QTextBrowser>
 #include <QWidget>
 
 #include <optional>
@@ -546,6 +549,56 @@ void DialogLayoutTests::serverConfigDialog_computersTab_withTheArrangement_isLai
     Settings::setValue(Settings::Computer::ArrangementX.arg(QString::fromLatin1(name)));
     Settings::setValue(Settings::Computer::ArrangementY.arg(QString::fromLatin1(name)));
   }
+}
+
+void DialogLayoutTests::connectionTestDialog_isLaidOutWithoutSqueezing_data()
+{
+  addScenarios();
+}
+
+// The result panel holds long wrapped text (what is wrong and what to try) for several addresses, a status line and
+// three buttons: none of it may be squeezed or overlap, in any style, font size or window size
+void DialogLayoutTests::connectionTestDialog_isLaidOutWithoutSqueezing()
+{
+  using deskflow::diagnosis::FailureKind;
+  QFETCH(QString, style);
+  QFETCH(qreal, fontScale);
+  QFETCH(int, sizeMode);
+
+  QVERIFY(QApplication::setStyle(style) != nullptr);
+  probetest::FakeNetwork network;
+  network.scripts[QStringLiteral("10.0.0.5")] = probetest::Script{};
+  network.scripts[QStringLiteral("10.0.0.6")] = probetest::open(5);
+  network.scripts[QStringLiteral("10.0.0.7")] =
+      probetest::fail(FailureKind::Refused, QStringLiteral("Connection refused"), 5);
+  network.scripts[QStringLiteral("10.0.0.8")] =
+      probetest::fail(FailureKind::NoRoute, QStringLiteral("No route to host"), 5);
+  network.resolveErrors[QStringLiteral("ghost.example")] = QStringLiteral("Host not found");
+  ConnectionTestDialog dialog(
+      nullptr, QStringLiteral("10.0.0.5, 10.0.0.6, 10.0.0.7, 10.0.0.8, ghost.example, 10.0.0.9:0"), 24800,
+      [&network](QObject *parent) {
+        auto *probe = probetest::makeProbe(network, 60);
+        probe->setParent(parent);
+        return probe;
+      }
+  );
+  dialog.runTest();
+  QTRY_VERIFY_WITH_TIMEOUT(!dialog.isTesting(), 5000);
+  showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
+  QVERIFY(dialog.isVisible());
+  auto *results = dialog.findChild<QTextBrowser *>(QStringLiteral("resultsView"));
+  QVERIFY(results != nullptr && results->isVisibleTo(&dialog));
+  // the panel is a few lines of its own font, not a sliver
+  QVERIFY2(results->height() >= results->fontMetrics().lineSpacing() * 10, qPrintable(describe(results->geometry())));
+  QVERIFY(dialog.findChild<QPushButton *>(QStringLiteral("btnCopySummary"))->isVisibleTo(&dialog));
+  QVERIFY(dialog.findChild<QPushButton *>(QStringLiteral("btnRunAgain"))->isVisibleTo(&dialog));
+  grabIfRequested(QStringLiteral("ConnectionTestDialog"), dialog);
+
+  const auto violations = findLayoutViolations(dialog);
+  QVERIFY2(
+      violations.isEmpty(),
+      qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+  );
 }
 
 QTEST_MAIN(DialogLayoutTests)

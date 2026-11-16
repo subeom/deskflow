@@ -82,6 +82,11 @@ enum class EventTypes : uint32_t
   */
   DataSocketConnectionFailed,
 
+  /** A secure socket sends this event when the secure handshake (TLS) of an outgoing connection failed.
+      The data is a malloc'ed deskflow::diagnosis::FailureKind: TlsHandshakeFailed or FingerprintRejected.
+  */
+  DataSocketSecureFailed,
+
   /// A socket sends this event when a remote connection is waiting to be accepted.
   ListenSocketConnecting,
 

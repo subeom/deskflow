@@ -458,6 +458,7 @@ int SecureSocket::secureConnect(int socket)
 {
   if (!loadCertificate(Settings::value(Settings::Security::Certificate).toString())) {
     LOG_ERR("could not load client certificates");
+    sendSecureFailedEvent(deskflow::diagnosis::FailureKind::TlsHandshakeFailed);
     disconnect();
     return -1;
   }
@@ -479,6 +480,7 @@ int SecureSocket::secureConnect(int socket)
 
   if (isFatal()) {
     LOG_ERR("failed to connect secure socket");
+    sendSecureFailedEvent(deskflow::diagnosis::FailureKind::TlsHandshakeFailed);
     retry = 0;
     return -1;
   }
@@ -496,11 +498,13 @@ int SecureSocket::secureConnect(int socket)
   if (verifyCertFingerprint(Settings::tlsTrustedServersDb())) {
     LOG_INFO("connected to secure socket");
     if (!showCertificate()) {
+      sendSecureFailedEvent(deskflow::diagnosis::FailureKind::TlsHandshakeFailed);
       disconnect();
       return -1; // Cert fail, error
     }
   } else {
     LOG_ERR("failed to verify server certificate fingerprint");
+    sendSecureFailedEvent(deskflow::diagnosis::FailureKind::FingerprintRejected);
     disconnect();
     return -1; // Fingerprint failed, error
   }
@@ -611,6 +615,17 @@ void SecureSocket::disconnect()
   using enum EventTypes;
   sendEvent(SocketDisconnected);
   sendEvent(StreamInputShutdown);
+}
+
+void SecureSocket::sendSecureFailedEvent(deskflow::diagnosis::FailureKind kind)
+{
+  // plain data the queue frees after the event was handled
+  auto *data = static_cast<deskflow::diagnosis::FailureKind *>(std::malloc(sizeof(deskflow::diagnosis::FailureKind)));
+  if (data == nullptr) {
+    return;
+  }
+  *data = kind;
+  getEvents()->addEvent(Event(EventTypes::DataSocketSecureFailed, getEventTarget(), data));
 }
 
 bool SecureSocket::verifyCertFingerprint(const QString &FingerprintDatabasePath) const

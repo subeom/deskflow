@@ -9,6 +9,7 @@
 #pragma once
 
 #include "base/BaseException.h"
+#include "common/ConnectionDiagnosis.h"
 #include "io/IOException.h"
 
 #include <QByteArray>
@@ -176,10 +177,35 @@ protected:
  */
 class SocketConnectException : public SocketWithWhatException
 {
-  using SocketWithWhatException::SocketWithWhatException;
+public:
+  //! \p msg is the text of the operating system, \p kind says what it means (Unknown when not known)
+  explicit SocketConnectException(
+      const QString &msg, deskflow::diagnosis::FailureKind kind = deskflow::diagnosis::FailureKind::Unknown
+  )
+      : SocketWithWhatException(msg),
+        m_kind(kind),
+        m_detail(msg.toStdString())
+  {
+    // do nothing
+  }
+
+  deskflow::diagnosis::FailureKind kind() const noexcept
+  {
+    return m_kind;
+  }
+
+  //! The operating system's text without the "cannot connect socket" prefix
+  const std::string &detail() const noexcept
+  {
+    return m_detail;
+  }
 
 protected:
   QString getWhat() const throw() override;
+
+private:
+  deskflow::diagnosis::FailureKind m_kind;
+  std::string m_detail;
 };
 
 /**

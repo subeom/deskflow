@@ -28,6 +28,8 @@ private Q_SLOTS:
   void monitorEditorDialog_isLaidOutWithoutSqueezing();
   void serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing_data();
   void serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing();
+  void connectionTestDialog_isLaidOutWithoutSqueezing_data();
+  void connectionTestDialog_isLaidOutWithoutSqueezing();
 
 private:
   QTemporaryDir m_settingsDir;
