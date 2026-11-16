@@ -122,5 +122,6 @@ target_link_libraries(${target}
     common
     platform
     net
+    server
     Qt6::Widgets
 )
