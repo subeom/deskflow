@@ -745,6 +745,35 @@ void ServerConfigDialogTests::arrangement_monitorsAreDrawnInTheEditor_andKeptOnO
   QVERIFY(!panel->hasErrors());
 }
 
+void ServerConfigDialogTests::arrangement_aComputerResizedOnTheCanvas_hasItsSizeSaidAndSaved()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  for (const auto &[name, x, y] :
+       std::vector<std::tuple<QString, double, double>>{{"srv", 0, 0}, {"PC", -1920, 0}, {"MINI", 3440, 0}}) {
+    Settings::setValue(Settings::Computer::ArrangementX.arg(name), x);
+    Settings::setValue(Settings::Computer::ArrangementY.arg(name), y);
+  }
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  dialog.show();
+  auto *panel = panelOf(dialog);
+  auto *issues = panel->findChild<QLabel *>(QStringLiteral("lblArrangementIssues"));
+  QVERIFY(issues->text().contains(QStringLiteral("PC: size assumed")));
+
+  // the edges of the computer are dragged on the canvas: its size is said, and it is not assumed any more
+  Q_EMIT panel->canvas()->computerResized(QStringLiteral("PC"), 0, 0, 2560, 1440);
+  QVERIFY2(!issues->text().contains(QStringLiteral("PC: size assumed")), qPrintable(issues->text()));
+  QVERIFY(issues->text().contains(QStringLiteral("MINI: size assumed")));
+  const auto &arrangement = panel->canvas()->arrangement();
+  QCOMPARE(arrangement.computers[static_cast<size_t>(arrangement.indexOf("PC"))].shape().w, 2560);
+  // and it is in the configuration that is saved
+  Q_EMIT buttons(dialog)->accepted();
+  QCOMPARE(Settings::value(Settings::Computer::ArrangementWidth.arg("PC")).toInt(), 2560);
+  QCOMPARE(Settings::value(Settings::Computer::ArrangementHeight.arg("PC")).toInt(), 1440);
+}
+
 void ServerConfigDialogTests::arrangement_screenshots_areMadeOfTheDialogs()
 {
   const auto originalStyle = QApplication::style()->name();

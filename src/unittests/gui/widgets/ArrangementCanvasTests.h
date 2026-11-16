@@ -17,6 +17,11 @@ private Q_SLOTS:
   void drag_escapeCancelsIt();
   void drag_aRightClickInTheMiddleOfIt_doesNotEndIt();
   void assumedSize_isMarkedOnTheComputerThatHasIt();
+  void resize_theEdgesOfTheOneRectangleOfAComputer_changeItsSize();
+  void resize_anEdgeSnapsToTheNeighbour_theRatiosAndTheReportedSize();
+  void resize_aComputerThatIsZoomed_isSizedInItsOwnUnits();
+  void resize_theServerAndAComputerOfSeveralMonitors_arePutAndNotResized();
+  void resize_overAnotherComputer_isNotDone();
   void drag_aBackgroundDrag_movesTheViewNotTheComputers();
   void keys_moveTheSelectedComputer();
   void doubleClick_asksToEditTheComputer();

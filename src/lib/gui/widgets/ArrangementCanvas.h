@@ -6,11 +6,16 @@
 #pragma once
 
 #include "server/Arrangement.h"
+#include "server/MonitorEditor.h"
 
 #include <QHash>
 #include <QPointF>
 #include <QRectF>
+#include <QSize>
 #include <QWidget>
+
+#include <optional>
+#include <vector>
 
 //! The arrangement of the computers, like the displays arrangement of macOS (experimental)
 /*!
@@ -54,6 +59,8 @@ public:
   {
     return m_assumed;
   }
+  //! The size that each computer reports, in its own units: a side of a computer that is resized snaps to it
+  void setReportedSizes(const QHash<QString, QSize> &sizes);
   void setStatus(const QString &computer, Status status);
   void setSelected(const QString &computer);
   QString selected() const
@@ -83,6 +90,8 @@ Q_SIGNALS:
   void selectedChanged(const QString &computer);
   //! A computer was double clicked
   void editRequested(const QString &computer);
+  //! The one rectangle of a computer was resized: it is now this one, in the coordinates of the computer
+  void computerResized(const QString &computer, int x, int y, int w, int h);
 
 protected:
   void paintEvent(QPaintEvent *event) override;
@@ -107,6 +116,10 @@ private:
       bool unconnected, bool dragged
   ) const;
   void cancelDrag();
+  //! A computer of one rectangle that is not the server has handles on its edges and corners
+  bool canResize(int index) const;
+  std::optional<deskflow::server::editor::Handle> handleAt(const QPointF &point) const;
+  QPointF toUnits(const QPointF &point) const;
   void moveSelected(double dx, double dy);
   int indexOf(const QString &computer) const;
   //! The arrangement as it is while a computer is dragged: with the computer where it would drop
@@ -117,6 +130,7 @@ private:
   std::vector<deskflow::server::arrangement::Issue> m_issues;
   QHash<QString, Status> m_status;
   QStringList m_assumed;
+  QHash<QString, QSize> m_reportedSizes;
   QString m_selected;
 
   // arrangement to widget: scale and where the arrangement origin is
@@ -137,6 +151,15 @@ private:
     bool panning = false;
     Qt::MouseButton button = Qt::NoButton;
     QPointF offsetAtPress;
+    // an edge or a corner is dragged
+    bool resizing = false;
+    deskflow::server::editor::Handle handle = deskflow::server::editor::Handle::Right;
+    double grabX = 0;
+    double grabY = 0;
+    deskflow::server::editor::Layout startLayout;
+    deskflow::server::arrangement::Computer preview;
+    bool previewValid = false;
+    std::vector<deskflow::server::arrangement::Guide> resizeGuides;
   };
   Drag m_drag;
 };

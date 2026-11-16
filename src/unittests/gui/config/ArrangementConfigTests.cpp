@@ -621,6 +621,41 @@ void ArrangementConfigTests::monitorEditing_drawsWhatIsStored_andStoresWhatIsMad
   QCOMPARE(pc.arrangementY(), made.originY);
 }
 
+void ArrangementConfigTests::setComputerSize_isTheSizeOfAComputerThatHasNone_andTheMonitorOfOneThatHasOne()
+{
+  writeGrid({{6, "A"}, {7, "B"}, {8, "C"}}, "A");
+  ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{});
+  Settings::setValue(Settings::Computer::MonitorLayout.arg("C"), QStringLiteral("-100,40,1920,1080"));
+  Settings::setValue(Settings::Computer::MonitorScales.arg("C"), QStringLiteral("150"));
+  ServerConfig config;
+  const auto find = [&](const char *name) -> const ::Computer & {
+    for (const auto &c : std::as_const(config).computers()) {
+      if (c.name() == name)
+        return c;
+    }
+    qFatal("there is no %s", name);
+  };
+
+  config.setComputerSize("b", 2560, 1440);
+  QCOMPARE(find("B").arrangementWidth(), 2560);
+  QCOMPARE(find("B").arrangementHeight(), 1440);
+  QVERIFY(find("B").monitorLayout().isEmpty());
+  QVERIFY(!config.assumedSizes().contains("B"));
+
+  // a layout of one monitor is a layout of one monitor, where it was; its scale is no longer one that was drawn
+  config.setComputerSize("C", 2560, 1440);
+  QCOMPARE(find("C").monitorLayout(), QStringLiteral("-100,40,2560,1440"));
+  QVERIFY(find("C").monitorScales().isEmpty());
+  QCOMPARE(find("C").arrangementWidth(), 0);
+
+  // the server's screen is the operating system's, and a size that cannot be is none
+  config.setComputerSize("A", 800, 600);
+  QCOMPARE(find("A").arrangementWidth(), 0);
+  config.setComputerSize("B", 0, 100);
+  QCOMPARE(find("B").arrangementWidth(), 2560);
+  forget({"C"});
+}
+
 void ArrangementConfigTests::reportedScreen_doesNotChangeWhatIsGenerated()
 {
   // what a computer reported is in memory only: the file that is written must be the same with it and without it

@@ -92,6 +92,9 @@ public:
   monitors and no size that was said is drawn as.
   */
   void setReportedScreen(const QString &computer, const QRect &shape);
+  //! The one rectangle of a computer, drawn on the canvas, is \p width x \p height in the units of the computer: its
+  //! monitor if it has a layout of one, else its size
+  void setComputerSize(const QString &computer, int width, int height);
   //! The computers that the arrangement has to draw with a size that it assumed: they have no monitors and no size
   QStringList assumedSizes() const;
   //! Takes what a line of the log of the core says about the screen of a computer, if it does

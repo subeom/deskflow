@@ -122,6 +122,11 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   connect(m_btnRemove, &QPushButton::clicked, this, [this] { Q_EMIT removeComputerRequested(m_canvas->selected()); });
   connect(m_canvas, &ArrangementCanvas::selectedChanged, this, &ArrangementPanel::updateSelection);
   connect(m_canvas, &ArrangementCanvas::editRequested, this, &ArrangementPanel::editMonitorsRequested);
+  connect(m_canvas, &ArrangementCanvas::computerResized, this, [this](const QString &name, int, int, int w, int h) {
+    m_config.setComputerSize(name, w, h);
+    refresh();
+    Q_EMIT changed();
+  });
   connect(m_canvas, &ArrangementCanvas::arrangementChanged, this, [this] {
     m_config.setArrangement(m_canvas->arrangement());
     updateIssues();
@@ -135,6 +140,10 @@ void ArrangementPanel::refresh()
 {
   m_canvas->setArrangement(m_config.arrangement());
   m_canvas->setAssumedSizes(m_config.assumedSizes());
+  QHash<QString, QSize> reported;
+  for (auto it = m_config.reportedScreens().cbegin(); it != m_config.reportedScreens().cend(); ++it)
+    reported.insert(it.key(), it.value().size());
+  m_canvas->setReportedSizes(reported);
   updateIssues();
   updateSelection();
 }

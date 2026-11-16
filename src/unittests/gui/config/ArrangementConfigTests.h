@@ -35,6 +35,7 @@ private Q_SLOTS:
   void reportedScreen_isTakenFromTheLogOnlyWhileTheExperimentIsOnAndOnlyForTheComputersOfTheConfig();
   void assumedSizes_areOfTheComputersThatHaveNoMonitorsAndNoSize();
   void monitorEditing_drawsWhatIsStored_andStoresWhatIsMade();
+  void setComputerSize_isTheSizeOfAComputerThatHasNone_andTheMonitorOfOneThatHasOne();
   void reportedScreen_doesNotChangeWhatIsGenerated();
   void reportedScreen_isAdoptedAsTheSizeOfAComputerThatHasNone();
 

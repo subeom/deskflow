@@ -395,6 +395,29 @@ void ServerConfig::setReportedScreen(const QString &computer, const QRect &shape
   m_reportedScreens.insert(computer.toLower(), shape);
 }
 
+void ServerConfig::setComputerSize(const QString &name, int width, int height)
+{
+  if (width <= 0 || height <= 0)
+    return;
+  for (auto &computer : computers()) {
+    if (computer.isNull() || computer.isServer() || computer.name().compare(name, Qt::CaseInsensitive) != 0)
+      continue;
+    if (!computer.monitorLayout().isEmpty()) {
+      // a layout of one monitor is kept as one, where it was
+      int x = 0;
+      int y = 0;
+      if (const auto parsed = MonitorLayout::parse(computer.monitorLayout().toStdString()); parsed) {
+        x = parsed.layout->monitors().front().x;
+        y = parsed.layout->monitors().front().y;
+      }
+      computer.setMonitorLayout(QStringLiteral("%1,%2,%3,%4").arg(x).arg(y).arg(width).arg(height));
+      computer.setMonitorScales({});
+    } else {
+      computer.setArrangementSize(width, height);
+    }
+  }
+}
+
 QStringList ServerConfig::assumedSizes() const
 {
   QStringList names;
