@@ -77,6 +77,11 @@ enum class EventTypes : uint32_t
   /// A secure socket sends this event when a remote connection has been established.
   DataSocketSecureConnected,
 
+  /** A secure socket sends this event when its TCP connection is up and the secure handshake (TLS) begins. The socket
+      handles the plain "connected" event itself, so this is how the client learns that TCP is done.
+  */
+  DataSocketTlsStarted,
+
   /** A socket sends this event when an attempt to connect to a remote port has failed.
       The data is a pointer to a ConnectionFailedInfo.
   */

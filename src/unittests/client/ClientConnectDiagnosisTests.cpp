@@ -19,11 +19,13 @@
 #include "net/IDataSocket.h"
 #include "net/ISocketFactory.h"
 #include "net/NetworkAddress.h"
+#include "net/SecureUtils.h"
 #include "net/SocketException.h"
 #include "net/SocketMultiplexer.h"
 #include "net/TCPSocketFactory.h"
 
 #include <QTcpServer>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include <algorithm>
@@ -461,7 +463,7 @@ void ClientConnectDiagnosisTests::timeout_afterTcpConnectedWithTls_namesTheHands
   m_log.insert(&log, true);
   Scenario scenario(true);
   scenario.connect();
-  scenario.fromSocket(EventTypes::DataSocketConnected);
+  scenario.fromSocket(EventTypes::DataSocketTlsStarted);
   scenario.fireTimer();
   m_log.remove(&log);
 
@@ -476,7 +478,7 @@ void ClientConnectDiagnosisTests::timeout_afterTheSecureConnectionWithoutHello_n
   m_log.insert(&log, true);
   Scenario scenario(true);
   scenario.connect();
-  scenario.fromSocket(EventTypes::DataSocketConnected);
+  scenario.fromSocket(EventTypes::DataSocketTlsStarted);
   scenario.fromSocket(EventTypes::DataSocketSecureConnected);
   scenario.fireTimer();
   m_log.remove(&log);
@@ -491,7 +493,7 @@ void ClientConnectDiagnosisTests::timeout_afterAnEarlierTlsFailure_reportsTheTls
   m_log.insert(&log, true);
   Scenario scenario(true);
   scenario.connect();
-  scenario.fromSocket(EventTypes::DataSocketConnected);
+  scenario.fromSocket(EventTypes::DataSocketTlsStarted);
   scenario.fromSocket(EventTypes::DataSocketSecureFailed, secureFailure(FailureKind::TlsHandshakeFailed));
   scenario.fireTimer();
   m_log.remove(&log);
@@ -508,7 +510,7 @@ void ClientConnectDiagnosisTests::timeout_afterAnEarlierFingerprintRejection_rep
   m_log.insert(&log, true);
   Scenario scenario(true);
   scenario.connect();
-  scenario.fromSocket(EventTypes::DataSocketConnected);
+  scenario.fromSocket(EventTypes::DataSocketTlsStarted);
   scenario.fromSocket(EventTypes::DataSocketSecureFailed, secureFailure(FailureKind::FingerprintRejected));
   scenario.fireTimer();
   m_log.remove(&log);
@@ -699,6 +701,59 @@ void ClientConnectDiagnosisTests::connect_toAClosedLocalPort_logsTheRefusalOfThe
   QVERIFY(!timedOut);
   QVERIFY2(log.has(QStringLiteral("the server 127.0.0.1:%1 refused the connection").arg(port)), qPrintable(log.dump()));
   QVERIFY2(failure.contains(QStringLiteral("refused"), Qt::CaseInsensitive), qPrintable(failure));
+}
+
+// A real secure socket against a peer that takes the connection and says nothing: TCP is up and the handshake has
+// nothing to go on. The secure socket handles the "connected" event of its socket itself, so the client has to learn
+// from a different event that the handshake began: a stall is then the handshake's and not the network's.
+void ClientConnectDiagnosisTests::connect_withTlsToAPeerThatNeverAnswers_namesTheHandshakeAndNotTcp()
+{
+  QTcpServer silentPeer;
+  QVERIFY(silentPeer.listen(QHostAddress::LocalHost, 0));
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const auto certificate = directory.filePath(QStringLiteral("client.pem"));
+  deskflow::generatePemSelfSignedCert(certificate, 2048);
+  Settings::setValue(Settings::Security::TlsEnabled, true);
+  Settings::setValue(Settings::Security::Certificate, certificate);
+  Settings::setValue(Settings::Client::ConnectTimeout, 1.0);
+
+  CapturingOutputter log;
+  m_log.insert(&log, true);
+
+  EventQueue events;
+  SocketMultiplexer multiplexer;
+  deskflow::Computer computer(new MockPlatformComputer(&events), &events);
+  Client client(
+      &events, "desk", NetworkAddress("127.0.0.1", silentPeer.serverPort()),
+      new TCPSocketFactory(&events, &multiplexer), &computer
+  );
+
+  QString failure;
+  bool timedOut = false;
+  events.addHandler(EventTypes::ClientConnectionFailed, client.getEventTarget(), [&](const Event &event) {
+    auto *info = static_cast<Client::FailInfo *>(event.getData());
+    failure = info->m_what;
+    delete info;
+    events.addEvent(Event(EventTypes::Quit));
+  });
+  auto *guard = events.newOneShotTimer(6.0, nullptr);
+  events.addHandler(EventTypes::Timer, guard, [&](const Event &) {
+    timedOut = true;
+    events.addEvent(Event(EventTypes::Quit));
+  });
+
+  client.connect();
+  events.loop();
+  events.deleteTimer(guard);
+  m_log.remove(&log);
+  Settings::setValue(Settings::Security::TlsEnabled, false);
+  Settings::setValue(Settings::Security::Certificate);
+
+  QVERIFY(!timedOut);
+  QCOMPARE(failure, QStringLiteral("Timed out"));
+  QVERIFY2(log.has(QStringLiteral("while the secure handshake (TLS) was running")), qPrintable(log.dump()));
+  QVERIFY(!log.has(QStringLiteral("while connecting (TCP)")));
 }
 
 QTEST_MAIN(ClientConnectDiagnosisTests)

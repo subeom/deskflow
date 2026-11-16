@@ -523,7 +523,7 @@ void Client::setupConnecting()
 
   if (Settings::value(Settings::Security::TlsEnabled).toBool()) {
     // the TCP connection is up and the secure handshake runs from here until the secure connection is reported
-    m_events->addHandler(EventTypes::DataSocketConnected, m_stream->getEventTarget(), [this](const auto &) {
+    m_events->addHandler(EventTypes::DataSocketTlsStarted, m_stream->getEventTarget(), [this](const auto &) {
       m_connectPhase = Phase::Tls;
     });
     m_events->addHandler(EventTypes::DataSocketSecureFailed, m_stream->getEventTarget(), [this](const auto &e) {
@@ -659,6 +659,7 @@ void Client::cleanupConnecting()
 {
   if (m_stream != nullptr) {
     m_events->removeHandler(EventTypes::DataSocketConnected, m_stream->getEventTarget());
+    m_events->removeHandler(EventTypes::DataSocketTlsStarted, m_stream->getEventTarget());
     m_events->removeHandler(EventTypes::DataSocketSecureConnected, m_stream->getEventTarget());
     m_events->removeHandler(EventTypes::DataSocketSecureFailed, m_stream->getEventTarget());
     m_events->removeHandler(EventTypes::DataSocketConnectionFailed, m_stream->getEventTarget());
