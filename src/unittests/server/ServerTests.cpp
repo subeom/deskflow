@@ -30,6 +30,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <format>
 #include <map>
 #include <memory>
 #include <optional>
@@ -695,6 +696,25 @@ struct PointerRig
     events.dispatchEvent(Event(EventTypes::ComputerShapeChanged, remote.getEventTarget()));
   }
 
+  // The experiment is on or off, and some computers have a monitor layout; the Server reads both when it is configured
+  void configureExperiment(bool on, const std::map<std::string, std::string> &layouts = {})
+  {
+    Settings::setValue(Settings::Server::ExperimentalMultiMonitor, on);
+    for (const auto &[name, layout] : layouts)
+      config.setMonitorLayout(name, layout);
+    server->setConfig(config);
+  }
+
+  // the remote computer goes away, and one of the same name with another shape connects
+  PointerClient &reconnect(const std::string &name, const Box &shape)
+  {
+    events.dispatchEvent(Event(EventTypes::ClientProxyDisconnected, client(name).getEventTarget()));
+    auto *connected = new PointerClient(name, shape);
+    clients[name] = connected;
+    server->adoptClient(connected);
+    return *connected;
+  }
+
 private:
   void send(EventTypes type, int32_t a, int32_t b)
   {
@@ -789,11 +809,90 @@ std::array<int32_t, 5> samplesAlong(int32_t length)
   return {0, length / 4, length / 2, (length * 3) / 4, length - 1};
 }
 
+// two monitors that are an L: the second one is lower, so that the first one has an edge on its right above it. They
+// are the shape of \p box.
+std::string lShapeOf(const Box &box)
+{
+  return std::format(
+      "{},{},{},{};{},{},{},{}", box.x, box.y, box.w / 2, box.h, box.x + box.w / 2, box.y + box.h / 4,
+      box.w - box.w / 2, box.h - box.h / 4
+  );
+}
+
+// What the experiment is like, and what the computers have for a layout. A Server that is not set to use the layout of
+// a computer has to move the pointer as it always did, for every one of these.
+enum class Mode
+{
+  // the experiment is off
+  Off,
+  // the experiment is off, and every computer has a layout that is of its screen
+  OffButConfigured,
+  // the experiment is on, and no computer has a layout
+  NoLayout,
+  // the experiment is on, and the layouts are wrong
+  WrongLayout,
+  // the experiment is on, and the layouts are of screens of another size
+  OtherBox,
+  // the experiment is on, and the layouts are the screens as they are: rectangles
+  PlainRectangle,
+};
+
+constexpr std::array<Mode, 6> kModes = {Mode::Off,         Mode::OffButConfigured, Mode::NoLayout,
+                                        Mode::WrongLayout, Mode::OtherBox,         Mode::PlainRectangle};
+
+const char *modeName(Mode mode)
+{
+  switch (mode) {
+  case Mode::Off:
+    return "the experiment off";
+  case Mode::OffButConfigured:
+    return "the experiment off, layouts set";
+  case Mode::NoLayout:
+    return "the experiment on, no layout";
+  case Mode::WrongLayout:
+    return "the experiment on, a layout that is wrong";
+  case Mode::OtherBox:
+    return "the experiment on, a layout of another size";
+  default:
+    return "the experiment on, a layout that is a rectangle";
+  }
+}
+
+// puts the Server of \p rig in \p mode
+void applyMode(PointerRig &rig, Mode mode)
+{
+  if (mode == Mode::Off)
+    return;
+
+  std::map<std::string, std::string> layouts;
+  for (const auto &[name, client] : rig.clients) {
+    const auto &box = client->shape;
+    switch (mode) {
+    case Mode::OffButConfigured:
+      layouts[name] = lShapeOf(box);
+      break;
+    case Mode::WrongLayout:
+      layouts[name] = "0,0,1920";
+      break;
+    case Mode::OtherBox:
+      layouts[name] = lShapeOf({box.x + 1, box.y, box.w, box.h});
+      break;
+    case Mode::PlainRectangle:
+      layouts[name] = std::format("{},{},{},{}", box.x, box.y, box.w, box.h);
+      break;
+    default:
+      break;
+    }
+  }
+  rig.configureExperiment(mode != Mode::OffButConfigured, layouts);
+}
+
 // "primary" and "C" are neighbours, C being on the \p side of the primary
-std::unique_ptr<PointerRig> neighbours(const Box &primary, const Box &remote, Direction side)
+std::unique_ptr<PointerRig> neighbours(const Box &primary, const Box &remote, Direction side, Mode mode = Mode::Off)
 {
   auto rig = std::make_unique<PointerRig>(primary, std::vector<PointerRig::Remote>{{"C", remote}});
   rig->link("primary", side, "C");
+  applyMode(*rig, mode);
   return rig;
 }
 
@@ -865,11 +964,11 @@ std::array<Pos, 3> startsOn(const Box &box)
 }
 
 // every entry into C through every edge pixel of the primary computer, for each of the shapes of C
-uint64_t everyEntryDigest(const Box &primary, Direction side)
+uint64_t everyEntryDigest(const Box &primary, Direction side, Mode mode = Mode::Off)
 {
   Digest digest;
   for (const auto &remote : kRemoteShapes) {
-    auto rig = neighbours(primary, remote, side);
+    auto rig = neighbours(primary, remote, side, mode);
     for (int32_t index = 0; index < edgeLength(primary, side); ++index) {
       const auto entered = crossToC(*rig, side, index);
       digest.add(entered ? 1 : 0);
@@ -881,12 +980,13 @@ uint64_t everyEntryDigest(const Box &primary, Direction side)
 }
 
 // every way out of C, for each of the shapes of C, toward a primary computer that is on its \p side
-uint64_t everyExitDigest(const Box &primary, Direction side)
+uint64_t everyExitDigest(const Box &primary, Direction side, Mode mode = Mode::Off)
 {
   Digest digest;
   for (const auto &remote : kRemoteShapes) {
     PointerRig rig(primary, {{"C", remote}});
     rig.link("C", side, "primary");
+    applyMode(rig, mode);
     for (const auto &start : startsOn(remote)) {
       for (const int32_t drift : {0, 4, -4}) {
         const auto exit = pushOutOfC(rig, side, start, drift);
@@ -938,11 +1038,12 @@ private:
 
 // A computer "A", with "B" on its right and the primary computer on its left; the pointer starts at \p start on "A" and
 // is moved by \p dx, \p dy at once
-std::optional<Landing> flick(const Pos &start, int32_t dx, int32_t dy)
+std::optional<Landing> flick(const Pos &start, int32_t dx, int32_t dy, Mode mode = Mode::Off)
 {
   PointerRig rig(kPrimaryShapes[0], {{"A", {0, 0, 1920, 1080}}, {"B", {-100, 50, 2560, 1440}}});
   rig.link("primary", Direction::Right, "A");
   rig.link("A", Direction::Right, "B");
+  applyMode(rig, mode);
   rig.switchTo("A");
   rig.placeCursor("A", start.x, start.y);
   const EntryWatch watch(rig);
@@ -952,11 +1053,12 @@ std::optional<Landing> flick(const Pos &start, int32_t dx, int32_t dy)
 
 // The pointer goes through the right edge of the primary computer, \p index pixels down it, toward "A" with "X", which
 // is not connected, between them
-std::optional<Landing> acrossAnOfflineComputer(int32_t index)
+std::optional<Landing> acrossAnOfflineComputer(int32_t index, Mode mode = Mode::Off)
 {
   PointerRig rig(kPrimaryShapes[1], {{"X", {0, 0, 800, 600}, true}, {"A", {0, 0, 1920, 1080}}});
   rig.link("primary", Direction::Right, "X");
   rig.link("X", Direction::Right, "A");
+  applyMode(rig, mode);
   const EntryWatch watch(rig);
   const auto at = edgePixel(rig.platform->shape, Direction::Right, index);
   rig.moveOnPrimary(at.x, at.y);
@@ -965,13 +1067,14 @@ std::optional<Landing> acrossAnOfflineComputer(int32_t index)
 
 // The pointer goes through the right edge of the primary computer, \p index pixels down it, with "A" linked to the
 // upper half of the edge and "B" to the lower half
-std::optional<Landing> throughLinkIntervals(int32_t index)
+std::optional<Landing> throughLinkIntervals(int32_t index, Mode mode = Mode::Off)
 {
   PointerRig rig(kPrimaryShapes[0], {{"A", {0, 0, 1920, 1080}}, {"B", {0, 0, 2560, 1440}}});
   rig.config.connect("primary", Direction::Right, 0.0f, 0.5f, "A", 0.0f, 1.0f);
   rig.config.connect("primary", Direction::Right, 0.5f, 1.0f, "B", 0.0f, 1.0f);
   rig.config.connect("A", Direction::Left, 0.0f, 1.0f, "primary", 0.0f, 0.5f);
   rig.config.connect("B", Direction::Left, 0.0f, 1.0f, "primary", 0.5f, 1.0f);
+  applyMode(rig, mode);
   const EntryWatch watch(rig);
   const auto at = edgePixel(rig.platform->shape, Direction::Right, index);
   rig.moveOnPrimary(at.x, at.y);
@@ -979,7 +1082,7 @@ std::optional<Landing> throughLinkIntervals(int32_t index)
 }
 
 // The pointer reaches a corner of the primary computer that has a computer on each of its sides
-std::optional<Landing> intoACorner(Direction horizontal, Direction vertical)
+std::optional<Landing> intoACorner(Direction horizontal, Direction vertical, Mode mode = Mode::Off)
 {
   PointerRig rig(
       kPrimaryShapes[0],
@@ -989,6 +1092,7 @@ std::optional<Landing> intoACorner(Direction horizontal, Direction vertical)
   rig.link("primary", Direction::Right, "R");
   rig.link("primary", Direction::Top, "T");
   rig.link("primary", Direction::Bottom, "D");
+  applyMode(rig, mode);
   const EntryWatch watch(rig);
   const auto &shape = rig.platform->shape;
   const int32_t x = horizontal == Direction::Left ? shape.x : shape.x + shape.w - 1;
@@ -1010,6 +1114,7 @@ void ServerTests::initTestCase()
 void ServerTests::cleanup()
 {
   Settings::setValue(Settings::Server::ClipboardTextOnly);
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
 }
 
 void ServerTests::SwitchToComputerInfo_alloc_computer()
@@ -2002,16 +2107,35 @@ private:
   LogLevel::Level m_level;
 };
 
+void addPinColumns()
+{
+  QTest::addColumn<int>("pin");
+  QTest::addColumn<int>("mode");
+}
+
+// a row of a pin for each of the modes
+void addPinRows(const QString &name, size_t pin)
+{
+  for (const auto mode : kModes)
+    QTest::newRow(qPrintable(QStringLiteral("%1, %2").arg(name, modeName(mode))))
+        << static_cast<int>(pin) << static_cast<int>(mode);
+}
+
+void addModeRows()
+{
+  QTest::addColumn<int>("mode");
+  for (const auto mode : kModes)
+    QTest::newRow(modeName(mode)) << static_cast<int>(mode);
+}
+
 } // namespace
 
 void ServerTests::pointerPin_primaryToRemote_entersWhereItAlwaysDid_data()
 {
-  QTest::addColumn<int>("pin");
+  addPinColumns();
   for (size_t i = 0; i < kEntryPins.size(); ++i) {
     const auto &pin = kEntryPins.at(i);
-    QTest::newRow(
-        qPrintable(QStringLiteral("%1 through the %2").arg(shapeName(kRemoteShapes.at(pin.remote)), sideName(pin.side)))
-    ) << static_cast<int>(i);
+    addPinRows(QStringLiteral("%1 through the %2").arg(shapeName(kRemoteShapes.at(pin.remote)), sideName(pin.side)), i);
   }
 }
 
@@ -2019,8 +2143,9 @@ void ServerTests::pointerPin_primaryToRemote_entersWhereItAlwaysDid()
 {
   const QuietLog quiet;
   QFETCH(int, pin);
+  QFETCH(int, mode);
   const auto &expected = kEntryPins.at(static_cast<size_t>(pin));
-  auto rig = neighbours(kPrimaryShapes[0], kRemoteShapes.at(expected.remote), expected.side);
+  auto rig = neighbours(kPrimaryShapes[0], kRemoteShapes.at(expected.remote), expected.side, static_cast<Mode>(mode));
   const auto samples = samplesAlong(edgeLength(kPrimaryShapes[0], expected.side));
   for (size_t i = 0; i < samples.size(); ++i) {
     const auto entered = crossToC(*rig, expected.side, samples.at(i));
@@ -2031,12 +2156,10 @@ void ServerTests::pointerPin_primaryToRemote_entersWhereItAlwaysDid()
 
 void ServerTests::pointerPin_remoteToPrimary_leavesWhereItAlwaysDid_data()
 {
-  QTest::addColumn<int>("pin");
+  addPinColumns();
   for (size_t i = 0; i < kExitPins.size(); ++i) {
     const auto &pin = kExitPins.at(i);
-    QTest::newRow(
-        qPrintable(QStringLiteral("%1 toward its %2").arg(shapeName(kRemoteShapes.at(pin.remote)), sideName(pin.side)))
-    ) << static_cast<int>(i);
+    addPinRows(QStringLiteral("%1 toward its %2").arg(shapeName(kRemoteShapes.at(pin.remote)), sideName(pin.side)), i);
   }
 }
 
@@ -2044,10 +2167,12 @@ void ServerTests::pointerPin_remoteToPrimary_leavesWhereItAlwaysDid()
 {
   const QuietLog quiet;
   QFETCH(int, pin);
+  QFETCH(int, mode);
   const auto &expected = kExitPins.at(static_cast<size_t>(pin));
   const auto &shape = kRemoteShapes.at(expected.remote);
   PointerRig rig(kPrimaryShapes[0], {{"C", shape}});
   rig.link("C", expected.side, "primary");
+  applyMode(rig, static_cast<Mode>(mode));
   const auto exit = pushOutOfC(rig, expected.side, startsOn(shape)[0], 0);
   QCOMPARE(exit.moves, expected.moves);
   QCOMPARE(text(exit.entered), text(expected.entered));
@@ -2055,12 +2180,12 @@ void ServerTests::pointerPin_remoteToPrimary_leavesWhereItAlwaysDid()
 
 void ServerTests::pointerPin_everyEdgePixel_entersWhereItAlwaysDid_data()
 {
-  QTest::addColumn<int>("pin");
+  addPinColumns();
   for (size_t i = 0; i < kEntryDigests.size(); ++i) {
     const auto &pin = kEntryDigests.at(i);
-    QTest::newRow(qPrintable(
-        QStringLiteral("%1 through the %2").arg(shapeName(kPrimaryShapes.at(pin.primary)), sideName(pin.side))
-    )) << static_cast<int>(i);
+    addPinRows(
+        QStringLiteral("%1 through the %2").arg(shapeName(kPrimaryShapes.at(pin.primary)), sideName(pin.side)), i
+    );
   }
 }
 
@@ -2068,18 +2193,21 @@ void ServerTests::pointerPin_everyEdgePixel_entersWhereItAlwaysDid()
 {
   const QuietLog quiet;
   QFETCH(int, pin);
+  QFETCH(int, mode);
   const auto &expected = kEntryDigests.at(static_cast<size_t>(pin));
-  QCOMPARE(everyEntryDigest(kPrimaryShapes.at(expected.primary), expected.side), expected.digest);
+  QCOMPARE(
+      everyEntryDigest(kPrimaryShapes.at(expected.primary), expected.side, static_cast<Mode>(mode)), expected.digest
+  );
 }
 
 void ServerTests::pointerPin_everyWayOutOfARemote_leavesWhereItAlwaysDid_data()
 {
-  QTest::addColumn<int>("pin");
+  addPinColumns();
   for (size_t i = 0; i < kExitDigests.size(); ++i) {
     const auto &pin = kExitDigests.at(i);
-    QTest::newRow(qPrintable(
-        QStringLiteral("toward %1 on its %2").arg(shapeName(kPrimaryShapes.at(pin.primary)), sideName(pin.side))
-    )) << static_cast<int>(i);
+    addPinRows(
+        QStringLiteral("toward %1 on its %2").arg(shapeName(kPrimaryShapes.at(pin.primary)), sideName(pin.side)), i
+    );
   }
 }
 
@@ -2087,16 +2215,19 @@ void ServerTests::pointerPin_everyWayOutOfARemote_leavesWhereItAlwaysDid()
 {
   const QuietLog quiet;
   QFETCH(int, pin);
+  QFETCH(int, mode);
   const auto &expected = kExitDigests.at(static_cast<size_t>(pin));
-  QCOMPARE(everyExitDigest(kPrimaryShapes.at(expected.primary), expected.side), expected.digest);
+  QCOMPARE(
+      everyExitDigest(kPrimaryShapes.at(expected.primary), expected.side, static_cast<Mode>(mode)), expected.digest
+  );
 }
 
 void ServerTests::pointerPin_aFlick_landsWhereItAlwaysDid_data()
 {
-  QTest::addColumn<int>("pin");
+  addPinColumns();
   for (size_t i = 0; i < kFlickPins.size(); ++i) {
     const auto &pin = kFlickPins.at(i);
-    QTest::newRow(qPrintable(QStringLiteral("%1 by %2").arg(text(pin.start)).arg(pin.dx))) << static_cast<int>(i);
+    addPinRows(QStringLiteral("%1 by %2").arg(text(pin.start)).arg(pin.dx), i);
   }
 }
 
@@ -2104,34 +2235,422 @@ void ServerTests::pointerPin_aFlick_landsWhereItAlwaysDid()
 {
   const QuietLog quiet;
   QFETCH(int, pin);
+  QFETCH(int, mode);
   const auto &expected = kFlickPins.at(static_cast<size_t>(pin));
-  const auto landing = flick(expected.start, expected.dx, expected.dx > 0 ? 7 : -7);
+  const auto landing = flick(expected.start, expected.dx, expected.dx > 0 ? 7 : -7, static_cast<Mode>(mode));
   const auto expectedLanding =
       expected.computer ? std::optional<Landing>(Landing{expected.computer, expected.entered}) : std::nullopt;
   QCOMPARE(text(landing), text(expectedLanding));
 }
 
+void ServerTests::pointerPin_acrossAnOfflineComputer_landsWhereItAlwaysDid_data()
+{
+  addModeRows();
+}
+
 void ServerTests::pointerPin_acrossAnOfflineComputer_landsWhereItAlwaysDid()
 {
   const QuietLog quiet;
+  QFETCH(int, mode);
   for (const auto &pin : kOfflinePins)
-    QCOMPARE(text(acrossAnOfflineComputer(pin.index)), text(std::optional<Landing>(pin.landing)));
+    QCOMPARE(
+        text(acrossAnOfflineComputer(pin.index, static_cast<Mode>(mode))), text(std::optional<Landing>(pin.landing))
+    );
+}
+
+void ServerTests::pointerPin_linkIntervals_landWhereTheyAlwaysDid_data()
+{
+  addModeRows();
 }
 
 void ServerTests::pointerPin_linkIntervals_landWhereTheyAlwaysDid()
 {
   const QuietLog quiet;
+  QFETCH(int, mode);
   for (const auto &pin : kIntervalPins)
-    QCOMPARE(text(throughLinkIntervals(pin.index)), text(std::optional<Landing>(pin.landing)));
+    QCOMPARE(text(throughLinkIntervals(pin.index, static_cast<Mode>(mode))), text(std::optional<Landing>(pin.landing)));
+}
+
+void ServerTests::pointerPin_cornersOfThePrimary_horizontalIsTriedFirst_data()
+{
+  addModeRows();
 }
 
 void ServerTests::pointerPin_cornersOfThePrimary_horizontalIsTriedFirst()
 {
   const QuietLog quiet;
-  QCOMPARE(text(intoACorner(Direction::Left, Direction::Top)), QStringLiteral("L at 1919,0"));
-  QCOMPARE(text(intoACorner(Direction::Left, Direction::Bottom)), QStringLiteral("L at 1919,1079"));
-  QCOMPARE(text(intoACorner(Direction::Right, Direction::Top)), QStringLiteral("R at 0,0"));
-  QCOMPARE(text(intoACorner(Direction::Right, Direction::Bottom)), QStringLiteral("R at 0,1439"));
+  QFETCH(int, mode);
+  const auto at = static_cast<Mode>(mode);
+  QCOMPARE(text(intoACorner(Direction::Left, Direction::Top, at)), QStringLiteral("L at 1919,0"));
+  QCOMPARE(text(intoACorner(Direction::Left, Direction::Bottom, at)), QStringLiteral("L at 1919,1079"));
+  QCOMPARE(text(intoACorner(Direction::Right, Direction::Top, at)), QStringLiteral("R at 0,0"));
+  QCOMPARE(text(intoACorner(Direction::Right, Direction::Bottom, at)), QStringLiteral("R at 0,1439"));
+}
+
+namespace {
+
+// Keeps the INFO lines that are logged for as long as it lives, whatever becomes of the test
+class ScopedInfoLines : public InfoLines
+{
+public:
+  explicit ScopedInfoLines(Log &log) : m_log(log)
+  {
+    m_log.insert(this, true);
+  }
+
+  ~ScopedInfoLines() override
+  {
+    m_log.remove(this);
+  }
+
+private:
+  Log &m_log;
+};
+
+// The desktop of a PC that has a monitor on the right of a bigger one, top aligned: below the smaller one, the right
+// edge of the desktop's bounding box is a hole
+const Box kStaggered{0, 0, 4480, 1440};
+constexpr const char *kStaggeredLayout = "0,0,2560,1440;2560,0,1920,1080";
+const Box kRemote1080{0, 0, 1920, 1080};
+
+// the row of "C" that the pointer enters on when it goes through the left edge of the primary computer (which is
+// 1728x1117) at \p index: the fraction of the primary computer's edge, over the rows of "C"
+int32_t rowOfStaggered(int32_t index)
+{
+  const float fraction = deskflow::server::getCursorEdgeFraction(index, 0, kPrimaryShapes[0].h);
+  return static_cast<int32_t>(fraction * kStaggered.h);
+}
+
+// how the pointer got out of a computer, pushed to the right by 17 pixels at a time
+struct Leaving
+{
+  int moves = 0;
+  std::optional<Landing> landing;
+};
+
+// The pointer is at \p start on "C" and is pushed 17 pixels to the right until it enters another computer
+Leaving pushRightOnC(PointerRig &rig, const Pos &start)
+{
+  rig.switchTo("C");
+  rig.placeCursor("C", start.x, start.y);
+  const EntryWatch watch(rig);
+  Leaving leaving;
+  while (leaving.moves < kSteps && !leaving.landing) {
+    rig.moveOnSecondary(17, 0);
+    ++leaving.moves;
+    leaving.landing = watch.landing();
+  }
+  return leaving;
+}
+
+QString landingText(const Leaving &leaving)
+{
+  return text(leaving.landing);
+}
+
+// "C", which has the staggered desktop, with "R" on its right
+std::unique_ptr<PointerRig> staggeredWithNeighbourOnTheRight(bool experiment)
+{
+  auto rig = std::make_unique<PointerRig>(
+      kPrimaryShapes[0], std::vector<PointerRig::Remote>{{"C", kStaggered}, {"R", kRemote1080}}
+  );
+  rig->link("C", Direction::Right, "R");
+  if (experiment)
+    rig->configureExperiment(true, {{"C", kStaggeredLayout}});
+  return rig;
+}
+
+} // namespace
+
+void ServerTests::monitorGeometry_enteringAHole_landsOnAMonitor()
+{
+  const QuietLog quiet;
+  for (const int32_t index : {0, 100, 500, 800, 900, 1000, 1116}) {
+    const auto row = rowOfStaggered(index);
+
+    // today the pointer is put on the right edge of the desktop's bounding box, which is no monitor below the small one
+    auto legacy = neighbours(kPrimaryShapes[0], kStaggered, Direction::Left);
+    QCOMPARE(text(*crossToC(*legacy, Direction::Left, index)), text(Pos{4479, row}));
+
+    // with the monitors known, it is put on the monitor that has the row, on its right edge
+    auto aware = neighbours(kPrimaryShapes[0], kStaggered, Direction::Left);
+    aware->configureExperiment(true, {{"C", kStaggeredLayout}});
+    QCOMPARE(text(*crossToC(*aware, Direction::Left, index)), text(Pos{row < 1080 ? 4479 : 2559, row}));
+  }
+}
+
+void ServerTests::monitorGeometry_leavingThroughAnInnerEdge_happensAtOnce()
+{
+  const QuietLog quiet;
+  // on the part of the desktop that is below the smaller monitor, the pointer is pushed to the right
+  const Pos start{2559, 1300};
+
+  // today the pointer has to go on to the right edge of the bounding box, where there is nothing, before it leaves
+  auto legacy = staggeredWithNeighbourOnTheRight(false);
+  const auto before = pushRightOnC(*legacy, start);
+  QCOMPARE(before.moves, 113);
+  QCOMPARE(landingText(before), QStringLiteral("R at 0,975"));
+
+  // with the monitors known, it leaves where the edge is, and enters "R" by as much as it went beyond it
+  auto aware = staggeredWithNeighbourOnTheRight(true);
+  const auto after = pushRightOnC(*aware, start);
+  QCOMPARE(after.moves, 1);
+  QCOMPARE(landingText(after), QStringLiteral("R at 16,975"));
+}
+
+void ServerTests::monitorGeometry_pushedAgainstAnInnerEdge_hasNoDeadTravel()
+{
+  const QuietLog quiet;
+  const Pos start{2559, 1300};
+
+  // "C" has nothing on its right, whatever the pointer is pushed against
+  const auto build = [] {
+    auto rig = std::make_unique<PointerRig>(kPrimaryShapes[0], std::vector<PointerRig::Remote>{{"C", kStaggered}});
+    rig->config.connect("C", Direction::Left, 0.0f, 1.0f, "primary", 0.0f, 1.0f);
+    return rig;
+  };
+
+  // today the pointer is sent into the hole while the person goes on pushing, and has to be brought back from it
+  auto legacy = build();
+  legacy->switchTo("C");
+  legacy->placeCursor("C", start.x, start.y);
+  legacy->client("C").moved.clear();
+  for (int i = 0; i < 50; ++i)
+    legacy->moveOnSecondary(17, 0);
+  QCOMPARE(text(legacy->client("C").moved.back()), text(Pos{2559 + 17 * 50, 1300}));
+  legacy->moveOnSecondary(-1, 0);
+  QCOMPARE(text(legacy->client("C").moved.back()), text(Pos{2559 + 17 * 50 - 1, 1300}));
+
+  // with the monitors known, it stays where it can go, and goes back at once
+  auto aware = build();
+  aware->configureExperiment(true, {{"C", kStaggeredLayout}});
+  aware->switchTo("C");
+  aware->placeCursor("C", start.x, start.y);
+  aware->client("C").moved.clear();
+  for (int i = 0; i < 50; ++i)
+    aware->moveOnSecondary(17, 0);
+  QVERIFY(aware->client("C").moved.empty());
+  aware->moveOnSecondary(-1, 0);
+  QCOMPARE(aware->client("C").moved.size(), size_t{1});
+  QCOMPARE(text(aware->client("C").moved.back()), text(Pos{2558, 1300}));
+
+  // and sliding along the edge goes on
+  aware->moveOnSecondary(5, 7);
+  QCOMPARE(text(aware->client("C").moved.back()), text(Pos{2559, 1307}));
+}
+
+void ServerTests::monitorGeometry_linkIntervals_areAlongTheBoundingBoxOfTheDesktop()
+{
+  const QuietLog quiet;
+  // the upper half of the right edge goes to "R1" and the lower half to "R2", as a person writes them for any computer
+  const auto build = [] {
+    auto rig = std::make_unique<PointerRig>(
+        kPrimaryShapes[0],
+        std::vector<PointerRig::Remote>{{"C", kStaggered}, {"R1", kRemote1080}, {"R2", {0, 0, 2560, 1000}}}
+    );
+    rig->config.connect("C", Direction::Right, 0.0f, 0.5f, "R1", 0.0f, 1.0f);
+    rig->config.connect("C", Direction::Right, 0.5f, 1.0f, "R2", 0.0f, 1.0f);
+    rig->configureExperiment(true, {{"C", kStaggeredLayout}});
+    return rig;
+  };
+
+  // row 600 is in the upper half, and is where the right monitor is: the way out is the right edge of the desktop
+  auto upper = build();
+  const auto leavingUpper = pushRightOnC(*upper, {2559, 600});
+  QCOMPARE(landingText(leavingUpper), QStringLiteral("R1 at 0,900"));
+  QVERIFY(leavingUpper.moves > 100);
+
+  // row 1300 is in the lower half, below that monitor: the way out is the inner edge, at once
+  auto lower = build();
+  const auto leavingLower = pushRightOnC(*lower, {2559, 1300});
+  QCOMPARE(landingText(leavingLower), QStringLiteral("R2 at 16,806"));
+  QCOMPARE(leavingLower.moves, 1);
+}
+
+void ServerTests::monitorGeometry_aShapeThatChanges_dropsALayoutThatIsStale()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = staggeredWithNeighbourOnTheRight(true);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry on for \"C\"")), 1);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"C\"")), 0);
+  QCOMPARE(pushRightOnC(*rig, {2559, 1300}).moves, 1);
+
+  // the computer reports another size, as when its resolution is changed: the layout is not of that desktop any more
+  rig->reportShape(rig->client("C"), Box{0, 0, 4480, 1441});
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"C\"")), 1);
+  QVERIFY(info.lines.last().contains(QStringLiteral("does not match the screen size")));
+  QVERIFY(pushRightOnC(*rig, {2559, 1300}).moves > 100);
+  // a change that makes no difference is not said again
+  rig->reportShape(rig->client("C"));
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"C\"")), 1);
+
+  // and when it is the same again, the layout is used again
+  rig->reportShape(rig->client("C"), kStaggered);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry on for \"C\"")), 2);
+  QCOMPARE(pushRightOnC(*rig, {2559, 1300}).moves, 1);
+}
+
+void ServerTests::monitorGeometry_aComputerThatConnectsAgain_isDecidedAgain()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = staggeredWithNeighbourOnTheRight(true);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry on for \"C\"")), 1);
+
+  // it comes back with another resolution
+  rig->reconnect("C", Box{0, 0, 3840, 1440});
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"C\"")), 1);
+  QVERIFY(info.lines.last().contains(QStringLiteral("does not match the screen size")));
+  QVERIFY(pushRightOnC(*rig, {2559, 1300}).moves > 50);
+
+  // and then as it was
+  rig->reconnect("C", kStaggered);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry on for \"C\"")), 2);
+  QCOMPARE(pushRightOnC(*rig, {2559, 1300}).moves, 1);
+}
+
+void ServerTests::monitorGeometry_decisions_areSaidOncePerChange()
+{
+  ScopedInfoLines info(m_log);
+
+  // no layout, a layout that is wrong, a rectangle, one of another size, and one that is used: a line for each
+  PointerRig rig(
+      kPrimaryShapes[0], {{"none", kRemote1080},
+                          {"wrong", kRemote1080},
+                          {"plain", kRemote1080},
+                          {"other", kRemote1080},
+                          {"used", kStaggered}}
+  );
+  rig.configureExperiment(
+      true, {{"wrong", "0,0,1920"},
+             {"plain", "0,0,1920,1080"},
+             {"other", "0,0,1920,1081;1920,0,100,100"},
+             {"used", kStaggeredLayout},
+             {"primary", lShapeOf(kPrimaryShapes[0])}}
+  );
+  QCOMPARE(info.count(QStringLiteral("monitor geometry")), 6);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"none\": no monitor layout")), 1);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"wrong\": the monitor layout is not valid")), 1);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"plain\": the monitors make up a rectangle")), 1);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"other\": the monitor layout does not match")), 1);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry on for \"used\": 2 monitors")), 1);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry off for \"primary\"")), 1);
+
+  // a configuration that is read again with no change in it says nothing more, nor does the pointer moving
+  rig.configureExperiment(true);
+  rig.switchTo("used");
+  for (int i = 0; i < 200; ++i)
+    rig.moveOnSecondary(i % 7 - 3, i % 5 - 2);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry")), 6 + info.count(QStringLiteral("monitor geometry: switch")));
+
+  // off says nothing at all, and the experiment being off says it once
+  rig.configureExperiment(false);
+  const auto lines = info.count(QStringLiteral("monitor geometry"));
+  rig.configureExperiment(false);
+  QCOMPARE(info.count(QStringLiteral("monitor geometry")), lines);
+}
+
+void ServerTests::monitorGeometry_everySwitch_isSaidAtInfoLevel()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = neighbours(kPrimaryShapes[0], kStaggered, Direction::Left);
+  rig->configureExperiment(true, {{"C", kStaggeredLayout}});
+  QVERIFY(crossToC(*rig, Direction::Left, 1000));
+
+  QCOMPARE(
+      info.count(QStringLiteral("monitor geometry: switch \"primary\" (0,0 1728x1117) -> \"C\" (0,0 4480x1440)")), 1
+  );
+  QCOMPARE(info.count(QStringLiteral("left edge at 0.8957")), 1);
+  QCOMPARE(info.count(QStringLiteral("enters at 2559,1289")), 1);
+  QCOMPARE(info.count(QStringLiteral("geometry of \"primary\" off, geometry of \"C\" on")), 1);
+
+  // the experiment being off, nothing is said that was not before
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, false);
+  ScopedInfoLines quiet(m_log);
+  auto off = neighbours(kPrimaryShapes[0], kStaggered, Direction::Left);
+  QVERIFY(crossToC(*off, Direction::Left, 1000));
+  QCOMPARE(quiet.count(QStringLiteral("monitor geometry")), 0);
+}
+
+void ServerTests::monitorGeometry_theScreenOfTheServer_isMappedAsItAlwaysWas()
+{
+  const QuietLog quiet;
+  const auto layout = lShapeOf(kPrimaryShapes[0]);
+  for (const auto side : kSides) {
+    auto plain = neighbours(kPrimaryShapes[0], kStaggered, side);
+    auto aware = neighbours(kPrimaryShapes[0], kStaggered, side);
+    aware->configureExperiment(true, {{"primary", layout}});
+    for (const auto index : samplesAlong(edgeLength(kPrimaryShapes[0], side)))
+      QCOMPARE(text(*crossToC(*aware, side, index)), text(*crossToC(*plain, side, index)));
+  }
+
+  // and what comes back to it is put in as it always was
+  for (const auto side : kSides) {
+    PointerRig plain(kPrimaryShapes[0], {{"C", kStaggered}});
+    plain.link("C", side, "primary");
+    PointerRig aware(kPrimaryShapes[0], {{"C", kStaggered}});
+    aware.link("C", side, "primary");
+    aware.configureExperiment(true, {{"primary", layout}});
+    const auto start = startsOn(kStaggered)[1];
+    const auto expected = pushOutOfC(plain, side, start, 4);
+    const auto actual = pushOutOfC(aware, side, start, 4);
+    QCOMPARE(actual.moves, expected.moves);
+    QCOMPARE(text(actual.entered), text(expected.entered));
+  }
+}
+
+void ServerTests::monitorGeometry_nothingIsAddedToWhatAComputerIsTold()
+{
+  const auto optionsOf = [](bool experiment) {
+    PointerRig rig(kPrimaryShapes[0], {{"C", kStaggered}});
+    // a computer that does not share its clipboard is told so, with an option, as it always is
+    rig.config.addOption("C", kOptionClipboardSharing, 0);
+    if (experiment)
+      rig.configureExperiment(true, {{"C", kStaggeredLayout}});
+    else
+      rig.configureExperiment(false);
+    return rig.client("C").options();
+  };
+
+  const auto without = optionsOf(false);
+  const auto with = optionsOf(true);
+  QVERIFY(!without.empty());
+  QCOMPARE(with, without);
+  QVERIFY(std::ranges::find(with, static_cast<uint32_t>(kOptionClipboardSharing)) != with.end());
+}
+
+void ServerTests::monitorGeometry_cornersThatLockTheCursor_stillDo_data()
+{
+  QTest::addColumn<bool>("experiment");
+  QTest::newRow("the experiment off") << false;
+  QTest::newRow("the experiment on") << true;
+}
+
+void ServerTests::monitorGeometry_cornersThatLockTheCursor_stillDo()
+{
+  const QuietLog quiet;
+  QFETCH(bool, experiment);
+  // an L: the second monitor is lower, so the top left corner of the desktop is a corner of a monitor
+  const Box shape{0, 0, 2000, 1000};
+  Settings::setValue(Settings::Computer::SwitchCornerTopLeft.arg(QStringLiteral("C")), true);
+  Settings::setValue(Settings::Computer::SwitchCornerSize.arg(QStringLiteral("C")), 20);
+  PointerRig rig(kPrimaryShapes[0], {{"C", shape}});
+  Settings::setValue(Settings::Computer::SwitchCornerTopLeft.arg(QStringLiteral("C")));
+  Settings::setValue(Settings::Computer::SwitchCornerSize.arg(QStringLiteral("C")));
+  rig.link("C", Direction::Left, "primary");
+  rig.configureExperiment(experiment, {{"C", "0,0,1000,1000;1000,500,1000,500"}});
+
+  // pushed to the left in the corner, the cursor stays
+  rig.switchTo("C");
+  rig.placeCursor("C", 3, 3);
+  const auto before = rig.primary->entered.size();
+  for (int i = 0; i < 5; ++i)
+    rig.moveOnSecondary(-17, 0);
+  QCOMPARE(rig.primary->entered.size(), before);
+
+  // and not in the middle of the edge
+  rig.placeCursor("C", 3, 400);
+  rig.moveOnSecondary(-17, 0);
+  QCOMPARE(rig.primary->entered.size(), before + 1);
 }
 
 QTEST_MAIN(ServerTests)

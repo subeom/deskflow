@@ -10,6 +10,7 @@
 #include "common/ClipboardCapabilities.h"
 #include "common/InputCapabilities.h"
 #include "common/PlatformInfo.h"
+#include "common/Settings.h"
 #include "deskflow/AppUtil.h"
 #include "deskflow/ProtocolUtil.h"
 #include "io/IStream.h"
@@ -29,6 +30,7 @@
 #include <vector>
 
 #include <QByteArray>
+#include <QTemporaryDir>
 #include <QTest>
 
 namespace {
@@ -522,6 +524,47 @@ void ClientProxyTests::inputCapabilities_v19_sendsSourcePlatformAndCapabilities(
   const auto actual = stream->take();
   const auto expectedBytes = expected.take();
   QVERIFY(actual.endsWith(expectedBytes));
+}
+
+// The experiment that maps the pointer around the holes of a desktop is the Server's alone: a computer is not told of
+// it, so the first bytes that it gets are the same, with it on and with it off, for every protocol that has a handshake
+void ClientProxyTests::handshake_monitorExperiment_changesNoByteOnTheWire()
+{
+  QTemporaryDir settingsDir;
+  QVERIFY(settingsDir.isValid());
+  Settings::setSettingsFile(settingsDir.filePath(QStringLiteral("Deskflow.conf")));
+
+  const auto handshake = [](bool version19) {
+    MockEventQueue events;
+    auto *stream = new CapturingStream;
+    auto *server = reinterpret_cast<Server *>(0x1);
+    if (version19) {
+      ClientProxy1_9 proxy("client", stream, server, &events);
+      return stream->take();
+    }
+    ClientProxy1_8 proxy("client", stream, server, &events);
+    return stream->take();
+  };
+
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, false);
+  const auto off19 = handshake(true);
+  const auto off18 = handshake(false);
+
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(
+      Settings::Computer::MonitorLayout.arg(QStringLiteral("client")), QStringLiteral("0,0,2560,1440;2560,0,1920,1080")
+  );
+  const auto on19 = handshake(true);
+  const auto on18 = handshake(false);
+
+  QVERIFY(!off19.isEmpty());
+  QCOMPARE(on19, off19);
+  QCOMPARE(on18, off18);
+  // there is no message for monitors: a computer that was sent one would drop what is buffered after it
+  QVERIFY(!on19.contains("DMON"));
+  QVERIFY(!on19.contains("CMON"));
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+  Settings::setValue(Settings::Computer::MonitorLayout.arg(QStringLiteral("client")));
 }
 
 void ClientProxyTests::inputCapabilities_v18_doesNotSendCapabilityMessage()

@@ -42,6 +42,44 @@ using namespace deskflow::server;
 using deskflow::clipboard::formatSkipLine;
 using deskflow::clipboard::SkipReason;
 
+namespace {
+
+Direction oppositeOf(Direction side)
+{
+  using enum Direction;
+  switch (side) {
+  case Left:
+    return Right;
+  case Right:
+    return Left;
+  case Top:
+    return Bottom;
+  case Bottom:
+    return Top;
+  default:
+    return NoDirection;
+  }
+}
+
+const char *sideText(Direction side)
+{
+  using enum Direction;
+  switch (side) {
+  case Left:
+    return "left";
+  case Right:
+    return "right";
+  case Top:
+    return "top";
+  case Bottom:
+    return "bottom";
+  default:
+    return "no";
+  }
+}
+
+} // namespace
+
 //
 // Server
 //
@@ -444,6 +482,10 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
 
   LOG_INFO("switch from \"%s\" to \"%s\" at %d,%d", getName(m_active).c_str(), getName(dst).c_str(), x, y);
 
+  if (m_multiMonitor && m_active != dst) {
+    sayMonitorGeometrySwitch(dst, x, y);
+  }
+
   // stop waiting to switch
   stopSwitch();
 
@@ -536,6 +578,11 @@ void Server::jumpToComputer(BaseClientProxy *newComputer)
   int32_t x;
   int32_t y;
   newComputer->getJumpCursorPos(x, y);
+
+  // there is no edge that the pointer was taken over
+  if (m_multiMonitor) {
+    m_crossing.known = false;
+  }
 
   switchComputer(newComputer, x, y, false);
 }
@@ -654,6 +701,11 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, Direction srcSide, 
 
   assert(src != nullptr);
 
+  // what is said about the switch, if there is one
+  if (m_multiMonitor) {
+    m_crossing = {true, srcSide, mapToFraction(src, srcSide, x, y)};
+  }
+
   // get the first neighbor
   BaseClientProxy *dst = getNeighbor(src, srcSide, x, y);
   if (dst == nullptr) {
@@ -747,6 +799,11 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, Direction srcSide, 
   // save destination computer
   assert(lastGoodComputer != nullptr);
   dst = lastGoodComputer;
+
+  // a computer that has a layout is entered on a monitor of it
+  if (const auto *layout = monitorLayoutFor(dst); layout != nullptr) {
+    enterOnMonitor(*layout, srcSide, x, y);
+  }
 
   // if entering primary computer then be sure to move in far enough
   // to avoid the jump zone.  if entering a side that doesn't have
@@ -1159,6 +1216,7 @@ void Server::processOptions()
   m_relativeMoves = newRelativeMoves;
   m_protocol = Settings::networkProtocol();
   setClipboardTextOnly(Settings::value(Settings::Server::ClipboardTextOnly).toBool());
+  setMonitorGeometry(Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool());
 }
 
 bool Server::sharesClipboardWith(const BaseClientProxy *client) const
@@ -1227,6 +1285,243 @@ void Server::setClipboardTextOnly(bool textOnly)
   }
 }
 
+void Server::setMonitorGeometry(bool on)
+{
+  if (m_multiMonitor != on) {
+    m_multiMonitor = on;
+    m_monitorGeometrySaid.clear();
+    m_crossing.known = false;
+    LOG_INFO("experimental multi-monitor aware cursor mapping is %s", on ? "on" : "off");
+  }
+  if (!on) {
+    return;
+  }
+  for (const auto &[name, client] : m_clients) {
+    sayMonitorGeometry(client);
+  }
+}
+
+const MonitorLayout *Server::monitorLayoutFor(const BaseClientProxy *client, std::string *reason) const
+{
+  if (!m_multiMonitor) {
+    return nullptr;
+  }
+
+  const auto *setting = m_config->getMonitorLayout(getName(client));
+  if (client == m_primaryClient) {
+    if (reason != nullptr && setting != nullptr) {
+      *reason = "the screen of the server itself is not supported yet";
+    }
+    return nullptr;
+  }
+  if (setting == nullptr) {
+    if (reason != nullptr) {
+      *reason = "no monitor layout is set";
+    }
+    return nullptr;
+  }
+  if (!setting->parsed) {
+    if (reason != nullptr) {
+      *reason = "the monitor layout is not valid: " + setting->parsed.error;
+    }
+    return nullptr;
+  }
+
+  // the layout is of the screen that the computer reports now, or it is of another one
+  const auto &layout = *setting->parsed.layout;
+  const auto box = layout.boundingBox();
+  int32_t x;
+  int32_t y;
+  int32_t w;
+  int32_t h;
+  client->getShape(x, y, w, h);
+  if (box.x != x || box.y != y || box.w != w || box.h != h) {
+    if (reason != nullptr) {
+      *reason = std::format(
+          "the monitor layout does not match the screen size the computer reported (layout {},{} {}x{}, reported "
+          "{},{} {}x{})",
+          box.x, box.y, box.w, box.h, x, y, w, h
+      );
+    }
+    return nullptr;
+  }
+
+  // a rectangle is mapped as it always was
+  if (layout.isPlainRectangle()) {
+    if (reason != nullptr) {
+      *reason = "the monitors make up a rectangle, nothing to correct";
+    }
+    return nullptr;
+  }
+
+  if (reason != nullptr) {
+    *reason = std::format("{} monitors, {},{} {}x{}", layout.monitors().size(), box.x, box.y, box.w, box.h);
+  }
+  return &layout;
+}
+
+void Server::sayMonitorGeometry(const BaseClientProxy *client)
+{
+  if (!m_multiMonitor) {
+    return;
+  }
+
+  std::string reason;
+  const bool on = monitorLayoutFor(client, &reason) != nullptr;
+  if (reason.empty()) {
+    return;
+  }
+
+  const auto name = getName(client);
+  const auto decision = std::format("{}: {}", on ? "on" : "off", reason);
+  auto &said = m_monitorGeometrySaid[name];
+  if (said != decision) {
+    said = decision;
+    LOG_INFO("monitor geometry %s for \"%s\": %s", on ? "on" : "off", name.c_str(), reason.c_str());
+  }
+}
+
+void Server::sayMonitorGeometrySwitch(const BaseClientProxy *destination, int32_t x, int32_t y)
+{
+  const auto describe = [this](const BaseClientProxy *client) {
+    int32_t sx;
+    int32_t sy;
+    int32_t sw;
+    int32_t sh;
+    client->getShape(sx, sy, sw, sh);
+    return std::format("\"{}\" ({},{} {}x{})", getName(client), sx, sy, sw, sh);
+  };
+
+  const auto edge = m_crossing.known ? std::format("{} edge at {:.4f}", sideText(m_crossing.side), m_crossing.fraction)
+                                     : std::string("jump");
+  m_crossing.known = false;
+  const auto text = std::format(
+      "monitor geometry: switch {} -> {}: {}, enters at {},{}, geometry of \"{}\" {}, geometry of \"{}\" {}",
+      describe(m_active), describe(destination), edge, x, y, getName(m_active),
+      monitorLayoutFor(m_active) != nullptr ? "on" : "off", getName(destination),
+      monitorLayoutFor(destination) != nullptr ? "on" : "off"
+  );
+  LOG_INFO("%s", text.c_str());
+}
+
+void Server::enterOnMonitor(const MonitorLayout &layout, Direction srcSide, int32_t &x, int32_t &y) const
+{
+  const auto entered = oppositeOf(srcSide);
+  if (entered == Direction::NoDirection) {
+    return;
+  }
+
+  // the row or the column is the one that the mapping of the computers gave; the way in is not the edge of the bounding
+  // box, which may be a hole, but the edge of the monitor that has the row or the column, as far in as the pointer was
+  // taken over it
+  const auto box = layout.boundingBox();
+  const bool alongY = srcSide == Direction::Left || srcSide == Direction::Right;
+  int32_t depth = 0;
+  switch (entered) {
+    using enum Direction;
+  case Left:
+    depth = x - box.x;
+    break;
+  case Right:
+    depth = box.right() - 1 - x;
+    break;
+  case Top:
+    depth = y - box.y;
+    break;
+  default:
+    depth = box.bottom() - 1 - y;
+    break;
+  }
+  const auto at = layout.entryPoint(entered, layout.edgeFraction(entered, alongY ? y : x), std::max(depth, 0));
+  x = at.x;
+  y = at.y;
+}
+
+void Server::onMouseMoveSecondaryOnMonitors(const MonitorLayout &layout, int32_t dx, int32_t dy)
+{
+  // save old position
+  const int32_t xOld = m_x;
+  const int32_t yOld = m_y;
+
+  // save last delta
+  m_xDelta2 = m_xDelta;
+  m_yDelta2 = m_yDelta;
+  m_xDelta = dx;
+  m_yDelta = dy;
+
+  // the pointer goes over the monitors, and along an edge that it is pushed against, not into a hole
+  const auto moved = layout.move({xOld, yOld}, dx, dy);
+  m_x = moved.position.x;
+  m_y = moved.position.y;
+
+  // The side it is pushed out through, a horizontal one before a vertical one, like it is when the computer is a
+  // rectangle. The computer on that side is found from where the pointer would be beyond the edge.
+  using enum Direction;
+  const auto box = layout.boundingBox();
+  auto dir = NoDirection;
+  int32_t x = m_x;
+  int32_t y = m_y;
+  if (moved.restX < 0) {
+    dir = Left;
+    x = box.x + moved.restX;
+  } else if (moved.restX > 0) {
+    dir = Right;
+    x = box.right() - 1 + moved.restX;
+  } else if (moved.restY < 0) {
+    dir = Top;
+    y = box.y + moved.restY;
+  } else if (moved.restY > 0) {
+    dir = Bottom;
+    y = box.bottom() - 1 + moved.restY;
+  }
+
+  BaseClientProxy *newComputer = m_active;
+  bool jump = false;
+  if (dir == NoDirection) {
+    // we haven't left the computer.  if waiting and the pointer is not on the edge we're waiting on then stop waiting,
+    // and arm the double tap
+    if (m_switchComputer != nullptr) {
+      bool clearWait;
+      switch (m_switchDir) {
+      case Left:
+        clearWait = layout.contains(m_x - 1, m_y);
+        break;
+
+      case Right:
+        clearWait = layout.contains(m_x + 1, m_y);
+        break;
+
+      case Top:
+        clearWait = layout.contains(m_x, m_y - 1);
+        break;
+
+      case Bottom:
+        clearWait = layout.contains(m_x, m_y + 1);
+        break;
+
+      default:
+        clearWait = false;
+        break;
+      }
+      if (clearWait) {
+        noSwitch(m_x, m_y);
+      }
+    }
+  } else {
+    // try to switch computer.  get the neighbor and see if we should switch
+    newComputer = mapToNeighbor(m_active, dir, x, y);
+    jump = isSwitchOkay(newComputer, dir, x, y, m_x, m_y);
+  }
+
+  if (jump) {
+    switchComputer(newComputer, x, y, false);
+  } else if (m_x != xOld || m_y != yOld) {
+    // same computer.  warp cursor if it moved.
+    LOG_VERBOSE("move on %s to %d,%d", getName(m_active).c_str(), m_x, m_y);
+    m_active->mouseMove(m_x, m_y);
+  }
+}
+
 void Server::handleShapeChanged(BaseClientProxy *client)
 {
   if (!m_clientSet.contains(client)) {
@@ -1234,6 +1529,9 @@ void Server::handleShapeChanged(BaseClientProxy *client)
   }
 
   LOG_DEBUG("computer \"%s\" shape changed", getName(client).c_str());
+
+  // the layout of the computer may not be of its screen any more, or be again
+  sayMonitorGeometry(client);
 
   // update jump coordinate
   int32_t x;
@@ -1901,6 +2199,12 @@ void Server::onMouseMoveSecondary(int32_t dx, int32_t dy)
     return;
   }
 
+  // a computer that has a layout to map the pointer by has it moved over its monitors
+  if (const auto *layout = monitorLayoutFor(m_active); layout != nullptr) {
+    onMouseMoveSecondaryOnMonitors(*layout, dx, dy);
+    return;
+  }
+
   // save old position
   const int32_t xOld = m_x;
   const int32_t yOld = m_y;
@@ -2077,6 +2381,8 @@ bool Server::addClient(BaseClientProxy *client)
   // tell primary client about the active sides
   m_primaryClient->reconfigure(getActivePrimarySides());
 
+  sayMonitorGeometry(client);
+
   return true;
 }
 
@@ -2095,6 +2401,7 @@ bool Server::removeClient(BaseClientProxy *client)
   m_events->removeHandler(ClipboardChanged, client->getEventTarget());
 
   // remove from list
+  m_monitorGeometrySaid.erase(getName(client));
   m_clients.erase(getName(client));
   m_clientSet.erase(i);
 

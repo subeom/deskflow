@@ -270,6 +270,93 @@ void ServerConfigTests::clipboardSizeOption_oldConfigWithoutTheKeyIsOff()
   QCOMPARE(options.at(kOptionClipboardSharingSize), 3 * 1024);
 }
 
+void ServerConfigTests::monitorLayout_isOffUnlessTheComputerHasOne()
+{
+  const auto name = QStringLiteral("monitorLayoutOff");
+  const auto key = Settings::Computer::MonitorLayout.arg(name);
+  Settings::setValue(key);
+
+  Config config(nullptr);
+  QVERIFY(config.addComputer(name.toStdString()));
+  QVERIFY(config.getMonitorLayout(name.toStdString()) == nullptr);
+
+  // a layout of nothing is none
+  Settings::setValue(key, QStringLiteral(" \n\t "));
+  Config blank(nullptr);
+  QVERIFY(blank.addComputer(name.toStdString()));
+  QVERIFY(blank.getMonitorLayout(name.toStdString()) == nullptr);
+  Settings::setValue(key);
+}
+
+void ServerConfigTests::monitorLayout_isReadFromTheSettings()
+{
+  const auto name = QStringLiteral("monitorLayoutRead");
+  const auto key = Settings::Computer::MonitorLayout.arg(name);
+
+  Settings::setValue(key, QStringLiteral(" 0,0,2560,1440 ; 2560,0,1920,1080\n"));
+  Config config(nullptr);
+  QVERIFY(config.addComputer(name.toStdString()));
+  const auto *layout = config.getMonitorLayout(name.toStdString());
+  QVERIFY(layout != nullptr);
+  QVERIFY(layout->parsed);
+  QCOMPARE(layout->parsed.layout->monitors().size(), size_t{2});
+  QCOMPARE(layout->text, std::string("0,0,2560,1440 ; 2560,0,1920,1080"));
+
+  // a layout that is wrong is kept, with what is wrong with it, so that it can be said when it matters
+  Settings::setValue(key, QStringLiteral("0,0,2560"));
+  Config wrong(nullptr);
+  QVERIFY(wrong.addComputer(name.toStdString()));
+  layout = wrong.getMonitorLayout(name.toStdString());
+  QVERIFY(layout != nullptr);
+  QVERIFY(!layout->parsed);
+  QVERIFY(!layout->parsed.error.empty());
+
+  Settings::setValue(key);
+}
+
+void ServerConfigTests::monitorLayout_addsNoOption()
+{
+  // an option goes to the computer, which is told the options of its own: a layout is not for it to know
+  const auto name = QStringLiteral("monitorLayoutOptions");
+  const auto key = Settings::Computer::MonitorLayout.arg(name);
+  Settings::setValue(key);
+  Config without(nullptr);
+  QVERIFY(without.addComputer(name.toStdString()));
+
+  Settings::setValue(key, QStringLiteral("0,0,2560,1440;2560,0,1920,1080"));
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Config with(nullptr);
+  QVERIFY(with.addComputer(name.toStdString()));
+
+  QVERIFY(*with.getOptions(name.toStdString()) == *without.getOptions(name.toStdString()));
+  // nor does the master switch add one that a computer is told
+  const auto onOptions = readGlobalOptions();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, false);
+  QVERIFY(onOptions == readGlobalOptions());
+
+  Settings::setValue(key);
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+}
+
+void ServerConfigTests::monitorLayout_isPartOfEquality()
+{
+  Config a(nullptr);
+  Config b(nullptr);
+  QVERIFY(a.addComputer("pc"));
+  QVERIFY(b.addComputer("pc"));
+  QVERIFY(a == b);
+
+  QVERIFY(b.setMonitorLayout("pc", "0,0,2560,1440;2560,0,1920,1080"));
+  QVERIFY(!(a == b));
+  QVERIFY(a.setMonitorLayout("pc", "0,0,2560,1440;2560,0,1920,1080"));
+  QVERIFY(a == b);
+
+  // an empty layout takes it away
+  QVERIFY(a.setMonitorLayout("pc", ""));
+  QVERIFY(a.getMonitorLayout("pc") == nullptr);
+  QVERIFY(!a.setMonitorLayout("nobody", "0,0,10,10"));
+}
+
 void ServerConfigTests::neighborPositions_stayHalfOpenAndChain()
 {
   Config config(nullptr);

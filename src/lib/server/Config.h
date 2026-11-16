@@ -14,6 +14,7 @@
 #include "deskflow/OptionTypes.h"
 #include "net/NetworkAddress.h"
 #include "server/InputFilter.h"
+#include "server/MonitorGeometry.h"
 
 #include <iosfwd>
 #include <map>
@@ -54,6 +55,20 @@ class Config
 public:
   using ScreenOptions = std::map<OptionID, OptionValue>;
   using Interval = std::pair<float, float>;
+
+  //! The monitor layout that was set for a computer
+  struct MonitorLayoutSetting
+  {
+    //! What it was set to, without the white space around it
+    std::string text;
+    //! What the text makes, or what is wrong with it
+    MonitorLayoutResult parsed;
+
+    bool operator==(const MonitorLayoutSetting &other) const
+    {
+      return text == other.text;
+    }
+  };
 
   class CellEdge
   {
@@ -133,6 +148,8 @@ private:
 
   public:
     ScreenOptions m_options;
+    //! Experimental: set when the computer has a monitor layout; not an option, so nothing of it is sent
+    std::optional<MonitorLayoutSetting> m_monitorLayout;
   };
   using CellMap = std::map<std::string, Cell, deskflow::string::CaselessCmp>;
   using NameMap = std::map<std::string, std::string, deskflow::string::CaselessCmp>;
@@ -264,6 +281,20 @@ public:
   is a known computer.
   */
   bool addOption(const std::string &name, OptionID option, OptionValue value);
+
+  //! Set the monitor layout of a computer (experimental)
+  /*!
+  The layout is the text of a list of monitors, see \c MonitorLayout::parse(). It is kept as it is and is parsed once;
+  a text that is wrong is kept with what is wrong with it. Empty text takes the layout of the computer away. It is not
+  an option: nothing of it is sent to the computer. Returns true iff \c name is a known computer.
+  */
+  bool setMonitorLayout(const std::string &name, const std::string &text);
+
+  //! Get the monitor layout of a computer
+  /*!
+  Returns nullptr if the computer is unknown or has none.
+  */
+  const MonitorLayoutSetting *getMonitorLayout(const std::string &name) const;
 
   //! Get the hot key input filter
   /*!

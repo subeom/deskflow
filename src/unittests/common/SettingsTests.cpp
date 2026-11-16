@@ -95,6 +95,40 @@ void SettingsTests::clipboardTextOnly_isOffByDefaultAndRoundTrips()
   QCOMPARE(Settings::value(key).toBool(), false);
 }
 
+void SettingsTests::experimentalMultiMonitor_isOffByDefaultAndRoundTrips()
+{
+  const auto key = Settings::Server::ExperimentalMultiMonitor;
+  QVERIFY(Settings::validKeys().contains(key));
+
+  // a config from before the setting existed has no value for it: it is off
+  Settings::setValue(key);
+  QCOMPARE(Settings::defaultValue(key), QVariant(false));
+  QCOMPARE(Settings::value(key), QVariant(false));
+
+  Settings::setValue(key, true);
+  QCOMPARE(Settings::value(key).toBool(), true);
+  Settings::setValue(key, false);
+  QCOMPARE(Settings::value(key).toBool(), false);
+  Settings::setValue(key);
+  QCOMPARE(Settings::value(key).toBool(), false);
+}
+
+void SettingsTests::monitorLayout_isEmptyByDefaultAndRoundTrips()
+{
+  const auto key = Settings::Computer::MonitorLayout.arg(QStringLiteral("some-pc"));
+  QCOMPARE(key, QStringLiteral("computer_some-pc/monitorLayout"));
+
+  // a config from before the setting existed has no layout for a computer: it is not used
+  Settings::setValue(key);
+  QCOMPARE(Settings::defaultValue(key).toString(), QString());
+  QCOMPARE(Settings::value(key).toString(), QString());
+
+  Settings::setValue(key, QStringLiteral("0,0,2560,1440;2560,0,1920,1080"));
+  QCOMPARE(Settings::value(key).toString(), QStringLiteral("0,0,2560,1440;2560,0,1920,1080"));
+  Settings::setValue(key);
+  QCOMPARE(Settings::value(key).toString(), QString());
+}
+
 void SettingsTests::checkCleanComputerName()
 {
   const auto input = QStringLiteral("--!_ _-C@o#mpu$t%e^&*(r)= +Name\n[1]2|3?4--5>6<,7`~/8*90\\.lan--..    ..");

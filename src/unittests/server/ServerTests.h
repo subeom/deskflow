@@ -73,9 +73,24 @@ private Q_SLOTS:
   void pointerPin_everyWayOutOfARemote_leavesWhereItAlwaysDid();
   void pointerPin_aFlick_landsWhereItAlwaysDid_data();
   void pointerPin_aFlick_landsWhereItAlwaysDid();
+  void pointerPin_acrossAnOfflineComputer_landsWhereItAlwaysDid_data();
   void pointerPin_acrossAnOfflineComputer_landsWhereItAlwaysDid();
+  void pointerPin_linkIntervals_landWhereTheyAlwaysDid_data();
   void pointerPin_linkIntervals_landWhereTheyAlwaysDid();
+  void pointerPin_cornersOfThePrimary_horizontalIsTriedFirst_data();
   void pointerPin_cornersOfThePrimary_horizontalIsTriedFirst();
+  void monitorGeometry_enteringAHole_landsOnAMonitor();
+  void monitorGeometry_leavingThroughAnInnerEdge_happensAtOnce();
+  void monitorGeometry_pushedAgainstAnInnerEdge_hasNoDeadTravel();
+  void monitorGeometry_linkIntervals_areAlongTheBoundingBoxOfTheDesktop();
+  void monitorGeometry_aShapeThatChanges_dropsALayoutThatIsStale();
+  void monitorGeometry_aComputerThatConnectsAgain_isDecidedAgain();
+  void monitorGeometry_decisions_areSaidOncePerChange();
+  void monitorGeometry_everySwitch_isSaidAtInfoLevel();
+  void monitorGeometry_theScreenOfTheServer_isMappedAsItAlwaysWas();
+  void monitorGeometry_nothingIsAddedToWhatAComputerIsTold();
+  void monitorGeometry_cornersThatLockTheCursor_stillDo_data();
+  void monitorGeometry_cornersThatLockTheCursor_stillDo();
 
 private:
   Log m_log;

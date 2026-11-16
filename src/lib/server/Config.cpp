@@ -143,6 +143,12 @@ bool Config::addComputer(const std::string &name)
     addOption(name, kOptionCrossOSSemanticMedia, 1);
   }
 
+  // not an option, so nothing of it is sent: a computer that has no layout is configured as it always was
+  if (const auto layout = Settings::value(Settings::Computer::MonitorLayout.arg(computer)).toString();
+      !layout.trimmed().isEmpty()) {
+    setMonitorLayout(name, layout.toStdString());
+  }
+
   return true;
 }
 
@@ -239,6 +245,31 @@ bool Config::addOption(const std::string &name, OptionID option, OptionValue val
   // add option
   options->insert(std::make_pair(option, value));
   return true;
+}
+
+bool Config::setMonitorLayout(const std::string &name, const std::string &text)
+{
+  const auto index = m_map.find(name);
+  if (index == m_map.end()) {
+    return false;
+  }
+
+  const auto trimmed = QString::fromStdString(text).trimmed().toStdString();
+  if (trimmed.empty()) {
+    index->second.m_monitorLayout.reset();
+  } else {
+    index->second.m_monitorLayout = MonitorLayoutSetting{trimmed, MonitorLayout::parse(trimmed)};
+  }
+  return true;
+}
+
+const Config::MonitorLayoutSetting *Config::getMonitorLayout(const std::string &name) const
+{
+  const auto index = m_map.find(getCanonicalName(name));
+  if (index == m_map.end() || !index->second.m_monitorLayout) {
+    return nullptr;
+  }
+  return &*index->second.m_monitorLayout;
 }
 
 bool Config::isValidComputerName(const std::string &name) const
@@ -1239,6 +1270,11 @@ bool Config::Cell::operator==(const Cell &x) const
 {
   // compare options
   if (m_options != x.m_options) {
+    return false;
+  }
+
+  // compare monitor layouts
+  if (m_monitorLayout != x.m_monitorLayout) {
     return false;
   }
 

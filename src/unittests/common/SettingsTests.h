@@ -23,6 +23,8 @@ private Q_SLOTS:
   void tlsTrustedClientsDb();
   void checkValidSettings();
   void clipboardTextOnly_isOffByDefaultAndRoundTrips();
+  void experimentalMultiMonitor_isOffByDefaultAndRoundTrips();
+  void monitorLayout_isEmptyByDefaultAndRoundTrips();
   void checkCleanComputerName();
   void checkCleanComputerName_LongName();
   void checkClearState();

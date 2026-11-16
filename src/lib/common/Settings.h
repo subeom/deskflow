@@ -111,6 +111,8 @@ public:
     inline static const auto EnableHeartbeat = QStringLiteral("server/enableHeartbeat");
     inline static const auto EnableSwitchDelay = QStringLiteral("server/enableSwitchDelay");
     inline static const auto EnableSwitchDoubleTap = QStringLiteral("server/enableSwitchDoubleTap");
+    // experimental: the Server maps the pointer around the holes of the desktop of a computer that has a monitor layout
+    inline static const auto ExperimentalMultiMonitor = QStringLiteral("server/experimentalMultiMonitor");
     inline static const auto ExternalConfig = QStringLiteral("server/externalConfig");
     inline static const auto ExternalConfigFile = QStringLiteral("server/externalConfigFile");
     inline static const auto GridHeight = QStringLiteral("server/gridHeight");
@@ -138,6 +140,8 @@ public:
     inline static const auto ModifierMeta = QStringLiteral("computer_%1/modifierMeta");
     inline static const auto ModifierShift = QStringLiteral("computer_%1/modifierShift");
     inline static const auto ModifierSuper = QStringLiteral("computer_%1/modifierSuper");
+    // experimental: the monitors of the computer, x,y,w,h;x,y,w,h in the coordinates of the shape that it reports
+    inline static const auto MonitorLayout = QStringLiteral("computer_%1/monitorLayout");
     inline static const auto ShareClipboard = QStringLiteral("computer_%1/shareClipboard");
     inline static const auto F18Action = QStringLiteral("computer_%1/f18Action");
     inline static const auto CrossOSInvertX = QStringLiteral("computer_%1/crossOSInvertX");
@@ -335,6 +339,7 @@ private:
     , Server::EnableHeartbeat
     , Server::EnableSwitchDelay
     , Server::EnableSwitchDoubleTap
+    , Server::ExperimentalMultiMonitor
     , Server::ExternalConfig
     , Server::ExternalConfigFile
     , Server::GridHeight
@@ -371,6 +376,7 @@ private:
     , Server::EnableHeartbeat
     , Server::EnableSwitchDelay
     , Server::EnableSwitchDoubleTap
+    , Server::ExperimentalMultiMonitor
     , Server::ExternalConfig
     , Server::RelativeMouseMoves
     , Server::XdpClipboardRetried

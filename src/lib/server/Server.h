@@ -331,6 +331,31 @@ private:
   // share the whole clipboard, or the text of it only
   void setClipboardTextOnly(bool textOnly);
 
+  // The experiment: the monitor layouts of computers, see deskflow::server::MonitorLayout. It is on when the setting is
+  // and then, for a computer that has a layout, the pointer is mapped around the holes of its desktop. Everything below
+  // is for a Server that is not set to the experiment, or a computer that has no layout that fits it, to not do.
+
+  // turn the experiment on or off, and say what is decided for each computer when it is on
+  void setMonitorGeometry(bool on);
+
+  // the layout to map the pointer by on \p client: when the experiment is on, the computer has a layout, that is valid,
+  // is of the screen that the computer reports, and is not a rectangle. Otherwise nullptr, which is the mapping that
+  // there always was; \p reason says why, if given (and is empty when there is nothing to say about the computer).
+  const deskflow::server::MonitorLayout *
+  monitorLayoutFor(const BaseClientProxy *client, std::string *reason = nullptr) const;
+
+  // say what is decided for \p client, if it is not what was said last
+  void sayMonitorGeometry(const BaseClientProxy *client);
+
+  // say about a switch of computers, when the experiment is on
+  void sayMonitorGeometrySwitch(const BaseClientProxy *destination, int32_t x, int32_t y);
+
+  // put the pointer on the monitor of \p layout that it enters on, entering through the side opposite to \p srcSide
+  void enterOnMonitor(const deskflow::server::MonitorLayout &layout, Direction srcSide, int32_t &x, int32_t &y) const;
+
+  // the pointer is moved by \p dx, \p dy on a computer that has a layout to map the pointer by
+  void onMouseMoveSecondaryOnMonitors(const deskflow::server::MonitorLayout &layout, int32_t dx, int32_t dy);
+
   // event handlers
   void handleShapeChanged(BaseClientProxy *client);
   void handleClipboardGrabbed(const Event &event, BaseClientProxy *client);
@@ -510,4 +535,19 @@ private:
   bool m_defaultLockToComputerState = false;
   bool m_disableLockToComputer = false;
   bool m_enableClipboard = true;
+
+  // the experiment is on
+  bool m_multiMonitor = false;
+
+  // what was said last about each computer, by name: on or off, and why
+  std::map<std::string, std::string> m_monitorGeometrySaid;
+
+  // the side and fraction of the last edge that the pointer was taken over, for what is said about a switch
+  struct Crossing
+  {
+    bool known = false;
+    Direction side = Direction::NoDirection;
+    float fraction = 0.0f;
+  };
+  mutable Crossing m_crossing;
 };

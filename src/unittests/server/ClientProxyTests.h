@@ -23,6 +23,7 @@ private Q_SLOTS:
   void keyUp_data();
   void keyUp();
   void inputCapabilities_v19_sendsSourcePlatformAndCapabilities();
+  void handshake_monitorExperiment_changesNoByteOnTheWire();
   void inputCapabilities_v18_doesNotSendCapabilityMessage();
   void inputCapabilities_v19_parsesDestinationCapabilities();
   void inputCapabilities_v19_waitsForCapabilitiesBeforeReady();

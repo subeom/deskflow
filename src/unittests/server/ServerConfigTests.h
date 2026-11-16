@@ -23,6 +23,10 @@ private Q_SLOTS:
   void clipboardSizeOption_data();
   void clipboardSizeOption();
   void clipboardSizeOption_oldConfigWithoutTheKeyIsOff();
+  void monitorLayout_isOffUnlessTheComputerHasOne();
+  void monitorLayout_isReadFromTheSettings();
+  void monitorLayout_addsNoOption();
+  void monitorLayout_isPartOfEquality();
   void neighborPositions_stayHalfOpenAndChain();
   void partialDestinationInterval_clampsInsideEndpoint();
   void equalityCheck();

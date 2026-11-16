@@ -536,6 +536,9 @@ QVariant Settings::computerDefaults(const QString &key)
     return QStringLiteral("all");
   if (key == "crossOSInvertX" || key == "crossOSInvertY" || key == "crossOSSemanticMedia")
     return false;
+  // a configuration that predates the setting has no monitor layout for a computer: it is mapped as it always was
+  if (key == "monitorLayout")
+    return QString();
   if (key.contains(QStringLiteral("halfDuplex")) || key.contains("xtestIsXineramaUnaware") || key.contains("X11") ||
       key.contains("Left") || key.contains("Right"))
     return false;
