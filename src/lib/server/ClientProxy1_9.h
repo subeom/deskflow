@@ -35,6 +35,12 @@ public:
   */
   const deskflow::server::ReportedMonitors *reportedMonitors() const override;
 
+  //! The computer was invited to report its monitors and acknowledged it: it reports them, or there are none
+  bool mayReportMonitors() const override
+  {
+    return monitorsNegotiated();
+  }
+
   void keyDown(KeyID, KeyModifierMask, KeyButton, const std::string &) override;
   void keyRepeat(KeyID, KeyModifierMask, int32_t, KeyButton, const std::string &) override;
   void keyUp(KeyID, KeyModifierMask, KeyButton) override;

@@ -29,13 +29,6 @@ server::editor::Layout drawingOf(
 //! Whether the user has a monitor layout for \p computer (typed, imported or drawn) that is a layout
 bool hasTypedMonitors(const ::Computer &computer);
 
-/*!
- * How many units of the arrangement a unit of \p computer is. The arrangement is in logical pixels, so the physical
- * pixels of a Windows PC that reports its monitors at 150 % are 100 / 150 of a unit, unless the user scaled the
- * computer (a zoom that is exactly 1 is the one that nobody set) or drew its monitors himself.
- */
-double effectiveZoom(const ::Computer &computer, const std::optional<ReportedMonitors> &reportedMonitors);
-
 //! What the editor made becomes the monitors, the zoom, the scales and the place of \p computer
 void apply(::Computer &computer, const server::editor::Realised &made);
 

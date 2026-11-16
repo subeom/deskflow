@@ -493,6 +493,11 @@ void MonitorEditorDialogTests::keys_deletingTheLastOne_leavesASelectionThatIsThe
 void MonitorEditorDialogTests::reported_theMonitorsOfTheComputer_areShownAndCannotBeChanged()
 {
   auto opened = open(windowsPc(), kMatching);
+  // the buttons of the numbers are in a group that disables them while it is closed: it is open to see their own state
+  child<QGroupBox>(opened, "groupAdvancedNumbers")->setChecked(true);
+  // there is something to undo when the reported monitors are shown: the shortcut must not undo it
+  child<QPushButton>(opened, "btnRotate")->click();
+  QVERIFY(child<QPushButton>(opened, "btnUndo")->isEnabled());
   opened.dialog->showReportedMonitors();
   QApplication::processEvents();
 
@@ -521,12 +526,14 @@ void MonitorEditorDialogTests::reported_theMonitorsOfTheComputer_areShownAndCann
   QCOMPARE(opened.dialog->drawing().monitors.size(), before.monitors.size());
   QVERIFY(opened.dialog->drawing().monitors[1].x == before.monitors[1].x);
   QVERIFY(opened.dialog->drawing().monitors[1].y == before.monitors[1].y);
+  QVERIFY(opened.dialog->drawing() == before);
   QVERIFY(opened.dialog->isShowingReportedMonitors());
 }
 
 void MonitorEditorDialogTests::reported_drawingYourOwn_enablesTheEditing()
 {
   auto opened = open(windowsPc(), kMatching);
+  child<QGroupBox>(opened, "groupAdvancedNumbers")->setChecked(true);
   opened.dialog->showReportedMonitors();
   child<QPushButton>(opened, "btnDrawOwn")->click();
   QApplication::processEvents();
@@ -535,6 +542,9 @@ void MonitorEditorDialogTests::reported_drawingYourOwn_enablesTheEditing()
   QVERIFY(!child<QPushButton>(opened, "btnDrawOwn")->isVisibleTo(opened.dialog.get()));
   QVERIFY(child<QPushButton>(opened, "btnAddMonitor")->isEnabled());
   QVERIFY(!child<QPlainTextEdit>(opened, "textNumbers")->isReadOnly());
+  // the buttons of the numbers are enabled again, not only the ones of the drawing
+  QVERIFY(child<QWidget>(opened, "btnApplyNumbers")->isEnabled());
+  QVERIFY(child<QWidget>(opened, "btnImportNumbers")->isEnabled());
   QVERIFY2(statusOf(opened).contains(QStringLiteral("Matches what PC reports")), qPrintable(statusOf(opened)));
 
   // and now the drawing is the user's: it is edited like any other

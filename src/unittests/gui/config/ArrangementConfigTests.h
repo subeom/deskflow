@@ -41,6 +41,8 @@ private Q_SLOTS:
   void reportedMonitors_areRememberedForAComputerThatIsOffline();
   void reportedMonitors_areDrawnForAComputerThatHasNoLayout();
   void reportedMonitors_aTypedLayoutIsWhatIsDrawn();
+  void reportedMonitors_aMacIsDrawnInItsPoints_aWindowsPcAtItsScale();
+  void reportedMonitors_theZoomIsAdoptedOnTheFirstReportOnly();
   void reportedMonitors_aListenerIsToldOfEveryReport();
   void assumedSizes_areOfTheComputersThatHaveNoMonitorsAndNoSize();
   void monitorEditing_drawsWhatIsStored_andStoresWhatIsMade();

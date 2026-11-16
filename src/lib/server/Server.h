@@ -586,6 +586,8 @@ private:
 
   // the monitors that each computer was last said to report, by name; empty when it was said to report none
   std::map<std::string, std::string> m_reportedMonitorsSaid;
+  // the computers that were said not to report, for as long as they are connected
+  std::set<std::string> m_noMonitorsSaid;
 
   // the side and fraction of the last edge that the pointer was taken over, for what is said about a switch
   struct Crossing

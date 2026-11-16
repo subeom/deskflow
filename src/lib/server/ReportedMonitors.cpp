@@ -44,6 +44,7 @@ ReportCheck checkReport(const deskflow::monitors::ReceivedReport &report, const 
     } else {
       auto &kept = entries[static_cast<size_t>(same - rects.begin())];
       kept.primary = kept.primary || monitor.primary;
+      kept.logicalUnits = kept.logicalUnits || monitor.logicalUnits;
     }
   }
 

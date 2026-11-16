@@ -46,7 +46,9 @@ std::vector<uint8_t> encodeReport(const MonitorReport &report)
     put16(out, static_cast<uint16_t>(monitor.w));
     put16(out, static_cast<uint16_t>(monitor.h));
     put16(out, monitor.scalePercent);
-    out.push_back(monitor.primary ? kFlagPrimary : 0);
+    out.push_back(
+        static_cast<uint8_t>((monitor.primary ? kFlagPrimary : 0) | (monitor.logicalUnits ? kFlagLogicalUnits : 0))
+    );
   }
   return out;
 }
@@ -72,7 +74,7 @@ std::optional<ReceivedReport> readReport(deskflow::IStream *stream)
     }
     report.monitors.push_back(
         {static_cast<int16_t>(x), static_cast<int16_t>(y), static_cast<int16_t>(w), static_cast<int16_t>(h), scale,
-         (flags & kFlagPrimary) != 0}
+         (flags & kFlagPrimary) != 0, (flags & kFlagLogicalUnits) != 0}
     );
   }
   return report;
@@ -91,6 +93,9 @@ std::string formatMonitorEntries(const std::vector<MonitorEntry> &monitors)
     }
     if (monitor.primary) {
       text += " primary";
+    }
+    if (monitor.logicalUnits) {
+      text += " logical";
     }
   }
   return text;
@@ -113,6 +118,7 @@ PreparedMonitors prepareMonitors(const std::vector<MonitorInfo> &monitors, const
       continue;
     }
     same->primary = same->primary || monitor.primary;
+    same->logicalUnits = same->logicalUnits || monitor.logicalUnits;
     if (same->scalePercent == 0) {
       same->scalePercent = monitor.scalePercent;
     }
@@ -179,7 +185,7 @@ PreparedMonitors prepareMonitors(const std::vector<MonitorInfo> &monitors, const
     prepared.monitors.push_back(
         {static_cast<int16_t>(monitor.rect.x), static_cast<int16_t>(monitor.rect.y),
          static_cast<int16_t>(monitor.rect.w), static_cast<int16_t>(monitor.rect.h), monitor.scalePercent,
-         monitor.primary}
+         monitor.primary, monitor.logicalUnits}
     );
   }
   return prepared;

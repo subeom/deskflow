@@ -583,6 +583,8 @@ void ArrangementConfigTests::reportedMonitors_isParsedFromTheLogOfTheCore_data()
   QTest::newRow("a negative origin and no scale")
       << line(QStringLiteral("2 monitors: -1920,-300,1920,1080;0,0,2560,1440 primary\r")) << true << "PC"
       << "-1920,-300,1920,1080;0,0,2560,1440 primary";
+  QTest::newRow("a Mac: logical units") << line(QStringLiteral("1 monitors: 0,0,2064,1347 scale=200 primary logical"))
+                                        << true << "PC" << "0,0,2064,1347 scale=200 primary logical";
   QTest::newRow("no monitors any more") << line(QStringLiteral("no monitors")) << true << "PC" << "";
   QTest::newRow("a name with a space and a dot")
       << QStringLiteral(
@@ -621,6 +623,8 @@ void ArrangementConfigTests::reportedMonitors_isParsedFromTheLogOfTheCore_data()
                                              << "";
   QTest::newRow("beyond 16 bits") << line(QStringLiteral("1 monitors: 0,0,40000,10")) << false << "" << "";
   QTest::newRow("not numbers") << line(QStringLiteral("1 monitors: a,0,10,10")) << false << "" << "";
+  QTest::newRow("the words in another order")
+      << line(QStringLiteral("1 monitors: 0,0,10,10 logical primary")) << false << "" << "";
   QTest::newRow("a word that is not expected") << line(QStringLiteral("1 monitors: 0,0,10,10 evil")) << false << ""
                                                << "";
   QTest::newRow("an empty item") << line(QStringLiteral("2 monitors: 0,0,10,10;;10,0,10,10")) << false << "" << "";
@@ -798,6 +802,76 @@ void ArrangementConfigTests::reportedMonitors_aTypedLayoutIsWhatIsDrawn()
   ServerConfig::overrideServerMonitors(std::nullopt);
 }
 
+// The arrangement is in logical pixels: the physical pixels of a Windows PC at 150 % are 100 / 150 of a unit, and the
+// points of a Mac are units already, whatever the scale of the display is
+void ArrangementConfigTests::reportedMonitors_aMacIsDrawnInItsPoints_aWindowsPcAtItsScale()
+{
+  writeGrid({{6, "A"}, {7, "B"}, {8, "C"}}, "A");
+  ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{});
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  ServerConfig config;
+  QVERIFY(config.takeReportedMonitorsFromLog(QStringLiteral(
+      "[2026-11-16T13:30:00.123] INFO: computer \"B\" reports 1 monitors: 0,0,2560,1440 scale=150 primary"
+  )));
+  QVERIFY(config.takeReportedMonitorsFromLog(QStringLiteral(
+      "[2026-11-16T13:30:00.123] INFO: computer \"C\" reports 1 monitors: 0,0,2064,1347 scale=200 primary logical"
+  )));
+
+  for (const auto &c : config.arrangement().computers) {
+    if (c.name == "B")
+      QVERIFY(qAbs(c.zoom - 100.0 / 150.0) < 1e-9);
+    if (c.name == "C")
+      QCOMPARE(c.zoom, 1.0);
+  }
+  ServerConfig::overrideServerMonitors(std::nullopt);
+}
+
+// The zoom that a first report gives a computer is stored like the zoom that the user sets: a report after it does not
+// take it back, and neither does a zoom of 100 % that the user chose
+void ArrangementConfigTests::reportedMonitors_theZoomIsAdoptedOnTheFirstReportOnly()
+{
+  writeGrid({{6, "A"}, {7, "B"}}, "A");
+  ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{});
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  const auto zoomOfB = [](const ServerConfig &config) {
+    for (const auto &c : config.arrangement().computers) {
+      if (c.name == "B")
+        return c.zoom;
+    }
+    return 0.0;
+  };
+  const auto report = [](int scale) {
+    return QStringLiteral(
+               "[2026-11-16T13:30:00.123] INFO: computer \"B\" reports 1 monitors: 0,0,2560,1440 scale=%1 primary"
+    )
+        .arg(scale);
+  };
+  {
+    ServerConfig config;
+    QVERIFY(config.takeReportedMonitorsFromLog(report(150)));
+    QVERIFY(qAbs(zoomOfB(config) - 100.0 / 150.0) < 1e-9);
+    // it is stored, as a zoom is
+    QVERIFY(qAbs(Settings::value(Settings::Computer::ArrangementZoom.arg("B")).toDouble() - 100.0 / 150.0) < 1e-9);
+
+    // the monitors are scaled again by the user, to 100 %: that is his choice, and a report does not undo it
+    config.setComputerZoom("B", 1.0);
+    QVERIFY(config.takeReportedMonitorsFromLog(report(150)));
+    QVERIFY(config.takeReportedMonitorsFromLog(report(200)));
+    QCOMPARE(zoomOfB(config), 1.0);
+    // saved, a zoom of 100 % is the one that has no key
+    config.commit();
+  }
+
+  // and the same after the program is started again: the first report is not the first any more
+  ServerConfig again;
+  QCOMPARE(zoomOfB(again), 1.0);
+  QVERIFY(again.takeReportedMonitorsFromLog(report(200)));
+  QCOMPARE(zoomOfB(again), 1.0);
+  ServerConfig::overrideServerMonitors(std::nullopt);
+}
+
 void ArrangementConfigTests::reportedMonitors_aListenerIsToldOfEveryReport()
 {
   writeGrid({{6, "A"}, {7, "B"}}, "A");
@@ -815,12 +889,25 @@ void ArrangementConfigTests::reportedMonitors_aListenerIsToldOfEveryReport()
   ));
   QCOMPARE(told, (QStringList{"B", "B"}));
 
+  // a computer that reports nothing takes back what it reported, and the one that had nothing to take back is not news
+  const auto none = QStringLiteral("[2026-11-16T13:30:00.123] INFO: computer \"%1\" reports no monitors");
+  QVERIFY(config.takeReportedMonitorsFromLog(none.arg("B")));
+  QVERIFY(!config.reportedMonitors("B").has_value());
+  QVERIFY(Settings::value(Settings::Computer::ReportedMonitors.arg("B")).toString().isEmpty());
+  QCOMPARE(told, (QStringList{"B", "B", "B"}));
+  QVERIFY(config.takeReportedMonitorsFromLog(none.arg("B")));
+  QCOMPARE(told.size(), 3);
+  QVERIFY(config.takeReportedMonitorsFromLog(
+      QStringLiteral("[2026-11-16T13:30:00.123] INFO: computer \"B\" reports 1 monitors: 0,0,10,10")
+  ));
+  QCOMPARE(told.size(), 4);
+
   // a listener that is gone (a dialog that was closed) is not called
   listener.reset();
   QVERIFY(config.takeReportedMonitorsFromLog(
       QStringLiteral("[2026-11-16T13:30:00.123] INFO: computer \"B\" reports 1 monitors: 0,0,20,20")
   ));
-  QCOMPARE(told.size(), 2);
+  QCOMPARE(told.size(), 4);
 }
 
 void ArrangementConfigTests::assumedSizes_areOfTheComputersThatHaveNoMonitorsAndNoSize()

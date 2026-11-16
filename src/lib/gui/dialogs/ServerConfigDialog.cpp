@@ -530,11 +530,22 @@ void ServerConfigDialog::updateArrangementMode()
     m_arrangementPanel->refresh();
 }
 
-void ServerConfigDialog::takeReports(const QString &)
+void ServerConfigDialog::takeReports(const QString &computer)
 {
   // the copy that this dialog works on has what the configuration of the main window had when it was opened
   serverConfig().setReportedScreens(m_originalServerConfig.reportedScreens());
   serverConfig().setReportedMonitorsByComputer(m_originalServerConfig.reportedMonitorsByComputer());
+
+  // The first report of a computer gave it a zoom there: this copy gets it too, unless the zoom was set here already
+  for (const auto &original : std::as_const(m_originalServerConfig).computers()) {
+    if (original.isNull() || original.name().compare(computer, Qt::CaseInsensitive) != 0 ||
+        original.arrangementZoom() == 1.0)
+      continue;
+    for (auto &mine : serverConfig().computers()) {
+      if (!mine.isNull() && mine.name() == original.name() && mine.arrangementZoom() == 1.0)
+        mine.setArrangementZoom(original.arrangementZoom());
+    }
+  }
   refreshArrangement();
 }
 

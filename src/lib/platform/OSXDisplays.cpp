@@ -54,6 +54,8 @@ std::vector<deskflow::monitors::MonitorInfo> osxActiveDisplayInfo()
         },
         displayScalePercent(display),
         CGDisplayIsMain(display) != 0,
+        // Quartz says points: the scale of a Retina display is how sharp it is, not how big
+        true,
     });
   }
   return monitors;

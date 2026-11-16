@@ -66,6 +66,16 @@ public:
     return nullptr;
   }
 
+  //! Whether this computer takes part in the reporting of monitors (experimental)
+  /*!
+  False for a computer that does not: one of an older version, or that the server did not invite. What such a computer
+  had reported in an earlier connection is not true any more.
+  */
+  virtual bool mayReportMonitors() const
+  {
+    return false;
+  }
+
   void *getEventTarget() const override = 0;
   bool getClipboard(ClipboardID id, IClipboard *) const override = 0;
   void getShape(int32_t &x, int32_t &y, int32_t &width, int32_t &height) const override = 0;

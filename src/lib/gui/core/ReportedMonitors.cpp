@@ -8,6 +8,8 @@
 #include <QRegularExpression>
 #include <QStringList>
 
+#include <algorithm>
+
 namespace deskflow::gui {
 
 namespace {
@@ -36,6 +38,8 @@ QString ReportedMonitors::toText() const
       item += QStringLiteral(" scale=%1").arg(monitor.scalePercent);
     if (monitor.primary)
       item += QStringLiteral(" primary");
+    if (monitor.logicalUnits)
+      item += QStringLiteral(" logical");
     items << item;
   }
   return items.join(QLatin1Char(';'));
@@ -48,7 +52,7 @@ std::optional<ReportedMonitors> ReportedMonitors::fromText(const QString &text)
 
   // x,y,w,h and, in this order, the scale and the primary monitor; nothing else is part of a monitor
   static const QRegularExpression item(
-      QStringLiteral(R"re(^(-?\d{1,6}),(-?\d{1,6}),(\d{1,6}),(\d{1,6})(?: scale=(\d{1,5}))?( primary)?$)re")
+      QStringLiteral(R"re(^(-?\d{1,6}),(-?\d{1,6}),(\d{1,6}),(\d{1,6})(?: scale=(\d{1,5}))?( primary)?( logical)?$)re")
   );
 
   ReportedMonitors reported;
@@ -64,7 +68,7 @@ std::optional<ReportedMonitors> ReportedMonitors::fromText(const QString &text)
     const auto scale = match.captured(5).isEmpty() ? 0 : match.captured(5).toInt();
     if (!inShort(x) || !inShort(y) || w < 1 || h < 1 || w > kShortMax || h > kShortMax || scale > 65535)
       return std::nullopt;
-    reported.monitors.push_back({QRect(x, y, w, h), scale, !match.captured(6).isEmpty()});
+    reported.monitors.push_back({QRect(x, y, w, h), scale, !match.captured(6).isEmpty(), !match.captured(7).isEmpty()});
   }
 
   // monitors that a computer can have: they do not overlap and make one shape
@@ -92,6 +96,11 @@ int ReportedMonitors::primaryScalePercent() const
       return monitor.scalePercent;
   }
   return 0;
+}
+
+bool ReportedMonitors::logicalUnits() const
+{
+  return std::ranges::any_of(monitors, [](const ReportedMonitor &monitor) { return monitor.logicalUnits; });
 }
 
 std::optional<ReportedMonitorsLine> parseReportedMonitors(const QString &logLine)

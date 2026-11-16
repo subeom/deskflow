@@ -514,26 +514,50 @@ bool ServerConfig::takeReportedMonitorsFromLog(const QString &line)
   if (!report)
     return false;
   // and for a computer of the configuration
-  const auto &known = std::as_const(*this).computers();
+  auto &known = computers();
   const auto computer = std::ranges::find_if(known, [&](const ::Computer &c) {
     return !c.isNull() && c.name().compare(report->computer, Qt::CaseInsensitive) == 0;
   });
-  if (computer == known.cend())
+  if (computer == known.end())
     return false;
 
   // remembered, so that the computer is drawn from it when it is offline; one that has none takes it back
   const auto name = computer->name();
   const auto key = Settings::Computer::ReportedMonitors.arg(name);
+  bool changed = true;
   if (report->monitors.isEmpty()) {
-    m_reportedMonitors.remove(name.toLower());
+    // the core says it for every computer that does not report, each time that it connects: most have nothing to take
+    // back
+    changed = m_reportedMonitors.remove(name.toLower()) > 0;
     Settings::setValue(key);
   } else {
+    // the first time that a computer reports, its zoom is set the way importing its monitors would: its physical pixels
+    // are drawn at the scale of its display. After that the zoom is the user's, whatever it is.
+    if (!m_reportedMonitors.contains(name.toLower()))
+      adoptZoomOfFirstReport(*computer, report->monitors);
     m_reportedMonitors.insert(name.toLower(), report->monitors);
     Settings::setValue(key, report->monitors.toText());
   }
-  if (const auto listener = m_reportListener.lock())
-    (*listener)(name);
+  if (changed) {
+    if (const auto listener = m_reportListener.lock())
+      (*listener)(name);
+  }
   return true;
+}
+
+void ServerConfig::adoptZoomOfFirstReport(::Computer &computer, const deskflow::gui::ReportedMonitors &reported)
+{
+  // a layout of the user's, a zoom that was set, the server, and monitors in points (a Mac) are drawn as they are
+  if (computer.isServer() || deskflow::gui::hasTypedMonitors(computer) || computer.arrangementZoom() != 1.0 ||
+      reported.logicalUnits())
+    return;
+  const auto percent = reported.primaryScalePercent();
+  if (percent <= 0 || percent == 100)
+    return;
+  const auto zoom =
+      std::clamp(100.0 / percent, deskflow::server::arrangement::kMinZoom, deskflow::server::arrangement::kMaxZoom);
+  computer.setArrangementZoom(zoom);
+  Settings::setValue(Settings::Computer::ArrangementZoom.arg(computer.name()), zoom);
 }
 
 std::optional<deskflow::gui::ReportedMonitors> ServerConfig::reportedMonitors(const QString &computer) const
@@ -584,7 +608,7 @@ std::vector<arrangement::Computer> ServerConfig::arrangementComputers() const
     entry.name = computer.name().toStdString();
     entry.isServer = computer.isServer();
     const auto reported = reportedMonitors(computer.name());
-    entry.zoom = deskflow::gui::effectiveZoom(computer, reported);
+    entry.zoom = computer.arrangementZoom();
     entry.monitors = monitorsOf(computer, display, reported);
     entry.originX = computer.arrangementX();
     entry.originY = computer.arrangementY();

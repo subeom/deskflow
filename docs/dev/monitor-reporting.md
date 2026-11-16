@@ -51,7 +51,10 @@ monitor = x(2) y(2) w(2) h(2) scale(2) flags(1)          (11 bytes, big endian)
   virtual-desktop pixels on Windows. They are not scaled for display.
 - `scale` is `uint16`, the display scale in percent (100, 125, 150, 200 ...), 0 if unknown. It is informational for
   the canvas and not used for the pointer.
-- `flags`: bit 0 is the primary monitor. The other bits are 0 now and ignored by a reader.
+- `flags`: bit 0 is the primary monitor. Bit 1 says that `x y w h` are **logical units** (points): a Mac sets it, a
+  Windows PC does not (its numbers are physical pixels). It decides what `scale` means to the GUI: for physical pixels
+  the scale says how much bigger than a unit they are, for points it only says how sharp the display is and the
+  numbers are units already. The other bits are 0 now and ignored by a reader.
 
 A valid report is at most 4 + 1 + 2 + 1 + 16 x 11 = 184 bytes.
 
@@ -122,12 +125,15 @@ is read when the computer connects (for the invitation) and at every decision (f
 ### The log line the GUI reads
 
 ```
-INFO: computer "<name>" reports <N> monitors: <x>,<y>,<w>,<h>[ scale=<S>][ primary];<x>,...
+INFO: computer "<name>" reports <N> monitors: <x>,<y>,<w>,<h>[ scale=<S>][ primary][ logical];<x>,...
+INFO: computer "<name>" reports no monitors
 ```
 
 One line per **change** of a computer's report, and one when it connects, only while the experiment is on, with the name
 cleaned (a quote, a line end or another control character becomes `?`). `N` is the number of monitors; `monitors` is
-always plural. A report that is dropped says `computer "<name>" monitor report ignored: <reason>`. The GUI reads the
+always plural. `reports no monitors` is said when a computer takes its report back, **and once for each connection of a
+computer that will not report at all** (an older version, or one that the server did not invite): the GUI keeps what it
+was told for a computer that is offline, and what a computer reported before it was downgraded is not true any more. A report that is dropped says `computer "<name>" monitor report ignored: <reason>`. The GUI reads the
 first line only when it is the whole line as the core writes it, as it does for `reports its screen:`.
 
 ## The GUI
@@ -136,16 +142,25 @@ The GUI reads the log line above in the output of the core, as it reads `reports
 the experiment is on, only the whole line as the core writes it, only for a computer of the configuration, and only a
 list that a computer can report (1 to 16 monitors, valid together, the count of the line equal to the list). A name
 that has a line end in it makes a line that does not begin with the time and the level, and the core has cleaned the
-quotes out of a name, so a name cannot close itself.
+quotes out of a name, so a name cannot close itself. This is also why the names that the core logs **before** it has
+recognised a computer (`unrecognised client name`, the lines of `ClientProxyUnknown`, the warnings and errors of
+`ClientProxy1_0`) are cleaned the same way: what a computer says of itself is not trusted to be a line. The verbose and
+debug lines of a proxy that is not recognised yet still carry the name as it came (the core log is not escaped as a
+whole; that is outside this change), and what the GUI takes from such a forged line is a drawing on the canvas, never a
+decision of the server.
 
 - **Kept** in **one new optional key**, `computer_<name>/reportedMonitors` (text, the notation of the log, empty by
   default). Only the GUI writes it, as soon as a line is taken, and the core never reads it (it uses the live report):
   a computer that is offline is still drawn from what it reported last. `reports no monitors` takes it back.
 - **Drawn.** The arrangement canvas draws a computer that has no layout of the user's from its reported monitors, with the
-  line *reported by the computer* on it, at the scale of its primary monitor (a Windows PC at 150 % is `100 / 150` of
-  an arrangement unit; a zoom that is exactly 1, the one that nobody set, is replaced by that; a computer that the
-  user scaled keeps its zoom). A computer that reported its monitors is not "size assumed". The typed layout
-  (typed, imported or drawn in the monitor editor) wins, as for the server.
+  line *reported by the computer* on it. The arrangement is in logical units, so the physical pixels of a Windows PC at
+  150 % are `100 / 150` of a unit: **the first time that a computer reports** (no report is kept for it), the GUI sets
+  its zoom to that, as importing its monitors would, and stores it like any zoom (`computer_<name>/arrangementZoom`).
+  After that the zoom is the user's, whatever it is (a zoom of 100 % that he chose is kept; the dialog of the computer
+  shows the stored zoom). It is not set for the server itself, for a computer with a layout of the user's, for one whose
+  zoom was set, nor for a Mac (`logical`: points are units already, whatever the scale of the display is). A computer
+  that reported its monitors is not "size assumed". The typed layout (typed, imported or drawn in the monitor editor)
+  wins, as for the server.
 - **Live.** `ServerConfig::listenToReports` tells the open server configuration dialog when a line says something new
   about a computer; the dialog copies what the main window knows into the copy that it works on and redraws the
   canvas, so a computer that reports another desktop is followed without restarting the dialog.

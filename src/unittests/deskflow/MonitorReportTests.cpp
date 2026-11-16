@@ -357,6 +357,49 @@ void MonitorReportTests::format_isTheTextThatTheGuiReads()
   QCOMPARE(QString::fromStdString(formatMonitorEntries({})), QString());
 }
 
+// The flag that says that the coordinates are points: a Retina display of a Mac has a scale of 200 % and is 2064 points
+// wide, a Windows monitor of 150 % has its 2560 pixels; the GUI draws them by it
+void MonitorReportTests::logicalUnits_aMacReportsPointsAndWindowsPixels()
+{
+  MonitorReport report;
+  report.generation = 1;
+  report.monitors = {{0, 0, 2064, 1347, 200, true, true}};
+  // flags: bit 0 the primary monitor, bit 1 logical units
+  QCOMPARE(bytes(encodeReport(report)), hex("444d4f4e 01 0001 01 0000 0000 0810 0543 00c8 03"));
+
+  BufferStream stream(afterTheCode(encodeReport(report)));
+  const auto read = readReport(&stream);
+  QVERIFY(read.has_value());
+  QVERIFY(read->monitors[0].logicalUnits);
+  QVERIFY(read->monitors[0].primary);
+
+  // a monitor of Windows is not
+  report.monitors = {{0, 0, 2560, 1440, 150, true, false}};
+  BufferStream pixels(afterTheCode(encodeReport(report)));
+  QVERIFY(!readReport(&pixels)->monitors[0].logicalUnits);
+  QCOMPARE(bytes(encodeReport(report)).right(1), hex("01"));
+
+  // the text of the log has it, after the primary
+  QCOMPARE(
+      QString::fromStdString(formatMonitorEntries({{0, 0, 2064, 1347, 200, true, true}})),
+      QStringLiteral("0,0,2064,1347 scale=200 primary logical")
+  );
+  QCOMPARE(
+      QString::fromStdString(formatMonitorEntries({{0, 0, 2064, 1347, 200, false, true}})),
+      QStringLiteral("0,0,2064,1347 scale=200 logical")
+  );
+
+  // and a platform's monitors keep it through the preparation (a mirrored display too)
+  MonitorInfo mac = info(0, 0, 2064, 1347, 200, true);
+  mac.logicalUnits = true;
+  MonitorInfo mirror = mac;
+  mirror.primary = false;
+  const auto prepared = prepareMonitors({mac, mirror}, {0, 0, 2064, 1347});
+  QVERIFY2(prepared.ok(), prepared.problem.c_str());
+  QVERIFY(prepared.monitors[0].logicalUnits);
+  QVERIFY(!monitorsFromNative({{0, 0, 2560, 1440, 144, true}})[0].logicalUnits);
+}
+
 // Windows says the corners of a monitor and the first pixel outside it
 void MonitorReportTests::native_rectIsMadeOfTheCorners()
 {

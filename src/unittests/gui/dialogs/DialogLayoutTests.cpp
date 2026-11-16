@@ -591,11 +591,14 @@ void DialogLayoutTests::serverConfigDialog_computersTab_withReportedMonitors_isL
       Settings::Computer::ReportedMonitors.arg("Windows-PC-with-a-long-name"),
       QStringLiteral("0,0,2560,1440 scale=150 primary;2560,0,1920,1080 scale=100")
   );
+  // a Mac says its points, a Windows PC its pixels
   Settings::setValue(
-      Settings::Computer::ReportedMonitors.arg("Mac-mini"), QStringLiteral("0,0,1920,1080 scale=200 primary")
+      Settings::Computer::ReportedMonitors.arg("Mac-mini"), QStringLiteral("0,0,1920,1080 scale=200 primary logical")
   );
-  // the server, and a row to its right: the PC (at 150 %, so 2987 units wide, 3840 with a third monitor) touching it,
-  // and the Mac mini (at 200 %) with room for the PC to grow
+  // the server, and a row to its right: the PC (at 150 %, which the first report gave it as its zoom, so 2987 units
+  // wide, 3840 with a third monitor) touching it, and the Mac mini (in points, 1920 units wide) with room for the PC to
+  // grow
+  Settings::setValue(Settings::Computer::ArrangementZoom.arg("Windows-PC-with-a-long-name"), 100.0 / 150.0);
   Settings::setValue(Settings::Computer::ArrangementX.arg("srv"), 0.0);
   Settings::setValue(Settings::Computer::ArrangementX.arg("Windows-PC-with-a-long-name"), 3440.0);
   Settings::setValue(Settings::Computer::ArrangementX.arg("Mac-mini"), 7400.0);
@@ -655,6 +658,7 @@ void DialogLayoutTests::serverConfigDialog_computersTab_withReportedMonitors_isL
     Settings::setValue(Settings::Computer::ArrangementX.arg(QString::fromLatin1(name)));
     Settings::setValue(Settings::Computer::ArrangementY.arg(QString::fromLatin1(name)));
     Settings::setValue(Settings::Computer::ReportedMonitors.arg(QString::fromLatin1(name)));
+    Settings::setValue(Settings::Computer::ArrangementZoom.arg(QString::fromLatin1(name)));
   }
 }
 

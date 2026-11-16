@@ -782,6 +782,8 @@ void ClientProxyTests::monitorReport_negotiated_isKeptAndAnnounced()
   MonitorLink link(true);
   link.handshake(kWindowsMask | kLayoutCapabilityMonitors);
   QVERIFY(link.proxy->reportedMonitors() == nullptr);
+  // known when the Server adopts the computer, before anything is reported
+  QVERIFY(link.proxy->mayReportMonitors());
 
   link.push(reportBytes(twoMonitors(7)));
   link.run();
@@ -823,6 +825,7 @@ void ClientProxyTests::monitorReport_notNegotiated_isReadAndIgnored()
   link.run();
 
   QVERIFY(link.proxy->reportedMonitors() == nullptr);
+  QVERIFY(!link.proxy->mayReportMonitors());
   QCOMPARE(link.events.added(EventTypes::ClientProxyMonitorsReported), 0);
   QVERIFY(link.open());
   // the message behind it was read as the message that it is

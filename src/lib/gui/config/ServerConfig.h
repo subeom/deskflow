@@ -180,6 +180,7 @@ private:
   }
   int adjacentComputerIndex(int idx, int deltaColumn, int deltaRow) const;
   std::vector<deskflow::server::arrangement::Computer> arrangementComputers() const;
+  void adoptZoomOfFirstReport(Computer &computer, const deskflow::gui::ReportedMonitors &reported);
   bool findComputerName(const QString &name, int &index);
   bool fixNoServer(const QString &name, int &index);
 

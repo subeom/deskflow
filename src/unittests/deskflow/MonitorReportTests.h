@@ -32,6 +32,7 @@ private Q_SLOTS:
   void prepare_keepsScaleAndPrimary();
   void prepare_sixteenMonitorsAreTheMost();
   void format_isTheTextThatTheGuiReads();
+  void logicalUnits_aMacReportsPointsAndWindowsPixels();
   void native_rectIsMadeOfTheCorners();
   void native_scaleFromDpi_data();
   void native_scaleFromDpi();

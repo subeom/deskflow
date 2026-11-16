@@ -23,6 +23,8 @@ struct ReportedMonitor
   //! The display scale in percent (100, 150, 200 ...); 0 when the computer did not say
   int scalePercent = 0;
   bool primary = false;
+  //! The rectangle is in logical units (the points of a Mac): the scale is how sharp the monitor is, not how big
+  bool logicalUnits = false;
 
   bool operator==(const ReportedMonitor &) const = default;
 };
@@ -37,7 +39,7 @@ struct ReportedMonitors
     return monitors.isEmpty();
   }
 
-  //! The monitors the way the log of the core and the settings write them: x,y,w,h[ scale=S][ primary];...
+  //! The monitors the way the log of the core and the settings write them: x,y,w,h[ scale=S][ primary][ logical];...
   QString toText() const;
 
   //! The monitors of \p text, if it is a list that a computer can report: 1 to 16 monitors that are valid together
@@ -47,6 +49,9 @@ struct ReportedMonitors
 
   //! The display scale of the primary monitor, or of the first monitor that has one; 0 when none says
   int primaryScalePercent() const;
+
+  //! The coordinates are in logical units (a Mac), not in physical pixels (a Windows PC)
+  bool logicalUnits() const;
 
   bool operator==(const ReportedMonitors &) const = default;
 };

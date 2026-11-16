@@ -88,6 +88,8 @@ void OSXDisplaysTests::scaleAndPrimaryAreReported()
         monitor.scalePercent >= 100 && monitor.scalePercent <= 400, qPrintable(QString::number(monitor.scalePercent))
     );
     QVERIFY(monitor.rect.w > 0 && monitor.rect.h > 0);
+    // Quartz says points, whatever the scale of the display is
+    QVERIFY(monitor.logicalUnits);
   }
 }
 

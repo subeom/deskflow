@@ -19,16 +19,6 @@ bool hasTypedMonitors(const ::Computer &computer)
   return !computer.monitorLayout().isEmpty() && server::MonitorLayout::parse(computer.monitorLayout().toStdString());
 }
 
-double effectiveZoom(const ::Computer &computer, const std::optional<ReportedMonitors> &reportedMonitors)
-{
-  if (!reportedMonitors || computer.isServer() || hasTypedMonitors(computer) || computer.arrangementZoom() != 1.0)
-    return computer.arrangementZoom();
-  const auto percent = reportedMonitors->primaryScalePercent();
-  if (percent <= 0)
-    return computer.arrangementZoom();
-  return std::clamp(100.0 / percent, server::arrangement::kMinZoom, server::arrangement::kMaxZoom);
-}
-
 server::editor::Layout drawingOf(
     const ::Computer &computer, double originX, double originY, const std::optional<QRect> &reported,
     const std::optional<ReportedMonitors> &reportedMonitors
@@ -56,7 +46,7 @@ server::editor::Layout drawingOf(
     else
       rects = {{0, 0, 1920, 1080}};
   }
-  return server::editor::fromStored(rects, effectiveZoom(computer, reportedMonitors), originX, originY, scales);
+  return server::editor::fromStored(rects, computer.arrangementZoom(), originX, originY, scales);
 }
 
 void apply(::Computer &computer, const server::editor::Realised &made)

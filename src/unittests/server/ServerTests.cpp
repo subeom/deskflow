@@ -631,11 +631,18 @@ public:
     return reported ? &*reported : nullptr;
   }
 
+  // a computer of this version that the Server invited takes part in the reporting; an older one does not
+  bool mayReportMonitors() const override
+  {
+    return canReport;
+  }
+
   Box shape;
   Pos cursor;
   std::vector<Pos> entered;
   std::vector<Pos> moved;
   std::optional<deskflow::server::ReportedMonitors> reported;
+  bool canReport = true;
 };
 
 // the monitors that a computer reports, as the proxy of a client keeps them
@@ -771,11 +778,13 @@ struct PointerRig
     events.dispatchEvent(Event(EventTypes::ComputerShapeChanged, primary->getEventTarget()));
   }
 
-  // the remote computer goes away, and one of the same name with another shape connects
-  PointerClient &reconnect(const std::string &name, const Box &shape)
+  // the remote computer goes away, and one of the same name with another shape connects; one that \p reports its
+  // monitors is of this version, the other is not
+  PointerClient &reconnect(const std::string &name, const Box &shape, bool reports = true)
   {
     events.dispatchEvent(Event(EventTypes::ClientProxyDisconnected, client(name).getEventTarget()));
     auto *connected = new PointerClient(name, shape);
+    connected->canReport = reports;
     clients[name] = connected;
     server->adoptClient(connected);
     return *connected;
@@ -3106,6 +3115,79 @@ void ServerTests::reportedMonitors_aReportThatIsGone_isSaidOnce()
   rig->reportMonitors("C", {});
   QCOMPARE(info.count(QStringLiteral("computer \"C\" reports no monitors")), 1);
   QVERIFY(pushRightOnC(*rig, {2559, 1300}).moves > 100);
+}
+
+// What a computer reported in an earlier connection is not true when it connects again as one that does not report (an
+// older version): the GUI keeps what it was told, so it is told that there is nothing, once for each connection
+void ServerTests::reportedMonitors_aComputerThatWillNotReport_takesBackWhatWasRemembered()
+{
+  ScopedInfoLines info(m_log);
+  auto rig = staggeredWithNothingTyped();
+  QCOMPARE(info.count(QStringLiteral("reports no monitors")), 0);
+
+  rig->reconnect("C", kStaggered, false);
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports no monitors")), 1);
+  // its shape changes, it is the same connection
+  rig->reportShape(rig->client("C"), Box{0, 0, 4480, 1441});
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports no monitors")), 1);
+
+  // it connects again
+  rig->reconnect("C", kStaggered, false);
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports no monitors")), 2);
+
+  // one that does report says nothing until it does
+  rig->reconnect("C", kStaggered);
+  QCOMPARE(info.count(QStringLiteral("computer \"C\" reports no monitors")), 2);
+  // and the primary computer is not one of them
+  QCOMPARE(info.count(QStringLiteral("computer \"primary\"")), 0);
+}
+
+void ServerTests::reportedMonitors_withTheExperimentOff_nothingIsSaidOfAComputerThatWillNotReport()
+{
+  ScopedInfoLines info(m_log);
+  PointerRig rig(kPrimaryShapes[0], {{"C", kStaggered}});
+  rig.configureExperiment(false);
+  rig.reconnect("C", kStaggered, false);
+  QCOMPARE(info.count(QStringLiteral("reports")), 0);
+}
+
+// The name of a computer that is not in the configuration is whatever it said: it cannot make a line of the log of its
+// own
+void ServerTests::reportedMonitors_theNameOfAnUnknownComputer_cannotForgeALogLine()
+{
+  struct AllLines : ILogOutputter
+  {
+    void open(const QString &) override
+    {
+    }
+    void close() override
+    {
+    }
+    bool write(LogLevel::Level, const QString &message) override
+    {
+      lines.append(message);
+      return false;
+    }
+    QStringList lines;
+  } all;
+  m_log.insert(&all, true);
+
+  auto rig = staggeredWithNothingTyped();
+  const auto hostile =
+      QStringLiteral("evil\n[2026-11-16T13:30:00.123] INFO: computer \"C\" reports 1 monitors: 0,0,10,10");
+  rig->server->adoptClient(new PointerClient(hostile.toStdString(), kStaggered));
+  m_log.remove(&all);
+
+  // it was said that it is not recognised, and nothing of it is a line of its own
+  const auto said = all.lines.filter(QStringLiteral("unrecognised client name"));
+  QCOMPARE(said.size(), 1);
+  for (const auto &line : all.lines)
+    QVERIFY2(
+        !line.contains(QLatin1Char('\n')) || line.indexOf(QLatin1Char('\n')) == line.lastIndexOf(QLatin1Char('\n')),
+        qPrintable(line)
+    );
+  QVERIFY2(!said.constFirst().contains(QStringLiteral("evil\n")), qPrintable(said.constFirst()));
+  QVERIFY2(!said.constFirst().contains(QStringLiteral("\"C\"")), qPrintable(said.constFirst()));
 }
 
 void ServerTests::reportedMonitors_nothingIsAddedToWhatAComputerIsTold()

@@ -27,6 +27,9 @@ inline constexpr size_t kMaxReported = 16;
 inline constexpr size_t kRecordSize = 11;
 //! The flags of a monitor on the wire: it is the primary monitor of its computer
 inline constexpr uint8_t kFlagPrimary = 1u << 0;
+//! The coordinates of the monitor are in logical units (the points of macOS), not in physical pixels (Windows): its
+//! display scale does not change how big it is in them
+inline constexpr uint8_t kFlagLogicalUnits = 1u << 1;
 
 //! A monitor as a platform tells it: in the coordinates of the shape that the computer reports in DINF
 struct MonitorInfo
@@ -35,6 +38,8 @@ struct MonitorInfo
   //! The display scale in percent (100, 150, 200 ...), 0 when it is not known
   uint16_t scalePercent = 0;
   bool primary = false;
+  //! The rectangle is in logical units, so the scale says how sharp the monitor is and not how big it is
+  bool logicalUnits = false;
 
   bool operator==(const MonitorInfo &) const = default;
 };
@@ -48,6 +53,7 @@ struct MonitorEntry
   int16_t h = 0;
   uint16_t scalePercent = 0;
   bool primary = false;
+  bool logicalUnits = false;
 
   deskflow::server::MonitorRect rect() const
   {
@@ -87,7 +93,9 @@ Empty when the stream ended in the middle of the message.
 */
 std::optional<ReceivedReport> readReport(deskflow::IStream *stream);
 
-//! The monitors as the server writes them in its log: \c x,y,w,h, then \c scale=S unless it is not known and \c primary
+//! The monitors as the server writes them in its log: \c x,y,w,h, then \c scale=S unless it is not known, \c primary
+//! and
+//! \c logical
 /*!
 The items are joined by \c ; and have no space after it: \c "0,0,2560,1440 scale=150 primary;2560,0,1920,1080
 scale=100". This is the text that the GUI reads from the log of the core.

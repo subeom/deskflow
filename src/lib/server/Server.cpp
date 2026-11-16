@@ -299,7 +299,11 @@ void Server::adoptClient(BaseClientProxy *client)
 
   // name must be in our configuration
   if (!m_config->isComputer(client->getName())) {
-    LOG_WARN("unrecognised client name \"%s\", check server config", client->getName().c_str());
+    // the name is whatever the computer said: it is not written the way it came into a log that a program reads
+    LOG_WARN(
+        "unrecognised client name \"%s\", check server config",
+        deskflow::server::loggableName(client->getName()).c_str()
+    );
     ipcSendToClient("unrecognisedClient", QString::fromStdString(client->getName()));
     closeClient(client, kMsgEUnknown);
     return;
@@ -1312,6 +1316,7 @@ void Server::setMonitorGeometry(bool on)
     m_monitorGeometrySaid.clear();
     m_reportedScreenSaid.clear();
     m_reportedMonitorsSaid.clear();
+    m_noMonitorsSaid.clear();
     m_crossing.known = false;
     LOG_INFO("experimental multi-monitor aware cursor mapping is %s", on ? "on" : "off");
   }
@@ -1543,8 +1548,10 @@ void Server::sayReportedMonitors(const BaseClientProxy *client)
   const auto *reported = client->reportedMonitors();
   auto &said = m_reportedMonitorsSaid[getName(client)];
   if (reported == nullptr) {
-    // a computer that never reported has nothing to take back
-    if (!said.empty()) {
+    // a computer that reported takes it back; one that will not report at all (an older version) is not what it was
+    // when it reported in a connection of the past, and that is said once, for the GUI that keeps what it was told
+    const bool oldNews = !client->mayReportMonitors() && m_noMonitorsSaid.insert(getName(client)).second;
+    if (!said.empty() || oldNews) {
       said.clear();
       LOG_INFO("computer \"%s\" reports no monitors", name.c_str());
     }
@@ -2658,6 +2665,7 @@ bool Server::removeClient(BaseClientProxy *client)
   m_monitorGeometrySaid.erase(getName(client));
   m_reportedScreenSaid.erase(getName(client));
   m_reportedMonitorsSaid.erase(getName(client));
+  m_noMonitorsSaid.erase(getName(client));
   m_clients.erase(getName(client));
   m_clientSet.erase(i);
 

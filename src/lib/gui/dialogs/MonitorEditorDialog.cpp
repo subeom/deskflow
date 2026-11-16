@@ -283,8 +283,12 @@ void MonitorEditorDialog::updateReportedMode()
   m_widget->setReadOnly(m_showingReported);
   m_widget->setFocusPolicy(m_showingReported ? Qt::NoFocus : Qt::StrongFocus);
   m_numbers->setReadOnly(m_showingReported);
-  if (!m_showingReported)
+  if (!m_showingReported) {
+    // what refresh() and syncControls() do not decide: the buttons of the numbers
+    m_import->setEnabled(true);
+    m_apply->setEnabled(true);
     return;
+  }
 
   for (QWidget *w :
        {static_cast<QWidget *>(m_resolution), static_cast<QWidget *>(m_pixelsW), static_cast<QWidget *>(m_pixelsH),

@@ -121,6 +121,9 @@ private Q_SLOTS:
   void reportedMonitors_aComputerThatConnectsAgain_isDecidedAgain();
   void reportedMonitors_areSaidInTheLineTheGuiReads();
   void reportedMonitors_aReportThatIsGone_isSaidOnce();
+  void reportedMonitors_aComputerThatWillNotReport_takesBackWhatWasRemembered();
+  void reportedMonitors_withTheExperimentOff_nothingIsSaidOfAComputerThatWillNotReport();
+  void reportedMonitors_theNameOfAnUnknownComputer_cannotForgeALogLine();
   void reportedMonitors_nothingIsAddedToWhatAComputerIsTold();
   void reportedMonitors_namesInTheLog_areCleaned();
   void monitorGeometry_cornersThatLockTheCursor_stillDo_data();

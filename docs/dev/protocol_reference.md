@@ -325,7 +325,8 @@ have capability bit 12 (`kLayoutCapabilityMonitors`):
 The message is `"DMON%1i%2i%1i"` (version 1, generation, count) followed by `count` records of
 `"%2i%2i%2i%2i%2i%1i"` (x, y, width, height as signed 16-bit numbers in the coordinates of the `DINF`
 shape of the same client; the display scale in percent, 0 if unknown; flags, bit 0 is the primary
-monitor): 8 + 11 x count bytes. **The size of the message is fixed by its count and never by its values**,
+monitor, bit 1 says that the coordinates are logical units, the points of a Mac, and not physical
+pixels): 8 + 11 x count bytes. **The size of the message is fixed by its count and never by its values**,
 so a receiver always reads it in full, also when it ignores it, and what is behind it in the stream
 stays where it is: an unexpected or invalid `DMON` never costs the connection and never makes the receiver
 discard the buffer, which is what an unknown message code does. Because `ProtocolUtil` does not frame
