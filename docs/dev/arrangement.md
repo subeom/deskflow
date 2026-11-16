@@ -196,6 +196,14 @@ canvas draws 1920 × 1080 for it and says so on the computer (a dashed border an
 line, because the line of the log is not there when the level of the log is above INFO or the computer has not
 connected.
 
+### Reported monitors (stage 3)
+
+A client can also tell the server its **monitors**, not only its size, with a negotiated message
+([monitor-reporting.md](monitor-reporting.md)). The GUI keeps what a computer reported last (`computer_<name>/reportedMonitors`),
+draws a computer that has no layout of the user's from it, says so on the canvas (*reported by the computer*), follows a
+computer that reports another desktop while the dialog is open, and shows it in the monitor editor read-only until the user
+chooses to draw his own, which then wins. The size above is still what a computer that does not report is drawn with.
+
 ## The monitor editor (draw the monitors of a computer with the mouse)
 
 Typing `x,y,w,h` in pixels does not work for people: every computer has another display scale, and nobody knows the

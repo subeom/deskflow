@@ -783,6 +783,8 @@ void MainWindow::handleLogLine(const QString &line)
 
   // what a computer that connected says its screen is, for the arrangement of the computers
   m_serverConfig.takeReportedScreenFromLog(line);
+  // and the monitors that it says its desktop is made of, which are drawn on the canvas
+  m_serverConfig.takeReportedMonitorsFromLog(line);
 }
 
 void MainWindow::handleUnrecognisedClient(const QString &clientName)

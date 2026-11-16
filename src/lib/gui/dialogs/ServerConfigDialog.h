@@ -14,6 +14,9 @@
 
 #include <QDialog>
 
+#include <functional>
+#include <memory>
+
 class ArrangementPanel;
 class SettingsDialogButtonBox;
 class QItemSelection;
@@ -100,6 +103,7 @@ protected:
 private:
   void updateArrangementMode();
   void refreshArrangement();
+  void takeReports(const QString &computer);
   void save();
   void cancel();
   void loadFromConfig();
@@ -125,6 +129,8 @@ private:
   bool m_useArrangement = false;
   ArrangementPanel *m_arrangementPanel = nullptr;
   QWidget *m_arrangementBanner = nullptr;
+  // told by the configuration of the main window when a computer says its screen or monitors again, while this is open
+  std::shared_ptr<std::function<void(const QString &)>> m_reportListener;
   bool m_enableHeartbeat;
   int m_heartbeatRate;
   int m_switchDelay;

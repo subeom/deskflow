@@ -8,6 +8,8 @@
 
 #include "ServerConfig.h"
 
+#include "gui/config/MonitorEditing.h"
+
 #include "common/Hotkey.h"
 #include "common/Settings.h"
 #include "gui/core/ReportedScreen.h"
@@ -57,7 +59,10 @@ std::optional<std::vector<MonitorRect>> &monitorsOverride()
   return override;
 }
 
-std::vector<MonitorRect> monitorsOf(const ::Computer &computer, const std::vector<MonitorRect> &display)
+std::vector<MonitorRect> monitorsOf(
+    const ::Computer &computer, const std::vector<MonitorRect> &display,
+    const std::optional<deskflow::gui::ReportedMonitors> &reported
+)
 {
   // the screen of this computer is what the operating system says it is
   if (computer.isServer() && !display.empty() && MonitorLayout::create(display))
@@ -66,6 +71,9 @@ std::vector<MonitorRect> monitorsOf(const ::Computer &computer, const std::vecto
     if (const auto parsed = MonitorLayout::parse(computer.monitorLayout().toStdString()); parsed)
       return parsed.layout->monitors();
   }
+  // what the user did not say, the computer did: it reported its monitors (experimental)
+  if (reported && !computer.isServer())
+    return reported->rects();
   return {
       {0, 0, computer.arrangementWidth() > 0 ? computer.arrangementWidth() : kDefaultWidth,
        computer.arrangementHeight() > 0 ? computer.arrangementHeight() : kDefaultHeight}
@@ -177,6 +185,17 @@ void ServerConfig::recall()
   settings().endArray();
 
   settings().endGroup();
+
+  // what the computers reported when they were last connected
+  m_reportedMonitors.clear();
+  for (const auto &computer : computers()) {
+    if (computer.isNull() || computer.name().isEmpty())
+      continue;
+    if (const auto reported = deskflow::gui::ReportedMonitors::fromText(
+            Settings::textValue(Settings::Computer::ReportedMonitors.arg(computer.name()))
+        ))
+      m_reportedMonitors.insert(computer.name().toLower(), *reported);
+  }
 }
 
 int ServerConfig::adjacentComputerIndex(int idx, int deltaColumn, int deltaRow) const
@@ -450,8 +469,7 @@ QStringList ServerConfig::assumedSizes() const
   for (const auto &computer : computers()) {
     if (computer.isNull() || computer.isServer())
       continue;
-    const bool hasMonitors =
-        !computer.monitorLayout().isEmpty() && MonitorLayout::parse(computer.monitorLayout().toStdString());
+    const bool hasMonitors = deskflow::gui::hasTypedMonitors(computer) || reportedMonitors(computer.name());
     if (!hasMonitors && (computer.arrangementWidth() <= 0 || computer.arrangementHeight() <= 0))
       names << computer.name();
   }
@@ -474,6 +492,8 @@ bool ServerConfig::takeReportedScreenFromLog(const QString &line)
   if (computer == known.cend())
     return false;
   setReportedScreen(screen->computer, screen->shape);
+  if (const auto listener = m_reportListener.lock())
+    (*listener)(computer->name());
   return true;
 }
 
@@ -483,6 +503,57 @@ std::optional<QRect> ServerConfig::reportedScreen(const QString &computer) const
   if (found == m_reportedScreens.cend())
     return std::nullopt;
   return *found;
+}
+
+bool ServerConfig::takeReportedMonitorsFromLog(const QString &line)
+{
+  // the core writes the line only while the experiment is on
+  if (!Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool())
+    return false;
+  const auto report = deskflow::gui::parseReportedMonitors(line);
+  if (!report)
+    return false;
+  // and for a computer of the configuration
+  const auto &known = std::as_const(*this).computers();
+  const auto computer = std::ranges::find_if(known, [&](const ::Computer &c) {
+    return !c.isNull() && c.name().compare(report->computer, Qt::CaseInsensitive) == 0;
+  });
+  if (computer == known.cend())
+    return false;
+
+  // remembered, so that the computer is drawn from it when it is offline; one that has none takes it back
+  const auto name = computer->name();
+  const auto key = Settings::Computer::ReportedMonitors.arg(name);
+  if (report->monitors.isEmpty()) {
+    m_reportedMonitors.remove(name.toLower());
+    Settings::setValue(key);
+  } else {
+    m_reportedMonitors.insert(name.toLower(), report->monitors);
+    Settings::setValue(key, report->monitors.toText());
+  }
+  if (const auto listener = m_reportListener.lock())
+    (*listener)(name);
+  return true;
+}
+
+std::optional<deskflow::gui::ReportedMonitors> ServerConfig::reportedMonitors(const QString &computer) const
+{
+  const auto found = m_reportedMonitors.constFind(computer.toLower());
+  if (found == m_reportedMonitors.cend())
+    return std::nullopt;
+  return *found;
+}
+
+QStringList ServerConfig::monitorsFromReport() const
+{
+  QStringList names;
+  for (const auto &computer : computers()) {
+    if (computer.isNull() || computer.isServer() || deskflow::gui::hasTypedMonitors(computer))
+      continue;
+    if (reportedMonitors(computer.name()))
+      names << computer.name();
+  }
+  return names;
 }
 
 void ServerConfig::adoptReportedScreens()
@@ -512,8 +583,9 @@ std::vector<arrangement::Computer> ServerConfig::arrangementComputers() const
     arrangement::Computer entry;
     entry.name = computer.name().toStdString();
     entry.isServer = computer.isServer();
-    entry.zoom = computer.arrangementZoom();
-    entry.monitors = monitorsOf(computer, display);
+    const auto reported = reportedMonitors(computer.name());
+    entry.zoom = deskflow::gui::effectiveZoom(computer, reported);
+    entry.monitors = monitorsOf(computer, display, reported);
     entry.originX = computer.arrangementX();
     entry.originY = computer.arrangementY();
     result.push_back(entry);

@@ -98,9 +98,19 @@ ServerConfigDialog::ServerConfigDialog(QWidget *parent, ServerConfig &config)
   if (!deskflow::platform::isWindows())
     ui->cbWin32KeepForeground->setVisible(false);
   initConnections();
+
+  // A computer that says its screen or its monitors again while this is open: what the canvas draws follows it
+  m_reportListener = std::make_shared<std::function<void(const QString &)>>([this](const QString &computer) {
+    takeReports(computer);
+  });
+  m_originalServerConfig.listenToReports(m_reportListener);
 }
 
-ServerConfigDialog::~ServerConfigDialog() = default;
+ServerConfigDialog::~ServerConfigDialog()
+{
+  // the configuration of the main window outlives this dialog and must not call it any more
+  m_reportListener.reset();
+}
 
 bool ServerConfigDialog::addClient(const QString &clientName)
 {
@@ -127,8 +137,10 @@ void ServerConfigDialog::save()
   // original one, which is a reference to the one in MainWindow.
   // what the computers that are connected said their screens are belongs to the server that runs, not to this copy
   const auto reportedScreens = m_originalServerConfig.reportedScreens();
+  const auto reportedMonitors = m_originalServerConfig.reportedMonitorsByComputer();
   setOriginalServerConfig(serverConfig());
   m_originalServerConfig.setReportedScreens(reportedScreens);
+  m_originalServerConfig.setReportedMonitorsByComputer(reportedMonitors);
   if (Settings::value(Settings::Server::EnableClipboard).toBool() != m_enableClipboard) {
     Settings::setValue(Settings::Server::XdpRestoreToken, QString());
     Settings::setValue(Settings::Server::XdpClipboardRetried, false);
@@ -518,6 +530,14 @@ void ServerConfigDialog::updateArrangementMode()
     m_arrangementPanel->refresh();
 }
 
+void ServerConfigDialog::takeReports(const QString &)
+{
+  // the copy that this dialog works on has what the configuration of the main window had when it was opened
+  serverConfig().setReportedScreens(m_originalServerConfig.reportedScreens());
+  serverConfig().setReportedMonitorsByComputer(m_originalServerConfig.reportedMonitorsByComputer());
+  refreshArrangement();
+}
+
 void ServerConfigDialog::refreshArrangement()
 {
   if (m_arrangementPanel != nullptr) {
@@ -553,8 +573,19 @@ void ServerConfigDialog::editArrangementMonitors(const QString &name)
   const double originX = index >= 0 ? arrangement.computers[static_cast<size_t>(index)].originX : 0.0;
   const double originY = index >= 0 ? arrangement.computers[static_cast<size_t>(index)].originY : 0.0;
   const auto reported = serverConfig().reportedScreen(name);
-  MonitorEditorDialog dlg(this, name, deskflow::gui::drawingOf(*computer, originX, originY, reported), reported);
+  // a computer that reports its monitors and has none of the user's: they are shown, and the user draws his own if he
+  // wants other ones
+  const auto reportedMonitors = serverConfig().reportedMonitors(name);
+  const bool showReport = reportedMonitors && !deskflow::gui::hasTypedMonitors(*computer);
+  MonitorEditorDialog dlg(
+      this, name, deskflow::gui::drawingOf(*computer, originX, originY, reported, reportedMonitors), reported
+  );
+  if (showReport)
+    dlg.showReportedMonitors();
   if (dlg.exec() != QDialog::Accepted)
+    return;
+  // what was only looked at changes nothing
+  if (dlg.isShowingReportedMonitors())
     return;
   const auto made = dlg.realised();
   if (made.fit == deskflow::server::editor::Fit::Invalid)

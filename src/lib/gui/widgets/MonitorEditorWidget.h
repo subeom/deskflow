@@ -34,6 +34,13 @@ public:
     return m_layout;
   }
 
+  //! The drawing is only looked at: the mouse and the keys change nothing (the monitors that a computer reports)
+  void setReadOnly(bool readOnly);
+  bool isReadOnly() const
+  {
+    return m_readOnly;
+  }
+
   void setSelected(int index);
   int selected() const
   {
@@ -70,6 +77,8 @@ protected:
   void leaveEvent(QEvent *event) override;
 
 private:
+  bool m_readOnly = false;
+
   struct Drag
   {
     bool active = false;

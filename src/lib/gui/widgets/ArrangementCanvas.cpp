@@ -474,6 +474,12 @@ void ArrangementCanvas::setAssumedSizes(const QStringList &computers)
   m_assumed = computers;
 }
 
+void ArrangementCanvas::setReportedMonitorComputers(const QStringList &computers)
+{
+  m_fromReport = computers;
+  update();
+}
+
 void ArrangementCanvas::paintComputer(
     QPainter &painter, const Arrangement &shown, size_t index, bool overlapping, bool unconnected, bool dragged
 ) const
@@ -549,6 +555,8 @@ void ArrangementCanvas::paintComputer(
     lines << sizeText(computer);
     if (assumed)
       lines << tr("size assumed");
+    if (m_fromReport.contains(name, Qt::CaseInsensitive))
+      lines << tr("reported by the computer");
     if (const auto zoom = zoomText(computer); !zoom.isEmpty())
       lines << zoom;
 

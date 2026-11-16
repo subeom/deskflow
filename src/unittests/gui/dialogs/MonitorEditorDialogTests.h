@@ -26,6 +26,8 @@ private Q_SLOTS:
   void numbers_areInStepWithTheDrawing_andCanBeUsed();
   void keys_rotateDeleteAndNudge();
   void keys_deletingTheLastOne_leavesASelectionThatIsThere();
+  void reported_theMonitorsOfTheComputer_areShownAndCannotBeChanged();
+  void reported_drawingYourOwn_enablesTheEditing();
   void screenshots_areMadeOfTheEditor();
 
 private:

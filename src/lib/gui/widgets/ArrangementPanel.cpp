@@ -158,6 +158,7 @@ void ArrangementPanel::refresh()
 {
   m_canvas->setArrangement(m_config.arrangement());
   m_canvas->setAssumedSizes(m_config.assumedSizes());
+  m_canvas->setReportedMonitorComputers(m_config.monitorsFromReport());
   QHash<QString, QSize> reported;
   for (auto it = m_config.reportedScreens().cbegin(); it != m_config.reportedScreens().cend(); ++it)
     reported.insert(it.key(), it.value().size());

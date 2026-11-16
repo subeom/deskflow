@@ -59,6 +59,13 @@ public:
   {
     return m_assumed;
   }
+  //! The computers that are drawn from the monitors that they reported (not from what the user said): the canvas says
+  //! so
+  void setReportedMonitorComputers(const QStringList &computers);
+  QStringList reportedMonitorComputers() const
+  {
+    return m_fromReport;
+  }
   //! The size that each computer reports, in its own units: a side of a computer that is resized snaps to it
   void setReportedSizes(const QHash<QString, QSize> &sizes);
   //! The computer that the pointer is at the outline of, or empty
@@ -152,6 +159,7 @@ private:
   std::vector<deskflow::server::arrangement::Issue> m_issues;
   QHash<QString, Status> m_status;
   QStringList m_assumed;
+  QStringList m_fromReport;
   QString m_hovered;
   QHash<QString, QSize> m_reportedSizes;
   QString m_selected;

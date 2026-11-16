@@ -12,12 +12,15 @@
 #include "common/Hotkey.h"
 #include "gui/config/ComputerConfig.h"
 #include "gui/config/ComputerList.h"
+#include "gui/core/ReportedMonitors.h"
 #include "server/Arrangement.h"
 
 #include <QHash>
 #include <QList>
 #include <QRect>
 
+#include <functional>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -112,6 +115,33 @@ public:
     m_reportedScreens = screens;
   }
 
+  //! Takes what a line of the log of the core says about the monitors of a computer, if it does (experimental)
+  /*!
+  Only while the experiment is on and for a computer of the configuration. What a computer reported is kept in the
+  settings (one key for each computer, which only this class writes), so that a computer that is offline is still drawn
+  from what it reported last; a computer that says it has none takes it back.
+  */
+  bool takeReportedMonitorsFromLog(const QString &line);
+  //! The monitors that a computer reported last, if it did and they are valid
+  std::optional<deskflow::gui::ReportedMonitors> reportedMonitors(const QString &computer) const;
+  //! By the name of the computer in lower case
+  const QHash<QString, deskflow::gui::ReportedMonitors> &reportedMonitorsByComputer() const
+  {
+    return m_reportedMonitors;
+  }
+  void setReportedMonitorsByComputer(const QHash<QString, deskflow::gui::ReportedMonitors> &monitors)
+  {
+    m_reportedMonitors = monitors;
+  }
+  //! The computers that are drawn from the monitors that they reported: they have no layout of the user's
+  QStringList monitorsFromReport() const;
+  //! \p listener is called with the name of a computer when a line of the log said something new about its screen or
+  //! its monitors, for as long as \p listener is alive (the configuration only keeps a weak reference to it)
+  void listenToReports(const std::shared_ptr<std::function<void(const QString &)>> &listener)
+  {
+    m_reportListener = listener;
+  }
+
   //! Make the screen that a computer reported its size, when it has no monitors and no size that was said
   /*!
   A size is only taken from a report where the screen begins at 0,0: another one needs its monitors said.
@@ -159,6 +189,9 @@ private:
   ComputerList m_computers;
   // by the name of the computer in lower case
   QHash<QString, QRect> m_reportedScreens;
+  // by the name of the computer in lower case: what each computer reported of its monitors last
+  QHash<QString, deskflow::gui::ReportedMonitors> m_reportedMonitors;
+  std::weak_ptr<std::function<void(const QString &)>> m_reportListener;
   int m_columns;
   int m_rows;
 };

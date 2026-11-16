@@ -46,6 +46,14 @@ public:
   //! The layout can be saved: it has no problem that is an error
   bool canSave() const;
 
+  //! The drawing is what the computer reports: it is shown and cannot be changed, until the user chooses to draw his
+  //! own
+  void showReportedMonitors();
+  bool isShowingReportedMonitors() const
+  {
+    return m_showingReported;
+  }
+
   MonitorEditorWidget *editorWidget() const
   {
     return m_widget;
@@ -61,6 +69,7 @@ private:
   void chooseScale();
   void undo();
   void redo();
+  void updateReportedMode();
   QString describeProblem(const deskflow::server::editor::Problem &problem) const;
 
   QString m_name;
@@ -71,6 +80,8 @@ private:
   bool m_otherSize = false;
   // the scale of the zoom of what was drawn, which numbers that are typed are in
   double m_numbersZoom = 1.0;
+  // the monitors are the ones that the computer reported: nothing is edited until the user draws his own
+  bool m_showingReported = false;
 
   MonitorEditorWidget *m_widget = nullptr;
   QLabel *m_status = nullptr;
@@ -86,6 +97,7 @@ private:
   QPushButton *m_undo = nullptr;
   QPushButton *m_redo = nullptr;
   QPushButton *m_stretchButton = nullptr;
+  QPushButton *m_drawOwn = nullptr;
   QGroupBox *m_advanced = nullptr;
   QWidget *m_advancedContent = nullptr;
   QPlainTextEdit *m_numbers = nullptr;

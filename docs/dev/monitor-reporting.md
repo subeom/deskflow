@@ -132,12 +132,29 @@ first line only when it is the whole line as the core writes it, as it does for 
 
 ## The GUI
 
-The GUI keeps **one new optional key**, `computer_<name>/reportedMonitors` (text, same notation as `monitorLayout`,
-empty by default; written only by the GUI, never read by the core, which always uses the live report). A computer that
-is offline is drawn from the last report. The arrangement canvas draws a computer with a report from its real monitors
-with a *reported by the computer* badge and refreshes at once when the line comes again. The monitor editor opens on
-the reported monitors read-only; the user may start from them as their own drawing, which then wins (rule 2).
-Computers that never report keep the manual path.
+The GUI reads the log line above in the output of the core, as it reads `reports its screen:` (no IPC change): only while
+the experiment is on, only the whole line as the core writes it, only for a computer of the configuration, and only a
+list that a computer can report (1 to 16 monitors, valid together, the count of the line equal to the list). A name
+that has a line end in it makes a line that does not begin with the time and the level, and the core has cleaned the
+quotes out of a name, so a name cannot close itself.
+
+- **Kept** in **one new optional key**, `computer_<name>/reportedMonitors` (text, the notation of the log, empty by
+  default). Only the GUI writes it, as soon as a line is taken, and the core never reads it (it uses the live report):
+  a computer that is offline is still drawn from what it reported last. `reports no monitors` takes it back.
+- **Drawn.** The arrangement canvas draws a computer that has no layout of the user's from its reported monitors, with the
+  line *reported by the computer* on it, at the scale of its primary monitor (a Windows PC at 150 % is `100 / 150` of
+  an arrangement unit; a zoom that is exactly 1, the one that nobody set, is replaced by that; a computer that the
+  user scaled keeps its zoom). A computer that reported its monitors is not "size assumed". The typed layout
+  (typed, imported or drawn in the monitor editor) wins, as for the server.
+- **Live.** `ServerConfig::listenToReports` tells the open server configuration dialog when a line says something new
+  about a computer; the dialog copies what the main window knows into the copy that it works on and redraws the
+  canvas, so a computer that reports another desktop is followed without restarting the dialog.
+- **Editor.** *Edit monitors* of a computer that reports and has no layout of its own opens the monitor editor on the
+  reported monitors, in their scales, **read-only** (the mouse, the keys, undo and the controls change nothing, and
+  closing it changes nothing). *Draw my own instead* turns the editing on; what is then saved is the user's layout,
+  which wins from then on. The editor shows the report as it was when it was opened.
+
+Computers that never report keep the manual path (`monitorLayout`, the size, the guess).
 
 ## Compatibility matrix
 

@@ -33,6 +33,15 @@ private Q_SLOTS:
   void reportedScreen_isParsedFromTheLogOfTheCore_data();
   void reportedScreen_isParsedFromTheLogOfTheCore();
   void reportedScreen_isTakenFromTheLogOnlyWhileTheExperimentIsOnAndOnlyForTheComputersOfTheConfig();
+  void reportedMonitors_isParsedFromTheLogOfTheCore_data();
+  void reportedMonitors_isParsedFromTheLogOfTheCore();
+  void reportedMonitors_textRoundTripsAndOnlyValidTextIsTaken_data();
+  void reportedMonitors_textRoundTripsAndOnlyValidTextIsTaken();
+  void reportedMonitors_areTakenOnlyWhileTheExperimentIsOnAndOnlyForTheComputersOfTheConfig();
+  void reportedMonitors_areRememberedForAComputerThatIsOffline();
+  void reportedMonitors_areDrawnForAComputerThatHasNoLayout();
+  void reportedMonitors_aTypedLayoutIsWhatIsDrawn();
+  void reportedMonitors_aListenerIsToldOfEveryReport();
   void assumedSizes_areOfTheComputersThatHaveNoMonitorsAndNoSize();
   void monitorEditing_drawsWhatIsStored_andStoresWhatIsMade();
   void setComputerSize_isTheSizeOfAComputerThatHasNone_andTheMonitorOfOneThatHasOne();

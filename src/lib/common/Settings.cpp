@@ -548,7 +548,7 @@ QVariant Settings::computerDefaults(const QString &key)
   if (key == "crossOSInvertX" || key == "crossOSInvertY" || key == "crossOSSemanticMedia")
     return false;
   // a configuration that predates the setting has no monitor layout for a computer: it is mapped as it always was
-  if (key == "monitorLayout" || key == "monitorScales")
+  if (key == "monitorLayout" || key == "monitorScales" || key == "reportedMonitors")
     return QString();
   // and no arrangement: a computer that is not placed has no position
   if (key == "arrangementZoom")

@@ -342,8 +342,21 @@ void MonitorEditorWidget::paintEvent(QPaintEvent *)
   }
 }
 
+void MonitorEditorWidget::setReadOnly(bool readOnly)
+{
+  m_readOnly = readOnly;
+  if (readOnly) {
+    m_drag = {};
+    unsetCursor();
+  }
+}
+
 void MonitorEditorWidget::mousePressEvent(QMouseEvent *event)
 {
+  if (m_readOnly) {
+    event->ignore();
+    return;
+  }
   if (event->button() != Qt::LeftButton) {
     QWidget::mousePressEvent(event);
     return;
@@ -419,6 +432,10 @@ void MonitorEditorWidget::dragTo(const QPointF &point)
 
 void MonitorEditorWidget::mouseMoveEvent(QMouseEvent *event)
 {
+  if (m_readOnly) {
+    event->ignore();
+    return;
+  }
   if (m_drag.active) {
     dragTo(event->position());
     return;
@@ -470,6 +487,10 @@ void MonitorEditorWidget::commit(const Layout &layout)
 
 void MonitorEditorWidget::keyPressEvent(QKeyEvent *event)
 {
+  if (m_readOnly) {
+    event->ignore();
+    return;
+  }
   if (m_selected < 0 || m_selected >= static_cast<int>(m_layout.monitors.size()) || m_drag.active) {
     QWidget::keyPressEvent(event);
     return;

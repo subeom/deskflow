@@ -8,6 +8,7 @@
 #include "common/Settings.h"
 #include "gui/config/MonitorEditing.h"
 #include "gui/config/ServerConfig.h"
+#include "gui/core/ReportedMonitors.h"
 #include "gui/core/ReportedScreen.h"
 #include "server/MonitorEditor.h"
 
@@ -15,6 +16,8 @@
 #include <QSettings>
 #include <QTextStream>
 
+#include <functional>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -219,7 +222,7 @@ void forget(const QStringList &names)
     for (const auto &key :
          {Settings::Computer::ArrangementX, Settings::Computer::ArrangementY, Settings::Computer::ArrangementZoom,
           Settings::Computer::ArrangementWidth, Settings::Computer::ArrangementHeight,
-          Settings::Computer::MonitorLayout})
+          Settings::Computer::MonitorLayout, Settings::Computer::ReportedMonitors})
       Settings::setValue(key.arg(name));
   }
 }
@@ -562,6 +565,262 @@ void ArrangementConfigTests::
   for (const auto &part : hostile.split(QLatin1Char('\n')))
     QVERIFY(!config.takeReportedScreenFromLog(part));
   QVERIFY(!config.reportedScreen("A"));
+}
+
+void ArrangementConfigTests::reportedMonitors_isParsedFromTheLogOfTheCore_data()
+{
+  QTest::addColumn<QString>("line");
+  QTest::addColumn<bool>("parsed");
+  QTest::addColumn<QString>("computer");
+  QTest::addColumn<QString>("text");
+
+  const auto line = [](const QString &rest) {
+    return QStringLiteral("[2026-11-16T13:30:00.123] INFO: computer \"PC\" reports ") + rest;
+  };
+  QTest::newRow("two monitors with their scale and the primary")
+      << line(QStringLiteral("2 monitors: 0,0,2560,1440 scale=150 primary;2560,0,1920,1080 scale=100")) << true << "PC"
+      << "0,0,2560,1440 scale=150 primary;2560,0,1920,1080 scale=100";
+  QTest::newRow("a negative origin and no scale")
+      << line(QStringLiteral("2 monitors: -1920,-300,1920,1080;0,0,2560,1440 primary\r")) << true << "PC"
+      << "-1920,-300,1920,1080;0,0,2560,1440 primary";
+  QTest::newRow("no monitors any more") << line(QStringLiteral("no monitors")) << true << "PC" << "";
+  QTest::newRow("a name with a space and a dot")
+      << QStringLiteral(
+             "[2026-11-16T13:30:00.123] INFO: computer \"Subeoms Mac-mini.local\" reports 1 monitors: "
+             "0,0,2064,1347 scale=200 primary"
+         )
+      << true << "Subeoms Mac-mini.local" << "0,0,2064,1347 scale=200 primary";
+
+  // only the line that the core writes, whole
+  QTest::newRow("no time and level") << QStringLiteral("computer \"PC\" reports 1 monitors: 0,0,10,10") << false << ""
+                                     << "";
+  QTest::newRow("a level that is not INFO")
+      << QStringLiteral("[2026-11-16T13:30:00.123] DEBUG: computer \"PC\" reports 1 monitors: 0,0,10,10") << false << ""
+      << "";
+  QTest::newRow("the text in the middle of another line")
+      << QStringLiteral(
+             "[2026-11-16T13:30:00.123] WARNING: unrecognised client name \"x computer \"PC\" reports 1 "
+             "monitors: 0,0,10,10"
+         )
+      << false << "" << "";
+  QTest::newRow("a quote in the name") << line(
+                                              QStringLiteral("1 monitors: 0,0,1,1\" b\" reports 1 monitors: 0,0,10,10")
+                                          )
+                                       << false << "" << "";
+  QTest::newRow("another line") << QStringLiteral("INFO: client \"PC\" has connected") << false << "" << "";
+  QTest::newRow("the screen line is not this one")
+      << QStringLiteral("[2026-11-16T13:30:00.123] INFO: computer \"PC\" reports its screen: 0,0 10x10") << false << ""
+      << "";
+
+  // a list that a computer cannot report
+  QTest::newRow("the count is not the list") << line(QStringLiteral("2 monitors: 0,0,10,10")) << false << "" << "";
+  QTest::newRow("a count of none and a list") << line(QStringLiteral("0 monitors: 0,0,10,10")) << false << "" << "";
+  QTest::newRow("no width") << line(QStringLiteral("1 monitors: 0,0,0,10")) << false << "" << "";
+  QTest::newRow("overlap") << line(QStringLiteral("2 monitors: 0,0,10,10;5,0,10,10")) << false << "" << "";
+  QTest::newRow("touching at a corner only") << line(QStringLiteral("2 monitors: 0,0,10,10;10,10,10,10")) << false << ""
+                                             << "";
+  QTest::newRow("beyond 16 bits") << line(QStringLiteral("1 monitors: 0,0,40000,10")) << false << "" << "";
+  QTest::newRow("not numbers") << line(QStringLiteral("1 monitors: a,0,10,10")) << false << "" << "";
+  QTest::newRow("a word that is not expected") << line(QStringLiteral("1 monitors: 0,0,10,10 evil")) << false << ""
+                                               << "";
+  QTest::newRow("an empty item") << line(QStringLiteral("2 monitors: 0,0,10,10;;10,0,10,10")) << false << "" << "";
+  QTest::newRow("seventeen monitors")
+      << line(
+             QStringLiteral("17 monitors: ") +
+             QStringLiteral(
+                 "0,0,1,1;1,0,1,1;2,0,1,1;3,0,1,1;4,0,1,1;5,0,1,1;6,0,1,1;7,0,1,1;8,0,1,1;9,0,1,1;10,0,1,1;11,0,1,1;12,"
+                 "0,1,1;13,0,1,1;14,0,1,1;15,0,1,1;16,0,1,1"
+             )
+         )
+      << false << "" << "";
+}
+
+void ArrangementConfigTests::reportedMonitors_isParsedFromTheLogOfTheCore()
+{
+  QFETCH(QString, line);
+  QFETCH(bool, parsed);
+  QFETCH(QString, computer);
+  QFETCH(QString, text);
+
+  const auto report = deskflow::gui::parseReportedMonitors(line);
+  QCOMPARE(report.has_value(), parsed);
+  if (parsed) {
+    QCOMPARE(report->computer, computer);
+    QCOMPARE(report->monitors.toText(), text);
+  }
+}
+
+void ArrangementConfigTests::reportedMonitors_textRoundTripsAndOnlyValidTextIsTaken_data()
+{
+  QTest::addColumn<QString>("text");
+  QTest::addColumn<bool>("valid");
+
+  QTest::newRow("two monitors") << QStringLiteral("0,0,2560,1440 scale=150 primary;2560,0,1920,1080 scale=100") << true;
+  QTest::newRow("one") << QStringLiteral("0,0,2064,1347 scale=200 primary") << true;
+  QTest::newRow("nothing") << QString() << false;
+  QTest::newRow("blanks") << QStringLiteral("   ") << false;
+  QTest::newRow("the numbers of a typed layout") << QStringLiteral("0,0,1920,1080;1920,0,1920,1080") << true;
+  QTest::newRow("a hole in the middle") << QStringLiteral("0,0,10,10;100,0,10,10") << false;
+}
+
+void ArrangementConfigTests::reportedMonitors_textRoundTripsAndOnlyValidTextIsTaken()
+{
+  QFETCH(QString, text);
+  QFETCH(bool, valid);
+
+  const auto monitors = deskflow::gui::ReportedMonitors::fromText(text);
+  QCOMPARE(monitors.has_value(), valid);
+  if (!valid)
+    return;
+  QCOMPARE(deskflow::gui::ReportedMonitors::fromText(monitors->toText())->toText(), monitors->toText());
+
+  // and through the settings file, with the characters that a settings file has opinions about
+  const auto key = Settings::Computer::ReportedMonitors.arg(QStringLiteral("round trip"));
+  Settings::setValue(key, monitors->toText());
+  QCOMPARE(deskflow::gui::ReportedMonitors::fromText(Settings::textValue(key))->toText(), monitors->toText());
+  Settings::setValue(key);
+}
+
+void ArrangementConfigTests::reportedMonitors_areTakenOnlyWhileTheExperimentIsOnAndOnlyForTheComputersOfTheConfig()
+{
+  writeGrid({{6, "A"}, {7, "B"}}, "A");
+  const auto line = [](const char *name, const char *rest) {
+    return QStringLiteral("[2026-11-16T13:30:00.123] INFO: computer \"%1\" reports %2")
+        .arg(QString::fromLatin1(name), QString::fromLatin1(rest));
+  };
+  const auto two = "2 monitors: 0,0,2560,1440 scale=150 primary;2560,0,1920,1080 scale=100";
+  ServerConfig config;
+
+  // the experiment is off: the core does not write the line, and a line that is there is not taken
+  QVERIFY(!config.takeReportedMonitorsFromLog(line("B", two)));
+  QVERIFY(!config.reportedMonitors("B"));
+
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  QVERIFY(config.takeReportedMonitorsFromLog(line("B", two)));
+  QCOMPARE(config.reportedMonitors("B")->monitors.size(), 2);
+  QCOMPARE(config.reportedMonitors("b")->primaryScalePercent(), 150);
+
+  // a computer that the configuration does not have is not remembered
+  QVERIFY(!config.takeReportedMonitorsFromLog(line("stranger", two)));
+  QVERIFY(!config.reportedMonitors("stranger"));
+  QVERIFY(Settings::textValue(Settings::Computer::ReportedMonitors.arg("stranger")).isEmpty());
+
+  // a name that a computer that is not known sent, with a line in it: the log of the core has it as two lines
+  for (const auto &part :
+       {QStringLiteral("[2026-11-16T13:30:01.000] WARNING: unrecognised client name \"evil"),
+        QStringLiteral("[2026-11-16T13:30:01.001] INFO: computer \"A\" reports 1 monitors: 0,0,1,1\"")})
+    QVERIFY(!config.takeReportedMonitorsFromLog(part));
+  QVERIFY(!config.reportedMonitors("A"));
+
+  // a list that cannot be reported is not taken, and does not change what was
+  QVERIFY(!config.takeReportedMonitorsFromLog(line("B", "2 monitors: 0,0,10,10;5,0,10,10")));
+  QCOMPARE(config.reportedMonitors("B")->monitors.size(), 2);
+
+  // and one that says that there are none takes it back
+  QVERIFY(config.takeReportedMonitorsFromLog(line("B", "no monitors")));
+  QVERIFY(!config.reportedMonitors("B"));
+  QVERIFY(Settings::textValue(Settings::Computer::ReportedMonitors.arg("B")).isEmpty());
+}
+
+// what a computer reported is remembered in the settings, so that it is drawn from it when it is offline
+void ArrangementConfigTests::reportedMonitors_areRememberedForAComputerThatIsOffline()
+{
+  writeGrid({{6, "A"}, {7, "B"}}, "A");
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  {
+    ServerConfig online;
+    QVERIFY(online.takeReportedMonitorsFromLog(QStringLiteral(
+        "[2026-11-16T13:30:00.123] INFO: computer \"B\" reports 2 monitors: 0,0,2560,1440 scale=150 "
+        "primary;2560,0,1920,1080 scale=100"
+    )));
+  }
+
+  // the program is started again, and the computer is not there
+  const ServerConfig offline;
+  const auto reported = offline.reportedMonitors("B");
+  QVERIFY(reported.has_value());
+  QCOMPARE(reported->toText(), QStringLiteral("0,0,2560,1440 scale=150 primary;2560,0,1920,1080 scale=100"));
+  QVERIFY(!offline.reportedMonitors("A"));
+}
+
+void ArrangementConfigTests::reportedMonitors_areDrawnForAComputerThatHasNoLayout()
+{
+  writeGrid({{6, "A"}, {7, "B"}, {8, "C"}}, "A");
+  ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{});
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  ServerConfig config;
+  QVERIFY(config.takeReportedMonitorsFromLog(QStringLiteral(
+      "[2026-11-16T13:30:00.123] INFO: computer \"B\" reports 2 monitors: 0,0,2560,1440 scale=150 "
+      "primary;2560,0,1920,1080 scale=100"
+  )));
+
+  const auto arrangement = config.arrangement();
+  const auto computer = [&](const char *name) {
+    for (const auto &c : arrangement.computers) {
+      if (c.name == name)
+        return c;
+    }
+    return deskflow::server::arrangement::Computer{};
+  };
+  // the monitors that it reported are what is drawn, at the scale of its primary monitor (a Windows PC at 150 %)
+  const auto b = computer("B");
+  QCOMPARE(b.monitors.size(), size_t(2));
+  QCOMPARE(b.shape().w, 4480);
+  QCOMPARE(b.shape().h, 1440);
+  QVERIFY(qAbs(b.zoom - 100.0 / 150.0) < 1e-9);
+  // a computer that did not report is a guess, and is said to be one
+  QCOMPARE(computer("C").monitors.size(), size_t(1));
+  QCOMPARE(config.assumedSizes(), QStringList{"C"});
+  QCOMPARE(config.monitorsFromReport(), QStringList{"B"});
+  ServerConfig::overrideServerMonitors(std::nullopt);
+}
+
+void ArrangementConfigTests::reportedMonitors_aTypedLayoutIsWhatIsDrawn()
+{
+  writeGrid({{6, "A"}, {7, "B"}}, "A");
+  ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{});
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  Settings::setValue(Settings::Computer::MonitorLayout.arg("B"), QStringLiteral("0,0,1920,1080"));
+  ServerConfig config;
+  QVERIFY(config.takeReportedMonitorsFromLog(QStringLiteral(
+      "[2026-11-16T13:30:00.123] INFO: computer \"B\" reports 2 monitors: 0,0,2560,1440 primary;2560,0,1920,1080"
+  )));
+
+  for (const auto &c : config.arrangement().computers) {
+    if (c.name == "B") {
+      QCOMPARE(c.monitors.size(), size_t(1));
+      QCOMPARE(c.shape().w, 1920);
+    }
+  }
+  QCOMPARE(config.monitorsFromReport(), QStringList{});
+  ServerConfig::overrideServerMonitors(std::nullopt);
+}
+
+void ArrangementConfigTests::reportedMonitors_aListenerIsToldOfEveryReport()
+{
+  writeGrid({{6, "A"}, {7, "B"}}, "A");
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  ServerConfig config;
+  QStringList told;
+  auto listener = std::make_shared<std::function<void(const QString &)>>([&](const QString &name) { told << name; });
+  config.listenToReports(listener);
+
+  QVERIFY(config.takeReportedMonitorsFromLog(
+      QStringLiteral("[2026-11-16T13:30:00.123] INFO: computer \"B\" reports 1 monitors: 0,0,10,10")
+  ));
+  QVERIFY(config.takeReportedScreenFromLog(
+      QStringLiteral("[2026-11-16T13:30:00.123] INFO: computer \"B\" reports its screen: 0,0 10x10")
+  ));
+  QCOMPARE(told, (QStringList{"B", "B"}));
+
+  // a listener that is gone (a dialog that was closed) is not called
+  listener.reset();
+  QVERIFY(config.takeReportedMonitorsFromLog(
+      QStringLiteral("[2026-11-16T13:30:00.123] INFO: computer \"B\" reports 1 monitors: 0,0,20,20")
+  ));
+  QCOMPARE(told.size(), 2);
 }
 
 void ArrangementConfigTests::assumedSizes_areOfTheComputersThatHaveNoMonitorsAndNoSize()

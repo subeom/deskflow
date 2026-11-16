@@ -157,6 +157,10 @@ public:
     // experimental: the display scale in percent of each monitor of the layout, in its order (150,100); none: the
     // scale of the zoom. Only the monitor editor uses it, to draw the monitors as they are
     inline static const auto MonitorScales = QStringLiteral("computer_%1/monitorScales");
+    // experimental: the monitors that the computer last reported to the server, x,y,w,h[ scale=S][ primary];x,y,w,h, as
+    // the core writes them in its log. Written by the GUI only, so that a computer that is offline is still drawn from
+    // them; the core never reads it (it uses what the computer reports while it is connected)
+    inline static const auto ReportedMonitors = QStringLiteral("computer_%1/reportedMonitors");
     inline static const auto ShareClipboard = QStringLiteral("computer_%1/shareClipboard");
     inline static const auto F18Action = QStringLiteral("computer_%1/f18Action");
     inline static const auto CrossOSInvertX = QStringLiteral("computer_%1/crossOSInvertX");

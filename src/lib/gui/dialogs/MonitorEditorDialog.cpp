@@ -65,6 +65,7 @@ MonitorEditorDialog::MonitorEditorDialog(
       m_undo(new QPushButton(tr("Undo"), this)),
       m_redo(new QPushButton(tr("Redo"), this)),
       m_stretchButton(new QPushButton(tr("Stretch to the reported size"), this)),
+      m_drawOwn(new QPushButton(tr("Draw my own instead"), this)),
       m_advanced(new QGroupBox(tr("Advanced: numbers"), this)),
       m_advancedContent(new QWidget(this)),
       m_numbers(new QPlainTextEdit(this)),
@@ -89,6 +90,12 @@ MonitorEditorDialog::MonitorEditorDialog(
   m_undo->setObjectName(QStringLiteral("btnUndo"));
   m_redo->setObjectName(QStringLiteral("btnRedo"));
   m_stretchButton->setObjectName(QStringLiteral("btnStretchToReported"));
+  m_drawOwn->setObjectName(QStringLiteral("btnDrawOwn"));
+  m_drawOwn->setVisible(false);
+  m_drawOwn->setToolTip(
+      tr("Start from the monitors that the computer reports and change them. What you draw is used instead of what the "
+         "computer reports.")
+  );
   m_advanced->setObjectName(QStringLiteral("groupAdvancedNumbers"));
   m_numbers->setObjectName(QStringLiteral("textNumbers"));
   m_numbersStatus->setObjectName(QStringLiteral("lblNumbersStatus"));
@@ -144,6 +151,7 @@ MonitorEditorDialog::MonitorEditorDialog(
   bottom->addWidget(m_undo);
   bottom->addWidget(m_redo);
   bottom->addStretch(1);
+  bottom->addWidget(m_drawOwn);
   bottom->addWidget(m_stretchButton);
 
   auto *numbersButtons = new QHBoxLayout;
@@ -219,6 +227,10 @@ MonitorEditorDialog::MonitorEditorDialog(
     m_stretch = true;
     refresh();
   });
+  connect(m_drawOwn, &QPushButton::clicked, this, [this] {
+    m_showingReported = false;
+    refresh();
+  });
   connect(m_advanced, &QGroupBox::toggled, this, [this](bool on) { m_advancedContent->setVisible(on); });
   connect(m_apply, &QPushButton::clicked, this, [this] { applyNumbers(); });
   connect(m_import, &QPushButton::clicked, this, [this] { importNumbers(); });
@@ -259,9 +271,39 @@ void MonitorEditorDialog::changeTo(const Layout &layout, int selected)
   refresh();
 }
 
+void MonitorEditorDialog::showReportedMonitors()
+{
+  m_showingReported = true;
+  refresh();
+}
+
+void MonitorEditorDialog::updateReportedMode()
+{
+  m_drawOwn->setVisible(m_showingReported);
+  m_widget->setReadOnly(m_showingReported);
+  m_widget->setFocusPolicy(m_showingReported ? Qt::NoFocus : Qt::StrongFocus);
+  m_numbers->setReadOnly(m_showingReported);
+  if (!m_showingReported)
+    return;
+
+  for (QWidget *w :
+       {static_cast<QWidget *>(m_resolution), static_cast<QWidget *>(m_pixelsW), static_cast<QWidget *>(m_pixelsH),
+        static_cast<QWidget *>(m_scale), static_cast<QWidget *>(m_rotate), static_cast<QWidget *>(m_makeMain),
+        static_cast<QWidget *>(m_add), static_cast<QWidget *>(m_remove), static_cast<QWidget *>(m_undo),
+        static_cast<QWidget *>(m_redo), static_cast<QWidget *>(m_stretchButton), static_cast<QWidget *>(m_import),
+        static_cast<QWidget *>(m_apply)})
+    w->setEnabled(false);
+  m_status->setText(
+      tr("✔ These are the monitors that %1 reports. They are used as they are; draw your own to use others.")
+          .arg(m_name)
+  );
+  m_status->setStyleSheet(QString::fromLatin1(kGreen));
+  m_buttons->button(QDialogButtonBox::Ok)->setEnabled(true);
+}
+
 void MonitorEditorDialog::undo()
 {
-  if (!m_history.canUndo())
+  if (m_showingReported || !m_history.canUndo())
     return;
   m_history.undo();
   m_stretch = false;
@@ -272,7 +314,7 @@ void MonitorEditorDialog::undo()
 
 void MonitorEditorDialog::redo()
 {
-  if (!m_history.canRedo())
+  if (m_showingReported || !m_history.canRedo())
     return;
   m_history.redo();
   m_stretch = false;
@@ -433,6 +475,7 @@ void MonitorEditorDialog::refresh()
   if (made.fit != Fit::Invalid)
     m_numbers->setPlainText(QString::fromStdString(made.text));
   m_numbersStatus->clear();
+  updateReportedMode();
 }
 
 void MonitorEditorDialog::applyNumbers()

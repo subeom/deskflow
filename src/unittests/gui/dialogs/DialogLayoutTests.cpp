@@ -551,6 +551,159 @@ void DialogLayoutTests::serverConfigDialog_computersTab_withTheArrangement_isLai
   }
 }
 
+void DialogLayoutTests::serverConfigDialog_computersTab_withReportedMonitors_isLaidOutWithoutSqueezing_data()
+{
+  addScenarios();
+}
+
+// A computer that reported its monitors is drawn from them, with the line that says so, and when it reports others
+// while the dialog is open the canvas follows: none of it may be squeezed or overlap
+void DialogLayoutTests::serverConfigDialog_computersTab_withReportedMonitors_isLaidOutWithoutSqueezing()
+{
+  QFETCH(QString, style);
+  QFETCH(qreal, fontScale);
+  QFETCH(int, sizeMode);
+
+  QVERIFY(QApplication::setStyle(style) != nullptr);
+  Settings::setValue(Settings::Core::ComputerName, QStringLiteral("srv"));
+  auto &proxy = Settings::proxy();
+  proxy.beginGroup(QStringLiteral("internalConfig"));
+  proxy.remove(QString());
+  proxy.beginWriteArray(QStringLiteral("screens"));
+  for (int i = 0; i < 15; ++i) {
+    proxy.setArrayIndex(i);
+    proxy.setValue(
+        QStringLiteral("name"), i == 6   ? QStringLiteral("Windows-PC-with-a-long-name")
+                                : i == 7 ? QStringLiteral("srv")
+                                : i == 8 ? QStringLiteral("Mac-mini")
+                                         : QString()
+    );
+  }
+  proxy.endArray();
+  proxy.endGroup();
+  ServerConfig::overrideServerMonitors(
+      std::vector<deskflow::server::MonitorRect>{{0, 0, 3440, 1440}, {753, 1440, 2064, 1347}}
+  );
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  // the Windows PC reported two monitors the last time that it was connected, and is offline now
+  Settings::setValue(
+      Settings::Computer::ReportedMonitors.arg("Windows-PC-with-a-long-name"),
+      QStringLiteral("0,0,2560,1440 scale=150 primary;2560,0,1920,1080 scale=100")
+  );
+  Settings::setValue(
+      Settings::Computer::ReportedMonitors.arg("Mac-mini"), QStringLiteral("0,0,1920,1080 scale=200 primary")
+  );
+  // the server, and a row to its right: the PC (at 150 %, so 2987 units wide, 3840 with a third monitor) touching it,
+  // and the Mac mini (at 200 %) with room for the PC to grow
+  Settings::setValue(Settings::Computer::ArrangementX.arg("srv"), 0.0);
+  Settings::setValue(Settings::Computer::ArrangementX.arg("Windows-PC-with-a-long-name"), 3440.0);
+  Settings::setValue(Settings::Computer::ArrangementX.arg("Mac-mini"), 7400.0);
+  for (const auto *name : {"srv", "Windows-PC-with-a-long-name", "Mac-mini"})
+    Settings::setValue(Settings::Computer::ArrangementY.arg(QString::fromLatin1(name)), 0.0);
+
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  auto *tabs = dialog.findChild<QTabWidget *>(QStringLiteral("tabWidget"));
+  auto *computers = dialog.findChild<QWidget *>(QStringLiteral("tabComputers"));
+  QVERIFY(tabs != nullptr && computers != nullptr);
+  tabs->setCurrentWidget(computers);
+  showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
+  QVERIFY(dialog.isVisible());
+  auto *panel = dialog.findChild<ArrangementPanel *>();
+  QVERIFY(panel != nullptr && panel->isVisibleTo(&dialog));
+  auto *canvas = panel->canvas();
+  QVERIFY2(canvas->height() >= 150, qPrintable(describe(canvas->geometry())));
+
+  const auto monitorsOf = [&](const char *name) {
+    const auto &arrangement = canvas->arrangement();
+    const auto index = arrangement.indexOf(name);
+    return index >= 0 ? arrangement.computers[static_cast<size_t>(index)].monitors.size() : size_t(0);
+  };
+  // drawn from what it reported, and said to be
+  QCOMPARE(monitorsOf("Windows-PC-with-a-long-name"), size_t(2));
+  QCOMPARE(monitorsOf("Mac-mini"), size_t(1));
+  QVERIFY(canvas->reportedMonitorComputers().contains(QStringLiteral("Windows-PC-with-a-long-name")));
+  QVERIFY(canvas->reportedMonitorComputers().contains(QStringLiteral("Mac-mini")));
+  QVERIFY(!canvas->reportedMonitorComputers().contains(QStringLiteral("srv")));
+  grabIfRequested(QStringLiteral("ServerConfigDialogReportedMonitors"), dialog);
+
+  auto violations = findLayoutViolations(dialog);
+  QVERIFY2(
+      violations.isEmpty(),
+      qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+  );
+
+  // the Windows PC connects, and says that a third monitor is plugged in; the dialog is open and the canvas follows it
+  QVERIFY(config.takeReportedMonitorsFromLog(QStringLiteral(
+      "[2026-11-16T13:30:00.123] INFO: computer \"Windows-PC-with-a-long-name\" reports 3 monitors: 0,0,2560,1440 "
+      "scale=150 primary;2560,0,1920,1080 scale=100;4480,0,1280,1024 scale=100"
+  )));
+  QCOMPARE(monitorsOf("Windows-PC-with-a-long-name"), size_t(3));
+  QCoreApplication::processEvents();
+  grabIfRequested(QStringLiteral("ServerConfigDialogReportedMonitorsChanged"), dialog);
+  violations = findLayoutViolations(dialog);
+  QVERIFY2(
+      violations.isEmpty(),
+      qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+  );
+
+  Settings::setValue(Settings::Server::UseArrangement);
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+  ServerConfig::overrideServerMonitors(std::nullopt);
+  for (const auto *name : {"srv", "Windows-PC-with-a-long-name", "Mac-mini"}) {
+    Settings::setValue(Settings::Computer::ArrangementX.arg(QString::fromLatin1(name)));
+    Settings::setValue(Settings::Computer::ArrangementY.arg(QString::fromLatin1(name)));
+    Settings::setValue(Settings::Computer::ReportedMonitors.arg(QString::fromLatin1(name)));
+  }
+}
+
+void DialogLayoutTests::monitorEditorDialog_showingTheReportedMonitors_isLaidOutWithoutSqueezing_data()
+{
+  addScenarios();
+}
+
+// The editor that shows what the computer reports has a line that says so and a button to draw one's own, next to the
+// controls that are disabled: none of it may be squeezed or overlap
+void DialogLayoutTests::monitorEditorDialog_showingTheReportedMonitors_isLaidOutWithoutSqueezing()
+{
+  QFETCH(QString, style);
+  QFETCH(qreal, fontScale);
+  QFETCH(int, sizeMode);
+
+  QVERIFY(QApplication::setStyle(style) != nullptr);
+  using deskflow::server::editor::Layout;
+  using deskflow::server::editor::Monitor;
+  Monitor main;
+  main.w = 2560 / 1.5;
+  main.h = 960;
+  main.scale = 150;
+  Monitor left;
+  left.x = -1920;
+  left.y = -120;
+  left.w = 1920;
+  left.h = 1080;
+  MonitorEditorDialog dialog(
+      nullptr, QStringLiteral("a-computer-with-a-long-name"), Layout{{main, left}}, QRect(-1920, 0, 4480, 1440)
+  );
+  dialog.showReportedMonitors();
+  showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
+  QVERIFY(dialog.isVisible());
+  for (const auto *name : {"lblMonitorStatus", "monitorEditorWidget", "btnDrawOwn", "cbResolution", "cbScale"}) {
+    auto *widget = dialog.findChild<QWidget *>(QString::fromLatin1(name));
+    QVERIFY2(widget != nullptr, name);
+    QVERIFY2(widget->isVisibleTo(&dialog), name);
+  }
+  QVERIFY2(dialog.editorWidget()->height() >= 150, qPrintable(describe(dialog.editorWidget()->geometry())));
+  grabIfRequested(QStringLiteral("MonitorEditorDialogReportedMonitors"), dialog);
+
+  const auto violations = findLayoutViolations(dialog);
+  QVERIFY2(
+      violations.isEmpty(),
+      qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+  );
+}
+
 void DialogLayoutTests::connectionTestDialog_isLaidOutWithoutSqueezing_data()
 {
   addScenarios();

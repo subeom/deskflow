@@ -47,6 +47,8 @@ add_library(${target} STATIC
   core/ConnectionProbe.cpp
   core/ConnectionProbe.h
   core/NetworkMonitor.cpp
+  core/ReportedMonitors.cpp
+  core/ReportedMonitors.h
   core/ReportedScreen.cpp
   core/ReportedScreen.h
   core/NetworkMonitor.h

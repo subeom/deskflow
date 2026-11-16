@@ -488,6 +488,61 @@ void MonitorEditorDialogTests::keys_deletingTheLastOne_leavesASelectionThatIsThe
   QCOMPARE(opened.dialog->drawing().monitors[0].x, 1.0);
 }
 
+// The monitors that the computer reports are shown, and nothing of the drawing can be changed with the mouse, the keys,
+// or the controls, until the user chooses to draw his own
+void MonitorEditorDialogTests::reported_theMonitorsOfTheComputer_areShownAndCannotBeChanged()
+{
+  auto opened = open(windowsPc(), kMatching);
+  opened.dialog->showReportedMonitors();
+  QApplication::processEvents();
+
+  QVERIFY(opened.dialog->isShowingReportedMonitors());
+  QVERIFY2(
+      statusOf(opened).contains(QStringLiteral("These are the monitors that PC reports")), qPrintable(statusOf(opened))
+  );
+  QVERIFY(child<QPushButton>(opened, "btnDrawOwn")->isVisibleTo(opened.dialog.get()));
+  for (const auto *name :
+       {"cbResolution", "cbScale", "btnRotate", "btnMakeMain", "btnAddMonitor", "btnRemoveMonitor", "btnUndo",
+        "btnRedo", "btnStretchToReported", "btnApplyNumbers", "btnImportNumbers", "sbPixelsW", "sbPixelsH"})
+    QVERIFY2(!child<QWidget>(opened, name)->isEnabled(), name);
+  QVERIFY(child<QPlainTextEdit>(opened, "textNumbers")->isReadOnly());
+  // it can be closed
+  QVERIFY(okIsEnabled(opened));
+
+  // a drag, the keys and the shortcut of the undo do nothing
+  QSignalSpy changed(opened.widget, &MonitorEditorWidget::drawingChanged);
+  const auto before = opened.dialog->drawing();
+  const auto from = centre(opened, 1);
+  drag(opened.widget, from, from + QPoint(-40, 30));
+  QTest::keyClick(opened.widget, Qt::Key_Delete);
+  QTest::keyClick(opened.widget, Qt::Key_Right);
+  QTest::keyClick(opened.dialog.get(), Qt::Key_Z, Qt::ControlModifier);
+  QCOMPARE(changed.count(), 0);
+  QCOMPARE(opened.dialog->drawing().monitors.size(), before.monitors.size());
+  QVERIFY(opened.dialog->drawing().monitors[1].x == before.monitors[1].x);
+  QVERIFY(opened.dialog->drawing().monitors[1].y == before.monitors[1].y);
+  QVERIFY(opened.dialog->isShowingReportedMonitors());
+}
+
+void MonitorEditorDialogTests::reported_drawingYourOwn_enablesTheEditing()
+{
+  auto opened = open(windowsPc(), kMatching);
+  opened.dialog->showReportedMonitors();
+  child<QPushButton>(opened, "btnDrawOwn")->click();
+  QApplication::processEvents();
+
+  QVERIFY(!opened.dialog->isShowingReportedMonitors());
+  QVERIFY(!child<QPushButton>(opened, "btnDrawOwn")->isVisibleTo(opened.dialog.get()));
+  QVERIFY(child<QPushButton>(opened, "btnAddMonitor")->isEnabled());
+  QVERIFY(!child<QPlainTextEdit>(opened, "textNumbers")->isReadOnly());
+  QVERIFY2(statusOf(opened).contains(QStringLiteral("Matches what PC reports")), qPrintable(statusOf(opened)));
+
+  // and now the drawing is the user's: it is edited like any other
+  const auto before = opened.dialog->drawing();
+  child<QPushButton>(opened, "btnRotate")->click();
+  QVERIFY(!(opened.dialog->drawing() == before));
+}
+
 void MonitorEditorDialogTests::screenshots_areMadeOfTheEditor()
 {
   // 1. a Windows PC of two monitors at different scales, and what it reports
@@ -514,6 +569,13 @@ void MonitorEditorDialogTests::screenshots_areMadeOfTheEditor()
     auto opened = open(windowsPc(), kPhysical);
     opened.widget->setSelected(0);
     saveGrab(*opened.dialog, QStringLiteral("11-monitor-editor-mismatch-hint.png"));
+  }
+  // 4. the monitors that the computer reports, shown and not editable
+  {
+    auto opened = open(windowsPc(), kMatching);
+    opened.dialog->showReportedMonitors();
+    QApplication::processEvents();
+    saveGrab(*opened.dialog, QStringLiteral("12-monitor-editor-reported-monitors.png"));
   }
 }
 
