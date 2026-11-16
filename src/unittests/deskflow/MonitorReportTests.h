@@ -31,6 +31,14 @@ private Q_SLOTS:
   void prepare_mirroredMonitorsAreOne();
   void prepare_keepsScaleAndPrimary();
   void prepare_sixteenMonitorsAreTheMost();
+  void native_rectIsMadeOfTheCorners();
+  void native_scaleFromDpi_data();
+  void native_scaleFromDpi();
+  void native_keepsOrderPrimaryAndDpi();
+  void native_windowsDesktopWithAMonitorOnTheLeft_tilesTheVirtualScreen();
+  void native_mirroredMonitorsAreOne();
+  void native_monitorsOfAnotherSpace_doNotTileTheShape();
+  void native_changeOfArrangementWithTheSameBox_isSeen();
 
 private:
   Log m_log;

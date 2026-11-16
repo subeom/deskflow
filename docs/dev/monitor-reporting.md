@@ -68,6 +68,19 @@ A client that **cannot** make its monitors tile exactly the shape of its `DINF` 
 system call than the shape, or a monitor is out of the range of 16 bits) **does not report** and logs one INFO line
 with the reason; if it had reported before it sends `count = 0`.
 
+### Where the client gets its monitors
+
+`IPlatformComputer::getMonitorInfo()` (defaulted to the rectangles of `getMonitors()`; empty means "cannot report", so
+the capability is not acknowledged). Platform code only produces numbers; everything else (the 16-bit range, the
+mirrored displays, the overlap check, the box that must equal the shape) is `deskflow/MonitorReport.cpp`, the same code
+on every platform and unit tested with fake enumerations.
+
+| Platform | Source | Coordinates | Notes |
+|---|---|---|---|
+| macOS | `CGGetActiveDisplayList` + `CGDisplayBounds` (`OSXDisplays.cpp`, already read for the server's own screen) | points, Quartz global space: exactly the space of `DINF` | scale = pixels of the display mode per point (200 on a Retina display); main display is primary; a mirror set is one monitor. `displayReconfigurationCallback` already raises `ComputerShapeChanged` for every change, so a report follows every `DINF` |
+| Windows | `EnumDisplayMonitors` + `GetMonitorInfoW` (`rcMonitor`, `MONITORINFOF_PRIMARY`) + `GetDpiForMonitor(MDT_EFFECTIVE_DPI)` loaded from `shcore.dll` (`MSWindowsMonitors.cpp`; 100 % when it is missing) | the virtual-screen pixels of the calling thread: the same space as `GetSystemMetrics(SM_*VIRTUALSCREEN)` that makes the shape | The DPI awareness of the process is **not** changed. When the box of the monitors is not the shape (a process that is not per-monitor aware sees a virtualised space) nothing is reported and one INFO line says so. `WM_DISPLAYCHANGE` re-reads the list with the shape; when the box did not change but the list did, `ComputerMonitorsChanged` is raised |
+| Linux (X11, libei) | none | | `getMonitors()` is empty: no acknowledgement, the legacy rectangle |
+
 ## What the server does with it
 
 `ClientProxy1_9` reads the message, checks it, and keeps **one** report for the connection; it is gone when the

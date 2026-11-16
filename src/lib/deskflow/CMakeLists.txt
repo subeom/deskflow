@@ -79,6 +79,8 @@ add_library(${lib_name} STATIC ${PLATFORM_CODE}
   MonitorReport.cpp
   MonitorReport.h
   MouseTypes.h
+  NativeMonitors.cpp
+  NativeMonitors.h
   OptionTypes.h
   PacketStreamFilter.cpp
   PacketStreamFilter.h

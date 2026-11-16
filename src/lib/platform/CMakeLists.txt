@@ -58,6 +58,8 @@ if(WIN32)
     MSWindowsHook.h
     MSWindowsKeyState.cpp
     MSWindowsKeyState.h
+    MSWindowsMonitors.cpp
+    MSWindowsMonitors.h
     MSWindowsPowerManager.cpp
     MSWindowsPowerManager.h
     MSWindowsProcess.cpp

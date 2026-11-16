@@ -1332,6 +1332,11 @@ std::vector<deskflow::server::MonitorRect> OSXComputer::getMonitors() const
   return m_monitors;
 }
 
+std::vector<deskflow::monitors::MonitorInfo> OSXComputer::getMonitorInfo() const
+{
+  return m_monitorInfo;
+}
+
 bool OSXComputer::updateComputerShape(const CGDirectDisplayID, const CGDisplayChangeSummaryFlags flags)
 {
   return updateComputerShape();
@@ -1381,7 +1386,11 @@ bool OSXComputer::updateComputerShape()
 
   delete[] displays;
   // the displays, for the server that maps the pointer around the holes of its own screen
-  m_monitors = deskflow::platform::osxActiveDisplays();
+  m_monitorInfo = deskflow::platform::osxActiveDisplayInfo();
+  m_monitors.clear();
+  for (const auto &display : m_monitorInfo) {
+    m_monitors.push_back(display.rect);
+  }
 
   // We want to notify the peer computer whether we are primary computer or not
   sendEvent(EventTypes::ComputerShapeChanged);

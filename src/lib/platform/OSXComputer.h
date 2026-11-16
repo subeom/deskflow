@@ -63,6 +63,7 @@ public:
 
   //! The displays, in points: the same numbers as the shape is made of (experimental)
   std::vector<deskflow::server::MonitorRect> getMonitors() const override;
+  std::vector<deskflow::monitors::MonitorInfo> getMonitorInfo() const override;
 
   // IPrimaryComputer overrides
   void reconfigure(uint32_t activeSides) override;
@@ -241,6 +242,7 @@ private:
   int32_t m_w, m_h;
   // the displays that the shape is of, read at the same time
   std::vector<deskflow::server::MonitorRect> m_monitors;
+  std::vector<deskflow::monitors::MonitorInfo> m_monitorInfo;
   int32_t m_xCenter, m_yCenter;
 
   // mouse state

@@ -6,6 +6,7 @@
 #include "MonitorReportTests.h"
 
 #include "deskflow/MonitorReport.h"
+#include "deskflow/NativeMonitors.h"
 #include "deskflow/ProtocolTypes.h"
 #include "io/IStream.h"
 
@@ -340,6 +341,103 @@ void MonitorReportTests::prepare_sixteenMonitorsAreTheMost()
   const auto tooMany = prepareMonitors(row(17), {0, 0, 1700, 100});
   QVERIFY(!tooMany.ok());
   QVERIFY2(QString::fromStdString(tooMany.problem).contains(QStringLiteral("16")), tooMany.problem.c_str());
+}
+
+// Windows says the corners of a monitor and the first pixel outside it
+void MonitorReportTests::native_rectIsMadeOfTheCorners()
+{
+  const auto monitors = monitorsFromNative({{-1920, 0, 0, 1080, 96, false}});
+
+  QCOMPARE(monitors.size(), static_cast<size_t>(1));
+  QVERIFY(monitors[0].rect == (MonitorRect{-1920, 0, 1920, 1080}));
+}
+
+void MonitorReportTests::native_scaleFromDpi_data()
+{
+  QTest::addColumn<uint>("dpi");
+  QTest::addColumn<int>("percent");
+
+  QTest::newRow("100 %") << 96u << 100;
+  QTest::newRow("125 %") << 120u << 125;
+  QTest::newRow("150 %") << 144u << 150;
+  QTest::newRow("175 %") << 168u << 175;
+  QTest::newRow("200 %") << 192u << 200;
+  QTest::newRow("250 %") << 240u << 250;
+  QTest::newRow("300 %") << 288u << 300;
+  QTest::newRow("a DPI that is not a step rounds") << 97u << 101;
+  QTest::newRow("not known") << 0u << 0;
+  QTest::newRow("more than a scale can say stays in 16 bits") << 4000000000u << 65535;
+}
+
+void MonitorReportTests::native_scaleFromDpi()
+{
+  QFETCH(uint, dpi);
+  QFETCH(int, percent);
+
+  QCOMPARE(static_cast<int>(scalePercentFromDpi(dpi)), percent);
+}
+
+void MonitorReportTests::native_keepsOrderPrimaryAndDpi()
+{
+  const auto monitors = monitorsFromNative({{1920, 0, 3840, 1080, 144, false}, {0, 0, 1920, 1080, 96, true}});
+
+  QCOMPARE(monitors.size(), static_cast<size_t>(2));
+  QVERIFY(monitors[0].rect == (MonitorRect{1920, 0, 1920, 1080}));
+  QCOMPARE(monitors[0].scalePercent, static_cast<uint16_t>(150));
+  QVERIFY(!monitors[0].primary);
+  QVERIFY(monitors[1].primary);
+  QCOMPARE(monitors[1].scalePercent, static_cast<uint16_t>(100));
+}
+
+// the virtual screen of Windows with the primary monitor at 0,0 and another on its left: what SM_XVIRTUALSCREEN and the
+// others say is the box of the monitors, which is what the server checks a report against
+void MonitorReportTests::native_windowsDesktopWithAMonitorOnTheLeft_tilesTheVirtualScreen()
+{
+  const auto monitors = monitorsFromNative({{0, 0, 2560, 1440, 144, true}, {-1920, 0, 0, 1080, 96, false}});
+  const auto prepared = prepareMonitors(monitors, {-1920, 0, 4480, 1440});
+
+  QVERIFY2(prepared.ok(), prepared.problem.c_str());
+  QCOMPARE(prepared.monitors.size(), static_cast<size_t>(2));
+  QVERIFY(prepared.monitors[0].primary);
+  QCOMPARE(prepared.monitors[0].scalePercent, static_cast<uint16_t>(150));
+}
+
+void MonitorReportTests::native_mirroredMonitorsAreOne()
+{
+  const auto prepared = prepareMonitors(
+      monitorsFromNative({{0, 0, 1920, 1080, 96, true}, {0, 0, 1920, 1080, 96, false}}), {0, 0, 1920, 1080}
+  );
+
+  QVERIFY2(prepared.ok(), prepared.problem.c_str());
+  QCOMPARE(prepared.monitors.size(), static_cast<size_t>(1));
+  QCOMPARE(prepared.duplicatesRemoved, static_cast<size_t>(1));
+}
+
+// a process that is not aware of the DPI of each monitor can be told the monitors in another space than the one of the
+// virtual screen; nothing is reported then, rather than a report that the server would have to throw away
+void MonitorReportTests::native_monitorsOfAnotherSpace_doNotTileTheShape()
+{
+  // 2 x 3840x2160 at 200 %: 7680x2160 of pixels, 3840x1080 of the units of 200 %
+  const auto monitors = monitorsFromNative({{0, 0, 1920, 1080, 192, true}, {1920, 0, 3840, 1080, 192, false}});
+  const auto prepared = prepareMonitors(monitors, {0, 0, 7680, 2160});
+
+  QVERIFY(!prepared.ok());
+  QVERIFY2(QString::fromStdString(prepared.problem).contains(QStringLiteral("screen")), prepared.problem.c_str());
+}
+
+// the arrangement of the monitors changed and the box did not: the list is not the same, which is what makes a client
+// say it again although it has no new shape to tell
+void MonitorReportTests::native_changeOfArrangementWithTheSameBox_isSeen()
+{
+  const auto before = monitorsFromNative({{0, 0, 2560, 1440, 96, true}, {2560, 0, 4480, 1080, 96, false}});
+  const auto same = monitorsFromNative({{0, 0, 2560, 1440, 96, true}, {2560, 0, 4480, 1080, 96, false}});
+  const auto swapped = monitorsFromNative({{0, 0, 1920, 1080, 96, false}, {1920, 0, 4480, 1440, 96, true}});
+
+  QVERIFY(before == same);
+  QVERIFY(before != swapped);
+  const MonitorRect shape{0, 0, 4480, 1440};
+  QVERIFY(prepareMonitors(before, shape).ok());
+  QVERIFY(prepareMonitors(swapped, shape).ok());
 }
 
 QTEST_MAIN(MonitorReportTests)
