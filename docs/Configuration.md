@@ -1,6 +1,7 @@
 # GUI Config
 
  Deskflow will automatically figure out where to save settings and other files.
+ If two computers cannot reach each other, see [Connecting across networks](connecting-across-networks.md).
 
 ## Search paths
 
@@ -54,7 +55,7 @@ It will begin with `[client]`
 | connectTimeout            | Number 1 - 60      | Seconds the client waits for one connection attempt to finish: the TCP connection, the secure (TLS) handshake and the server's greeting together. Raise it on a slow or far away network. A value outside 1 - 60 or that is not a number is ignored with a warning and the default is used [default: 2] |
 | dynamicConnectionInterval | `true` or `false`  | Use dynamic connection retry times based on number of previously failed attempts [default: false] |
 | languageSync              | `true` or `false`  | Sync to server language [default: true] |
-| remoteHost                | `IP` or `hostname` | The remote host(s) to connect to. Use a comma separated list when you want to try several hosts |
+| remoteHost                | `IP` or `hostname` | The remote host(s) to connect to. Use a comma separated list when you want to try several hosts, for example `192.168.1.5,100.64.1.7` (LAN address first, then the VPN address). They are tried in this order, one at a time: a host that does not answer is given `connectTimeout` seconds plus a 1 second pause before the next one is tried, and when the last one failed the list starts again with the first. Each entry can have its own port, `host:port` or `[ipv6]:port` |
 | yScrollScale              | Double 0.1 - 10.0  | Vertical mouse scrolling will be scaled by this amount on the client [default: 1.0] |
 | xScrollScale              | Double 0.1 - 10.0  | Horizontal mouse scrolling will be scaled by this amount on the client [default: 1.0] |
 | invertYScroll             | `true` or `false`  | Invert vertical scroll on this client [default: false] |

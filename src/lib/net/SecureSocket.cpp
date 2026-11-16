@@ -751,5 +751,7 @@ void SecureSocket::handleTCPConnected(const Event &)
     LOG_DEBUG("disregarding stale connect event");
     return;
   }
+  // this handler takes the place of any other for the event, so the client is told in another way that TCP is done
+  sendEvent(EventTypes::DataSocketTlsStarted);
   secureConnect();
 }

@@ -51,7 +51,7 @@ ClientApp::ClientApp(IEventQueue *events, const QString &processName) : App(even
 void ClientApp::parseArgs()
 {
   // save server addresses (comma-separated list supported)
-  if (const auto addressList = Settings::value(Settings::Client::RemoteHost).toString(); !addressList.isEmpty()) {
+  if (const auto addressList = Settings::textValue(Settings::Client::RemoteHost); !addressList.isEmpty()) {
     const int port = Settings::value(Settings::Core::Port).toInt();
     const QStringList addresses = addressList.split(',', Qt::SkipEmptyParts);
 

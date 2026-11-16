@@ -46,6 +46,8 @@ add_library(${target} STATIC
   core/CoreProcess.h
   core/ConnectionProbe.cpp
   core/ConnectionProbe.h
+  core/AddressClassifier.cpp
+  core/AddressClassifier.h
   core/NetworkMonitor.cpp
   core/ReportedMonitors.cpp
   core/ReportedMonitors.h
@@ -75,6 +77,8 @@ add_library(${target} STATIC
   dialogs/HotkeyDialog.ui
   dialogs/MonitorEditorDialog.cpp
   dialogs/MonitorEditorDialog.h
+  dialogs/ServerAddressesDialog.cpp
+  dialogs/ServerAddressesDialog.h
   dialogs/ServerConfigDialog.cpp
   dialogs/ServerConfigDialog.h
   dialogs/ServerConfigDialog.ui

@@ -14,6 +14,7 @@ add_custom_target(docs ALL
     Security.md
     HelpMain.md
     Configuration.md
+    connecting-across-networks.md
     Issues.md
 )
 
@@ -22,6 +23,7 @@ install(
     Readme.md
     HelpMain.md
     Configuration.md
+    connecting-across-networks.md
     Issues.md
     Security.md
   DESTINATION ${CMAKE_INSTALL_DOCDIR}
@@ -36,6 +38,9 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       ${CMAKE_CURRENT_SOURCE_DIR}/Configuration.md
       ${CMAKE_CURRENT_BINARY_DIR}/Configuration.md
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      ${CMAKE_CURRENT_SOURCE_DIR}/connecting-across-networks.md
+      ${CMAKE_CURRENT_BINARY_DIR}/connecting-across-networks.md
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       ${CMAKE_CURRENT_SOURCE_DIR}/Issues.md
       ${CMAKE_CURRENT_BINARY_DIR}/Issues.md

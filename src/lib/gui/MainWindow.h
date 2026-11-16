@@ -17,6 +17,7 @@
 
 #include "VersionChecker.h"
 #include "config/ServerConfig.h"
+#include "gui/core/AddressClassifier.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/core/NetworkMonitor.h"
 #include "net/Fingerprint.h"
@@ -131,6 +132,7 @@ private:
   void showConfigureServer(const QString &message);
   void showConfigureClient();
   void showConnectionTest();
+  void showServerAddresses();
   void restoreWindow();
   void setupControls();
   void showFirstConnectedMessage();
@@ -207,6 +209,8 @@ private:
   // Network monitoring
   NetworkMonitor *m_networkMonitor = nullptr;
   QString m_currentIpAddress;
+  // every IPv4 address a client could use, when there is more than one to choose from (empty otherwise)
+  QList<deskflow::gui::AddressInfo> m_serverAddresses;
 
   // Server IP strategy optimization
   QStringList m_serverStartIPs;

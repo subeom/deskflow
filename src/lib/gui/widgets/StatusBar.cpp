@@ -107,8 +107,9 @@ void StatusBar::setStatus(ConnectionState connectionState, ProcessState processS
           setSecurityIconVisible(true);
           m_connectionInterval = -1;
           if (!isServer) {
-            m_lblStatus->setText(tr("%1 is connected as client of %2")
-                                     .arg(kAppName, Settings::value(Settings::Client::RemoteHost).toString()));
+            m_lblStatus->setText(
+                tr("%1 is connected as client of %2").arg(kAppName, Settings::textValue(Settings::Client::RemoteHost))
+            );
           }
           break;
         }

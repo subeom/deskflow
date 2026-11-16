@@ -18,6 +18,7 @@
 #include "dialogs/ConnectionTestDialog.h"
 #include "dialogs/FingerprintDialog.h"
 #include "dialogs/HelpDialog.h"
+#include "dialogs/ServerAddressesDialog.h"
 #include "dialogs/ServerConfigDialog.h"
 #include "dialogs/SettingsDialog.h"
 
@@ -204,6 +205,7 @@ void MainWindow::setupControls()
 
   ui->btnConfigureServer->setIcon(QIcon::fromTheme(QStringLiteral("configure")));
   ui->btnConfigureClient->setIcon(QIcon::fromTheme(QStringLiteral("configure")));
+  ui->cbHostname->lineEdit()->setPlaceholderText(tr("LAN address first, then the VPN address, separated by commas"));
 
   if (Settings::value(Settings::Core::LastVersion).toString() != kVersion) {
     Settings::setValue(Settings::Core::LastVersion, kVersion);
@@ -293,6 +295,7 @@ void MainWindow::connectSlots()
   connect(ui->btnConfigureServer, &QPushButton::clicked, this, [this] { showConfigureServer(""); });
   connect(ui->btnConfigureClient, &QPushButton::clicked, this, [this] { showConfigureClient(); });
   connect(ui->btnTestConnection, &QPushButton::clicked, this, &MainWindow::showConnectionTest);
+  connect(ui->lblIpAddresses, &QLabel::linkActivated, this, &MainWindow::showServerAddresses);
   connect(ui->lblComputerName, &QLabel::linkActivated, this, &MainWindow::openSettings);
 
   connect(ui->rbModeServer, &QRadioButton::toggled, this, &MainWindow::coreModeToggled);
@@ -412,7 +415,7 @@ void MainWindow::startCore()
   }
 
   // Invalid client settings
-  if (m_coreProcess.mode() == CoreMode::Client && Settings::value(Settings::Client::RemoteHost).toString().isEmpty()) {
+  if (m_coreProcess.mode() == CoreMode::Client && Settings::textValue(Settings::Client::RemoteHost).isEmpty()) {
     qDebug().noquote() << "skipping core start, undefined remotehost";
     return;
   }
@@ -713,7 +716,7 @@ void MainWindow::applyConfig()
     setWindowTitle(kAppName);
   }
 
-  const auto host = Settings::value(Settings::Client::RemoteHost).toString();
+  const auto host = Settings::textValue(Settings::Client::RemoteHost);
   QSignalBlocker hostnameBlocker(ui->cbHostname);
   ui->cbHostname->clear();
   ui->cbHostname->addItems(Settings::value(Settings::Client::RecentRemoteHosts).toStringList());
@@ -827,7 +830,7 @@ void MainWindow::handleConnectionRefused(deskflow::core::ConnectionRefusal reaso
   m_clientErrorVisible = true;
   showAndActivate();
 
-  const auto address = Settings::value(Settings::Client::RemoteHost).toString();
+  const auto address = Settings::textValue(Settings::Client::RemoteHost);
   QMessageBox::warning(
       this, tr("%1 Connection Error").arg(kAppName),
       tr("<p>Failed to connect to the server '%1'.</p>"
@@ -1151,6 +1154,12 @@ void MainWindow::showConnectionTest()
   dialog.exec();
 }
 
+void MainWindow::showServerAddresses()
+{
+  ServerAddressesDialog dialog(this, m_serverAddresses);
+  dialog.exec();
+}
+
 void MainWindow::secureSocket(bool secureSocket)
 {
   m_secureSocket = secureSocket;
@@ -1329,6 +1338,27 @@ void MainWindow::updateIpLabel(const QStringList &addresses)
     toolTipText = toolTipText.arg(tr("the suggested IP."));
   } else {
     toolTipText = toolTipText.arg(tr("one of the following IPs:<br/>%1").arg(ipList.join("<br/>")));
+  }
+
+  // With more than one address to choose from, say which network card each is on and what it is for, so that a
+  // client is not given the address of a network it cannot reach. With one address nothing changes.
+  m_serverAddresses.clear();
+  if (mode == CoreMode::Server && !fixedIP) {
+    for (const auto &info : usableIpv4Addresses()) {
+      if (ipList.contains(info.address)) {
+        m_serverAddresses.append(info);
+      }
+    }
+  }
+  if (m_serverAddresses.size() >= 2) {
+    labelText.append(
+        QStringLiteral(" (<a href=\"addresses\">%1</a>)").arg(tr("all %1 addresses").arg(m_serverAddresses.size()))
+    );
+    toolTipText = tr("<p>If connecting via the hostname fails, try one of the following IPs:</p>") +
+                  addressListToolTip(m_serverAddresses);
+    if (!IPValid) {
+      toolTipText.append(tr("<p>A bound IP is now invalid, you may need to restart the server.</p>"));
+    }
   }
 
   ui->lblIpAddresses->setText(labelText);

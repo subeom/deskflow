@@ -14,6 +14,14 @@ create_test(
 )
 
 create_test(
+  NAME ClientAppConnectTests
+  DEPENDS client
+  LIBS arch base io mt net platform server app ${extra_libs}
+  SOURCE ClientAppConnectTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/client"
+)
+
+create_test(
   NAME ClientConnectDiagnosisTests
   DEPENDS client
   LIBS arch base io mt net platform server app ${extra_libs}

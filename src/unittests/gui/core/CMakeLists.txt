@@ -9,6 +9,13 @@ create_test(
 )
 
 create_test(
+  NAME AddressClassifierTests
+  DEPENDS gui
+  SOURCE AddressClassifierTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
   NAME ConnectionProbeTests
   DEPENDS gui
   SOURCE ConnectionProbeTests.cpp

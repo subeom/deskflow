@@ -41,6 +41,7 @@ private Q_SLOTS:
   void refuseConnection_unknownName_namesTheScreenName();
   void refuseConnection_alreadyConnected_namesTheDuplicate();
   void connect_toAClosedLocalPort_logsTheRefusalOfTheRealSocket();
+  void connect_withTlsToAPeerThatNeverAnswers_namesTheHandshakeAndNotTcp();
 
 private:
   Arch m_arch;
