@@ -75,7 +75,7 @@ The Config model (`src/lib/server/Config.{h,cpp}`) was read, not guessed:
 
 - a link is `side(srcStart,srcEnd) = Name(dstStart,dstEnd)`. `Interval` is a pair of `float`, kept as a *fraction*
   (0 to 1) of the side of the **bounding box**; `ConfigReadContext::parseInterval` reads percentages with `strtod`,
-  so **decimals are read** (`left(0,51.6684)`); only the `operator<<` of the core's own `Config` rounds to whole
+  so **decimals are read** (`left(0,51.6685)`); only the `operator<<` of the core's own `Config` rounds to whole
   percentages, and that is a debug dump, not what the GUI writes;
 - **source intervals of one side of one computer must not overlap** (`Cell::add` refuses, the file does not load).
   Destination intervals are not checked, may overlap, and are not an error;

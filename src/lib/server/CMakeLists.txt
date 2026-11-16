@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: MIT
 
 add_library(server STATIC
+  Arrangement.cpp
+  Arrangement.h
   BaseClientProxy.cpp
   BaseClientProxy.h
   ClientListener.cpp
