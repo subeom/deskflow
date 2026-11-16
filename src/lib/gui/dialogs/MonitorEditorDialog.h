@@ -67,6 +67,8 @@ private:
   std::optional<QRect> m_reported;
   deskflow::server::editor::History m_history;
   bool m_stretch = false;
+  // "Other size..." was chosen for the monitor that is selected: the sizes are typed until it or the size changes
+  bool m_otherSize = false;
   // the scale of the zoom of what was drawn, which numbers that are typed are in
   double m_numbersZoom = 1.0;
 

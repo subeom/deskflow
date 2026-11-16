@@ -503,6 +503,66 @@ void MonitorEditorTests::resize_sizesSnapToThePresetsAndTheTarget()
   QVERIFY(!resized.target);
 }
 
+namespace {
+struct PresetEdgeCase
+{
+  const char *name;
+  Layout layout;
+  Handle handle;
+  double toX;
+  double toY;
+  Rect expected;
+};
+
+// A is next to B on the side that its edge must not leave: B touches A along it
+const std::vector<PresetEdgeCase> &presetEdgeCases()
+{
+  static const std::vector<PresetEdgeCase> cases = {
+      {"right", layoutOf({mon(0, 0, 1920, 1090), mon(0, 1090, 1000, 500)}), Handle::Right, 1925, 0, {0, 0, 1920, 1090}},
+      {"left",
+       layoutOf({mon(100, 0, 1920, 1090), mon(300, 1090, 1000, 500)}),
+       Handle::Left,
+       95,
+       0,
+       {100, 0, 1920, 1090}},
+      {"bottom",
+       layoutOf({mon(0, 0, 1930, 1075), mon(1930, 20, 500, 500)}),
+       Handle::Bottom,
+       0,
+       1081,
+       {0, 0, 1930, 1080}},
+      {"top", layoutOf({mon(0, 10, 1930, 1070), mon(1930, 300, 500, 400)}), Handle::Top, 0, 5, {0, 0, 1930, 1080}},
+  };
+  return cases;
+}
+} // namespace
+
+void MonitorEditorTests::resize_aPresetSnapOfASingleEdge_movesOnlyThatSide_data()
+{
+  QTest::addColumn<int>("index");
+  for (size_t i = 0; i < presetEdgeCases().size(); ++i)
+    QTest::newRow(presetEdgeCases()[i].name) << static_cast<int>(i);
+}
+
+void MonitorEditorTests::resize_aPresetSnapOfASingleEdge_movesOnlyThatSide()
+{
+  QFETCH(int, index);
+  const auto &c = presetEdgeCases()[static_cast<size_t>(index)];
+  QVERIFY(check(c.layout).empty());
+  // the pixels are near 1920 x 1080 in both sides, and only the side of the edge that is dragged goes to it
+  Constraints presetsOnly;
+  presetsOnly.snapAspect = false;
+  auto resized = resize(c.layout, 0, c.handle, c.toX, c.toY, 8, presetsOnly);
+  QVERIFY(!resized.refused);
+  QVERIFY(resized.preset);
+  QCOMPARE(resized.layout.monitors[0].rect(), c.expected);
+  QVERIFY2(check(resized.layout).empty(), "the monitors still touch");
+  // with the ratios too, as it is when the mouse is used
+  resized = resize(c.layout, 0, c.handle, c.toX, c.toY, 8);
+  QVERIFY(!resized.refused);
+  QVERIFY2(check(resized.layout).empty(), "the monitors still touch, with the ratios");
+}
+
 void MonitorEditorTests::resize_neverSmallerThanTheMinimum_andNeverOverAnother()
 {
   Constraints none;

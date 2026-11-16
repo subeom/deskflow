@@ -397,7 +397,8 @@ void ServerConfig::setReportedScreen(const QString &computer, const QRect &shape
 
 void ServerConfig::setComputerSize(const QString &name, int width, int height)
 {
-  if (width <= 0 || height <= 0)
+  // a size that a layout cannot have is not stored, as a size or as a monitor
+  if (width <= 0 || height <= 0 || !MonitorLayout::create({{0, 0, width, height}}))
     return;
   for (auto &computer : computers()) {
     if (computer.isNull() || computer.isServer() || computer.name().compare(name, Qt::CaseInsensitive) != 0)

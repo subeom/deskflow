@@ -356,6 +356,53 @@ void MonitorEditorDialogTests::controls_followTheSelectedMonitor()
   QVERIFY(!child<QPushButton>(opened, "btnRemoveMonitor")->isEnabled());
 }
 
+void MonitorEditorDialogTests::controls_otherSize_staysChosenUntilTheSizeOrTheSelectionChanges()
+{
+  Monitor one;
+  auto opened = open(Layout{{one, added(Layout{{one}}).monitors[1]}});
+  auto *resolution = child<QComboBox>(opened, "cbResolution");
+  auto *w = child<QSpinBox>(opened, "sbPixelsW");
+  auto *h = child<QSpinBox>(opened, "sbPixelsH");
+  opened.widget->setSelected(0);
+  QCOMPARE(resolution->currentData().toPoint(), QPoint(1920, 1080));
+  QVERIFY(!w->isVisibleTo(opened.dialog.get()));
+
+  // "Other size..." on a monitor that has the size of a preset: the combo stays there, and the sizes are for typing
+  const auto last = resolution->count() - 1;
+  QCOMPARE(resolution->itemData(last).toPoint(), QPoint(0, 0));
+  resolution->setCurrentIndex(last);
+  Q_EMIT resolution->activated(last);
+  QCOMPARE(resolution->currentIndex(), last);
+  QVERIFY(w->isVisibleTo(opened.dialog.get()) && h->isVisibleTo(opened.dialog.get()));
+  QVERIFY(w->isEnabled() && h->isEnabled());
+  QCOMPARE(opened.dialog->drawing().monitors[0].pixelsW(), 1920);
+  QCOMPARE(w->value(), 1920);
+
+  // what is typed is the size, and it is still "other" when it is not a preset
+  w->setValue(1000);
+  h->setValue(700);
+  Q_EMIT w->editingFinished();
+  QCOMPARE(opened.dialog->drawing().monitors[0].pixelsW(), 1000);
+  QCOMPARE(resolution->currentIndex(), last);
+
+  // another monitor is selected and this one again: it is as it is, a size that is none of the presets
+  opened.widget->setSelected(1);
+  QCOMPARE(resolution->currentData().toPoint(), QPoint(1920, 1080));
+  QVERIFY(!w->isVisibleTo(opened.dialog.get()));
+  opened.widget->setSelected(0);
+  QCOMPARE(resolution->currentIndex(), last);
+
+  // and "other" on a preset again, then another monitor: it goes back to what the preset is
+  opened.widget->setSelected(1);
+  resolution->setCurrentIndex(last);
+  Q_EMIT resolution->activated(last);
+  QVERIFY(w->isVisibleTo(opened.dialog.get()));
+  opened.widget->setSelected(0);
+  opened.widget->setSelected(1);
+  QCOMPARE(resolution->currentData().toPoint(), QPoint(1920, 1080));
+  QVERIFY(!w->isVisibleTo(opened.dialog.get()));
+}
+
 void MonitorEditorDialogTests::problems_disableOk_andAreSaid()
 {
   Monitor a;

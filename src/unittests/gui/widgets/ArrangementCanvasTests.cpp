@@ -321,6 +321,50 @@ void ArrangementCanvasTests::resize_theServerAndAComputerOfSeveralMonitors_arePu
   QCOMPARE(resized.count(), 0);
 }
 
+void ArrangementCanvasTests::resize_aPresetSnapOnOneEdge_doesNotMoveTheOtherOne()
+{
+  // C is under A and touches it: the bottom of A is where it is when its right edge goes to the size of a preset
+  auto canvas = canvasOf({{pc("A", "0,0,1920,1090", 0, 0), pc("C", "0,0,1000,500", 0, 1090)}});
+  QSignalSpy resized(canvas.get(), &ArrangementCanvas::computerResized);
+  canvas->setSelected("A");
+  const auto box = canvas->boxOf("A");
+  const auto scale = box.width() / 1920.0;
+  const QPoint right(static_cast<int>(std::lround(box.right())), static_cast<int>(std::lround(box.center().y())));
+  // 20 units to the right: 1940 wide, which is near 1920 x 1080 (the height is not: it is where C needs it)
+  drag(*canvas, right, right + QPoint(static_cast<int>(std::lround(20 * scale)), 0));
+  QCOMPARE(resized.count(), 1);
+  QCOMPARE(resized.at(0).at(3).toInt(), 1920);
+  QCOMPARE(resized.at(0).at(4).toInt(), 1090);
+  QVERIFY(canvas->issues().empty());
+}
+
+void ArrangementCanvasTests::resize_beyondWhatALayoutCanHave_isNeverStored()
+{
+  auto canvas = canvasOf(twoApart());
+  QSignalSpy resized(canvas.get(), &ArrangementCanvas::computerResized);
+  canvas->setSelected("B");
+  const auto box = canvas->boxOf("B");
+  const auto scale = box.width() / 1920.0;
+  const QPoint right(static_cast<int>(std::lround(box.right())), static_cast<int>(std::lround(box.center().y())));
+
+  // in one step far beyond the numbers that a layout has (16 bits): nothing is done
+  QTest::mousePress(canvas.get(), Qt::LeftButton, {}, right);
+  const auto far = right + QPoint(static_cast<int>(std::lround(60000 * scale)), 0);
+  QTest::mouseMove(canvas.get(), far);
+  QTest::mouseRelease(canvas.get(), Qt::LeftButton, {}, far);
+  QCOMPARE(resized.count(), 0);
+  QCOMPARE(computerOf(*canvas, "B").monitors.front().w, 1920);
+
+  // in steps: whatever is last done is a layout that can be
+  drag(*canvas, right, right + QPoint(static_cast<int>(std::lround(100000 * scale)), 0));
+  for (const auto &args : resized) {
+    const deskflow::server::MonitorRect rect{
+        args.at(1).toInt(), args.at(2).toInt(), args.at(3).toInt(), args.at(4).toInt()
+    };
+    QVERIFY2(static_cast<bool>(MonitorLayout::create({rect})), qPrintable(QStringLiteral("%1").arg(rect.w)));
+  }
+}
+
 void ArrangementCanvasTests::resize_overAnotherComputer_isNotDone()
 {
   auto canvas = canvasOf(twoApart());

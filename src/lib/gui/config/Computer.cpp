@@ -11,6 +11,23 @@
 #include <common/Settings.h>
 
 #include <algorithm>
+#include <cmath>
+
+namespace {
+
+// the scales of two computers are the same when each monitor has the same one, or none (NaN) in both
+bool sameScales(const QList<double> &a, const QList<double> &b)
+{
+  if (a.size() != b.size())
+    return false;
+  for (qsizetype i = 0; i < a.size(); ++i) {
+    if (a[i] != b[i] && !(std::isnan(a[i]) && std::isnan(b[i])))
+      return false;
+  }
+  return true;
+}
+
+} // namespace
 
 using enum KeyboardModifier;
 using enum ComputerConfig::SwitchCorner;
@@ -62,13 +79,21 @@ void Computer::loadSettings(QSettingsProxy &settings)
   m_ArrangementZoom = zoom > 0 ? zoom : 1.0;
   m_ArrangementWidth = std::max(0, Settings::value(Settings::Computer::ArrangementWidth.arg(name)).toInt());
   m_ArrangementHeight = std::max(0, Settings::value(Settings::Computer::ArrangementHeight.arg(name)).toInt());
+  // an entry that is not a scale keeps its place (as NaN), so that the scales that follow stay with their monitors
   m_MonitorScales.clear();
+  bool anyScale = false;
   for (const auto &part : Settings::textValue(Settings::Computer::MonitorScales.arg(name)).split(QLatin1Char(','))) {
     bool ok = false;
     const auto scale = part.trimmed().toDouble(&ok);
-    if (ok && scale >= 25.0 && scale <= 500.0)
+    if (ok && std::isfinite(scale) && scale >= 25.0 && scale <= 500.0) {
       m_MonitorScales.append(scale);
+      anyScale = true;
+    } else {
+      m_MonitorScales.append(std::nan(""));
+    }
   }
+  if (!anyScale)
+    m_MonitorScales.clear();
 
   setSwitchCornerSize(Settings::value(Settings::Computer::SwitchCornerSize.arg(name)).toInt());
 
@@ -142,10 +167,13 @@ void Computer::saveSettings(QSettingsProxy &settings) const
   );
   // a computer that has no scales of its monitors has no key
   QStringList scales;
-  for (const auto scale : m_MonitorScales)
-    scales << QString::number(scale, 'g', 10);
+  bool anyScale = false;
+  for (const auto scale : m_MonitorScales) {
+    anyScale = anyScale || std::isfinite(scale);
+    scales << (std::isfinite(scale) ? QString::number(scale, 'g', 10) : QString());
+  }
   Settings::setValue(
-      Settings::Computer::MonitorScales.arg(computerName), scales.isEmpty() ? QVariant() : QVariant(scales.join(','))
+      Settings::Computer::MonitorScales.arg(computerName), anyScale ? QVariant(scales.join(',')) : QVariant()
   );
   Settings::setValue(Settings::Computer::SwitchCornerSize.arg(computerName), switchCornerSize());
   Settings::setValue(
@@ -203,6 +231,6 @@ bool Computer::operator==(const Computer &computer) const
          m_MonitorLayout == computer.m_MonitorLayout && m_ArrangementPlaced == computer.m_ArrangementPlaced &&
          m_ArrangementX == computer.m_ArrangementX && m_ArrangementY == computer.m_ArrangementY &&
          m_ArrangementZoom == computer.m_ArrangementZoom && m_ArrangementWidth == computer.m_ArrangementWidth &&
-         m_ArrangementHeight == computer.m_ArrangementHeight && m_MonitorScales == computer.m_MonitorScales &&
+         m_ArrangementHeight == computer.m_ArrangementHeight && sameScales(m_MonitorScales, computer.m_MonitorScales) &&
          m_Swapped == computer.m_Swapped && m_isServer == computer.m_isServer;
 }

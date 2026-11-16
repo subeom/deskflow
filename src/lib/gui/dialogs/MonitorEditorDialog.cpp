@@ -173,9 +173,13 @@ MonitorEditorDialog::MonitorEditorDialog(
   connect(m_widget, &MonitorEditorWidget::drawingChanged, this, [this](const Layout &layout) {
     m_history.push(layout);
     m_stretch = false;
+    m_otherSize = false;
     refresh();
   });
-  connect(m_widget, &MonitorEditorWidget::selectionChanged, this, [this] { refresh(); });
+  connect(m_widget, &MonitorEditorWidget::selectionChanged, this, [this] {
+    m_otherSize = false;
+    refresh();
+  });
   connect(m_resolution, &QComboBox::activated, this, [this] { chooseResolution(); });
   for (auto *box : {m_pixelsW, m_pixelsH}) {
     connect(box, &QSpinBox::editingFinished, this, [this] {
@@ -247,6 +251,7 @@ bool MonitorEditorDialog::canSave() const
 void MonitorEditorDialog::changeTo(const Layout &layout, int selected)
 {
   m_stretch = false;
+  m_otherSize = false;
   m_history.push(layout);
   m_widget->setDrawing(layout);
   if (selected != -2)
@@ -260,6 +265,7 @@ void MonitorEditorDialog::undo()
     return;
   m_history.undo();
   m_stretch = false;
+  m_otherSize = false;
   m_widget->setDrawing(m_history.current());
   refresh();
 }
@@ -270,6 +276,7 @@ void MonitorEditorDialog::redo()
     return;
   m_history.redo();
   m_stretch = false;
+  m_otherSize = false;
   m_widget->setDrawing(m_history.current());
   refresh();
 }
@@ -313,9 +320,9 @@ void MonitorEditorDialog::syncControls()
   if (has) {
     const auto &monitor = layout.monitors[static_cast<size_t>(selected)];
     const QPoint pixels(monitor.pixelsW(), monitor.pixelsH());
-    int found = m_resolution->findData(pixels);
-    other = found < 0;
-    m_resolution->setCurrentIndex(found >= 0 ? found : m_resolution->count() - 1);
+    const int found = m_resolution->findData(pixels);
+    other = found < 0 || m_otherSize;
+    m_resolution->setCurrentIndex(other ? m_resolution->count() - 1 : found);
     m_pixelsW->setValue(std::clamp(pixels.x(), m_pixelsW->minimum(), m_pixelsW->maximum()));
     m_pixelsH->setValue(std::clamp(pixels.y(), m_pixelsH->minimum(), m_pixelsH->maximum()));
     m_scale->setCurrentText(QStringLiteral("%1 %").arg(std::lround(monitor.scale)));
@@ -337,13 +344,9 @@ void MonitorEditorDialog::chooseResolution()
     return;
   const auto pixels = m_resolution->currentData().toPoint();
   if (pixels.x() <= 0) {
-    // another size: the spin boxes are for it
+    // another size: the combo stays on it and the spin boxes are for it
+    m_otherSize = true;
     syncControls();
-    for (QWidget *w :
-         {static_cast<QWidget *>(m_pixelsW), static_cast<QWidget *>(m_times), static_cast<QWidget *>(m_pixelsH)}) {
-      w->setVisible(true);
-      w->setEnabled(true);
-    }
     return;
   }
   changeTo(withResolution(m_history.current(), static_cast<size_t>(selected), pixels.x(), pixels.y()));

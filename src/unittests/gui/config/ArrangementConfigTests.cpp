@@ -656,6 +656,29 @@ void ArrangementConfigTests::setComputerSize_isTheSizeOfAComputerThatHasNone_and
   forget({"C"});
 }
 
+void ArrangementConfigTests::setComputerSize_neverStoresWhatALayoutCannotHave()
+{
+  writeGrid({{6, "A"}, {7, "B"}, {8, "C"}}, "A");
+  ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{});
+  Settings::setValue(Settings::Computer::MonitorLayout.arg("C"), QStringLiteral("-100,40,1920,1080"));
+  ServerConfig config;
+  const auto find = [&](const char *name) -> const ::Computer & {
+    for (const auto &c : std::as_const(config).computers()) {
+      if (c.name() == name)
+        return c;
+    }
+    qFatal("there is no %s", name);
+  };
+  // the numbers of a layout are 16 bits: a size that is more is not stored, as a size or as a monitor
+  config.setComputerSize("B", 40000, 1000);
+  QCOMPARE(find("B").arrangementWidth(), 0);
+  config.setComputerSize("C", 40000, 1000);
+  QCOMPARE(find("C").monitorLayout(), QStringLiteral("-100,40,1920,1080"));
+  config.setComputerSize("B", 32767, 1000);
+  QCOMPARE(find("B").arrangementWidth(), 32767);
+  forget({"C"});
+}
+
 void ArrangementConfigTests::reportedScreen_doesNotChangeWhatIsGenerated()
 {
   // what a computer reported is in memory only: the file that is written must be the same with it and without it

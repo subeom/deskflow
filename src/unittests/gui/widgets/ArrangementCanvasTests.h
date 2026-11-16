@@ -21,6 +21,8 @@ private Q_SLOTS:
   void resize_anEdgeSnapsToTheNeighbour_theRatiosAndTheReportedSize();
   void resize_aComputerThatIsZoomed_isSizedInItsOwnUnits();
   void resize_theServerAndAComputerOfSeveralMonitors_arePutAndNotResized();
+  void resize_aPresetSnapOnOneEdge_doesNotMoveTheOtherOne();
+  void resize_beyondWhatALayoutCanHave_isNeverStored();
   void resize_overAnotherComputer_isNotDone();
   void drag_aBackgroundDrag_movesTheViewNotTheComputers();
   void keys_moveTheSelectedComputer();

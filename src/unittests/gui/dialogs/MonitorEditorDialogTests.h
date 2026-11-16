@@ -21,6 +21,7 @@ private Q_SLOTS:
   void mouse_aRightClickInTheMiddleOfADrag_doesNotEndIt();
   void controls_resolutionScaleRotateAddRemoveAndMain();
   void controls_followTheSelectedMonitor();
+  void controls_otherSize_staysChosenUntilTheSizeOrTheSelectionChanges();
   void problems_disableOk_andAreSaid();
   void numbers_areInStepWithTheDrawing_andCanBeUsed();
   void keys_rotateDeleteAndNudge();

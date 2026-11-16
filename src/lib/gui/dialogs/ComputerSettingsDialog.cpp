@@ -255,8 +255,11 @@ void ComputerSettingsDialog::accept()
     if (!m_computer->isServer())
       m_computer->setArrangementSize(m_sbArrangementWidth->value(), m_sbArrangementHeight->value());
     // a scale that was not touched keeps the zoom that was set, which may not be a whole number of percent
-    if (m_sbDisplayScale->value() != m_scaleShown)
+    if (m_sbDisplayScale->value() != m_scaleShown) {
       m_computer->setArrangementZoom(deskflow::server::arrangement::zoomForScale(m_sbDisplayScale->value()));
+      // the scales of the monitors that were drawn are of the zoom that was: every monitor follows the new one
+      m_computer->setMonitorScales({});
+    }
   }
 
   m_computer->setModifier(KeyboardModifier::Shift, ui->comboShift->currentIndex());

@@ -557,8 +557,11 @@ ResizeResult resize(
     const double ph = (bottom - top) * m.scale / 100.0;
     for (const auto &preset : kPresets) {
       if (std::abs(pw - preset.w) <= kPresetSnap * preset.w && std::abs(ph - preset.h) <= kPresetSnap * preset.h) {
-        setWidth(preset.w * 100.0 / m.scale);
-        setHeight(preset.h * 100.0 / m.scale);
+        // only the sides of the edges that are dragged: the other side is where the monitors that touch it need it
+        if (dragL || dragR)
+          setWidth(preset.w * 100.0 / m.scale);
+        if (dragT || dragB)
+          setHeight(preset.h * 100.0 / m.scale);
         result.preset = true;
         break;
       }

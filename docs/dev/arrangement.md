@@ -210,7 +210,7 @@ monitor is the main display. Resolutions come from a preset list (HD to 8K, ultr
 dragged: dragging an edge or a corner resizes, with the opposite edge fixed; an edge snaps to the edges of the other
 monitors (and of the other computers on the canvas), a side snaps to the common ratios (16:9, 16:10, 21:9, 32:9, 4:3,
 3:2, 5:4 and their portrait variants) and the pixels snap to a preset, each within a small distance; a side is never
-smaller than 160 units, and a monitor is never dragged over another (the place is refused and it stays where it was).
+smaller than 160 units (a preset snaps only the sides of the edge that is dragged), and a monitor is never dragged over another (the place is refused and it stays where it was).
 Changing the resolution, the scale or the orientation of a monitor keeps the corner that keeps most of the edges that
 touch the other monitors. Problems are overlaps, a monitor that touches none (monitors have to share part of an edge),
 more than 16, sizes and scales that cannot be.
@@ -241,7 +241,9 @@ left of the main display at 0,0, and the result is *not verified*: it is checked
 **Storage.** `computer_<name>/monitorLayout` (the monitors, as before), `arrangementZoom`, `arrangementX/Y` (where the
 origin of the computer is: made so the drawing stays where it was on the canvas) and one optional key,
 `computer_<name>/monitorScales`, a list of the scales of the monitors in the order of the layout (missing: the scale
-of the zoom). An old configuration loads unchanged; the text field of the layout stays, as **Advanced: numbers**, and
+of the zoom; an entry that is not a scale keeps its place, as "no scale", so the ones that follow stay with their
+monitors; editing the display scale of the computer, or its numbers, in **Edit computer...** drops them, so every
+monitor follows the new zoom). An old configuration loads unchanged; the text field of the layout stays, as **Advanced: numbers**, and
 what is in it is the same layout.
 
 **History.** The editor keeps the states that it went through (200 at most): undo and redo are `Ctrl/Cmd+Z` and

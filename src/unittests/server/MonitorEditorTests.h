@@ -26,6 +26,8 @@ private Q_SLOTS:
   void resize_edgesSnapToTheEdgesOfTheOthers();
   void resize_sidesSnapToTheCommonRatios();
   void resize_sizesSnapToThePresetsAndTheTarget();
+  void resize_aPresetSnapOfASingleEdge_movesOnlyThatSide_data();
+  void resize_aPresetSnapOfASingleEdge_movesOnlyThatSide();
   void resize_neverSmallerThanTheMinimum_andNeverOverAnother();
   void resize_aSingleRectangleAmongObstacles();
 

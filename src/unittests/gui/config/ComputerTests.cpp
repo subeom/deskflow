@@ -9,8 +9,10 @@
 
 #include "common/Settings.h"
 #include "gui/config/Computer.h"
+#include "gui/config/MonitorEditing.h"
 #include "gui/dialogs/ComputerSettingsDialog.h"
 #include "server/Config.h"
+#include "server/MonitorEditor.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -784,10 +786,96 @@ void ComputerTests::monitorScales_areOptional_savedLoadedAndCompared()
   Settings::setValue(key, QStringLiteral("abc,,0,150,1000"));
   Computer odd;
   odd.loadSettings(Settings::proxy());
-  QCOMPARE(odd.monitorScales(), (QList<double>{150.0}));
+  // each entry keeps its place, so that the scales that follow stay with the monitors that they are of
+  QCOMPARE(odd.monitorScales().size(), 5);
+  for (const int i : {0, 1, 2, 4})
+    QVERIFY(std::isnan(odd.monitorScales()[i]));
+  QCOMPARE(odd.monitorScales()[3], 150.0);
   odd.setMonitorScales({});
   odd.saveSettings(Settings::proxy());
   QVERIFY(!QSettings(Settings::settingsFile(), QSettings::IniFormat).contains(key));
+}
+
+void ComputerTests::monitorScales_aScaleThatIsNotOne_keepsItsPlace()
+{
+  const auto name = QStringLiteral("scales-places");
+  const auto key = Settings::Computer::MonitorScales.arg(name);
+  Settings::proxy().setValue("name", name);
+  Settings::setValue(key, QStringLiteral("150,abc,200"));
+  Computer computer;
+  computer.loadSettings(Settings::proxy());
+  QCOMPARE(computer.monitorScales().size(), 3);
+  QCOMPARE(computer.monitorScales()[0], 150.0);
+  QVERIFY(std::isnan(computer.monitorScales()[1]));
+  QCOMPARE(computer.monitorScales()[2], 200.0);
+
+  // the monitor in the middle follows the zoom, the third one has its own scale: it is not moved to the second
+  computer.setMonitorLayout(QStringLiteral("0,0,1000,500;1000,0,1000,500;2000,0,1000,500"));
+  const auto drawn = deskflow::gui::drawingOf(computer, 0, 0, std::nullopt);
+  QCOMPARE(drawn.monitors[0].scale, 150.0);
+  QCOMPARE(drawn.monitors[1].scale, 100.0);
+  QCOMPARE(drawn.monitors[2].scale, 200.0);
+
+  // it is written with an empty place, read again in the same place, and the same computer as it was
+  computer.saveSettings(Settings::proxy());
+  QCOMPARE(Settings::value(key).toString(), QStringLiteral("150,,200"));
+  Computer again;
+  again.loadSettings(Settings::proxy());
+  QVERIFY(again == computer);
+  QVERIFY(std::isnan(again.monitorScales()[1]));
+
+  // and scales of which none is one are none
+  Settings::setValue(key, QStringLiteral("abc,0"));
+  Computer none;
+  none.loadSettings(Settings::proxy());
+  QVERIFY(none.monitorScales().isEmpty());
+  none.saveSettings(Settings::proxy());
+  QVERIFY(!QSettings(Settings::settingsFile(), QSettings::IniFormat).contains(key));
+}
+
+void ComputerTests::arrangementDialog_displayScale_dropsTheScalesOfTheMonitorsThatWereDrawn()
+{
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  const auto make = [] {
+    Computer computer(QStringLiteral("scaled"));
+    computer.setMonitorLayout(QStringLiteral("0,0,2560,1440"));
+    computer.setArrangementZoom(100.0 / 150.0);
+    computer.setMonitorScales({150.0});
+    return computer;
+  };
+
+  // nothing touched: the scales that were drawn stay
+  auto untouched = make();
+  {
+    ComputerSettingsDialog dialog(nullptr, &untouched);
+    dialog.accept();
+  }
+  QCOMPARE(untouched.monitorScales(), (QList<double>{150.0}));
+
+  // the display scale of the computer is 125 %: every monitor follows it, as the layout is the same pixels
+  auto computer = make();
+  {
+    ComputerSettingsDialog dialog(nullptr, &computer);
+    dialog.findChild<QSpinBox *>(QStringLiteral("sbDisplayScale"))->setValue(125);
+    dialog.accept();
+  }
+  QVERIFY(computer.monitorScales().isEmpty());
+  QVERIFY(std::abs(computer.arrangementZoom() - 0.8) < 1e-12);
+  QCOMPARE(computer.monitorLayout(), QStringLiteral("0,0,2560,1440"));
+
+  // the editor draws it at 125 %, 2048 x 1152 units of the pixels that the layout has, and keeps it so
+  const auto drawn = deskflow::gui::drawingOf(computer, 0, 0, std::nullopt);
+  QCOMPARE(drawn.monitors[0].scale, 125.0);
+  QCOMPARE(drawn.monitors[0].pixelsW(), 2560);
+  QCOMPARE(drawn.monitors[0].pixelsH(), 1440);
+  const auto unverified = deskflow::server::editor::realise(drawn, std::nullopt);
+  QCOMPARE(QString::fromStdString(unverified.text), QStringLiteral("0,0,2560,1440"));
+  QVERIFY(std::abs(unverified.zoom - 0.8) < 1e-12);
+  const auto connected = deskflow::server::editor::realise(drawn, deskflow::server::MonitorRect{0, 0, 2560, 1440});
+  QCOMPARE(static_cast<int>(connected.fit), static_cast<int>(deskflow::server::editor::Fit::Matches));
+  QCOMPARE(QString::fromStdString(connected.text), QStringLiteral("0,0,2560,1440"));
+  QVERIFY(std::abs(connected.zoom - 0.8) < 1e-12);
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
 }
 
 QTEST_MAIN(ComputerTests)

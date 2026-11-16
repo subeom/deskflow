@@ -631,6 +631,11 @@ void ArrangementCanvas::mouseMoveEvent(QMouseEvent *event)
       const auto h = std::max(1, static_cast<int>(std::lround(m.h / computer.zoom)));
       auto preview = computer;
       preview.monitors = {{monitor.x, monitor.y, w, h}};
+      // a size that a layout cannot have (its numbers are 16 bits) is not one that a computer can be given
+      if (!deskflow::server::MonitorLayout::create(preview.monitors)) {
+        update();
+        return;
+      }
       // the edge that is not dragged stays where it is: the size is a whole number of the units of the computer
       preview.originX = isLeftHandle(m_drag.handle) ? start.right() - computer.zoom * (monitor.x + w)
                                                     : m.x - computer.zoom * monitor.x;
