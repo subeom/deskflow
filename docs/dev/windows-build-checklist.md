@@ -212,7 +212,7 @@ A src/lib/gui/widgets/MonitorEditorWidget.h
 M src/lib/gui/widgets/StatusBar.cpp
 ```
 
-The tests (`src/unittests`, 74 files changed or added) are built and run by the script as well; the five `OSX*` tests are
+The tests (`src/unittests`, 75 files changed or added) are built and run by the script as well; the five `OSX*` tests are
 macOS only.
 
 ## 5. The new link edge: `gui` to `server`

@@ -33,6 +33,10 @@ private Q_SLOTS:
   void monitorReport_notValid_isDroppedWithoutLosingTheStream_data();
   void monitorReport_notValid_isDroppedWithoutLosingTheStream();
   void monitorReport_truncated_isIgnored();
+  void monitorReport_lengthThatIsNotTheCount_costsOnlyItsOwnPacket_data();
+  void monitorReport_lengthThatIsNotTheCount_costsOnlyItsOwnPacket();
+  void monitorReport_lengthThatIsTheCount_isReadWithPacketsBehindIt();
+  void monitorReport_theNameOfTheComputer_cannotForgeALogLine();
   void monitorReport_sameMonitors_areNotAnnouncedAgain();
   void monitorReport_changedMonitors_replaceTheLastReport();
   void monitorReport_noMonitors_forgetsTheLastReport();

@@ -107,15 +107,16 @@ const deskflow::server::ReportedMonitors *ClientProxy1_9::reportedMonitors() con
 
 bool ClientProxy1_9::receiveMonitorReport()
 {
-  // The size of the message is the one its header says, whatever it holds, so it is read in full even when it is not
-  // wanted: what is behind it in the stream stays where it is. A message that ends too soon has nothing behind it.
-  const auto received = deskflow::monitors::readReport(getStream());
+  // The message is as long as its packet, whatever its header says, so exactly that is read even when the message is
+  // not wanted or not valid: the packets behind it stay where they are. The name is what the computer said of itself,
+  // and nothing has looked at it yet: it is written the way that the log of the program can hold it.
+  const auto received = deskflow::monitors::readReport(getStream(), bytesAfterCode());
   if (!received) {
-    LOG_DEBUG("monitor report from \"%s\" ends too soon, ignored", getName().c_str());
+    LOG_DEBUG("monitor report from \"%s\" is not as long as its count says, ignored", loggableName().c_str());
     return true;
   }
   if (!monitorsNegotiated()) {
-    LOG_DEBUG("monitor report from \"%s\" ignored: it was not asked for", getName().c_str());
+    LOG_DEBUG("monitor report from \"%s\" ignored: it was not asked for", loggableName().c_str());
     return true;
   }
 
@@ -143,7 +144,7 @@ bool ClientProxy1_9::receiveMonitorReport()
 void ClientProxy1_9::dropMonitorReport(const std::string &problem)
 {
   if (!problem.empty() && problem != m_lastMonitorProblem) {
-    LOG_INFO("monitor report of computer \"%s\" ignored: %s", getName().c_str(), problem.c_str());
+    LOG_INFO("monitor report of computer \"%s\" ignored: %s", loggableName().c_str(), problem.c_str());
   }
   m_lastMonitorProblem = problem;
 

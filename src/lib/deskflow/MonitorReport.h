@@ -85,13 +85,14 @@ struct ReceivedReport
   std::vector<MonitorEntry> monitors;
 };
 
-//! Read what follows the code of a DMON message
+//! Read what follows the code of a DMON message, which is \p bytes long
 /*!
-The size of the message is the one that its header says (the count of monitors of \c kRecordSize bytes each), whatever
-the values in it are: a report that is not valid is read in full as well, so the stream is where the sender left it.
-Empty when the stream ended in the middle of the message.
+\p bytes is the length of the packet that holds the message, less its code: it is where the message ends, and exactly
+that many bytes are read from \p stream, whatever is in them. A message is valid when it is the header and the count of
+monitors that the header says, of \c kRecordSize bytes each; any other length is empty, and the bytes are read all the
+same, so what is behind the message in the stream (the next packet) is where the sender left it.
 */
-std::optional<ReceivedReport> readReport(deskflow::IStream *stream);
+std::optional<ReceivedReport> readReport(deskflow::IStream *stream, uint32_t bytes);
 
 //! The monitors as the server writes them in its log: \c x,y,w,h, then \c scale=S unless it is not known, \c primary
 //! and

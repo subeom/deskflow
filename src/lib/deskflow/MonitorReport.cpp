@@ -7,6 +7,7 @@
 
 #include "deskflow/ProtocolTypes.h"
 #include "deskflow/ProtocolUtil.h"
+#include "io/IStream.h"
 
 #include <algorithm>
 #include <format>
@@ -53,14 +54,42 @@ std::vector<uint8_t> encodeReport(const MonitorReport &report)
   return out;
 }
 
-std::optional<ReceivedReport> readReport(deskflow::IStream *stream)
+namespace {
+
+// reads \p bytes and drops them: what was not understood is not left to be read as the code of a message
+void discard(deskflow::IStream *stream, uint32_t bytes)
 {
+  while (bytes > 0) {
+    const auto got = stream->read(nullptr, bytes);
+    if (got == 0) {
+      return;
+    }
+    bytes -= got;
+  }
+}
+
+} // namespace
+
+std::optional<ReceivedReport> readReport(deskflow::IStream *stream, uint32_t bytes)
+{
+  constexpr uint32_t kHeaderSize = 4;
+  if (bytes < kHeaderSize) {
+    discard(stream, bytes);
+    return std::nullopt;
+  }
+
   ReceivedReport report;
   if (!ProtocolUtil::readf(stream, kMsgDMonitors + 4, &report.version, &report.generation, &report.count)) {
     return std::nullopt;
   }
 
-  // the count is all that says how long the message is, so it is read whatever the values are
+  // the length is the one of the packet; the count that the header says has to be the number of records that it holds
+  const uint32_t records = bytes - kHeaderSize;
+  if (records != static_cast<uint32_t>(report.count) * kRecordSize) {
+    discard(stream, records);
+    return std::nullopt;
+  }
+
   report.monitors.reserve(report.count);
   for (int i = 0; i < report.count; ++i) {
     uint16_t x = 0;

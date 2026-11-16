@@ -1567,7 +1567,7 @@ void Server::sayReportedMonitors(const BaseClientProxy *client)
 
 void Server::handleMonitorsReported(BaseClientProxy *client)
 {
-  LOG_DEBUG("computer \"%s\" reported its monitors", getName(client).c_str());
+  LOG_DEBUG("computer \"%s\" reported its monitors", deskflow::server::loggableName(getName(client)).c_str());
   sayMonitorGeometry(client);
 }
 

@@ -31,8 +31,11 @@ events of a peer that never heard of it.
 
 ## The message
 
-`DMON`, client to server, only after negotiation. It is **not** a list with a length of its own: its size is fixed by
-its header, so a receiver always knows how much of the stream is the message, whatever it holds.
+`DMON`, client to server, only after negotiation. It has no length of its own: it is as long as its **packet** (the
+stream of a client is made of packets, `PacketStreamFilter`), and it is valid when the packet is
+`4 + count x 11` bytes after the code. A receiver reads exactly the bytes of the packet, so the packets behind a message
+never pay for what it says: a count of 255 with no record, a count of 1 with three records or a header that ends in
+the middle are dropped (one DEBUG line) and the next packet is read as the next message.
 
 ```
 "DMON" version(1) generation(2) count(1)  then  count x monitor
@@ -45,8 +48,8 @@ monitor = x(2) y(2) w(2) h(2) scale(2) flags(1)          (11 bytes, big endian)
   DEBUG; a report that has the same monitors as the last one is not sent again, so a changed generation means a
   changed list.
 - `count` is 0 to 255 on the wire and 1 to 16 when valid. **0 means "I have no monitors to report": forget the last
-  report** (sent when the monitors cannot be made to tile the shape, see below). A receiver always reads the
-  `count x 11` bytes, so even 255 leaves the stream where the sender left it.
+  report** (sent when the monitors cannot be made to tile the shape, see below). The count is checked against the
+  length of the packet; a packet that is longer or shorter than `4 + count x 11` is not a report.
 - `x y w h` are `int16` in **the coordinate space of the `DINF` shape** of the same client: points on macOS, physical
   virtual-desktop pixels on Windows. They are not scaled for display.
 - `scale` is `uint16`, the display scale in percent (100, 125, 150, 200 ...), 0 if unknown. It is informational for
@@ -144,7 +147,8 @@ list that a computer can report (1 to 16 monitors, valid together, the count of 
 that has a line end in it makes a line that does not begin with the time and the level, and the core has cleaned the
 quotes out of a name, so a name cannot close itself. This is also why the names that the core logs **before** it has
 recognised a computer (`unrecognised client name`, the lines of `ClientProxyUnknown`, the warnings and errors of
-`ClientProxy1_0`) are cleaned the same way: what a computer says of itself is not trusted to be a line. The verbose and
+`ClientProxy1_0`, and every line about a monitor report in `ClientProxy1_9`, which is read before the Server has looked
+at the name) are cleaned the same way: what a computer says of itself is not trusted to be a line. The verbose and
 debug lines of a proxy that is not recognised yet still carry the name as it came (the core log is not escaped as a
 whole; that is outside this change), and what the GUI takes from such a forged line is a drawing on the canvas, never a
 decision of the server.
@@ -176,7 +180,7 @@ Computers that never report keep the manual path (`monitorLayout`, the size, the
 | Server | Client | Result |
 |---|---|---|
 | new, experiment on | new (this) | `DIPC` has bit 12, `CIPC` has bit 12, `DMON` after the handshake and on changes |
-| new, experiment on | legacy (Windows 1.27.0.45, the Mac mini 1.27.0.89) | `DIPC` has the bit, `CIPC` does not: the server never expects a `DMON`. A `DMON` that comes anyway is read and ignored, the stream is kept |
+| new, experiment on | legacy (Windows 1.27.0.45, the Mac mini 1.27.0.89) | `DIPC` has the bit, `CIPC` does not: the server never expects a `DMON`. A `DMON` that comes anyway is read (exactly its packet) and ignored, the stream is kept |
 | new, experiment **off** | any | `DIPC` is byte identical to today; no bit, no `DMON`; a `DMON` that comes anyway is read and ignored |
 | legacy (1.27.0.89 and older) | new | no bit in `DIPC`: the client sends no `DMON` and does not set bit 12 in its `CIPC` |
 | legacy | legacy | as today |

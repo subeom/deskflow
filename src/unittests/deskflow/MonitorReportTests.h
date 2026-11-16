@@ -24,6 +24,9 @@ private Q_SLOTS:
   void read_readsTheWholeMessageWhateverItHolds();
   void read_truncated_isEmptyAndDoesNotThrow_data();
   void read_truncated_isEmptyAndDoesNotThrow();
+  void read_lengthThatIsNotTheCount_isEmptyAndReadsOnlyThePacket_data();
+  void read_lengthThatIsNotTheCount_isEmptyAndReadsOnlyThePacket();
+  void read_noMonitors_isTheHeaderAndNothingBehindIt();
   void prepare_tilesTheShape_data();
   void prepare_tilesTheShape();
   void prepare_cannotReport_data();

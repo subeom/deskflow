@@ -149,9 +149,10 @@ void MonitorReportTests::read_roundTrips()
   MonitorReport report;
   report.generation = 65535;
   report.monitors = {{-32768, -1, 32767, 1080, 125, true}, {5, 6, 7, 8, 0, false}};
-  BufferStream stream(afterTheCode(encodeReport(report)));
+  const auto message = afterTheCode(encodeReport(report));
+  BufferStream stream(message);
 
-  const auto read = readReport(&stream);
+  const auto read = readReport(&stream, static_cast<uint32_t>(message.size()));
   QVERIFY(read.has_value());
   QCOMPARE(read->version, kReportVersion);
   QCOMPARE(read->generation, static_cast<uint16_t>(65535));
@@ -189,10 +190,11 @@ void MonitorReportTests::read_readsTheWholeMessageWhateverItHolds()
   message.append(char(0x34));
   message.append(static_cast<char>(count));
   message.append(QByteArray(count * static_cast<int>(kRecordSize), static_cast<char>(fill)));
+  const auto length = static_cast<uint32_t>(message.size());
   message.append("CNOP");
   BufferStream stream(message);
 
-  const auto read = readReport(&stream);
+  const auto read = readReport(&stream, length);
   QVERIFY(read.has_value());
   QCOMPARE(static_cast<int>(read->count), count);
   QCOMPARE(read->monitors.size(), static_cast<size_t>(count));
@@ -213,15 +215,54 @@ void MonitorReportTests::read_truncated_isEmptyAndDoesNotThrow_data()
   QTest::newRow("a count of 255 and nothing more") << hex("01 0001 ff");
 }
 
+// the packet is the message: when it is cut short, the message is empty, and what is behind the packet is not touched
 void MonitorReportTests::read_truncated_isEmptyAndDoesNotThrow()
 {
   QFETCH(QByteArray, message);
-  BufferStream stream(message);
+  BufferStream stream(message + "CNOP");
 
-  const auto read = readReport(&stream);
+  const auto read = readReport(&stream, static_cast<uint32_t>(message.size()));
   QVERIFY(!read.has_value());
-  // it read what there was and no more
-  QVERIFY(stream.left().isEmpty());
+  QCOMPARE(stream.left(), QByteArray("CNOP"));
+}
+
+void MonitorReportTests::read_lengthThatIsNotTheCount_isEmptyAndReadsOnlyThePacket_data()
+{
+  QTest::addColumn<QByteArray>("message");
+
+  const auto records = [](int n) { return QByteArray(n * static_cast<int>(kRecordSize), char(0x01)); };
+  QTest::newRow("a count of 255, and no record") << hex("01 0001 ff");
+  QTest::newRow("a count of 255, and a few") << hex("01 0001 ff") + records(3);
+  QTest::newRow("a count of 2, and one") << hex("01 0001 02") + records(1);
+  QTest::newRow("a count of 1, and three") << hex("01 0001 01") + records(3);
+  QTest::newRow("a count of 0, and one") << hex("01 0001 00") + records(1);
+  QTest::newRow("a count of 1, and a byte more") << hex("01 0001 01") + records(1) + QByteArray(1, char(0x7f));
+  QTest::newRow("a count of 1, and a byte less") << hex("01 0001 01") + records(1).chopped(1);
+  QTest::newRow("a count that is the length of a record") << hex("01 0001 0b") + records(1);
+}
+
+// the count of the header is checked against the length of the packet, which is all that says where the message ends: a
+// message that says more than it holds does not take the packets behind it, and one that holds more does not leave a
+// tail to be read as the code of a message
+void MonitorReportTests::read_lengthThatIsNotTheCount_isEmptyAndReadsOnlyThePacket()
+{
+  QFETCH(QByteArray, message);
+  BufferStream stream(message + "CNOP" + QByteArray(40, 'x'));
+
+  const auto read = readReport(&stream, static_cast<uint32_t>(message.size()));
+  QVERIFY(!read.has_value());
+  QCOMPARE(stream.left(), QByteArray("CNOP") + QByteArray(40, 'x'));
+}
+
+// the one that has no record is as long as its header, and a packet behind it is not a part of it
+void MonitorReportTests::read_noMonitors_isTheHeaderAndNothingBehindIt()
+{
+  BufferStream stream(hex("01 0007 00") + "CNOP");
+  const auto read = readReport(&stream, 4);
+  QVERIFY(read.has_value());
+  QCOMPARE(read->generation, static_cast<uint16_t>(7));
+  QVERIFY(read->monitors.empty());
+  QCOMPARE(stream.left(), QByteArray("CNOP"));
 }
 
 void MonitorReportTests::prepare_tilesTheShape_data()
@@ -367,16 +408,18 @@ void MonitorReportTests::logicalUnits_aMacReportsPointsAndWindowsPixels()
   // flags: bit 0 the primary monitor, bit 1 logical units
   QCOMPARE(bytes(encodeReport(report)), hex("444d4f4e 01 0001 01 0000 0000 0810 0543 00c8 03"));
 
-  BufferStream stream(afterTheCode(encodeReport(report)));
-  const auto read = readReport(&stream);
+  const auto message = afterTheCode(encodeReport(report));
+  BufferStream stream(message);
+  const auto read = readReport(&stream, static_cast<uint32_t>(message.size()));
   QVERIFY(read.has_value());
   QVERIFY(read->monitors[0].logicalUnits);
   QVERIFY(read->monitors[0].primary);
 
   // a monitor of Windows is not
   report.monitors = {{0, 0, 2560, 1440, 150, true, false}};
-  BufferStream pixels(afterTheCode(encodeReport(report)));
-  QVERIFY(!readReport(&pixels)->monitors[0].logicalUnits);
+  const auto pixelMessage = afterTheCode(encodeReport(report));
+  BufferStream pixels(pixelMessage);
+  QVERIFY(!readReport(&pixels, static_cast<uint32_t>(pixelMessage.size()))->monitors[0].logicalUnits);
   QCOMPARE(bytes(encodeReport(report)).right(1), hex("01"));
 
   // the text of the log has it, after the primary

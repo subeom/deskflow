@@ -1031,10 +1031,13 @@ extern const char *const kMsgDInfo;
  *
  * Each record of a monitor is 11 bytes: `x`, `y`, `w`, `h` (2 bytes each, signed, in the coordinates of the
  * kMsgDInfo shape of the same computer), the display scale in percent (2 bytes, 0 when unknown) and flags (1 byte,
- * bit 0 is the primary monitor, the others are 0 and ignored).
+ * bit 0 is the primary monitor, bit 1 says that the coordinates are logical units, the points of a Mac, and not
+ * physical pixels; the other bits are 0 and ignored).
  *
- * The size of the message is fixed by its count, not by its values, so a receiver reads it in full even when it
- * ignores it.
+ * The message is as long as its packet, and is valid only when the packet is 4 + 11 x `$3` bytes after the code: a
+ * receiver reads exactly the bytes of the packet, also when the message is not valid or not wanted, and ignores one
+ * whose length is not the count's (a count of 255 with no record does not take the packets behind it). The packet
+ * is what keeps the stream: nothing else says where the message ends.
  *
  * **Example**:
  *

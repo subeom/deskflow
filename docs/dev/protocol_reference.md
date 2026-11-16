@@ -326,12 +326,14 @@ The message is `"DMON%1i%2i%1i"` (version 1, generation, count) followed by `cou
 `"%2i%2i%2i%2i%2i%1i"` (x, y, width, height as signed 16-bit numbers in the coordinates of the `DINF`
 shape of the same client; the display scale in percent, 0 if unknown; flags, bit 0 is the primary
 monitor, bit 1 says that the coordinates are logical units, the points of a Mac, and not physical
-pixels): 8 + 11 x count bytes. **The size of the message is fixed by its count and never by its values**,
-so a receiver always reads it in full, also when it ignores it, and what is behind it in the stream
-stays where it is: an unexpected or invalid `DMON` never costs the connection and never makes the receiver
-discard the buffer, which is what an unknown message code does. Because `ProtocolUtil` does not frame
-messages, a message that ends in the middle (a truncated one) cannot be told from one that is followed by
-others; a receiver reads what there is and goes on.
+pixels): 8 + 11 x count bytes. **The message is as long as its packet**: a `DMON` is valid only when its
+packet is `4 + 11 x count` bytes after the code, and a receiver reads exactly the bytes of the packet, also when it
+ignores the message or the message is not valid or not wanted. What is behind it in the stream stays where it is:
+an unexpected or invalid `DMON` (a count of 255 and no record, a count of 1 and three records, a header that ends in
+the middle) never costs the connection, never takes the packets behind it and never makes the receiver discard the
+buffer, which is what an unknown message code does. `ProtocolUtil` itself does not frame messages: the packet that
+the stream is made of is the only thing that says where a message ends, so the receiver takes the length of the
+packet before it reads the code.
 
 A client sends a report after its `CIPC`, after every `DINF`, and when its monitors change while its shape
 does not (two monitors swap places); never when the monitors are the same as in the last report. A client

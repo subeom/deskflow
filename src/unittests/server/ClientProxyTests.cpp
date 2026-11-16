@@ -7,6 +7,8 @@
 #include "ClientProxyTests.h"
 
 #include "../deskflow/MockEventQueue.h"
+#include "../deskflow/TestPacketStream.h"
+#include "base/ILogOutputter.h"
 #include "common/ClipboardCapabilities.h"
 #include "common/InputCapabilities.h"
 #include "common/MonitorCapabilities.h"
@@ -356,19 +358,23 @@ deskflow::monitors::MonitorReport twoMonitors(uint16_t generation = 1)
 
 constexpr InputCapabilityMask kWindowsMask = kInputCapabilityProtocolV19;
 
-// A protocol 1.9 proxy, read through its own loop (the bytes of the destination are pushed, and handleData reads them)
+// A protocol 1.9 proxy on the stream that it has in the program: packets of a length and a payload. It is read through
+// its own loop (the bytes of the destination are pushed, and handleData reads them)
 struct MonitorLink
 {
   DispatchingEventQueue events;
+  // what the socket reads and writes: the proxy writes packets into it and reads packets from it
   CapturingStream *stream = new CapturingStream;
+  TestPacketStream *packets = nullptr;
   std::unique_ptr<TestClientProxy1_9> proxy;
   QByteArray greeting;
 
-  explicit MonitorLink(bool experiment)
+  explicit MonitorLink(bool experiment, const std::string &name = "client")
   {
     Settings::setValue(Settings::Server::ExperimentalMultiMonitor, experiment);
     auto *server = reinterpret_cast<Server *>(0x1);
-    proxy = std::make_unique<TestClientProxy1_9>("client", stream, server, &events);
+    packets = new TestPacketStream(&events, stream, true);
+    proxy = std::make_unique<TestClientProxy1_9>(name, packets, server, &events);
     greeting = stream->take();
   }
 
@@ -385,14 +391,20 @@ struct MonitorLink
     run();
   }
 
+  // a packet that holds \p bytes, as the peer sends them
   void push(const QByteArray &bytes)
   {
-    stream->pushInput(bytes);
+    QByteArray packet;
+    const auto size = static_cast<uint32_t>(bytes.size());
+    for (int shift = 24; shift >= 0; shift -= 8)
+      packet.append(static_cast<char>((size >> shift) & 0xff));
+    stream->pushInput(packet + bytes);
   }
 
   void run()
   {
-    events.dispatchEvent(Event(EventTypes::StreamInputReady, stream->getEventTarget()));
+    packets->received();
+    events.dispatchEvent(Event(EventTypes::StreamInputReady, packets->getEventTarget()));
   }
 
   bool open() const
@@ -896,7 +908,7 @@ void ClientProxyTests::monitorReport_notValid_isDroppedWithoutLosingTheStream()
   // the report that was there is not to be used either: what the computer says now is not valid
   QVERIFY(link.proxy->reportedMonitors() == nullptr);
   QVERIFY(link.open());
-  QCOMPARE(link.stream->getSize(), static_cast<uint32_t>(0));
+  QCOMPARE(link.packets->getSize(), static_cast<uint32_t>(0));
   // the DINF behind it was read as a DINF: a CIAK was written for it
   QVERIFY(link.stream->take().contains("CIAK"));
 }
@@ -921,6 +933,152 @@ void ClientProxyTests::monitorReport_truncated_isIgnored()
   link.run();
   QVERIFY(link.stream->take().contains("CIAK"));
   QVERIFY(link.open());
+}
+
+// The length of a DMON is the length of its packet, not the number that it says: a count that is more than the packet
+// holds must not take the packets behind it, and a packet that is more than the count says must not leave a tail that
+// is read as the code of a message
+void ClientProxyTests::monitorReport_lengthThatIsNotTheCount_costsOnlyItsOwnPacket_data()
+{
+  QTest::addColumn<QByteArray>("report");
+  QTest::addColumn<bool>("experiment");
+  QTest::addColumn<bool>("acknowledges");
+
+  const auto raw = [](int count, const QByteArray &records) {
+    QByteArray message("DMON");
+    message.append(char(1));
+    message.append(char(0));
+    message.append(char(9));
+    message.append(static_cast<char>(count));
+    message.append(records);
+    return message;
+  };
+  const QByteArray one(11, char(0));
+
+  for (const auto negotiated : {true, false}) {
+    const QByteArray how = negotiated ? "negotiated: " : "not negotiated: ";
+    QTest::newRow(qPrintable(how + "a count of 255 and no record")) << raw(255, {}) << negotiated << negotiated;
+    QTest::newRow(qPrintable(how + "a count of 2 and one record")) << raw(2, one) << negotiated << negotiated;
+    QTest::newRow(qPrintable(how + "a count of 1 and three records"))
+        << raw(1, one + one + one) << negotiated << negotiated;
+    QTest::newRow(qPrintable(how + "a count of 0 and a record")) << raw(0, one) << negotiated << negotiated;
+    QTest::newRow(qPrintable(how + "a record that ends in the middle"))
+        << raw(1, one.left(7)) << negotiated << negotiated;
+    QTest::newRow(qPrintable(how + "a header that ends in the middle"))
+        << raw(1, {}).left(6) << negotiated << negotiated;
+    QTest::newRow(qPrintable(how + "the code and nothing else")) << QByteArray("DMON") << negotiated << negotiated;
+    QTest::newRow(qPrintable(how + "the code and one byte")) << QByteArray("DMON\x01") << negotiated << negotiated;
+  }
+}
+
+void ClientProxyTests::monitorReport_lengthThatIsNotTheCount_costsOnlyItsOwnPacket()
+{
+  QFETCH(QByteArray, report);
+  QFETCH(bool, experiment);
+  QFETCH(bool, acknowledges);
+
+  MonitorLink link(experiment);
+  link.handshake(kWindowsMask | (acknowledges ? kLayoutCapabilityMonitors : 0));
+  (void)link.stream->take();
+
+  // two packets are behind it when it is read, as a peer that sends them in a row makes them
+  link.push(report);
+  link.push(infoBytes(0, 0, 1920, 1080));
+  link.push(infoBytes(0, 0, 1280, 720));
+  link.run();
+
+  QVERIFY(link.open());
+  QVERIFY(link.proxy->reportedMonitors() == nullptr);
+  QCOMPARE(link.events.added(EventTypes::ClientProxyMonitorsReported), 0);
+  // both of them were read as what they are, and nothing is left
+  int32_t x, y, w, h;
+  link.shape(x, y, w, h);
+  QCOMPARE(w, 1280);
+  QCOMPARE(h, 720);
+  QCOMPARE(link.packets->getSize(), static_cast<uint32_t>(0));
+  QCOMPARE(link.stream->take().count("CIAK"), 2);
+}
+
+// and the report that is exactly as long as it says is read, whatever is behind it: the "forget" that has no record
+// (its packet ends with its header) is the one that a count taken from what is left gets wrong
+void ClientProxyTests::monitorReport_lengthThatIsTheCount_isReadWithPacketsBehindIt()
+{
+  MonitorLink link(true);
+  link.handshake(kWindowsMask | kLayoutCapabilityMonitors);
+  (void)link.stream->take();
+
+  link.push(reportBytes(twoMonitors(1)));
+  link.push(infoBytes(0, 0, 4480, 1440));
+  link.run();
+  QVERIFY(link.proxy->reportedMonitors() != nullptr);
+  QCOMPARE(link.stream->take().count("CIAK"), 1);
+
+  // the computer takes it back, and the next message is behind it
+  link.push(reportBytes({2, {}}));
+  link.push(infoBytes(0, 0, 4480, 1440));
+  link.run();
+  QVERIFY(link.proxy->reportedMonitors() == nullptr);
+  QCOMPARE(link.stream->take().count("CIAK"), 1);
+  QCOMPARE(link.packets->getSize(), static_cast<uint32_t>(0));
+  QVERIFY(link.open());
+
+  // a report with its monitors, and the packet that was read before it still counts
+  link.push(reportBytes(twoMonitors(3)));
+  link.push(messageBytes(kMsgCNoop));
+  link.run();
+  QVERIFY(link.proxy->reportedMonitors() != nullptr);
+  QCOMPARE(link.packets->getSize(), static_cast<uint32_t>(0));
+  QVERIFY(link.open());
+}
+
+// The name of a computer is what it said, and its report is read before the Server has looked at the name: a line that
+// the log gets from it must not be a line that the GUI would take for one of the core
+void ClientProxyTests::monitorReport_theNameOfTheComputer_cannotForgeALogLine()
+{
+  struct AllLines : ILogOutputter
+  {
+    void open(const QString &) override
+    {
+    }
+    void close() override
+    {
+    }
+    bool write(LogLevel::Level, const QString &message) override
+    {
+      lines.append(message);
+      return false;
+    }
+    QStringList lines;
+  } all;
+  m_log.insert(&all, true);
+  const auto previous = m_log.getFilter();
+  m_log.setFilter(LogLevel::Level::Verbose);
+
+  const std::string hostile =
+      "evil\n[2026-11-16T13:30:00.123] INFO: computer \"Victim\" reports 1 monitors: 0,0,10,10\nx";
+  {
+    // what the peer sends in a row: its capabilities, its shape, and a report that is not valid; and one that is not
+    // asked for
+    MonitorLink link(true, hostile);
+    link.handshake(kWindowsMask | kLayoutCapabilityMonitors);
+    link.push(reportBytes({1, {{0, 0, 1920, 1080, 100, true}}}));
+    link.push(QByteArray("DMON"));
+    link.push(reportBytes({2, {{0, 0, 2560, 1440, 100, true}, {2000, 0, 2480, 1440, 100, false}}}));
+    link.run();
+    QVERIFY(link.open());
+  }
+  m_log.setFilter(previous);
+  m_log.remove(&all);
+
+  // lines were written about the reports of this computer, and none of them has the name as it came: the line end in it
+  // would begin a line of its own
+  const auto about = all.lines.filter(QStringLiteral("monitor report"));
+  for (const auto &line : about) {
+    QVERIFY2(!line.contains(QStringLiteral("\n[2026")), qPrintable(line));
+    QVERIFY2(!line.contains(QStringLiteral("computer \"Victim\"")), qPrintable(line));
+  }
+  // the one of the report that is not of the shape, the one that ended too soon, and the one that overlaps
+  QVERIFY2(about.size() >= 3, qPrintable(all.lines.join(u'|')));
 }
 
 void ClientProxyTests::monitorReport_sameMonitors_areNotAnnouncedAgain()

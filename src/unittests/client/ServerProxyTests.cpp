@@ -6,6 +6,8 @@
 
 #include "ServerProxyTests.h"
 
+#include "../deskflow/TestPacketStream.h"
+
 #include "base/Event.h"
 #include "base/IEventQueue.h"
 #include "base/ILogOutputter.h"
@@ -964,16 +966,19 @@ void ServerProxyTests::monitorReport_matrix()
 
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor, experiment);
 
-  // the proxy of the server owns its stream
+  // both ends have the stream that they have in the program: packets, whose lengths say where a message ends; the proxy
+  // of the server owns its stream
   RecordingEventQueue serverEvents;
   auto *serverStreamOwned = new FakeStream;
   FakeStream &serverStream = *serverStreamOwned;
-  ClientProxy1_9 serverSide("client", serverStreamOwned, reinterpret_cast<Server *>(0x1), &serverEvents);
+  auto *serverPackets = new TestPacketStream(&serverEvents, serverStreamOwned, true);
+  ClientProxy1_9 serverSide("client", serverPackets, reinterpret_cast<Server *>(0x1), &serverEvents);
 
   RecordingEventQueue clientEvents;
   FakeStream clientStream;
+  TestPacketStream clientPackets(&clientEvents, &clientStream, false);
   TestServerProxy1_9 clientSide(
-      undereferenceableClient(), &clientStream, &clientEvents, deskflow::platform::currentInputCapabilities()
+      undereferenceableClient(), &clientPackets, &clientEvents, deskflow::platform::currentInputCapabilities()
   );
   clientSide.setLocal(kTwoMonitorsShape, clientCanReport ? kTwoMonitors : std::vector<MonitorInfo>{});
 
@@ -982,13 +987,15 @@ void ServerProxyTests::monitorReport_matrix()
     const auto toClient = serverStream.takeOutput();
     if (!toClient.isEmpty()) {
       clientStream.push(stdString(toClient));
-      clientEvents.dispatchEvent(Event(EventTypes::StreamInputReady, clientStream.getEventTarget()));
+      clientPackets.received();
+      clientEvents.dispatchEvent(Event(EventTypes::StreamInputReady, clientPackets.getEventTarget()));
     }
     const auto answer = clientStream.takeOutput();
     toServer += answer;
     if (!answer.isEmpty()) {
       serverStream.push(stdString(answer));
-      serverEvents.dispatchEvent(Event(EventTypes::StreamInputReady, serverStream.getEventTarget()));
+      serverPackets->received();
+      serverEvents.dispatchEvent(Event(EventTypes::StreamInputReady, serverPackets->getEventTarget()));
     }
   }
 
