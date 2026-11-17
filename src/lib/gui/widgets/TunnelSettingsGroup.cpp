@@ -313,6 +313,15 @@ void TunnelSettingsGroup::updateStatusLines()
         m_found, location.configuredPathUnusable ? tr("The path above cannot be run. Found instead: %1").arg(where)
                                                  : tr("Found: %1").arg(where)
     );
+  } else if (location.configuredPathRelative) {
+    setLine(
+        m_found, tr("The path must be absolute (a full path to the file)."),
+        tr("A name or a relative path is not used: the system would look it up in the PATH of the program, and the "
+           "file "
+           "that runs may not be the one that was checked. Type the full path, or leave the field empty to look for "
+           "cloudflared in the usual places.")
+    );
+    m_install->setText(cloudflaredInstallHint(currentPlatform()));
   } else {
     setLine(m_found, tr("cloudflared was not found."), failureText(TunnelFailure::CloudflaredMissing));
     m_install->setText(cloudflaredInstallHint(currentPlatform()));

@@ -14,6 +14,7 @@ private Q_SLOTS:
   void aStartWithoutTls_isRefusedBeforeAnythingIsRead();
   void aHostnameThatIsNoHostname_isRefused();
   void aMissingCloudflared_isReported();
+  void aRelativePathOfCloudflared_isRefusedBeforeTheTokenIsRead();
   void missingOrIncompleteCredentials_areReported();
   void aBusyPortWithNoFreeOne_isReported();
   void aBusyPreferredPort_givesWayToAFreePort_andTellsIt();

@@ -140,12 +140,16 @@ void CloudflaredLaunchTests::commandLine_isForTheLogAndHasNoEnvironment()
 void CloudflaredLaunchTests::commandLine_quotesWhatHasBlanks()
 {
   auto r = request();
-  r.program = QStringLiteral("C:/Program Files (x86)/cloudflared/cloudflared.exe");
+  // an absolute path with blanks, in the syntax of the system that runs this
+#ifdef Q_OS_WIN
+  const auto program = QStringLiteral("C:/Program Files (x86)/cloudflared/cloudflared.exe");
+#else
+  const auto program = QStringLiteral("/Program Files (x86)/cloudflared/cloudflared");
+#endif
+  r.program = program;
   const auto built = buildLaunchSpec(r, token(), QProcessEnvironment());
   QVERIFY(built.has_value());
-  QVERIFY(
-      built->commandLine().startsWith(QStringLiteral("\"C:/Program Files (x86)/cloudflared/cloudflared.exe\" access"))
-  );
+  QVERIFY(built->commandLine().startsWith(QStringLiteral("\"%1\" access").arg(program)));
 }
 
 void CloudflaredLaunchTests::request_thatIsNotUsableMakesNoSpec_data()
@@ -194,6 +198,89 @@ void CloudflaredLaunchTests::serviceToken_isWipedWhenAsked()
   QVERIFY(value.secret.isEmpty());
   QVERIFY(value.clientId.isEmpty());
   QVERIFY(!value.isComplete());
+}
+
+// The Service Token goes to the program that is started. A name without a directory is looked up by the system in the
+// PATH of the process, so the file that runs may not be the one that was found: only an absolute path is run.
+void CloudflaredLaunchTests::aProgramThatIsNotAnAbsolutePath_makesNoSpec_data()
+{
+  QTest::addColumn<QString>("program");
+  for (const auto &program :
+       {QStringLiteral("cloudflared"), QStringLiteral("cloudflared.exe"), QStringLiteral("./cloudflared"),
+        QStringLiteral("bin/cloudflared"), QStringLiteral("../cloudflared"), QStringLiteral(".\\cloudflared.exe"),
+        QStringLiteral("~/bin/cloudflared"), QStringLiteral(" "), QString()}) {
+    QTest::newRow(program.isEmpty() ? "empty" : qPrintable(program)) << program;
+  }
+}
+
+void CloudflaredLaunchTests::aProgramThatIsNotAnAbsolutePath_makesNoSpec()
+{
+  QFETCH(QString, program);
+  auto r = request();
+  r.program = program;
+  QVERIFY(!buildLaunchSpec(r, token(), QProcessEnvironment()).has_value());
+}
+
+// every variable of the tunnel in the environment of the user can change what cloudflared does (the origin certificate,
+// a token of a tunnel, a hostname): none of them is passed, only the two of the token
+void CloudflaredLaunchTests::everyInheritedTunnelVariable_isDroppedNotOnlyTheKnownOnes()
+{
+  QProcessEnvironment base;
+  base.insert(QStringLiteral("TUNNEL_FOO"), QStringLiteral("made-up"));
+  base.insert(QStringLiteral("TUNNEL_TOKEN"), QStringLiteral("made-up-tunnel-token"));
+  base.insert(QStringLiteral("TUNNEL_ORIGIN_CERT"), QStringLiteral("/somewhere/cert.pem"));
+  base.insert(QStringLiteral("TUNNEL_TOKEN_FILE"), QStringLiteral("/somewhere/token"));
+  base.insert(QStringLiteral("TUNNEL_"), QStringLiteral("bare prefix"));
+  base.insert(QStringLiteral("TUNNEL_SERVICE_TOKEN_ID"), QStringLiteral("OLD-ID"));
+
+  const auto built = buildLaunchSpec(request(), token(), base);
+  QVERIFY(built.has_value());
+  const auto &env = built->environment;
+
+  for (const auto &key : env.keys()) {
+    if (key.startsWith(QStringLiteral("TUNNEL_"))) {
+      QVERIFY2(
+          key == QStringLiteral("TUNNEL_SERVICE_TOKEN_ID") || key == QStringLiteral("TUNNEL_SERVICE_TOKEN_SECRET"),
+          qPrintable(key)
+      );
+    }
+  }
+  QCOMPARE(env.value(QStringLiteral("TUNNEL_SERVICE_TOKEN_ID")), kClientId);
+  QCOMPARE(env.value(QStringLiteral("TUNNEL_SERVICE_TOKEN_SECRET")), kSecret);
+  QVERIFY(!env.contains(QStringLiteral("TUNNEL_FOO")));
+  QVERIFY(!env.contains(QStringLiteral("TUNNEL_TOKEN")));
+}
+
+void CloudflaredLaunchTests::aVariableThatIsNotOfTheTunnel_isKept()
+{
+  QProcessEnvironment base;
+  base.insert(QStringLiteral("TUNNELING"), QStringLiteral("kept"));
+  base.insert(QStringLiteral("MY_TUNNEL_X"), QStringLiteral("kept"));
+  base.insert(QStringLiteral("HTTPS_PROXY"), QStringLiteral("http://proxy.example.com:3128"));
+
+  const auto built = buildLaunchSpec(request(), token(), base);
+  QVERIFY(built.has_value());
+  QCOMPARE(built->environment.value(QStringLiteral("TUNNELING")), QStringLiteral("kept"));
+  QCOMPARE(built->environment.value(QStringLiteral("MY_TUNNEL_X")), QStringLiteral("kept"));
+  QCOMPARE(built->environment.value(QStringLiteral("HTTPS_PROXY")), QStringLiteral("http://proxy.example.com:3128"));
+}
+
+void CloudflaredLaunchTests::tunnelVariablesOfTheOtherCase_areDroppedOnWindowsOnly()
+{
+  QProcessEnvironment base;
+  base.insert(QStringLiteral("tunnel_foo"), QStringLiteral("made-up"));
+  base.insert(QStringLiteral("Tunnel_Origin_Cert"), QStringLiteral("made-up"));
+
+  const auto built = buildLaunchSpec(request(), token(), base);
+  QVERIFY(built.has_value());
+#ifdef Q_OS_WIN
+  // the names of variables are not case sensitive there: cloudflared would read them as TUNNEL_FOO
+  QVERIFY(!built->environment.contains(QStringLiteral("tunnel_foo")));
+  QVERIFY(!built->environment.contains(QStringLiteral("Tunnel_Origin_Cert")));
+#else
+  // here they are other variables than TUNNEL_FOO, which cloudflared does not read
+  QCOMPARE(built->environment.value(QStringLiteral("tunnel_foo")), QStringLiteral("made-up"));
+#endif
 }
 
 QTEST_MAIN(CloudflaredLaunchTests)

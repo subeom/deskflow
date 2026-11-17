@@ -20,4 +20,12 @@ private Q_SLOTS:
   void locate_saysNotFoundWhenThereIsNothing();
   void locate_withTheSystemCheckDoesNotRunWhatIsNotAnExecutableFile();
   void installHint_namesTheInstallerOfWindowsAndMac();
+
+  void aRelativeConfiguredPath_isRefusedAndNothingElseIsUsedInstead_data();
+  void aRelativeConfiguredPath_isRefusedAndNothingElseIsUsedInstead();
+  void theLocationIsOneCanonicalPath_whereverItWasFound();
+  void aCandidateThatCannotBeResolved_isNotUsed();
+  void locateWithTheSystem_neverTakesAFileOfTheWorkingDirectory();
+  void locateWithTheSystem_resolvesALinkToTheFileItIs();
+  void isAbsolutePath_knowsTheSyntaxOfEachSystem();
 };

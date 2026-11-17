@@ -36,6 +36,7 @@ struct Rig
   std::shared_ptr<FakeInspector> inspector = std::make_shared<FakeInspector>();
   std::vector<QPointer<FakeProcess>> processes;
   bool cloudflaredFound = true;
+  bool relativeProgram = false;
   bool nextProcessFailsToStart = false;
   bool nextProcessIgnoresTerminate = false;
   bool nextProcessIgnoresKill = false;
@@ -67,7 +68,7 @@ struct Rig
       CloudflaredLocation location;
       if (cloudflaredFound) {
         location.source = CloudflaredLocation::Source::Configured;
-        location.path = path.isEmpty() ? kProgram : path;
+        location.path = relativeProgram ? QStringLiteral("cloudflared") : (path.isEmpty() ? kProgram : path);
       }
       return location;
     };
@@ -184,6 +185,20 @@ void TunnelSupervisorTests::aMissingCloudflared_isReported()
   QCOMPARE(rig.supervisor->status().failure, TunnelFailure::CloudflaredMissing);
   QCOMPARE(rig.storeState->loadCount, 0);
   QVERIFY(rig.processes.empty());
+}
+
+// a locator that gives a name without a directory (a mistake of whoever replaced it): the system would look it up in
+// PATH
+void TunnelSupervisorTests::aRelativePathOfCloudflared_isRefusedBeforeTheTokenIsRead()
+{
+  Rig rig;
+  rig.relativeProgram = true;
+
+  QVERIFY(!rig.supervisor->start(rig.request));
+  QCOMPARE(rig.supervisor->status().failure, TunnelFailure::CloudflaredMissing);
+  QCOMPARE(rig.storeState->loadCount, 0);
+  QVERIFY(rig.processes.empty());
+  QVERIFY(rig.logsContain(QStringLiteral("absolute")));
 }
 
 void TunnelSupervisorTests::missingOrIncompleteCredentials_areReported()

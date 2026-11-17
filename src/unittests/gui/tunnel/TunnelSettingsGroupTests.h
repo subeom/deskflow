@@ -36,6 +36,7 @@ private Q_SLOTS:
   void notWritable_disablesEveryEntry();
   void saveInTheOtherDirection_aSavedTunnelIsShownAgain();
 
+  void aRelativePathOfCloudflared_isSaidToBeRefused();
   void openingWithTheTunnelOff_makesNoCallToTheSecureStore();
   void openingWithTheTunnelOn_looksUpOnce();
   void turningTheTunnelOn_looksUpOnceAndTheAnswerIsKept();

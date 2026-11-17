@@ -21,4 +21,9 @@ private Q_SLOTS:
   void request_thatIsNotUsableMakesNoSpec_data();
   void request_thatIsNotUsableMakesNoSpec();
   void serviceToken_isWipedWhenAsked();
+  void aProgramThatIsNotAnAbsolutePath_makesNoSpec_data();
+  void aProgramThatIsNotAnAbsolutePath_makesNoSpec();
+  void everyInheritedTunnelVariable_isDroppedNotOnlyTheKnownOnes();
+  void aVariableThatIsNotOfTheTunnel_isKept();
+  void tunnelVariablesOfTheOtherCase_areDroppedOnWindowsOnly();
 };

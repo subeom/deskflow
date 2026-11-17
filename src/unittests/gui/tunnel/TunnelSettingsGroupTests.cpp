@@ -548,6 +548,27 @@ void TunnelSettingsGroupTests::cloudflaredLine_followsTheLocatorAndTheTypedPath(
   QVERIFY(w.install->isHidden());
 }
 
+// a name or a relative path is refused by the locator, and the group says what to type instead
+void TunnelSettingsGroupTests::aRelativePathOfCloudflared_isSaidToBeRefused()
+{
+  useConfig();
+  const auto world = std::make_shared<World>();
+  TunnelSettingsGroup group(dependencies(world, std::make_shared<InMemorySecretStore>()));
+  const Widgets w(group);
+
+  CloudflaredLocation refused;
+  refused.configuredPathRelative = true;
+  world->location = refused;
+  w.path->setText(QStringLiteral("cloudflared"));
+
+  QVERIFY(w.found->text().contains(QStringLiteral("must be absolute")));
+  QVERIFY(!w.found->text().contains(QStringLiteral("was not found")));
+  QVERIFY(w.found->toolTip().contains(QStringLiteral("PATH")));
+  // the way to install it is still there
+  QVERIFY(!w.install->isHidden());
+  QCOMPARE(w.install->text(), cloudflaredInstallHint(currentPlatform()));
+}
+
 void TunnelSettingsGroupTests::resetToDefault_dropsTheEntriesAndKeepsTheToken()
 {
   useConfig();

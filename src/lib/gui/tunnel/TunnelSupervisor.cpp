@@ -15,6 +15,7 @@
 #include "gui/tunnel/SecretStoreFactory.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QPointer>
@@ -202,6 +203,11 @@ bool TunnelSupervisor::start(const TunnelRequest &request)
 
   const auto location = m_deps.locate(request.configuredPath);
   if (!location.found()) {
+    return reject(TunnelFailure::CloudflaredMissing);
+  }
+  // the path that is run is the path that was found: a name without a directory would be looked up again in PATH
+  if (!QDir::isAbsolutePath(location.path)) {
+    log(QStringLiteral("cloudflared was found as \"%1\", which is not an absolute path: not run").arg(location.path));
     return reject(TunnelFailure::CloudflaredMissing);
   }
   m_program = location.path;

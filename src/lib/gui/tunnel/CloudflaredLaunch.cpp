@@ -8,18 +8,25 @@
 
 #include "common/TunnelAddress.h"
 
+#include <QDir>
+
 namespace deskflow::tunnel {
 
 namespace {
 
-// what the environment of this process may hold that would change the tunnel that is started: another hostname,
-// another local address, another log format, or another token than the one of the user
-const QStringList kInheritedVariablesToDrop = {
-    QStringLiteral("TUNNEL_SERVICE_HOSTNAME"),     QStringLiteral("TUNNEL_SERVICE_URL"),
-    QStringLiteral("TUNNEL_SERVICE_DESTINATION"),  QStringLiteral("TUNNEL_SERVICE_TOKEN_ID"),
-    QStringLiteral("TUNNEL_SERVICE_TOKEN_SECRET"), QStringLiteral("TUNNEL_LOG_OUTPUT"),
-    QStringLiteral("TUNNEL_MANAGEMENT_OUTPUT"),
-};
+// Every variable of the tunnel in the environment of this process can change what cloudflared does (another hostname,
+// another local address, another log format, the origin certificate, a token of a tunnel, another token than the one of
+// the user): none is passed on, not only the ones that are known, and the two of the token are set after. The names of
+// variables are not case sensitive on Windows, so there `tunnel_foo` is `TUNNEL_FOO` for cloudflared as well.
+bool isTunnelVariable(const QString &name)
+{
+#ifdef Q_OS_WIN
+  const auto sensitivity = Qt::CaseInsensitive;
+#else
+  const auto sensitivity = Qt::CaseSensitive;
+#endif
+  return name.startsWith(QLatin1String("TUNNEL_"), sensitivity);
+}
 
 QString quoted(const QString &item)
 {
@@ -45,7 +52,10 @@ QString LaunchSpec::commandLine() const
 std::optional<LaunchSpec>
 buildLaunchSpec(const LaunchRequest &request, const ServiceToken &token, const QProcessEnvironment &baseEnvironment)
 {
-  if (request.program.trimmed().isEmpty() || !isValidHostname(request.hostname) ||
+  // Only an absolute path is run. A name without a directory is looked up by the system in the PATH of the process, and
+  // the Service Token goes to whatever file that finds: it has to be the file that was found by the locator.
+  if (request.program.trimmed().isEmpty() || request.program.startsWith(QLatin1Char(':')) ||
+      !QDir::isAbsolutePath(request.program) || !isValidHostname(request.hostname) ||
       !isValidLocalPort(request.localPort) || !token.isComplete()) {
     return std::nullopt;
   }
@@ -60,8 +70,10 @@ buildLaunchSpec(const LaunchRequest &request, const ServiceToken &token, const Q
   };
 
   spec.environment = baseEnvironment;
-  for (const auto &name : kInheritedVariablesToDrop) {
-    spec.environment.remove(name);
+  for (const auto &name : spec.environment.keys()) {
+    if (isTunnelVariable(name)) {
+      spec.environment.remove(name);
+    }
   }
   spec.environment.insert(QLatin1String(kTokenIdVariable), token.clientId);
   spec.environment.insert(QLatin1String(kTokenSecretVariable), token.secret);

@@ -20,16 +20,6 @@ struct LocatorTexts
   Q_DECLARE_TR_FUNCTIONS(LocatorTexts)
 };
 
-bool isAbsolute(const QString &path, Platform platform)
-{
-  // the platform of the computer that is described may not be the one that this runs on (the tests)
-  if (platform == Platform::Windows) {
-    static const QRegularExpression drive(QStringLiteral("^[a-zA-Z]:[\\\\/]"));
-    return drive.match(path).hasMatch() || path.startsWith(QStringLiteral("\\\\"));
-  }
-  return path.startsWith(QLatin1Char('/'));
-}
-
 QStringList pathDirectories(const QString &pathVariable, Platform platform)
 {
   QStringList directories;
@@ -39,7 +29,7 @@ QStringList pathDirectories(const QString &pathVariable, Platform platform)
     if (entry.size() >= 2 && entry.startsWith(QLatin1Char('"')) && entry.endsWith(QLatin1Char('"'))) {
       entry = entry.mid(1, entry.size() - 2);
     }
-    if (!entry.isEmpty() && isAbsolute(entry, platform)) {
+    if (!entry.isEmpty() && isAbsolutePath(entry, platform)) {
       directories.append(entry);
     }
   }
@@ -56,6 +46,16 @@ QString joined(const QString &directory, const QString &fileName)
 }
 
 } // namespace
+
+bool isAbsolutePath(const QString &path, Platform platform)
+{
+  // the platform of the computer that is described may not be the one that this runs on (the tests)
+  if (platform == Platform::Windows) {
+    static const QRegularExpression drive(QStringLiteral("^[a-zA-Z]:[\\\\/]"));
+    return drive.match(path).hasMatch() || path.startsWith(QStringLiteral("\\\\"));
+  }
+  return path.startsWith(QLatin1Char('/'));
+}
 
 Platform currentPlatform()
 {
@@ -111,35 +111,50 @@ FileCheck systemFileCheck()
 }
 
 CloudflaredLocation locateCloudflared(
-    const QString &configuredPath, const QString &pathVariable, Platform platform, const FileCheck &fileCheck
+    const QString &configuredPath, const QString &pathVariable, Platform platform, const FileCheck &fileCheck,
+    const PathResolver &resolve
 )
 {
   using Source = CloudflaredLocation::Source;
   CloudflaredLocation location;
 
+  // a candidate is taken when it is a file that can be run and, with a resolver, when it has one name
+  const auto accept = [&](const QString &candidate, Source source) {
+    if (!fileCheck(candidate)) {
+      return false;
+    }
+    auto path = candidate;
+    if (resolve) {
+      path = resolve(candidate);
+      if (path.isEmpty()) {
+        return false;
+      }
+    }
+    location.source = source;
+    location.path = path;
+    return true;
+  };
+
   if (const auto configured = configuredPath.trimmed(); !configured.isEmpty()) {
-    if (fileCheck(configured)) {
-      location.source = Source::Configured;
-      location.path = configured;
+    if (!isAbsolutePath(configured, platform)) {
+      location.configuredPathRelative = true;
+      return location;
+    }
+    if (accept(configured, Source::Configured)) {
       return location;
     }
     location.configuredPathUnusable = true;
   }
 
   for (const auto &candidate : cloudflaredKnownLocations(platform)) {
-    if (fileCheck(candidate)) {
-      location.source = Source::KnownLocation;
-      location.path = candidate;
+    if (accept(candidate, Source::KnownLocation)) {
       return location;
     }
   }
 
   const auto name = cloudflaredFileName(platform);
   for (const auto &directory : pathDirectories(pathVariable, platform)) {
-    const auto candidate = joined(directory, name);
-    if (fileCheck(candidate)) {
-      location.source = Source::Path;
-      location.path = candidate;
+    if (accept(joined(directory, name), Source::Path)) {
       return location;
     }
   }
@@ -149,7 +164,10 @@ CloudflaredLocation locateCloudflared(
 
 CloudflaredLocation locateCloudflared(const QString &configuredPath)
 {
-  return locateCloudflared(configuredPath, qEnvironmentVariable("PATH"), currentPlatform(), systemFileCheck());
+  const PathResolver canonical = [](const QString &path) { return QFileInfo(path).canonicalFilePath(); };
+  return locateCloudflared(
+      configuredPath, qEnvironmentVariable("PATH"), currentPlatform(), systemFileCheck(), canonical
+  );
 }
 
 } // namespace deskflow::tunnel
