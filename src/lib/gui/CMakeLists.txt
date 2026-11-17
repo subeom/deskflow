@@ -62,6 +62,8 @@ add_library(${target} STATIC
   layout/LayoutMatcher.h
   layout/LayoutProfileStore.cpp
   layout/LayoutProfileStore.h
+  layout/Reattach.cpp
+  layout/Reattach.h
   dialogs/AboutDialog.cpp
   dialogs/AboutDialog.h
   dialogs/AboutDialog.ui

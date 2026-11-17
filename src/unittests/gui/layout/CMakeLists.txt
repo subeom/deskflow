@@ -24,3 +24,11 @@ create_test(
   SOURCE LayoutMatcherTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME LayoutReattachTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE LayoutReattachTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
