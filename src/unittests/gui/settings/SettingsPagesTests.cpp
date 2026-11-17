@@ -17,6 +17,7 @@
 #include "gui/settings/SettingsPage.h"
 #include "gui/settings/SettingsPages.h"
 #include "gui/style/Appearance.h"
+#include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/PageTitle.h"
 #include "gui/widgets/SettingCard.h"
 #include "gui/widgets/SettingRow.h"
@@ -723,6 +724,23 @@ QString roleOf(QObject *object)
   return interface ? QString::fromLatin1(QMetaEnum::fromType<QAccessible::Role>().valueToKey(interface->role()))
                    : QString();
 }
+
+// One line for each thing that a screen reader walks to: its role and its name
+void dumpTree(QAccessibleInterface *interface, int depth, QStringList &lines)
+{
+  if (interface->state().invisible)
+    return;
+  lines << QStringLiteral("%1%2 \"%3\"")
+               .arg(
+                   QString(depth * 2, QLatin1Char(' ')),
+                   QString::fromLatin1(QMetaEnum::fromType<QAccessible::Role>().valueToKey(interface->role())),
+                   interface->text(QAccessible::Name)
+               );
+  for (int i = 0; i < interface->childCount(); ++i) {
+    if (auto *child = interface->child(i))
+      dumpTree(child, depth + 1, lines);
+  }
+}
 } // namespace
 
 void SettingsPagesTests::pages_haveTheRolesAndTheNamesOfTheirParts()
@@ -751,6 +769,48 @@ void SettingsPagesTests::pages_haveTheRolesAndTheNamesOfTheirParts()
       QAccessible::queryAccessibleInterface(must<QPushButton>(pages, "btnClearAllSettings"))->text(QAccessible::Name),
       QStringLiteral("Remove all settings")
   );
+}
+
+void SettingsPagesTests::pages_theTreeOfAScreenReaderHasHeadingsGroupsAndNamedControls()
+{
+  // the switches are switches (not check boxes) in the look of the application
+  auto *style = new deskflow::gui::style::DeskflowStyle;
+  QApplication::setStyle(style);
+  deskflow::gui::style::Look look;
+  look.reduceTransparency = true;
+  look.reduceMotion = true;
+  style->useLook(look);
+  SettingsPages pages;
+  QStringList all;
+  for (const auto &entry : pages.entries()) {
+    entry.page->resize(720, 560);
+    entry.page->show();
+    QCoreApplication::processEvents();
+    QStringList lines;
+    dumpTree(QAccessible::queryAccessibleInterface(entry.page), 0, lines);
+    const auto tree = lines.join(QLatin1Char('\n'));
+    all << QStringLiteral("== ") + entry.id << tree;
+    // the title of the page is its heading, and each card is a group that is named by its title
+    QVERIFY2(tree.contains(QStringLiteral("Heading \"%1\"").arg(entry.title())), qPrintable(entry.id + tree));
+    for (const auto *card : entry.page->cards())
+      QVERIFY2(tree.contains(QStringLiteral("Grouping \"%1\"").arg(card->title())), qPrintable(entry.id + tree));
+    entry.page->hide();
+  }
+  const auto text = all.join(QLatin1Char('\n'));
+  // a switch is a switch with the name of its row, a number and a choice are named by it too (a choice by its value,
+  // and its row is its label)
+  QVERIFY2(text.contains(QStringLiteral("Switch \"Enable TLS Encryption\"")), qPrintable(text));
+  QVERIFY2(text.contains(QStringLiteral("Switch \"Enable clipboard sharing\"")), qPrintable(text));
+  QVERIFY2(text.contains(QRegularExpression(QStringLiteral("SpinBox \"Port\""))), qPrintable(text));
+  QVERIFY2(text.contains(QRegularExpression(QStringLiteral("ComboBox \"[^\"]+\""))), qPrintable(text));
+  // no control without a name
+  QVERIFY2(!text.contains(QRegularExpression(QStringLiteral("(Switch|SpinBox|Button) \"\""))), qPrintable(text));
+
+  if (const auto path = qEnvironmentVariable("DESKFLOW_A11Y_DUMP"); !path.isEmpty()) {
+    QFile file(path);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+      file.write(text.toUtf8() + '\n');
+  }
 }
 
 void SettingsPagesTests::pages_theBackgroundServiceIsOnlyOnWindows()

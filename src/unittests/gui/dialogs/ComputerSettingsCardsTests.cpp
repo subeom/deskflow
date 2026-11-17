@@ -19,11 +19,13 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFile>
 #include <QGroupBox>
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMetaEnum>
 #include <QPixmapCache>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -32,6 +34,8 @@
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QTest>
+
+#include <functional>
 
 using namespace deskflow::gui::style;
 
@@ -354,6 +358,31 @@ void ComputerSettingsCardsTests::deskflowLook_namesTheControlsByTheirRows()
   // the cards are groups
   for (auto *card : dialog.findChildren<SettingCard *>())
     QCOMPARE(QAccessible::queryAccessibleInterface(card)->role(), QAccessible::Grouping);
+
+  // the walk of a screen reader, written for whoever wants to read it when the environment says where
+  if (const auto path = qEnvironmentVariable("DESKFLOW_A11Y_DUMP"); !path.isEmpty()) {
+    dialog.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+    QStringList lines;
+    std::function<void(QAccessibleInterface *, int)> walk = [&](QAccessibleInterface *interface, int depth) {
+      if (interface->state().invisible)
+        return;
+      lines << QStringLiteral("%1%2 \"%3\"")
+                   .arg(
+                       QString(depth * 2, QLatin1Char(' ')),
+                       QString::fromLatin1(QMetaEnum::fromType<QAccessible::Role>().valueToKey(interface->role())),
+                       interface->text(QAccessible::Name)
+                   );
+      for (int i = 0; i < interface->childCount(); ++i) {
+        if (auto *child = interface->child(i))
+          walk(child, depth + 1);
+      }
+    };
+    walk(QAccessible::queryAccessibleInterface(&dialog), 0);
+    QFile file(path);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+      file.write(lines.join(QLatin1Char('\n')).toUtf8() + '\n');
+  }
 }
 
 void ComputerSettingsCardsTests::deskflowLook_isAsSmallAsTheFormWas_andTheCardsScrollInIt()

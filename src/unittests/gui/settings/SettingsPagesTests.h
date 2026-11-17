@@ -29,6 +29,7 @@ private Q_SLOTS:
   void pages_aValueThatIsNotGoodIsNotWritten_andSaysWhy();
   void pages_whatDependsOnAnotherControlFollowsIt();
   void pages_haveTheRolesAndTheNamesOfTheirParts();
+  void pages_theTreeOfAScreenReaderHasHeadingsGroupsAndNamedControls();
   void pages_theBackgroundServiceIsOnlyOnWindows();
 
   void banner_asksWhenAskedAndTellsItsAlert();
