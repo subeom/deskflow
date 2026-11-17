@@ -459,4 +459,51 @@ void CoreProcessTunnelTests::aModeSwitchToTheServerWhileTheTunnelComesUp_leavesN
   QCOMPARE(rig.processes.size(), size_t(1));
 }
 
+// A tunnel whose process cannot be started ends the waiting start of the core, whenever the process says so: inside
+// start() (QProcess on Windows) or later (Unix). Also the second time: a retry must not wait for ever for a report that
+// was not made. The core is never started (the tunnel never listens).
+void CoreProcessTunnelTests::aTunnelThatCannotStart_endsTheWaitingStartOnceDuringStartOrLater_data()
+{
+  QTest::addColumn<bool>("later");
+  QTest::newRow("during start()") << false;
+  QTest::newRow("later") << true;
+}
+
+void CoreProcessTunnelTests::aTunnelThatCannotStart_endsTheWaitingStartOnceDuringStartOrLater()
+{
+  QFETCH(bool, later);
+  tunneltest::ControllerRig rig(m_dir);
+  rig.turnOn();
+  (later ? rig.nextProcessFailsToStartLater : rig.nextProcessFailsToStart) = true;
+  Settings::setValue(Settings::Core::ProcessMode, QVariant::fromValue(Settings::ProcessMode::Desktop));
+
+  const ServerConfig serverConfig;
+  CoreProcess core(serverConfig);
+  core.setTunnelGate(rig.controller.get());
+  core.setMode(Settings::CoreMode::Client);
+  QList<ProcessState> states;
+  connect(&core, &CoreProcess::processStateChanged, this, [&states](ProcessState state) { states << state; });
+
+  for (int attempt = 1; attempt <= 2; ++attempt) {
+    states.clear();
+    core.start();
+    if (later) {
+      QCOMPARE(core.processState(), ProcessState::Starting);
+      rig.process()->deliverStartFailure();
+    }
+
+    QCOMPARE(core.processState(), ProcessState::Stopped);
+    QCOMPARE(core.connectionState(), ConnectionState::Disconnected);
+    QCOMPARE(rig.controller->status().state, TunnelState::Failed);
+    QCOMPARE(rig.controller->status().failure, TunnelFailure::CloudflaredMissing);
+    QCOMPARE(states, (QList<ProcessState>{ProcessState::Starting, ProcessState::Stopped}));
+    QCOMPARE(rig.processes.size(), static_cast<size_t>(attempt));
+  }
+
+  // nothing follows by itself
+  rig.advance(20000);
+  QCOMPARE(core.processState(), ProcessState::Stopped);
+  QCOMPARE(rig.processes.size(), size_t(2));
+}
+
 QTEST_MAIN(CoreProcessTunnelTests)

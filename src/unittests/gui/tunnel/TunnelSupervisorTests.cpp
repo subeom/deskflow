@@ -38,6 +38,7 @@ struct Rig
   bool cloudflaredFound = true;
   bool relativeProgram = false;
   bool nextProcessFailsToStart = false;
+  bool nextProcessFailsToStartLater = false;
   bool nextProcessIgnoresTerminate = false;
   bool nextProcessIgnoresKill = false;
   qint64 clock = 10'000;
@@ -76,6 +77,7 @@ struct Rig
       auto *process = new FakeProcess;
       process->setParent(parent);
       process->failToStart = nextProcessFailsToStart;
+      process->failToStartLater = nextProcessFailsToStartLater;
       process->obeysTerminate = !nextProcessIgnoresTerminate;
       process->obeysKill = !nextProcessIgnoresKill;
       process->pid = 5000 + static_cast<qint64>(processes.size());
@@ -455,6 +457,120 @@ void TunnelSupervisorTests::aProcessThatCannotBeStarted_isReported()
   QCOMPARE(rig.supervisor->activePort(), 0);
   // no record is left for a process that never ran
   QVERIFY(!QFile::exists(rig.orphanFile));
+}
+
+// QProcess reports a start that failed (CreateProcess) inside start() on Windows and later, through the event loop, on
+// Unix. The supervisor sees both, and has to end up in the same place: Failed, once reported, with the process gone and
+// the token not kept.
+void TunnelSupervisorTests::aStartThatFails_isReportedOnceWhenTheProcessSaysSoDuringStartOrLater_data()
+{
+  QTest::addColumn<bool>("later");
+  QTest::newRow("during start()") << false;
+  QTest::newRow("later") << true;
+}
+
+void TunnelSupervisorTests::aStartThatFails_isReportedOnceWhenTheProcessSaysSoDuringStartOrLater()
+{
+  QFETCH(bool, later);
+  Rig rig;
+  (later ? rig.nextProcessFailsToStartLater : rig.nextProcessFailsToStart) = true;
+
+  // accepted in both cases: whether it worked is told by the status and by failed()
+  QVERIFY(rig.supervisor->start(rig.request));
+  if (later) {
+    QCOMPARE(rig.state(), TunnelState::Starting);
+    QVERIFY(rig.failures.isEmpty());
+    rig.process()->deliverStartFailure();
+  }
+
+  QCOMPARE(rig.state(), TunnelState::Failed);
+  QCOMPARE(rig.supervisor->status().failure, TunnelFailure::CloudflaredMissing);
+  QCOMPARE(rig.failures, QList<TunnelFailure>{TunnelFailure::CloudflaredMissing});
+  // what an observer sees is the same: the start, then the failure, each once
+  QList<TunnelState> seen;
+  for (const auto &status : std::as_const(rig.statuses)) {
+    seen << status.state;
+  }
+  QCOMPARE(seen, (QList<TunnelState>{TunnelState::Starting, TunnelState::Failed}));
+  QVERIFY(rig.logsContain(QStringLiteral("could not be started")));
+  QCOMPARE(rig.supervisor->activePort(), 0);
+  QCOMPARE(rig.ports.last(), 0);
+  QVERIFY(!rig.supervisor->isProcessRunning());
+  QVERIFY(!QFile::exists(rig.orphanFile));
+
+  // the process object is released, and not touched again: nothing is left of it after the deferred delete
+  QCOMPARE(rig.processes.size(), size_t(1));
+  QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+  QVERIFY(rig.processes.front().isNull());
+
+  // nothing happens by itself afterwards, and the token of that run is not kept: the next start reads the store again
+  rig.advance(20000);
+  QCOMPARE(rig.processes.size(), size_t(1));
+  QCOMPARE(rig.failures.size(), 1);
+  const auto loadsBefore = rig.storeState->loadCount;
+  QVERIFY(rig.supervisor->start(rig.request));
+  QCOMPARE(rig.storeState->loadCount, loadsBefore + 1);
+
+  // a new start is a new episode: it fails and is reported once again
+  if (later) {
+    rig.process()->deliverStartFailure();
+  }
+  QCOMPARE(rig.state(), TunnelState::Failed);
+  QCOMPARE(rig.failures.size(), 2);
+
+  // and the user can go on: a process that can be started brings the tunnel up
+  rig.nextProcessFailsToStart = false;
+  rig.nextProcessFailsToStartLater = false;
+  QVERIFY(rig.bringUp());
+  QCOMPARE(rig.failures.size(), 2);
+}
+
+void TunnelSupervisorTests::aRestartThatFailsDuringStart_failsTheTunnelOnceAndNothingFollows()
+{
+  Rig rig;
+  QVERIFY(rig.bringUp());
+  QCOMPARE(rig.processes.size(), size_t(1));
+
+  // the process stops by itself; the program cannot be started again (it was removed), which Windows says at once
+  rig.nextProcessFailsToStart = true;
+  rig.process()->end(1);
+  QCOMPARE(rig.state(), TunnelState::Backoff);
+  QVERIFY(rig.failures.isEmpty());
+
+  rig.advance(1200);
+  QCOMPARE(rig.processes.size(), size_t(2));
+  QCOMPARE(rig.state(), TunnelState::Failed);
+  QCOMPARE(rig.failures, QList<TunnelFailure>{TunnelFailure::CloudflaredMissing});
+  QVERIFY(!rig.supervisor->isProcessRunning());
+  QCOMPARE(rig.supervisor->activePort(), 0);
+
+  rig.advance(60000);
+  QCOMPARE(rig.processes.size(), size_t(2));
+  QCOMPARE(rig.failures.size(), 1);
+}
+
+// the supervisor is stopped, or the whole thing is let go, from inside the report of the failure: the usual reaction of
+// an owner
+void TunnelSupervisorTests::aFailureReportedDuringStart_canBeAnsweredByAStopFromTheHandler()
+{
+  Rig rig;
+  rig.nextProcessFailsToStart = true;
+  int answered = 0;
+  QObject::connect(
+      rig.supervisor.get(), &TunnelSupervisor::failed, rig.supervisor.get(),
+      [&rig, &answered](TunnelFailure) {
+        ++answered;
+        rig.supervisor->stop();
+      }
+  );
+
+  rig.supervisor->start(rig.request);
+  QCOMPARE(answered, 1);
+  QVERIFY(rig.state() == TunnelState::Failed || rig.state() == TunnelState::Idle);
+  QVERIFY(!rig.supervisor->isProcessRunning());
+  QCOMPARE(rig.supervisor->activePort(), 0);
+  QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+  QVERIFY(rig.processes.front().isNull());
 }
 
 void TunnelSupervisorTests::aProblemOfTheConnection_isShownUntilTheServerConnects()

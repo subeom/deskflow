@@ -34,6 +34,8 @@ private Q_SLOTS:
   void theQuitInServiceModeWithTheTunnelOff_isWhatItWas();
   void aModeSwitchToTheServerWhileTheStartWaits_resetsTheState();
   void aModeSwitchToTheServerWhileTheTunnelComesUp_leavesNothingBehind();
+  void aTunnelThatCannotStart_endsTheWaitingStartOnceDuringStartOrLater_data();
+  void aTunnelThatCannotStart_endsTheWaitingStartOnceDuringStartOrLater();
 
   void cleanup();
 

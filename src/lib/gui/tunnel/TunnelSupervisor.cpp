@@ -266,7 +266,12 @@ bool TunnelSupervisor::start(const TunnelRequest &request)
 
   setPort(port);
   m_machine.setTarget(request.hostname, port);
-  execute(m_machine.start(now));
+  const auto command = m_machine.start(now);
+  // Starting is told before the process is started. QProcess says that a start failed inside start() on Windows (and
+  // later on Unix): the failure then ends an episode that was begun and told, and is reported once, also when the
+  // episode before it failed as well
+  publish();
+  execute(command);
   publish();
   return true;
 }

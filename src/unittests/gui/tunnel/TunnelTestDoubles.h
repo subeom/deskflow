@@ -52,7 +52,12 @@ public:
   int terminateCalls = 0;
   int killCalls = 0;
   bool running = false;
+  //! startFailed is emitted inside start(), before it returns: what QProcess does on Windows when CreateProcess fails
   bool failToStart = false;
+  //! startFailed is emitted later, by deliverStartFailure(): what QProcess does on Unix (the failure of the exec comes
+  //! back through the event loop)
+  bool failToStartLater = false;
+  bool startFailurePending = false;
   bool obeysTerminate = true;
   bool obeysKill = true;
   qint64 pid = 5000;
@@ -63,6 +68,10 @@ public:
     ++starts;
     if (failToStart) {
       Q_EMIT startFailed(QStringLiteral("fake: cannot start"));
+      return;
+    }
+    if (failToStartLater) {
+      startFailurePending = true;
       return;
     }
     running = true;
@@ -106,6 +115,14 @@ public:
   void write(const QString &line)
   {
     Q_EMIT outputLine(line);
+  }
+
+  void deliverStartFailure()
+  {
+    if (startFailurePending) {
+      startFailurePending = false;
+      Q_EMIT startFailed(QStringLiteral("fake: cannot start"));
+    }
   }
 };
 
@@ -181,6 +198,8 @@ struct ControllerRig
   std::shared_ptr<FakeProber> prober = std::make_shared<FakeProber>();
   std::shared_ptr<FakeInspector> inspector = std::make_shared<FakeInspector>();
   std::vector<QPointer<FakeProcess>> processes;
+  bool nextProcessFailsToStart = false;      //!< see FakeProcess::failToStart
+  bool nextProcessFailsToStartLater = false; //!< see FakeProcess::failToStartLater
   qint64 clock = 10'000;
   QString configuredPath;
   std::unique_ptr<TunnelController> controller;
@@ -213,6 +232,8 @@ struct ControllerRig
     deps.processFactory = [this](QObject *parent) -> ITunnelProcess * {
       auto *process = new FakeProcess;
       process->setParent(parent);
+      process->failToStart = nextProcessFailsToStart;
+      process->failToStartLater = nextProcessFailsToStartLater;
       process->pid = 6000 + static_cast<qint64>(processes.size());
       inspector->processes.emplace(process->pid, ProcessInfo{1, kProgram});
       processes.emplace_back(process);

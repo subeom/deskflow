@@ -117,6 +117,14 @@ to the tray keeps it.
    stays.
 7. A switch from client to server stops the tunnel at once.
 
+**A start that fails inside `start()`.** `QProcess` reports a program that cannot be started (`CreateProcess` fails) inside
+`start()` on Windows, before it returns, and later through the event loop on Unix. The supervisor publishes `Starting` before it
+launches the process, so both orders give the same result: `Starting`, then `Failed`, `failed()` once for each failed start (a
+second failed start is reported again, so a retry never waits for a report that does not come), the process object released and
+not touched again, the token not kept. Code that waits for `startFailed` has to accept a signal that is already there
+(`count() > 0 || wait()`); a test of this is `QtTunnelProcessTests::aStartThatFailsInsideStart_isReportedBeforeStartReturns`
+(an empty program is reported inside `start()` on every system).
+
 A failure of the tunnel while the core runs stops the core (it would retry a port that nothing listens on); while the core
 waits for the tunnel it ends the start. The reason stays in the status line.
 

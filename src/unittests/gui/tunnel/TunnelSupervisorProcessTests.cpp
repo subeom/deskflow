@@ -29,6 +29,50 @@ namespace {
 const QString kSecret = QStringLiteral("dummy-secret-value-0123456789");
 const QString kClientId = QStringLiteral("dummy-client-id.access");
 
+// The real process of the system, with the program taken away: QProcess then reports that the start failed inside
+// start(), as it does on Windows when CreateProcess fails (on Unix a program that cannot be run is reported later)
+class EmptyProgramProcess : public ITunnelProcess
+{
+public:
+  explicit EmptyProgramProcess(QObject *parent) : ITunnelProcess(parent), m_inner(new QtTunnelProcess(this))
+  {
+    connect(m_inner, &ITunnelProcess::started, this, &ITunnelProcess::started);
+    connect(m_inner, &ITunnelProcess::startFailed, this, &ITunnelProcess::startFailed);
+    connect(m_inner, &ITunnelProcess::outputLine, this, &ITunnelProcess::outputLine);
+    connect(m_inner, &ITunnelProcess::finished, this, &ITunnelProcess::finished);
+  }
+
+  void start(const LaunchSpec &spec) override
+  {
+    auto changed = spec;
+    changed.program.clear();
+    m_inner->start(changed);
+  }
+
+  void terminate() override
+  {
+    m_inner->terminate();
+  }
+
+  void kill() override
+  {
+    m_inner->kill();
+  }
+
+  bool isRunning() const override
+  {
+    return m_inner->isRunning();
+  }
+
+  qint64 processId() const override
+  {
+    return m_inner->processId();
+  }
+
+private:
+  ITunnelProcess *m_inner;
+};
+
 struct Rig
 {
   QTemporaryDir dir;
@@ -40,6 +84,7 @@ struct Rig
   QStringList logs;
   QList<TunnelStatus> statuses;
   int processesStarted = 0;
+  bool programRemoved = false; //!< the next processes are made by EmptyProgramProcess
   QString orphanFile = dir.filePath(QStringLiteral("state/tunnel.json"));
 
   explicit Rig(const QString &mode, TunnelPolicy policy = {}, std::shared_ptr<IPortProber> racing = nullptr)
@@ -58,9 +103,9 @@ struct Rig
       return location;
     };
     const auto real = QtTunnelProcess::factory();
-    deps.processFactory = [this, real](QObject *parent) {
+    deps.processFactory = [this, real](QObject *parent) -> ITunnelProcess * {
       ++processesStarted;
-      return real(parent);
+      return programRemoved ? new EmptyProgramProcess(parent) : real(parent);
     };
     if (racing) {
       deps.prober = std::move(racing);
@@ -316,6 +361,37 @@ void TunnelSupervisorProcessTests::aPortTakenAfterTheCheck_isNotTheTunnel_andThe
   for (const auto &status : std::as_const(rig.statuses)) {
     QVERIFY(status.state != TunnelState::Failed);
   }
+}
+
+// The real QProcess tells that the start failed inside start(), so the supervisor is told before its own start() has
+// returned. Failed once, the process gone, and the same again for a second start; then a program that can be run brings
+// the tunnel up.
+void TunnelSupervisorProcessTests::aStartThatQtReportsInsideStart_failsTheTunnelOnceEachTime()
+{
+  Rig rig(QStringLiteral("ok"), quick());
+  rig.programRemoved = true;
+  QSignalSpy failed(rig.supervisor.get(), &TunnelSupervisor::failed);
+
+  for (int attempt = 1; attempt <= 2; ++attempt) {
+    QVERIFY(rig.supervisor->start(rig.request));
+    QCOMPARE(rig.state(), TunnelState::Failed);
+    QCOMPARE(rig.supervisor->status().failure, TunnelFailure::CloudflaredMissing);
+    QCOMPARE(failed.count(), attempt);
+    QVERIFY(!rig.supervisor->isProcessRunning());
+    QCOMPARE(rig.supervisor->activePort(), 0);
+    QVERIFY(!QFile::exists(rig.orphanFile));
+  }
+
+  // the event loop runs: the processes that were released are deleted, and nothing happens by itself
+  QTest::qWait(300);
+  QCOMPARE(rig.state(), TunnelState::Failed);
+  QCOMPARE(failed.count(), 2);
+  QCOMPARE(rig.processesStarted, 2);
+
+  rig.programRemoved = false;
+  QVERIFY(rig.supervisor->start(rig.request));
+  QTRY_COMPARE_WITH_TIMEOUT(rig.state(), TunnelState::Listening, 8000);
+  QCOMPARE(failed.count(), 2);
 }
 
 void TunnelSupervisorProcessTests::anEdgeThatRefuses_isShownWhileTheTunnelListens()

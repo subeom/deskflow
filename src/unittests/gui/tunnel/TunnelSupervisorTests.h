@@ -31,6 +31,10 @@ private Q_SLOTS:
   void aProcessThatStopsOnItsOwn_isStartedAgainWithTheSameTokenAndPort();
   void aProcessThatKeepsStoppingAtOnce_failsAndForgetsTheToken();
   void aProcessThatCannotBeStarted_isReported();
+  void aStartThatFails_isReportedOnceWhenTheProcessSaysSoDuringStartOrLater_data();
+  void aStartThatFails_isReportedOnceWhenTheProcessSaysSoDuringStartOrLater();
+  void aRestartThatFailsDuringStart_failsTheTunnelOnceAndNothingFollows();
+  void aFailureReportedDuringStart_canBeAnsweredByAStopFromTheHandler();
   void aProblemOfTheConnection_isShownUntilTheServerConnects();
   void everyRefusedConnection_isCountedWithItsReason();
 
