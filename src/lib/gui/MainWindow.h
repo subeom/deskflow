@@ -31,8 +31,13 @@ class QMenu;
 class QLocalServer;
 
 class DeskflowApplication;
+class LayoutNoticeBar;
 class LogDock;
 class StatusBar;
+
+namespace deskflow::gui::layout {
+class LayoutMemoryService;
+}
 
 namespace Ui {
 class MainWindow;
@@ -88,6 +93,9 @@ private:
 
   void settingsChanged(const QString &key = QString());
   void serverConfigSaving();
+  //! Experimental: remembers the arrangement for each set of displays (does nothing unless it is switched on)
+  void setupLayoutMemory();
+  void updateLayoutNotice();
   void coreProcessError(CoreProcess::Error error);
   void coreConnectionStateChanged(ConnectionState state);
   void coreProcessStateChanged(ProcessState state);
@@ -178,6 +186,8 @@ private:
   QSet<QString> m_ignoredClients;
   bool m_newClientPromptShowing = false;
   bool m_serverConfigDialogVisible = false;
+  deskflow::gui::layout::LayoutMemoryService *m_layoutMemory = nullptr;
+  LayoutNoticeBar *m_layoutNoticeBar = nullptr;
   QSize m_expandedSize = QSize();
   QStringList m_checkedClients;
   QStringList m_checkedServers;

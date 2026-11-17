@@ -7,18 +7,21 @@
 #include "DialogLayoutTests.h"
 
 #include "../core/FakeProbeNetwork.h"
+#include "../layout/LayoutServiceRig.h"
 #include "common/Settings.h"
 #include "gui/config/Computer.h"
 #include "gui/config/ServerConfig.h"
 #include "gui/dialogs/ClientConfigDialog.h"
 #include "gui/dialogs/ComputerSettingsDialog.h"
 #include "gui/dialogs/ConnectionTestDialog.h"
+#include "gui/dialogs/LayoutProfilesDialog.h"
 #include "gui/dialogs/MonitorEditorDialog.h"
 #include "gui/dialogs/ServerAddressesDialog.h"
 #include "gui/dialogs/ServerConfigDialog.h"
 #include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
+#include "gui/widgets/LayoutNoticeBar.h"
 #include "gui/widgets/MonitorEditorWidget.h"
 #include "server/MonitorEditor.h"
 
@@ -43,6 +46,7 @@
 #include <QStyle>
 #include <QStyleFactory>
 #include <QTabWidget>
+#include <QTableWidget>
 #include <QTest>
 #include <QTextBrowser>
 #include <QWidget>
@@ -675,6 +679,100 @@ void DialogLayoutTests::serverConfigDialog_computersTab_withReportedMonitors_isL
     Settings::setValue(Settings::Computer::ReportedMonitors.arg(QString::fromLatin1(name)));
     Settings::setValue(Settings::Computer::ArrangementZoom.arg(QString::fromLatin1(name)));
   }
+}
+
+void DialogLayoutTests::serverConfigDialog_computersTab_withTheLayoutNotice_isLaidOutWithoutSqueezing_data()
+{
+  addScenarios();
+}
+
+// The row of the switch for remembering layouts and the line that says what it did (with Undo and Dismiss) are in the
+// arrangement panel: a long notice is cut to the width, and nothing is squeezed or overlaps, in any style, font or size
+void DialogLayoutTests::serverConfigDialog_computersTab_withTheLayoutNotice_isLaidOutWithoutSqueezing()
+{
+  QFETCH(QString, style);
+  QFETCH(qreal, fontScale);
+  QFETCH(int, sizeMode);
+
+  QVERIFY(QApplication::setStyle(style) != nullptr);
+  layout_rig::arrangeT();
+  Settings::setValue(Settings::Server::RememberArrangements, true);
+  {
+    ServerConfig config;
+    ServerConfigDialog dialog(nullptr, config);
+    auto *tabs = dialog.findChild<QTabWidget *>(QStringLiteral("tabWidget"));
+    auto *computers = dialog.findChild<QWidget *>(QStringLiteral("tabComputers"));
+    QVERIFY(tabs != nullptr && computers != nullptr);
+    tabs->setCurrentWidget(computers);
+    auto *panel = dialog.findChild<ArrangementPanel *>();
+    QVERIFY(panel != nullptr);
+    panel->layoutNoticeBar()->setText(
+        QStringLiteral("Layout restored: \"external 3440x1440 + built-in 1512x982\" (similar displays, 88% alike). Not in "
+                       "that layout, left where they were: PC-with-a-long-name. The core was restarted."),
+        true
+    );
+    showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
+    QVERIFY(dialog.isVisible());
+    QVERIFY(panel->isVisibleTo(&dialog));
+    QVERIFY(panel->layoutNoticeBar()->isVisibleTo(&dialog));
+    auto *box = panel->findChild<QCheckBox *>(QStringLiteral("cbRememberArrangements"));
+    QVERIFY(box != nullptr && box->isVisibleTo(&dialog) && box->isChecked());
+    QVERIFY(panel->canvas()->height() >= 150);
+    grabIfRequested(QStringLiteral("ServerConfigDialogLayoutNotice"), dialog);
+
+    const auto violations = findLayoutViolations(dialog);
+    QVERIFY2(
+        violations.isEmpty(),
+        qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+    );
+  }
+  layout_rig::forgetEverything();
+}
+
+void DialogLayoutTests::layoutProfilesDialog_isLaidOutWithoutSqueezing_data()
+{
+  addScenarios();
+}
+
+// A list of the remembered layouts with the names that people give, the displays that each was made for, and the displays
+// that there are now: nothing is squeezed or overlaps, and the list has room to be read
+void DialogLayoutTests::layoutProfilesDialog_isLaidOutWithoutSqueezing()
+{
+  QFETCH(QString, style);
+  QFETCH(qreal, fontScale);
+  QFETCH(int, sizeMode);
+
+  QVERIFY(QApplication::setStyle(style) != nullptr);
+  layout_rig::arrangeT();
+  {
+    layout_rig::ServiceRig rig(m_settingsDir.filePath(QStringLiteral("layout-profiles.json")));
+    rig.turnOn();
+    const auto layout = layout_rig::captureLayout(*rig.config);
+    rig.service->store().upsert(
+        layout_rig::sig(layout_rig::laptopOnly()), layout, 5000,
+        QStringLiteral("On the move: the laptop alone with its own screen only"), true
+    );
+    rig.service->store().upsert(
+        layout_rig::sig({layout_rig::fullHd(0, 0, true), layout_rig::fullHd(1920, 0), layout_rig::builtIn(0, 1080)}),
+        layout, 6000
+    );
+    LayoutProfilesDialog dialog(*rig.service, [&] { return layout_rig::captureLayout(*rig.config); });
+    showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
+    QVERIFY(dialog.isVisible());
+    auto *table = dialog.findChild<QTableWidget *>(QStringLiteral("layoutProfilesTable"));
+    QVERIFY(table != nullptr && table->isVisibleTo(&dialog));
+    QCOMPARE(table->rowCount(), 3);
+    QVERIFY2(table->height() >= table->fontMetrics().lineSpacing() * 5, qPrintable(describe(table->geometry())));
+    grabIfRequested(QStringLiteral("LayoutProfilesDialog"), dialog);
+
+    const auto violations = findLayoutViolations(dialog);
+    QVERIFY2(
+        violations.isEmpty(),
+        qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+    );
+  }
+  layout_rig::forgetEverything();
+  QFile::remove(m_settingsDir.filePath(QStringLiteral("layout-profiles.json")));
 }
 
 void DialogLayoutTests::monitorEditorDialog_showingTheReportedMonitors_isLaidOutWithoutSqueezing_data()

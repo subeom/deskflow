@@ -105,4 +105,43 @@ void OSXDisplaysTests::monitorsCanBeReported()
   QVERIFY(!prepared.monitors.empty());
 }
 
+// what identifies the displays is only asked. The list is of the displays that are online, not only the active ones: a
+// display that is asleep is not active, and the signature of a situation must not change when the screens go to sleep. So
+// every active display is in it, with the same rectangle; exactly one display is the main one; and a display that has an
+// id has one that is the same when asked twice
+void OSXDisplaysTests::detailsAreOfTheSameDisplaysAsTheInfo()
+{
+  const auto info = deskflow::platform::osxActiveDisplayInfo();
+  const auto details = deskflow::platform::osxOnlineDisplayDetails();
+  if (info.empty() || details.empty())
+    QSKIP("no display to ask");
+
+  QVERIFY(details.size() >= info.size());
+  for (const auto &active : info) {
+    const auto found = std::ranges::find_if(details, [&](const auto &detail) {
+      return detail.info.rect == active.rect && detail.info.primary == active.primary;
+    });
+    QVERIFY2(found != details.end(), "an active display is not in the list of the online ones");
+  }
+  int mains = 0;
+  for (const auto &detail : details) {
+    mains += detail.info.primary ? 1 : 0;
+    QVERIFY(detail.info.rect.w > 0 && detail.info.rect.h > 0);
+    // a UUID is text of the form that the system writes, when it says one
+    if (!detail.uuid.empty())
+      QVERIFY2(detail.uuid.size() == 36, detail.uuid.c_str());
+  }
+  QCOMPARE(mains, 1);
+
+  const auto again = deskflow::platform::osxOnlineDisplayDetails();
+  QCOMPARE(again.size(), details.size());
+  for (size_t i = 0; i < details.size(); ++i) {
+    QCOMPARE(again[i].uuid, details[i].uuid);
+    QCOMPARE(again[i].vendor, details[i].vendor);
+    QCOMPARE(again[i].model, details[i].model);
+    QCOMPARE(again[i].serial, details[i].serial);
+    QCOMPARE(again[i].builtIn, details[i].builtIn);
+  }
+}
+
 QTEST_MAIN(OSXDisplaysTests)

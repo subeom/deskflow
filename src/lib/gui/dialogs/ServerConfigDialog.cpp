@@ -71,6 +71,10 @@ ServerConfigDialog::ServerConfigDialog(QWidget *parent, ServerConfig &config)
   ui->tabComputers->layout()->addWidget(m_arrangementPanel);
   connect(useButton, &QPushButton::clicked, this, [this] { toggleUseArrangement(true); });
   connect(m_arrangementPanel, &ArrangementPanel::changed, this, &ServerConfigDialog::setButtonBoxEnabledButtons);
+  connect(m_arrangementPanel, &ArrangementPanel::rememberArrangementsToggled, this, [this](bool on) {
+    m_rememberArrangements = on;
+    setButtonBoxEnabledButtons();
+  });
   connect(m_arrangementPanel, &ArrangementPanel::useClassicGridRequested, this, [this] {
     toggleUseArrangement(false);
   });
@@ -151,6 +155,7 @@ void ServerConfigDialog::save()
   Settings::setValue(Settings::Server::ClipboardTextOnly, m_clipboardTextOnly);
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor, m_experimentalMultiMonitor);
   Settings::setValue(Settings::Server::UseArrangement, m_useArrangement);
+  Settings::setValue(Settings::Server::RememberArrangements, m_rememberArrangements);
   Settings::setValue(Settings::Server::EnableHeartbeat, m_enableHeartbeat);
   Settings::setValue(Settings::Server::Heartbeat, m_heartbeatRate);
   Settings::setValue(Settings::Server::EnableSwitchDelay, m_enableSwitchDelay);
@@ -638,6 +643,7 @@ void ServerConfigDialog::loadFromConfig()
   m_clipboardTextOnly = Settings::value(Settings::Server::ClipboardTextOnly).toBool();
   m_experimentalMultiMonitor = Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool();
   m_useArrangement = Settings::value(Settings::Server::UseArrangement).toBool();
+  m_rememberArrangements = Settings::value(Settings::Server::RememberArrangements).toBool();
   setProperty("experimentalMultiMonitor", m_experimentalMultiMonitor);
 
   ui->lineConfigFile->setText(serverConfig().configFile());
@@ -701,6 +707,8 @@ void ServerConfigDialog::refreshControls()
   ui->cbEnableClipboard->setChecked(m_enableClipboard);
   ui->cbClipboardTextOnly->setChecked(m_clipboardTextOnly);
   ui->cbExperimentalMultiMonitor->setChecked(m_experimentalMultiMonitor);
+  if (m_arrangementPanel != nullptr)
+    m_arrangementPanel->setRememberArrangements(m_rememberArrangements);
   updateClipboardControls();
   ui->sbClipboardSizeLimit->setValue(m_clipboardSize);
 }
@@ -815,6 +823,7 @@ void ServerConfigDialog::restoreFromDefaults()
   m_clipboardTextOnly = Settings::defaultValue(Settings::Server::ClipboardTextOnly).toBool();
   m_experimentalMultiMonitor = Settings::defaultValue(Settings::Server::ExperimentalMultiMonitor).toBool();
   m_useArrangement = Settings::defaultValue(Settings::Server::UseArrangement).toBool();
+  m_rememberArrangements = Settings::defaultValue(Settings::Server::RememberArrangements).toBool();
   setProperty("experimentalMultiMonitor", m_experimentalMultiMonitor);
   updateArrangementMode();
 
@@ -861,6 +870,7 @@ bool ServerConfigDialog::isGeneralConfigModified() const
          m_clipboardTextOnly != Settings::value(Settings::Server::ClipboardTextOnly).toBool() ||
          m_experimentalMultiMonitor != Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool() ||
          m_useArrangement != Settings::value(Settings::Server::UseArrangement).toBool() ||
+         m_rememberArrangements != Settings::value(Settings::Server::RememberArrangements).toBool() ||
          m_enableHeartbeat != Settings::value(Settings::Server::EnableHeartbeat).toBool() ||
          m_heartbeatRate != Settings::value(Settings::Server::Heartbeat).toInt() ||
          m_enableSwitchDelay != Settings::value(Settings::Server::EnableSwitchDelay).toBool() ||
@@ -883,6 +893,7 @@ bool ServerConfigDialog::isGeneralConfigDefault() const
          m_clipboardTextOnly == Settings::defaultValue(Settings::Server::ClipboardTextOnly).toBool() &&
          m_experimentalMultiMonitor == Settings::defaultValue(Settings::Server::ExperimentalMultiMonitor).toBool() &&
          m_useArrangement == Settings::defaultValue(Settings::Server::UseArrangement).toBool() &&
+         m_rememberArrangements == Settings::defaultValue(Settings::Server::RememberArrangements).toBool() &&
          m_enableHeartbeat == Settings::defaultValue(Settings::Server::EnableHeartbeat).toBool() &&
          m_heartbeatRate == Settings::defaultValue(Settings::Server::Heartbeat).toInt() &&
          m_enableSwitchDelay == Settings::defaultValue(Settings::Server::EnableSwitchDelay).toBool() &&

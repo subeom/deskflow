@@ -124,6 +124,7 @@ void ServerConfigDialogTests::cleanup()
   Settings::setValue(Settings::Server::ClipboardTextOnly);
   Settings::setValue(Settings::Server::EnableClipboard);
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
+  Settings::setValue(Settings::Server::RememberArrangements);
   // the dialog writes these as soon as they are changed
   Settings::setValue(Settings::Server::ExternalConfig);
   Settings::setValue(Settings::Server::ExternalConfigFile);
@@ -905,6 +906,59 @@ void ServerConfigDialogTests::arrangement_screenshots_areMadeOfTheDialogs()
   }
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor);
   QApplication::setStyle(originalStyle);
+}
+
+// the arrangement is the one that has the switch, so the arrangement is in use
+void ServerConfigDialogTests::rememberArrangements_isOffByDefault_andIsLoadedSavedAndRestoredToOff()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  const auto boxOf = [](const ServerConfigDialog &dialog) {
+    return panelOf(dialog)->findChild<QCheckBox *>(QStringLiteral("cbRememberArrangements"));
+  };
+  QVERIFY(!Settings::value(Settings::Server::RememberArrangements).toBool());
+  {
+    ServerConfig config;
+    ServerConfigDialog dialog(nullptr, config);
+    auto *box = boxOf(dialog);
+    QVERIFY2(box != nullptr, "the arrangement panel has no check box for remembering layouts");
+    QVERIFY(!box->isChecked());
+    QVERIFY(box->toolTip().contains(QStringLiteral("Experimental")));
+    QVERIFY(!saveIsEnabled(dialog));
+
+    box->setChecked(true);
+    Q_EMIT buttons(dialog)->accepted();
+  }
+  QCOMPARE(Settings::value(Settings::Server::RememberArrangements).toBool(), true);
+  {
+    ServerConfig config;
+    ServerConfigDialog dialog(nullptr, config);
+    QVERIFY(boxOf(dialog)->isChecked());
+    Q_EMIT buttons(dialog)->restoreDefault();
+    QVERIFY(!boxOf(dialog)->isChecked());
+  }
+}
+
+void ServerConfigDialogTests::rememberArrangements_makesTheDialogModified_andCancelDoesNotSaveIt()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  auto *box = panelOf(dialog)->findChild<QCheckBox *>(QStringLiteral("cbRememberArrangements"));
+  QVERIFY(box != nullptr);
+  QVERIFY(!saveIsEnabled(dialog));
+
+  box->setChecked(true);
+  QVERIFY(saveIsEnabled(dialog));
+  box->setChecked(false);
+  QVERIFY(!saveIsEnabled(dialog));
+
+  box->setChecked(true);
+  Q_EMIT buttons(dialog)->rejected();
+  QVERIFY(!Settings::value(Settings::Server::RememberArrangements).toBool());
 }
 
 QTEST_MAIN(ServerConfigDialogTests)

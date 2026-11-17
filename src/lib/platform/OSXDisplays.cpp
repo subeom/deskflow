@@ -6,6 +6,7 @@
 #include "platform/OSXDisplays.h"
 
 #include <CoreGraphics/CoreGraphics.h>
+#include <ApplicationServices/ApplicationServices.h>
 
 #include <cmath>
 
@@ -67,6 +68,60 @@ std::vector<deskflow::server::MonitorRect> osxActiveDisplays()
   for (const auto &display : osxActiveDisplayInfo())
     monitors.push_back(display.rect);
   return monitors;
+}
+
+std::vector<OsxDisplayDetail> osxOnlineDisplayDetails()
+{
+  CGDisplayCount count = 0;
+  if (CGGetOnlineDisplayList(0, nullptr, &count) != kCGErrorSuccess || count == 0)
+    return {};
+
+  std::vector<CGDirectDisplayID> displays(count);
+  if (CGGetOnlineDisplayList(count, displays.data(), &count) != kCGErrorSuccess)
+    return {};
+  displays.resize(count);
+
+  std::vector<OsxDisplayDetail> details;
+  for (const auto display : displays) {
+    OsxDisplayDetail detail;
+    // truncated the way the shape of the computer is, as the rectangles of the active displays are
+    const auto bounds = CGDisplayBounds(display);
+    detail.info = {
+        {
+            static_cast<int32_t>(bounds.origin.x),
+            static_cast<int32_t>(bounds.origin.y),
+            static_cast<int32_t>(bounds.size.width),
+            static_cast<int32_t>(bounds.size.height),
+        },
+        displayScalePercent(display),
+        CGDisplayIsMain(display) != 0,
+        // Quartz says points: the scale of a Retina display is how sharp it is, not how big
+        true,
+    };
+    detail.vendor = CGDisplayVendorNumber(display);
+    detail.model = CGDisplayModelNumber(display);
+    detail.serial = CGDisplaySerialNumber(display);
+    // the system says "unknown" for a number that it does not know: the vendor 'unkn', the model 0xFFFFFFFF
+    constexpr uint32_t kUnknownVendor = 0x756e6b6e;
+    constexpr uint32_t kUnknownModel = 0xFFFFFFFF;
+    if (detail.vendor == kUnknownVendor || detail.vendor == kUnknownModel)
+      detail.vendor = 0;
+    if (detail.model == kUnknownModel)
+      detail.model = 0;
+    detail.builtIn = CGDisplayIsBuiltin(display) != 0;
+
+    if (const CFUUIDRef uuid = CGDisplayCreateUUIDFromDisplayID(display)) {
+      if (const CFStringRef text = CFUUIDCreateString(kCFAllocatorDefault, uuid)) {
+        char buffer[64] = {};
+        if (CFStringGetCString(text, buffer, sizeof(buffer), kCFStringEncodingUTF8))
+          detail.uuid = buffer;
+        CFRelease(text);
+      }
+      CFRelease(uuid);
+    }
+    details.push_back(detail);
+  }
+  return details;
 }
 
 } // namespace deskflow::platform

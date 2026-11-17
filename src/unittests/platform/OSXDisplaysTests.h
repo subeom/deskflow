@@ -16,4 +16,5 @@ private Q_SLOTS:
   void boxOfTheMonitorsIsTheShapeOfTheComputer();
   void scaleAndPrimaryAreReported();
   void monitorsCanBeReported();
+  void detailsAreOfTheSameDisplaysAsTheInfo();
 };

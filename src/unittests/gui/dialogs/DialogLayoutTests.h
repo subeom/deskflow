@@ -30,6 +30,10 @@ private Q_SLOTS:
   void serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing();
   void serverConfigDialog_computersTab_withReportedMonitors_isLaidOutWithoutSqueezing_data();
   void serverConfigDialog_computersTab_withReportedMonitors_isLaidOutWithoutSqueezing();
+  void serverConfigDialog_computersTab_withTheLayoutNotice_isLaidOutWithoutSqueezing_data();
+  void serverConfigDialog_computersTab_withTheLayoutNotice_isLaidOutWithoutSqueezing();
+  void layoutProfilesDialog_isLaidOutWithoutSqueezing_data();
+  void layoutProfilesDialog_isLaidOutWithoutSqueezing();
   void monitorEditorDialog_showingTheReportedMonitors_isLaidOutWithoutSqueezing_data();
   void monitorEditorDialog_showingTheReportedMonitors_isLaidOutWithoutSqueezing();
   void connectionTestDialog_isLaidOutWithoutSqueezing_data();

@@ -127,6 +127,7 @@ private:
   bool m_clipboardTextOnly = false;
   bool m_experimentalMultiMonitor = false;
   bool m_useArrangement = false;
+  bool m_rememberArrangements = false;
   ArrangementPanel *m_arrangementPanel = nullptr;
   QWidget *m_arrangementBanner = nullptr;
   // told by the configuration of the main window when a computer says its screen or monitors again, while this is open

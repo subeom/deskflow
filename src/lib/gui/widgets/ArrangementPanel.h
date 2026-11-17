@@ -8,6 +8,8 @@
 #include <QWidget>
 
 class ArrangementCanvas;
+class LayoutNoticeBar;
+class QCheckBox;
 class QLabel;
 class QPushButton;
 class ServerConfig;
@@ -38,9 +40,21 @@ public:
   //! Whether a computer can be added: the grid that holds the computers is not full
   void setAddEnabled(bool enabled);
 
+  //! Whether the arrangement is remembered for each set of displays (the experiment that goes with the arrangement)
+  void setRememberArrangements(bool on);
+  bool rememberArrangements() const;
+
+  //! What the remembering of layouts says it did, with Undo; for the tests
+  LayoutNoticeBar *layoutNoticeBar() const
+  {
+    return m_noticeBar;
+  }
+
 Q_SIGNALS:
   //! A computer was moved, or the arrangement was made again from the classic grid
   void changed();
+  //! The user ticked or unticked the remembering of layouts
+  void rememberArrangementsToggled(bool on);
   void useClassicGridRequested();
   void editComputerRequested(const QString &computer);
   //! The monitors of a computer are to be drawn: a double click on the computer, or the button
@@ -52,12 +66,17 @@ private:
   void updateIssues();
   void updateSelection();
   void resetFromClassicGrid();
+  void openLayoutsDialog();
+  void undoLayoutChange();
 
   ServerConfig &m_config;
   ArrangementCanvas *m_canvas = nullptr;
   QLabel *m_lblTitle = nullptr;
   QLabel *m_lblHint = nullptr;
   QLabel *m_lblIssues = nullptr;
+  QCheckBox *m_chkRemember = nullptr;
+  QPushButton *m_btnLayouts = nullptr;
+  LayoutNoticeBar *m_noticeBar = nullptr;
   QPushButton *m_btnClassicGrid = nullptr;
   QPushButton *m_btnFit = nullptr;
   QPushButton *m_btnReset = nullptr;

@@ -83,6 +83,13 @@ public:
   */
   deskflow::server::arrangement::Arrangement arrangement() const;
 
+  //! The same, with \p serverMonitors as the displays of this computer instead of what the operating system says
+  /*!
+  For a situation that is not the present one: what the arrangement was with the displays that the server had.
+  */
+  deskflow::server::arrangement::Arrangement arrangementWith(const std::vector<deskflow::server::MonitorRect> &serverMonitors
+  ) const;
+
   //! The classic grid as an arrangement, which is where the arrangement begins
   deskflow::server::arrangement::GridConversion classicGridAsArrangement() const;
 
@@ -179,7 +186,12 @@ private:
     return m_Hotkeys;
   }
   int adjacentComputerIndex(int idx, int deltaColumn, int deltaRow) const;
-  std::vector<deskflow::server::arrangement::Computer> arrangementComputers() const;
+  std::vector<deskflow::server::arrangement::Computer> arrangementComputers(
+      const std::vector<deskflow::server::MonitorRect> &display
+  ) const;
+  deskflow::server::arrangement::GridConversion classicGridAsArrangement(
+      const std::vector<deskflow::server::MonitorRect> &display
+  ) const;
   void adoptZoomOfFirstReport(Computer &computer, const deskflow::gui::ReportedMonitors &reported);
   bool findComputerName(const QString &name, int &index);
   bool fixNoServer(const QString &name, int &index);
