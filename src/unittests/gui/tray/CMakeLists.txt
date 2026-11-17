@@ -40,3 +40,15 @@ create_test(
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
 target_include_directories(TrayMenuModelTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+
+create_test(
+  NAME TrayIconTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TrayIconTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(TrayIconTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+# the mark of the program, which the icons are made of
+target_sources(TrayIconTests PRIVATE "${CMAKE_SOURCE_DIR}/src/apps/res/deskflow.qrc")
+
