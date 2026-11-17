@@ -41,6 +41,9 @@ using namespace deskflow::server;
 
 void ServerConfigTests::initTestCase()
 {
+  // reading a configuration resolves its network address, which Windows can do only after Arch::init() has loaded
+  // winsock
+  m_arch.init();
   QVERIFY(m_settingsDir.isValid());
   m_settingsFile = m_settingsDir.filePath(QStringLiteral("Deskflow.conf"));
   Settings::setSettingsFile(m_settingsFile);

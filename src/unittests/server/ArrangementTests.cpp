@@ -277,6 +277,9 @@ double physicalAlong(const Rect &box, Direction side, double fraction)
 
 void ArrangementTests::initTestCase()
 {
+  // reading a configuration resolves its network address, which Windows can do only after Arch::init() has loaded
+  // winsock
+  m_arch.init();
   QVERIFY(m_settingsDir.isValid());
   Settings::setSettingsFile(m_settingsDir.filePath(QStringLiteral("Deskflow.conf")));
 }
