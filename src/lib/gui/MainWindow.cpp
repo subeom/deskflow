@@ -40,6 +40,8 @@
 #include "gui/shell/StatusModel.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/Icons.h"
+#include "gui/tray/TrayController.h"
+#include "gui/tray/TrayMenuModel.h"
 #include "gui/tray/TrayPolicy.h"
 #include "gui/widgets/LayoutNoticeBar.h"
 #include "gui/widgets/LogDock.h"
@@ -500,6 +502,8 @@ void MainWindow::coreProcessError(CoreProcess::Error error)
                          .arg(mode, Settings::serverConfigFile()));
     }
     QMessageBox::warning(this, kAppName, message);
+    m_trayStartFailed = true;
+    updateTray();
     if (m_shell)
       m_shell->status()->setError(
           tr("Cannot start"),
@@ -834,15 +838,108 @@ void MainWindow::setupTrayIcon()
     qWarning() << "this build uses Qt" << qVersion() << ": a click on the tray icon can end the program on macOS 27";
 
   auto trayMenu = new QMenu(this);
-  trayMenu->addActions(
-      {m_actionStartCore, m_actionRestartCore, m_actionStopCore, m_actionMinimize, m_actionRestore, m_actionTrayQuit}
-  );
-  trayMenu->insertSeparator(m_actionMinimize);
-  trayMenu->insertSeparator(m_actionTrayQuit);
+  if (deskflow::gui::style::isDeskflowStyleInstalled()) {
+    setupTrayController(trayMenu);
+  } else {
+    trayMenu->addActions(
+        {m_actionStartCore, m_actionRestartCore, m_actionStopCore, m_actionMinimize, m_actionRestore, m_actionTrayQuit}
+    );
+    trayMenu->insertSeparator(m_actionMinimize);
+    trayMenu->insertSeparator(m_actionTrayQuit);
+  }
   m_trayIcon->setContextMenu(trayMenu);
 
   setTrayIcon();
+  updateTray();
   m_trayIcon->show();
+}
+
+void MainWindow::setupTrayController(QMenu *menu)
+{
+  using deskflow::gui::tray::TrayController;
+  m_trayController = new TrayController(m_trayIcon, menu, deskflow::gui::tray::TrayPlatform::current(), this);
+  connect(m_trayController, &TrayController::commandRequested, this, &MainWindow::trayCommand);
+}
+
+void MainWindow::trayCommand(deskflow::gui::tray::TrayCommand command)
+{
+  using deskflow::gui::tray::TrayCommand;
+  switch (command) {
+  case TrayCommand::Start:
+    startCore();
+    break;
+  case TrayCommand::Restart:
+    resetCore();
+    break;
+  case TrayCommand::Stop:
+    stopCore();
+    break;
+  case TrayCommand::TestConnection:
+    showConnectionTest();
+    break;
+  case TrayCommand::OpenWindow:
+    showAndActivate();
+    break;
+  case TrayCommand::Minimize:
+    hide();
+    break;
+  case TrayCommand::Preferences:
+    openSettings();
+    break;
+  case TrayCommand::OpenUpdate:
+    openGetNewVersionUrl();
+    break;
+  case TrayCommand::Quit:
+    close();
+    break;
+  }
+}
+
+void MainWindow::updateTray()
+{
+  if (m_trayController == nullptr)
+    return;
+  using deskflow::gui::tray::TrayCommand;
+  const bool isServer = m_coreProcess.mode() == CoreMode::Server;
+  const bool isClient = m_coreProcess.mode() == CoreMode::Client;
+
+  deskflow::gui::tray::TrayInput input;
+  input.process = m_coreProcess.processState();
+  input.connection = m_coreProcess.connectionState();
+  input.isServer = isServer;
+  input.hasMode = isServer || isClient;
+  input.startFailed = m_trayStartFailed;
+  input.canStart = m_actionStartCore->isEnabled();
+  input.canTestConnection = isClient && ui->btnTestConnection->isEnabled();
+  if (m_shell) {
+    input.headline = m_shell->status()->view().headline;
+    input.detail = m_shell->status()->view().detail;
+  }
+  if (isServer)
+    input.computers = m_connectedClients;
+  else if (isClient && input.connection == ConnectionState::Connected && input.process == ProcessState::Started)
+    input.computers = {Settings::textValue(Settings::Client::RemoteHost)};
+  input.updateVersion = m_statusBar->updateVersion();
+  // the window is shown when the menu does not offer to show it (the action of the window that does is hidden then)
+  input.windowShown = !m_actionRestore->isVisible();
+  input.appName = kAppName;
+  input.labels = {
+      {TrayCommand::Start, m_actionStartCore->text()},
+      {TrayCommand::Restart, m_actionRestartCore->text()},
+      {TrayCommand::Stop, m_actionStopCore->text()},
+      {TrayCommand::TestConnection, ui->btnTestConnection->text()},
+      {TrayCommand::OpenWindow, m_actionRestore->text()},
+      {TrayCommand::Minimize, m_actionMinimize->text()},
+      {TrayCommand::Preferences, m_actionSettings->text()},
+      {TrayCommand::Quit, m_actionTrayQuit->text()},
+  };
+  input.shortcuts = {
+      {TrayCommand::Start, m_actionStartCore->shortcut()},
+      {TrayCommand::Restart, m_actionRestartCore->shortcut()},
+      {TrayCommand::Stop, m_actionStopCore->shortcut()},
+      {TrayCommand::Quit, m_actionTrayQuit->shortcut()},
+  };
+  m_trayController->setInput(input);
 }
 
 void MainWindow::updateWindowTitle()
@@ -893,6 +990,13 @@ void MainWindow::saveSettings() const
 
 void MainWindow::setTrayIcon()
 {
+  // the icon of the new look tells the state: it is chosen by the tray, which knows it
+  if (m_trayController) {
+    m_trayController->setColoredIcon(!Settings::value(Settings::Gui::SymbolicTrayIcon).toBool());
+    m_trayController->refreshIcon();
+    return;
+  }
+
   static const auto fallbackPath = QStringLiteral(":/icons/%1-%2/apps/64/%3");
 
   QString themeIcon = kRevFqdnName;
@@ -1114,6 +1218,8 @@ void MainWindow::showFirstConnectedMessage()
 void MainWindow::updateStatus()
 {
   using enum ProcessState;
+  // a state that the core comes to is a new state: what failed before it is told no more
+  m_trayStartFailed = false;
   const auto connection = m_coreProcess.connectionState();
   const auto process = m_coreProcess.processState();
   const bool isServer = (m_coreProcess.mode() == CoreMode::Server);
@@ -1135,6 +1241,7 @@ void MainWindow::updateStatus()
     m_shell->status()->setCore(connection, process, isServer);
     updateShellComputers();
   }
+  updateTray();
 }
 
 void MainWindow::coreProcessStateChanged(ProcessState state)
@@ -1226,6 +1333,7 @@ void MainWindow::hide()
 #endif
   m_actionRestore->setVisible(true);
   m_actionMinimize->setVisible(false);
+  updateTray();
 }
 
 void MainWindow::changeEvent(QEvent *e)
@@ -1294,6 +1402,7 @@ void MainWindow::updateText()
     m_actionQuit->setShortcut(QKeySequence(tr("Ctrl+Q")));
     m_actionTrayQuit->setShortcut(QKeySequence(tr("Ctrl+Q")));
   }
+  updateTray();
 }
 
 void MainWindow::showConfigureServer(const QString &message)
@@ -1361,6 +1470,7 @@ void MainWindow::showAndActivate()
   m_actionMinimize->setVisible(true);
   if (!wasVisible)
     restoreWindow();
+  updateTray();
 }
 
 void MainWindow::showHostNameEditor()
@@ -1443,6 +1553,7 @@ void MainWindow::serverClientsChanged(const QStringList &clients)
     m_connectedClients = active ? clients : QStringList();
     m_shell->status()->setClients(m_connectedClients);
     updateShellComputers();
+    updateTray();
   }
   if (m_coreProcess.mode() != CoreMode::Server || !m_coreProcess.isStarted())
     return;
@@ -1463,6 +1574,7 @@ void MainWindow::toggleCanRunCore(bool enableButtons)
   ui->btnRestartCore->setEnabled(enableButtons && isStarted);
   m_actionStartCore->setEnabled(enableButtons);
   m_actionStopCore->setEnabled(enableButtons && isStarted);
+  updateTray();
 }
 
 void MainWindow::remoteHostChanged(const QString &newRemoteHost)
@@ -1664,6 +1776,8 @@ void MainWindow::setupShell()
   // hidden, and the shell shows it
   m_statusBar->setHeadless(true);
   connect(m_statusBar, &StatusBar::changed, this, &MainWindow::scheduleShellRefresh);
+  // the tray says what the status says: its header is the headline of the window
+  connect(m_shell->status(), &deskflow::gui::StatusModel::changed, this, &MainWindow::updateTray);
 
   setMinimumWidth(deskflow::gui::MainShell::kMinimumWindowWidth);
   updateModeControls();
@@ -1725,6 +1839,8 @@ void MainWindow::refreshShell()
   m_shell->setFingerprintVisible(m_statusBar->fingerprintVisible());
   m_shell->setUpdateVersion(m_statusBar->updateVersion());
   m_shell->setEncryptionEnabled(TlsUtility::isEnabled());
+  // the tray says the sentence of the status and the update as well
+  updateTray();
 }
 
 void MainWindow::updateShellComputers()

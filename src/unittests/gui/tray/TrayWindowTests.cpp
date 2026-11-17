@@ -10,6 +10,12 @@
 #include "gui/MainWindow.h"
 #include "gui/StyleUtils.h"
 #include "gui/core/CoreProcess.h"
+#include "gui/shell/MainShell.h"
+#include "gui/shell/StatusModel.h"
+#include "gui/style/DeskflowStyle.h"
+#include "gui/tray/TrayController.h"
+#include "gui/tray/TrayMenuBuilder.h"
+#include "gui/widgets/StatusBar.h"
 
 #include <QAccessible>
 #include <QAction>
@@ -51,6 +57,29 @@ struct MainWindowTestAccess
   {
     return w.maybeHideToTray();
   }
+  static deskflow::gui::tray::TrayController *controller(MainWindow &w)
+  {
+    return w.m_trayController;
+  }
+  static deskflow::gui::MainShell *shell(MainWindow &w)
+  {
+    return w.m_shell;
+  }
+  static StatusBar *statusBar(MainWindow &w)
+  {
+    return w.m_statusBar;
+  }
+  static QList<QAction *> sharedActions(MainWindow &w)
+  {
+    return {w.m_actionStartCore, w.m_actionRestartCore, w.m_actionStopCore, w.m_actionMinimize,
+            w.m_actionRestore,   w.m_actionTrayQuit,    w.m_actionQuit,     w.m_actionSettings};
+  }
+  //! The setting is changed in the settings of the window: it is written, and the window is told
+  static void applySetting(MainWindow &w, const QString &key, const QVariant &value)
+  {
+    Settings::setValue(key, value);
+    w.settingApplied(key);
+  }
   static void setTrayAvailable(MainWindow &w, bool available)
   {
     w.m_trayAvailable = [available] { return available; };
@@ -63,10 +92,23 @@ using Access = MainWindowTestAccess;
 using deskflow::core::ConnectionState;
 using deskflow::core::ProcessState;
 
-// A window as the application makes it: the settings are those of the test, and the core is not started
-std::unique_ptr<MainWindow> makeWindow(Settings::CoreMode mode = Settings::CoreMode::Server)
+void installDeskflowStyle()
 {
-  QApplication::setStyle(QStringLiteral("Fusion"));
+  auto *style = new deskflow::gui::style::DeskflowStyle;
+  QApplication::setStyle(style);
+  deskflow::gui::style::Look look;
+  look.reduceTransparency = true;
+  look.reduceMotion = true;
+  style->useLook(look);
+}
+
+// A window as the application makes it: the settings are those of the test, and the core is not started
+std::unique_ptr<MainWindow> makeWindow(Settings::CoreMode mode = Settings::CoreMode::Server, bool deskflowLook = false)
+{
+  if (deskflowLook)
+    installDeskflowStyle();
+  else
+    QApplication::setStyle(QStringLiteral("Fusion"));
   Settings::setValue(Settings::Security::TlsEnabled, false);
   Settings::setValue(Settings::Gui::ShownServerFirstStartMessage, true);
   Settings::setValue(Settings::Gui::ShownFirstConnectedMessage, true);
@@ -296,6 +338,164 @@ void TrayWindowTests::closeToTray_withoutATray_keepsTheWindowWhereItCanBeFoundAg
   QVERIFY(window->isMinimized());
   QVERIFY(window->isVisible());
   QVERIFY(!open->isVisible());
+}
+
+void TrayWindowTests::systemLook_hasNoTrayController_andNoStateInTheTrayIcon()
+{
+  auto window = makeWindow();
+  QVERIFY(!Access::controller(*window));
+  Access::states(*window, ProcessState::Started, ConnectionState::Connected);
+  // the tool tip is what the tray had: nothing was ever set for the state
+  QVERIFY(Access::trayIcon(*window)->toolTip().isEmpty());
+}
+
+void TrayWindowTests::deskflowLook_trayMenuSaysTheStateOfTheCore()
+{
+  using deskflow::gui::tray::TrayState;
+  auto window = makeWindow(Settings::CoreMode::Server, true);
+  auto *tray = Access::controller(*window);
+  QVERIFY(tray);
+  auto *icon = Access::trayIcon(*window);
+
+  QCOMPARE(tray->state(), TrayState::Stopped);
+  QCOMPARE(tray->spec().entries.first().text, QStringLiteral("Not sharing"));
+  QCOMPARE(icon->toolTip(), QStringLiteral("Deskflow: Not sharing"));
+  QVERIFY(!icon->icon().isNull());
+  QVERIFY(tray->builder()->actionFor(QStringLiteral("command:start")));
+  QVERIFY(!tray->builder()->actionFor(QStringLiteral("command:stop")));
+
+  Access::states(*window, ProcessState::Started, ConnectionState::Listening);
+  QCOMPARE(tray->state(), TrayState::Waiting);
+  QCOMPARE(icon->toolTip(), QStringLiteral("Deskflow: Waiting for clients"));
+  QVERIFY(!tray->builder()->actionFor(QStringLiteral("command:start")));
+  QVERIFY(tray->builder()->actionFor(QStringLiteral("command:restart")));
+  QVERIFY(tray->builder()->actionFor(QStringLiteral("command:stop")));
+  QCOMPARE(tray->builder()->actionFor(QStringLiteral("command:restart"))->text(), QStringLiteral("Rest&art"));
+  QCOMPARE(tray->iconSpec().state, TrayState::Waiting);
+
+  Access::states(*window, ProcessState::Started, ConnectionState::Connected);
+  QCOMPARE(tray->state(), TrayState::Connected);
+  QCOMPARE(icon->toolTip(), QStringLiteral("Deskflow: Sharing with 1 computer"));
+  QCOMPARE(tray->iconSpec().state, TrayState::Connected);
+
+  Access::states(*window, ProcessState::RetryPending, ConnectionState::Disconnected);
+  QCOMPARE(tray->state(), TrayState::Error);
+  QCOMPARE(tray->iconSpec().state, TrayState::Error);
+
+  Access::states(*window, ProcessState::Stopped, ConnectionState::Disconnected);
+  QCOMPARE(tray->state(), TrayState::Stopped);
+  QVERIFY(tray->builder()->actionFor(QStringLiteral("command:start")));
+}
+
+void TrayWindowTests::deskflowLook_trayHasRowsOfItsOwn_theActionsOfTheWindowAreNotInIt()
+{
+  auto window = makeWindow(Settings::CoreMode::Server, true);
+  const auto *menu = Access::trayIcon(*window)->contextMenu();
+  QVERIFY(menu);
+  const auto shared = Access::sharedActions(*window);
+  for (const auto *action : menu->actions())
+    QVERIFY2(!shared.contains(const_cast<QAction *>(action)), qPrintable(action->text()));
+  // the rows that show a shortcut show it and do not own it: a shortcut of the window is never met by one of the menu
+  auto *tray = Access::controller(*window);
+  for (const auto *id : {"command:start", "command:quit"}) {
+    const auto *row = tray->builder()->actionFor(QLatin1String(id));
+    QVERIFY(row);
+    QCOMPARE(row->shortcutContext(), Qt::WidgetShortcut);
+    QVERIFY(row->isShortcutVisibleInContextMenu());
+  }
+  // and the menu bar still has the actions it had
+  const auto *start = Access::sharedActions(*window).first();
+  QCOMPARE(start->shortcut(), QKeySequence(QStringLiteral("Ctrl+S")));
+  QVERIFY(Access::controller(*window)->builder()->actionFor(QStringLiteral("command:start"))->shortcut() ==
+          start->shortcut());
+}
+
+void TrayWindowTests::deskflowLook_chosenRowsDoWhatTheMenuAlwaysDid()
+{
+  auto window = makeWindow(Settings::CoreMode::Server, true);
+  auto *tray = Access::controller(*window);
+  auto *shell = Access::shell(*window);
+  Access::showAndActivate(*window);
+  QVERIFY(QTest::qWaitForWindowExposed(window.get()));
+  const auto *restore = Access::sharedActions(*window).at(4);
+  QVERIFY(!restore->isVisible());
+
+  // Minimize to tray hides the window: the window offers to be opened (and the menu says so)
+  tray->builder()->actionFor(QStringLiteral("command:minimize"))->trigger();
+  QVERIFY(restore->isVisible());
+  QVERIFY(!tray->spec().entries.isEmpty());
+  QVERIFY(tray->builder()->actionFor(QStringLiteral("command:minimize")) == nullptr ||
+          !tray->builder()->actionFor(QStringLiteral("command:minimize"))->isEnabled());
+
+  // Open shows it again
+  tray->builder()->actionFor(QStringLiteral("command:open"))->trigger();
+  QVERIFY(!restore->isVisible());
+  QVERIFY(tray->builder()->actionFor(QStringLiteral("command:minimize")));
+  QVERIFY(tray->builder()->actionFor(QStringLiteral("command:minimize"))->isEnabled());
+
+  // Preferences opens the page of the settings of the window of the new look
+  shell->showPage(QStringLiteral("home"));
+  tray->builder()->actionFor(QStringLiteral("command:preferences"))->trigger();
+  QCOMPARE(shell->currentPageId(), QStringLiteral("settings.general"));
+}
+
+void TrayWindowTests::deskflowLook_anUpdateIsInTheMenuAndOnTheIcon()
+{
+  auto window = makeWindow(Settings::CoreMode::Server, true);
+  auto *tray = Access::controller(*window);
+  QVERIFY(!tray->builder()->actionFor(QStringLiteral("command:update")));
+  QVERIFY(!tray->iconSpec().update);
+
+  Access::statusBar(*window)->updateFound(QStringLiteral("9.9.9"));
+  // the status bar says it through the event loop
+  QTRY_VERIFY(tray->builder()->actionFor(QStringLiteral("command:update")));
+  QCOMPARE(
+      tray->builder()->actionFor(QStringLiteral("command:update"))->text(),
+      QStringLiteral("A new version v9.9.9 is available")
+  );
+  QVERIFY(tray->iconSpec().update);
+  QVERIFY(Access::trayIcon(*window)->toolTip().contains(QStringLiteral("update available")));
+}
+
+void TrayWindowTests::deskflowLook_aClientTestsItsConnectionFromTheTray()
+{
+  Settings::setValue(Settings::Client::RemoteHost, QStringLiteral("srv"));
+  auto window = makeWindow(Settings::CoreMode::Client, true);
+  auto *tray = Access::controller(*window);
+  QVERIFY(tray->builder()->actionFor(QStringLiteral("command:start")));
+  QCOMPARE(tray->builder()->actionFor(QStringLiteral("command:start"))->text(), QStringLiteral("Connect"));
+
+  Access::states(*window, ProcessState::RetryPending, ConnectionState::Disconnected);
+  QCOMPARE(tray->state(), deskflow::gui::tray::TrayState::Error);
+  const auto *test = tray->builder()->actionFor(QStringLiteral("command:test-connection"));
+  QVERIFY(test);
+  QVERIFY(test->isEnabled());
+  QVERIFY(tray->builder()->actionFor(QStringLiteral("command:stop")));
+  QCOMPARE(tray->builder()->actionFor(QStringLiteral("command:stop"))->text(), QStringLiteral("Disconnect"));
+}
+
+void TrayWindowTests::deskflowLook_theColourOfTheIconFollowsTheSettingAndNeverTheShape()
+{
+  using deskflow::gui::tray::TrayState;
+  using deskflow::gui::tray::TrayTone;
+  auto window = makeWindow(Settings::CoreMode::Server, true);
+  auto *tray = Access::controller(*window);
+  // the bar of a PC with Windows, whose icons have no colour of their own
+  tray->setTone(TrayTone::OnLightBar);
+  Access::states(*window, ProcessState::Started, ConnectionState::Connected);
+  // the setting is Monocolor unless it was changed: no colour in the shapes
+  QVERIFY(!tray->iconSpec().coloredBadge);
+  QCOMPARE(tray->iconSpec().tone, TrayTone::OnLightBar);
+
+  // Colorful: the shapes have colour (the setting is told to the window, which tells the tray)
+  Access::applySetting(*window, Settings::Gui::SymbolicTrayIcon, false);
+  QVERIFY(tray->iconSpec().coloredBadge);
+  QCOMPARE(tray->iconSpec().state, TrayState::Connected);
+
+  // macOS has no colour in a template: the setting changes nothing there
+  tray->setTone(TrayTone::Template);
+  QVERIFY(!tray->iconSpec().coloredBadge);
+  QCOMPARE(tray->iconSpec().state, TrayState::Connected);
 }
 
 QTEST_MAIN(TrayWindowTests)

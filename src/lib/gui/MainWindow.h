@@ -49,6 +49,11 @@ namespace deskflow::gui::layout {
 class LayoutMemoryService;
 }
 
+namespace deskflow::gui::tray {
+class TrayController;
+enum class TrayCommand;
+}
+
 namespace Ui {
 class MainWindow;
 }
@@ -138,6 +143,10 @@ private:
 
   void createMenuBar();
   void setupTrayIcon();
+  //! The tray of the new look: its menu says the state (see TrayController); the window gives it what it knows
+  void setupTrayController(QMenu *menu);
+  void updateTray();
+  void trayCommand(deskflow::gui::tray::TrayCommand command);
   void applyConfig();
   void setTrayIcon();
   void handleUnrecognisedClient(const QString &clientName);
@@ -224,6 +233,9 @@ private:
   QSystemTrayIcon *m_trayIcon = nullptr;
   //! Whether the OS has a tray to hide the window in (the tests of the tray say what they need)
   std::function<bool()> m_trayAvailable = [] { return QSystemTrayIcon::isSystemTrayAvailable(); };
+  // The tray of the new look: null while the application has the look of the system
+  deskflow::gui::tray::TrayController *m_trayController = nullptr;
+  bool m_trayStartFailed = false;
   QLocalServer *m_guiDupeChecker = nullptr;
   deskflow::gui::ipc::DaemonIpcClient *m_daemonIpcClient = nullptr;
 
