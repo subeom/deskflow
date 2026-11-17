@@ -6,11 +6,14 @@
 
 #pragma once
 
+#include <QString>
 #include <QtGlobal>
 
 #ifdef Q_OS_WIN
 
 #include "gui/tunnel/ISecretStore.h"
+
+#include <string>
 
 namespace deskflow::tunnel {
 
@@ -24,6 +27,10 @@ namespace deskflow::tunnel {
 class WindowsCredentialStore : public ISecretStore
 {
 public:
+  //! \p targetName is the name of the credential; empty: the one of the program. Another one is for the manual test of
+  //! the store only (it must not touch the Service Token of the user).
+  explicit WindowsCredentialStore(QString targetName = {});
+
   QString name() const override;
   bool isPersistent() const override;
   StoreResult save(const ServiceToken &token) override;

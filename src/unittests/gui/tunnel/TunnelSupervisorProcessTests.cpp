@@ -128,7 +128,7 @@ bool connectTo(int port)
   QSignalSpy connected(&socket, &QAbstractSocket::connected);
   QSignalSpy failed(&socket, &QAbstractSocket::errorOccurred);
   socket.connectToHost(QHostAddress::LocalHost, static_cast<quint16>(port));
-  QTest::qWaitFor([&] { return connected.count() > 0 || failed.count() > 0; }, 2000);
+  static_cast<void>(QTest::qWaitFor([&] { return connected.count() > 0 || failed.count() > 0; }, 2000));
   return connected.count() > 0 && failed.count() == 0 && socket.peerPort() == port;
 }
 

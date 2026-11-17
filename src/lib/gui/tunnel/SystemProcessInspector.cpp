@@ -9,6 +9,8 @@
 #include <QCoreApplication>
 #include <QFile>
 
+#include <iterator>
+
 #if defined(Q_OS_WIN)
 #ifndef NOMINMAX
 #define NOMINMAX
