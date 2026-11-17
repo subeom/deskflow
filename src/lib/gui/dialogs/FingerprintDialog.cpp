@@ -73,8 +73,12 @@ FingerprintDialog::FingerprintDialog(
     connect(m_buttonBox->button(QDialogButtonBox::Yes), &QPushButton::clicked, this, &QDialog::accept);
   }
 
-  updateModeButton(false);
+  // the first view is the image, and the hash in the new look: a person compares two of them, which is easier with
+  // groups of four characters than with a picture
+  const bool hashMode = FingerprintPreview::hashFirst();
+  updateModeButton(hashMode);
   m_buttonBox->button(QDialogButtonBox::Help)->setCheckable(true);
+  m_buttonBox->button(QDialogButtonBox::Help)->setChecked(hashMode);
   m_buttonBox->button(QDialogButtonBox::Help)->setIcon(QIcon());
   connect(
       m_buttonBox->button(QDialogButtonBox::Help), &QPushButton::toggled, this, &FingerprintDialog::togglePreviewMode
@@ -86,7 +90,7 @@ FingerprintDialog::FingerprintDialog(
 
 QLayout *FingerprintDialog::makeLocalLayout(const Fingerprint &localFingerprint)
 {
-  m_localPreview = new FingerprintPreview(this, localFingerprint);
+  m_localPreview = new FingerprintPreview(this, localFingerprint, QString(), FingerprintPreview::hashFirst());
 
   auto layout = new QVBoxLayout();
   layout->addWidget(m_localPreview, 0, Qt::AlignTop | Qt::AlignHCenter);
@@ -100,8 +104,9 @@ QLayout *FingerprintDialog::makeCompareLayout(
   const auto serverText = tr("Server Fingerprint");
   const auto clientText = tr("Client Fingerprint");
 
-  m_localPreview = new FingerprintPreview(this, localFingerprint, isServer ? serverText : clientText, false);
-  m_remotePreview = new FingerprintPreview(this, remoteFingerprint, isServer ? clientText : serverText, false);
+  const bool hashMode = FingerprintPreview::hashFirst();
+  m_localPreview = new FingerprintPreview(this, localFingerprint, isServer ? serverText : clientText, hashMode);
+  m_remotePreview = new FingerprintPreview(this, remoteFingerprint, isServer ? clientText : serverText, hashMode);
 
   auto fpLayout = new QHBoxLayout();
   fpLayout->setAlignment(Qt::AlignTop);
