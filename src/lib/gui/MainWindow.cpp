@@ -30,11 +30,15 @@
 #include "gui/TlsUtility.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/ipc/DaemonIpcClient.h"
+#include "gui/layout/DisplayProvider.h"
+#include "gui/layout/LayoutMemoryService.h"
+#include "gui/widgets/LayoutNoticeBar.h"
 #include "gui/widgets/LogDock.h"
 #include "net/FingerprintDatabase.h"
 #include "widgets/StatusBar.h"
 
 #include <QCheckBox>
+#include <QBoxLayout>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDesktopServices>
@@ -159,6 +163,7 @@ MainWindow::MainWindow()
   }
 
   applyConfig();
+  setupLayoutMemory();
   m_statusBar->setSecurityIcon(TlsUtility::isEnabled());
   restoreWindow();
 
@@ -349,6 +354,13 @@ void MainWindow::toggleLogVisible(bool visible)
 
 void MainWindow::settingsChanged(const QString &key)
 {
+  // the remembering of layouts looks again when what it depends on changes (it does nothing while it is off)
+  if (m_layoutMemory != nullptr &&
+      (key == Settings::Server::RememberArrangements || key == Settings::Server::ExperimentalMultiMonitor ||
+       key == Settings::Server::UseArrangement || key == Settings::Server::ExternalConfig ||
+       key == Settings::Core::CoreMode))
+    m_layoutMemory->settingsChanged();
+
   if (key == Settings::Log::Level) {
     m_coreProcess.applyLogLevel();
     return;
@@ -375,6 +387,49 @@ void MainWindow::settingsChanged(const QString &key)
 void MainWindow::serverConfigSaving()
 {
   m_serverConfig.commit();
+}
+
+void MainWindow::setupLayoutMemory()
+{
+  using namespace deskflow::gui::layout;
+  HostHooks hooks;
+  hooks.serverMode = [this] { return m_coreProcess.mode() == CoreMode::Server; };
+  hooks.coreRunning = [this] { return m_coreProcess.isStarted(); };
+  hooks.restartCore = [this] { m_coreProcess.restart(); };
+  m_layoutMemory = new LayoutMemoryService(m_serverConfig, makePlatformDisplayProvider(), hooks, {}, this);
+
+  // one line above the controls, hidden until the remembering of layouts has something to say
+  m_layoutNoticeBar = new LayoutNoticeBar(this);
+  if (auto *box = qobject_cast<QBoxLayout *>(ui->topLevelWidget->layout()))
+    box->insertWidget(0, m_layoutNoticeBar);
+  connect(m_layoutMemory, &LayoutMemoryService::noticeChanged, this, &MainWindow::updateLayoutNotice);
+  connect(m_layoutNoticeBar, &LayoutNoticeBar::undoRequested, this, [this] { m_layoutMemory->undo(); });
+  connect(m_layoutNoticeBar, &LayoutNoticeBar::dismissRequested, m_layoutMemory, &LayoutMemoryService::dismissNotice);
+
+  // nothing runs unless the switch, the experiments and the mode ask for it
+  m_layoutMemory->settingsChanged();
+}
+
+void MainWindow::updateLayoutNotice()
+{
+  if (m_layoutMemory == nullptr || m_layoutNoticeBar == nullptr)
+    return;
+  const auto &notice = m_layoutMemory->notice();
+  const bool wasShown = !m_layoutNoticeBar->isHidden();
+  // a window of a fixed size keeps the room of its controls: the bar takes its height from outside it
+  const bool fixedSize = minimumSize() == maximumSize();
+  m_layoutNoticeBar->setNotice(notice);
+  const bool shown = !m_layoutNoticeBar->isHidden();
+  if (fixedSize && shown != wasShown) {
+    const int extra = m_layoutNoticeBar->sizeHint().height() + ui->topLevelWidget->layout()->spacing();
+    setFixedSize(width(), height() + (shown ? extra : -extra));
+  }
+
+  // the window is often hidden in the tray: the change is told there as well
+  if (notice && (!isVisible() || isMinimized()) && m_trayIcon->isVisible() && QSystemTrayIcon::supportsMessages())
+    m_trayIcon->showMessage(
+        kAppName, deskflow::gui::layout::LayoutMemoryService::noticeText(*notice), QSystemTrayIcon::Information, 10000
+    );
 }
 
 void MainWindow::trayIconActivated(QSystemTrayIcon::ActivationReason reason)
@@ -626,6 +681,9 @@ void MainWindow::serverConnectionConfigureClient(const QString &clientName)
   m_serverConfigDialogVisible = true;
   ServerConfigDialog dialog(this, m_serverConfig);
   if (dialog.addClient(clientName) && dialog.exec() == QDialog::Accepted) {
+    // the arrangement that was saved is what is remembered for the displays that there are
+    if (m_layoutMemory != nullptr)
+      m_layoutMemory->configSaved();
     m_coreProcess.restart();
   }
   m_serverConfigDialogVisible = false;
@@ -1130,7 +1188,11 @@ void MainWindow::showConfigureServer(const QString &message)
 {
   ServerConfigDialog dialog(this, serverConfig());
   dialog.message(message);
-  if ((dialog.exec() == QDialog::Accepted) && m_coreProcess.isStarted()) {
+  const bool accepted = dialog.exec() == QDialog::Accepted;
+  // the arrangement that was saved is what is remembered for the displays that there are
+  if (accepted && m_layoutMemory != nullptr)
+    m_layoutMemory->configSaved();
+  if (accepted && m_coreProcess.isStarted()) {
     m_coreProcess.restart();
   }
 }

@@ -42,6 +42,8 @@ private Q_SLOTS:
   void arrangement_aComputerScaledOnTheCanvas_hasItsZoomSaved_andTheHintSaysHow();
   void arrangement_aComputerResizedOnTheCanvas_hasItsSizeSaidAndSaved();
   void arrangement_screenshots_areMadeOfTheDialogs();
+  void rememberArrangements_isOffByDefault_andIsLoadedSavedAndRestoredToOff();
+  void rememberArrangements_makesTheDialogModified_andCancelDoesNotSaveIt();
 
 private:
   QTemporaryDir m_settingsDir;

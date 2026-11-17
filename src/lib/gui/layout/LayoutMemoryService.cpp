@@ -249,6 +249,26 @@ Layout LayoutMemoryService::currentLayout() const
   return m_host.currentLayout();
 }
 
+bool LayoutMemoryService::renameProfile(const QString &id, const QString &name)
+{
+  if (!m_running || !m_store.rename(id, name, m_host.wallClockMs()))
+    return false;
+  if (!m_store.save())
+    m_host.warn(QStringLiteral("layout memory: the remembered layouts could not be saved (%1)").arg(m_store.lastError()));
+  Q_EMIT profilesChanged();
+  return true;
+}
+
+bool LayoutMemoryService::removeProfile(const QString &id)
+{
+  if (!m_running || !m_store.remove(id))
+    return false;
+  if (!m_store.save())
+    m_host.warn(QStringLiteral("layout memory: the remembered layouts could not be saved (%1)").arg(m_store.lastError()));
+  Q_EMIT profilesChanged();
+  return true;
+}
+
 QString LayoutMemoryService::currentDisplays() const
 {
   const auto signature = DisplaySignature::fromDisplays(const_cast<ServerConfigLayoutHost &>(m_host).displays());

@@ -6,13 +6,19 @@
 #include "ArrangementPanel.h"
 
 #include "gui/config/ServerConfig.h"
+#include "gui/dialogs/LayoutProfilesDialog.h"
+#include "gui/layout/LayoutMemoryService.h"
+#include "gui/layout/ServerConfigLayout.h"
 #include "gui/widgets/ArrangementCanvas.h"
+#include "gui/widgets/LayoutNoticeBar.h"
 
+#include <QCheckBox>
 #include <QFont>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -37,6 +43,9 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
       m_lblTitle(new QLabel(this)),
       m_lblHint(new QLabel(this)),
       m_lblIssues(new QLabel(this)),
+      m_chkRemember(new QCheckBox(tr("Remember the arrangement for each set of displays"), this)),
+      m_btnLayouts(new QPushButton(tr("Remembered layouts..."), this)),
+      m_noticeBar(new LayoutNoticeBar(this)),
       m_btnClassicGrid(new QPushButton(tr("Use the classic grid"), this)),
       m_btnFit(new QPushButton(tr("Zoom to fit"), this)),
       m_btnReset(new QPushButton(tr("Reset from classic grid"), this)),
@@ -100,6 +109,21 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   header->addWidget(m_lblTitle, 1);
   header->addWidget(m_btnClassicGrid);
 
+  m_chkRemember->setObjectName(QStringLiteral("cbRememberArrangements"));
+  m_btnLayouts->setObjectName(QStringLiteral("btnRememberedLayouts"));
+  // a check box does not wrap its text: what does not fit the width is cut, and is all in the tool tip
+  m_chkRemember->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  m_chkRemember->setToolTip(
+      tr("Experimental. The arrangement of the other computers is remembered for each set of displays of this computer "
+         "(for example with and without an external monitor), and put back when the displays change. The core is "
+         "restarted only when the configuration really changes. It works with this arrangement, in server mode, with "
+         "the configuration of this program (not a file of your own), and is saved with Save.")
+  );
+  m_btnLayouts->setToolTip(tr("The layouts that are remembered: look at them, name them, forget them."));
+  auto *memory = new QHBoxLayout;
+  memory->addWidget(m_chkRemember, 1);
+  memory->addWidget(m_btnLayouts);
+
   auto *buttons = new QHBoxLayout;
   buttons->addWidget(m_btnFit);
   buttons->addWidget(m_btnReset);
@@ -112,11 +136,28 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   auto *layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
   layout->addLayout(header);
+  layout->addLayout(memory);
+  layout->addWidget(m_noticeBar);
   layout->addWidget(m_canvas, 1);
   layout->addWidget(m_lblHint);
   layout->addWidget(m_lblIssues);
   layout->addLayout(buttons);
 
+  connect(m_chkRemember, &QCheckBox::toggled, this, &ArrangementPanel::rememberArrangementsToggled);
+  connect(m_btnLayouts, &QPushButton::clicked, this, &ArrangementPanel::openLayoutsDialog);
+  connect(m_noticeBar, &LayoutNoticeBar::undoRequested, this, &ArrangementPanel::undoLayoutChange);
+  connect(m_noticeBar, &LayoutNoticeBar::dismissRequested, this, [] {
+    if (auto *service = deskflow::gui::layout::LayoutMemoryService::instance())
+      service->dismissNotice();
+  });
+  // what the remembering of layouts did, if the program that opened this has it
+  if (auto *service = deskflow::gui::layout::LayoutMemoryService::instance()) {
+    m_noticeBar->setNotice(service->notice());
+    connect(service, &deskflow::gui::layout::LayoutMemoryService::noticeChanged, this, [this, service] {
+      m_noticeBar->setNotice(service->notice());
+    });
+  }
+  m_btnLayouts->setEnabled(deskflow::gui::layout::LayoutMemoryService::instance() != nullptr);
   connect(m_btnClassicGrid, &QPushButton::clicked, this, &ArrangementPanel::useClassicGridRequested);
   connect(m_btnFit, &QPushButton::clicked, m_canvas, &ArrangementCanvas::zoomToFit);
   connect(m_btnReset, &QPushButton::clicked, this, &ArrangementPanel::resetFromClassicGrid);
@@ -175,6 +216,45 @@ bool ArrangementPanel::hasErrors() const
 void ArrangementPanel::setAddEnabled(bool enabled)
 {
   m_btnAdd->setEnabled(enabled);
+}
+
+void ArrangementPanel::setRememberArrangements(bool on)
+{
+  // the dialog that owns the setting says it: that is not the user ticking it
+  const QSignalBlocker blocker(m_chkRemember);
+  m_chkRemember->setChecked(on);
+}
+
+bool ArrangementPanel::rememberArrangements() const
+{
+  return m_chkRemember->isChecked();
+}
+
+void ArrangementPanel::openLayoutsDialog()
+{
+  auto *service = deskflow::gui::layout::LayoutMemoryService::instance();
+  if (service == nullptr)
+    return;
+  // what the canvas shows is what is remembered under a name: the copy of the arrangement of this window
+  LayoutProfilesDialog dialog(*service, [this] { return deskflow::gui::layout::captureLayout(m_config); }, this);
+  dialog.exec();
+}
+
+// The change that the remembering of layouts made is taken back in the copy of the arrangement that this window works on:
+// the program does not change the arrangement under a window that is open, and what is saved here is what is remembered
+void ArrangementPanel::undoLayoutChange()
+{
+  auto *service = deskflow::gui::layout::LayoutMemoryService::instance();
+  if (service == nullptr)
+    return;
+  const auto before = service->undoLayout();
+  if (!before)
+    return;
+  if (!deskflow::gui::layout::applyLayout(m_config, *before).applied)
+    return;
+  service->undoTakenByDialog();
+  refresh();
+  Q_EMIT changed();
 }
 
 void ArrangementPanel::updateSelection()

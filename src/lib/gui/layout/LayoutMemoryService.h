@@ -79,6 +79,15 @@ public:
 
   //! \p layout (what a dialog shows) is remembered as the layout of the situation that is, under \p name
   QString saveCurrentAs(const QString &name, const Layout &layout);
+  //! Gives a remembered layout a name of the user's; false for an empty name or a profile that is not there
+  bool renameProfile(const QString &id, const QString &name);
+  //! Forgets a remembered layout
+  bool removeProfile(const QString &id);
+  //! The feature runs (it is asked for by the settings, and the file of the layouts can be used)
+  bool isRunning() const
+  {
+    return m_running;
+  }
   //! Where the computers are now
   Layout currentLayout() const;
   //! The displays now as the memory sees them, for the diagnostics: \c "ba4a8180 (2 displays: ...)"
