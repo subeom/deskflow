@@ -40,6 +40,24 @@ powershell.exe -NoProfile -File .\docs\dev\windows-build.ps1
 ```
 
 It configures (this reads the version), builds everything and runs CTest. The new files are in the CMake lists already.
+
+**On a PC where Deskflow is installed and running, do not run all of `ctest`**: build, and run only the tests that you
+name. The options (with none of them the script does what it always did):
+
+```powershell
+# build everything, run no test
+powershell.exe -NoProfile -File .\docs\dev\windows-build.ps1 -SkipTests
+# build everything, go on after a failure (ninja -k 0) to see all the failures at once, run no test
+powershell.exe -NoProfile -File .\docs\dev\windows-build.ps1 -SkipTests -KeepGoing
+# build and run only the tests whose names match
+powershell.exe -NoProfile -File .\docs\dev\windows-build.ps1 -TestFilter 'ServerConfigTests|ArrangementTests|MSWindowsKeyStateTests'
+# build only these targets (and the tests, if you do not say -SkipTests, that match -TestFilter)
+powershell.exe -NoProfile -File .\docs\dev\windows-build.ps1 -Target deskflow-core,deskflow -SkipTests
+```
+
+Tests that are known to touch what a running Deskflow owns: `ClientAppConnectTests` (it is skipped by itself when it cannot
+make `Global\DeskflowClose`, see below). No test listens on or connects to port 24800 or to another computer: they use
+`127.0.0.1` with a port that the system gives.
 Known and not from this work: `ArchNetworkTests` `setNoDelayOnSocket_returnsPreviousValue` failed on the setup PC
 before (see multi-pc.md); the script then ends with an error **after** the build, and the executables are there. Any
 other failing test is a finding: send me its name and its output.
@@ -239,8 +257,8 @@ do: `base arch version app mt net`). The programs are not affected: `deskflow.ex
 byte-identical). `ninja` stops at the first failing target: if another test fails to link, the symbols tell the
 library (a symbol of `KeyMap`, `IKeyState`, `Clipboard*Policy`, `Event`... is in `app.lib` or `base.lib`; one of
 `Arch*` is in `arch.lib`), and the fix is the same one line of `LIBS` of that test. To see every failure at once instead
-of the first one, build with `cmake --build build\windows-Release --parallel 4 -- -k 0` (ninja goes on with the targets
-that can still be built); then `windows-build.ps1` again for the tests.
+of the first one, run `windows-build.ps1 -SkipTests -KeepGoing` (ninja goes on with the targets that can still be built);
+then `windows-build.ps1 -TestFilter ...` for the tests that you name.
 
 ### The tests that failed on the first run of `b361da336` (7 of 53)
 
@@ -255,7 +273,7 @@ cannot run Windows: "proxy" below is an object-level check with llvm-mingw, not 
 | `MSWindowsKeyStateTests` (did not link, 65 unresolved) | **fixed**, proxy-checked | the test links `platform` and `base arch` only; a `MSWindowsKeyState` is a `KeyState` with a `KeyMap` and a `PlatformComputer`, in `app.lib`, and uses the threads of `mt.lib`. The `server -> app` edge is Unix only | `LIBS base arch io mt net app version` (`src/unittests/platform/CMakeLists.txt`, WIN32 only). Proxy: the objects of the libraries compiled for Windows, resolved the way a static link does: before, **65 symbols of `app` and 13 of `mt`** are missing (65 is the count of the LNK1120); after, none. `MSWindowsClipboardTests` (links today) has none missing in the same check |
 | `ServerConfigTests::clipboardSizeOption`, `ArrangementTests::property_derivedLinks_areReadByTheCoreAsTheyAreMeant` (crash, `0xc0000005` at **address 0**) | **fixed**; the cause is certain from the code and the report, the fix is not run on Windows | reading a server configuration resolves its network address (`NetworkAddress::resolve` -> `ArchNetworkWinsock::setAddrPort` -> `htons_winsock`), a function pointer that `Arch::init()` sets, and **`Arch::init()` exists on Windows only**. Both tests have an `Arch m_arch` and never called `m_arch.init()` (the eight other tests that have one do). A call through a null pointer is an access violation at address 0, as in the report. On macOS and Linux there is nothing to initialise | `m_arch.init()` in `initTestCase()` of both |
 | `ClientAppConnectTests` (`0xc0000409`, "failed to create event for windows event loop") | **not run when Deskflow is running**; the cause is probable (not shown) | an application object of Windows (`AppUtilWindows`) opens the machine-wide event `Global\DeskflowClose` in a thread, and the process ends if it cannot be made (an exception in a thread). The installed Deskflow (the daemon of session 0) owns it; the probable error is *access denied* | `initTestCase()` makes the event itself and **skips the whole test**, with the reason, when it exists or cannot be made (the CMake file says so too). Stop Deskflow (the GUI, its core and the service) to run it. See the safety note below |
-| `ClientConnectDiagnosisTests::connect_toAClosedLocalPort_logsTheRefusalOfTheRealSocket`, `ConnectionProbeTests::system_closedLocalPort_isRefused` | **confirmed on the PC**, tests adapted | the log of the first one shows `connecting to '127.0.0.1:47301'` and exactly 2 s later `cannot reach the server ...: the connection timed out (no answer within 2 s)`: Windows does not hand the refusal over at once (it sends the SYN again after the reset), so a limit of 2 s ends as a timeout. The mapping `WSAECONNREFUSED` -> refused is there (`ArchNetworkWinsock.cpp`) | the limits are 10 s, and the failure messages tell **how long it took** and what the kind is. The product consequence is in `docs/connecting-across-networks.md` |
+| `ClientConnectDiagnosisTests::connect_toAClosedLocalPort_logsTheRefusalOfTheRealSocket`, `ConnectionProbeTests::system_closedLocalPort_isRefused` | **confirmed on the PC**, tests adapted | the log of the first one shows `connecting to '127.0.0.1:47301'` and exactly 2 s later `cannot reach the server ...: the connection timed out (no answer within 2 s)`: Windows does not hand the refusal over at once (it sends the SYN again after the reset), so a limit of 2 s ends as a timeout. The mapping `WSAECONNREFUSED` -> refused is there (`ArchNetworkWinsock.cpp`) | the limits are 10 s, and the failure messages tell **how long it took** and what the kind is. The product consequence is in `docs/connecting-across-networks.md`; on Windows the *timed out while connecting* message now also says that a port that nothing listens on looks the same (`ConnectionDiagnosis.cpp`) |
 | `DialogLayoutTests::serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing` (crash) | **not understood** | no cause found in the code | see below |
 
 **Safety, `ClientAppConnectTests`.** Could a test stop the Deskflow that runs on the PC? No: the only code that signals
@@ -265,22 +283,63 @@ stops its core signals the event, and a test that shares it quits), which is why
 event exists. The same code makes a core that cannot create the event stop with `0xc0000409` instead of a message:
 that is in the program too, not only in the test, and it is **not changed here** (not verifiable without Windows).
 
-**`DialogLayoutTests`, ranked, with what to run.** It is the first test of the file that shows the arrangement canvas; the
-dialogs before it passed. Nothing of it is Windows specific in the source (no `Q_OS_WIN`, the GUI does not use `ARCH`).
+**`DialogLayoutTests`: not understood, what is known and what to run.** The report (Qt's crash handler, a release build
+without symbols): `0xc0000005` inside `QObject::property`, called under `QTableView::doItemsLayout` <-
+`QTableView::paintEvent` while the offscreen platform exposes the window of the dialog. `QObject::property` reads the
+meta-object of the object, so it was called on an object that is not alive any more or not an object. The test is the first
+of the file that paints the *Computers* tab with its table (the `Advanced` tab test, which passed, never paints it).
+On the Mac the same test passes in all its rows and **AddressSanitizer finds nothing** in the 182 tests of the file (the
+Mac styles only). Nothing in the sources of the dialog is Windows specific (no `Q_OS_WIN`; the only
+`QObject::property` of the GUI is `ComputerSettingsDialog`, which is not painted here), so no change is made.
 
-1. *A stack that is too small* (a main thread has 1 MB with MSVC, 8 MB on macOS). Check: the exception code in the Event
-   Viewer (*Windows Logs > Application*, the *Application Error* of `DialogLayoutTests.exe`): `0xc00000fd` is a stack
-   overflow, `0xc0000005` an access violation. Or run it once with a big stack:
-   `editbin /STACK:16777216 build\windows-Release\src\unittests\gui\dialogs\DialogLayoutTests.exe` (from a Developer
-   PowerShell) and run the test again: if it passes, it is the stack.
-2. *The painting of the canvas* (fonts, `QPainter`) on the `offscreen` platform of Windows. Run
-   `$env:QT_QPA_PLATFORM='offscreen'; .\DialogLayoutTests.exe serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing -v2`
-   in `build\windows-Release\src\unittests\gui\dialogs`: the last lines say which row (style, font, size) it died in. Then
-   the same with `$env:QT_QPA_PLATFORM='windows'` (a window appears for a moment).
-3. *The library set of the test* (as the test above): the link works, but an object that is not on the line is
-   replaced by another. Less likely, the test was passing the link.
+Ranked:
 
-Send the last 30 lines of the `-v2` output and the exception code.
+1. *The Windows styles of Qt on the offscreen platform.* The test runs each row with every style that Qt has
+   (`Fusion`, `Windows`, and on Windows 11 also `windows11` and `windowsvista`). The native styles read the style object
+   of an item with `QObject::property` when they paint (animations), and they were written for a real window. Check: run
+   the rows of the test one style at a time:
+
+   ```powershell
+   $env:PATH = "$PWD\deps\Qt\6.9.3\msvc2022_64\bin;$PWD\build\windows-Release\vcpkg_installed\x64-windows\bin;$env:PATH"
+   $env:QT_QPA_PLATFORM = 'offscreen'
+   Set-Location .\build\windows-Release\src\unittests\gui\dialogs
+   $test = 'serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing'
+   foreach ($style in 'Fusion','Windows','windows11','windowsvista') {
+     foreach ($font in 'x1.0','x1.3') {
+       foreach ($size in 'default size','preferred size','minimum size') {
+         $row = "$style, font $font, $size"
+         .\DialogLayoutTests.exe "${test}:$row" *> $null
+         '{0,-44} exit code {1:X}' -f $row, $LASTEXITCODE
+       }
+     }
+   }
+   ```
+
+   `0` is a pass; `C0000005` the crash. If only the `windows11` and `windowsvista` rows crash, it is that, and the test
+   should leave those two styles out on the offscreen platform (a change of the test that is not made before this is known).
+2. *A stack that is too small* (1 MB in the main thread with MSVC, 8 MB on macOS). A stack overflow is `0xc00000fd`, not
+   `0xc0000005`, so the exception code of the report already speaks against it; the check is cheap anyway: from a
+   Developer PowerShell, `editbin /STACK:16777216 DialogLayoutTests.exe` and run the test again.
+3. *An object that is deleted while a paint of the table is waiting* (the table is painted from a posted event). On the Mac
+   AddressSanitizer found nothing; on Windows the timing of events differs. It needs the stack: build with debug
+   information.
+
+**A stack with names, without installing the packages again** (about as long as a build of the three tests; the packages
+of the Release build are reused):
+
+```powershell
+powershell.exe -NoProfile -File .\docs\dev\windows-build.ps1 -BuildType RelWithDebInfo -VcpkgInstalledDir .\build\windows-Release\vcpkg_installed -Target DialogLayoutTests,ServerConfigTests,ArrangementTests -SkipTests
+$env:PATH = "$PWD\deps\Qt\6.9.3\msvc2022_64\bin;$PWD\build\windows-Release\vcpkg_installed\x64-windows\bin;$env:PATH"
+$env:QT_QPA_PLATFORM = 'offscreen'
+Set-Location .\build\windows-RelWithDebInfo\src\unittests\gui\dialogs
+.\DialogLayoutTests.exe serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing -v2 *> ..\..\..\..\..\..\dialog-crash.txt
+```
+
+(`RelWithDebInfo` writes the PDB files next to the programs, which the crash handler of Qt reads.) If `vcpkg` starts to
+install again, stop it (Ctrl+C) and run the same without `-VcpkgInstalledDir`: it takes minutes and is safe. Send the last 40
+lines of `dialog-crash.txt`. For the two tests that crashed at address 0 the same commands apply with `ServerConfigTests.exe
+clipboardSizeOption` (`...\build\windows-RelWithDebInfo\src\unittests\server`); after the fix of `Arch::init()` they are
+expected to pass.
 
 ## 6. Cross-compile check (done on the Mac, for what could be checked)
 

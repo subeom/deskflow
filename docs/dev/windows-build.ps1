@@ -1,12 +1,25 @@
 # SPDX-FileCopyrightText: (C) 2026 Deskflow Developers
 # SPDX-License-Identifier: MIT
 
+# Configures, builds and tests Deskflow on Windows x64. With no option it does all of that, as it always did.
+#   -Target          build only these targets (cmake --build --target), not everything
+#   -SkipTests       do not run the tests. Use it on a PC where Deskflow is running: some tests make objects of the machine
+#                    that the running Deskflow owns (see docs\dev\windows-build-checklist.md)
+#   -TestFilter      run only the tests whose name matches this regular expression (ctest -R)
+#   -KeepGoing       go on with the targets that can be built when one fails (ninja -k 0), to see every failure at once
+#   -VcpkgInstalledDir  use the packages that another build directory installed, and do not install them again
+# -BuildType RelWithDebInfo builds with the debug information (PDB) that a stack of a crash needs.
 [CmdletBinding()]
 param(
-    [ValidateSet('Release', 'Debug')]
+    [ValidateSet('Release', 'Debug', 'RelWithDebInfo')]
     [string]$BuildType = 'Release',
     [string]$QtRoot,
-    [string]$VcpkgRoot
+    [string]$VcpkgRoot,
+    [string[]]$Target,
+    [switch]$SkipTests,
+    [string]$TestFilter,
+    [switch]$KeepGoing,
+    [string]$VcpkgInstalledDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,7 +68,7 @@ function Invoke-Checked {
     }
 }
 
-Invoke-Checked cmake @(
+$configureArgs = @(
     '-S', $repo, '-B', $build, '-G', 'Ninja',
     "-DCMAKE_BUILD_TYPE=$BuildType",
     "-DCMAKE_PREFIX_PATH=$QtRoot",
@@ -66,13 +79,37 @@ Invoke-Checked cmake @(
     '-DBUILD_TESTS=ON',
     '-DSKIP_BUILD_TESTS=ON'
 )
-Invoke-Checked cmake @('--build', $build, '--parallel', '4')
+$vcpkgInstalled = Join-Path $build 'vcpkg_installed'
+if ($VcpkgInstalledDir) {
+    $vcpkgInstalled = (Resolve-Path $VcpkgInstalledDir).Path
+    $configureArgs += "-DVCPKG_INSTALLED_DIR=$vcpkgInstalled"
+}
+Invoke-Checked cmake $configureArgs
 
-$opensslBin = Join-Path $build 'vcpkg_installed\x64-windows\bin'
+$buildArgs = @('--build', $build, '--parallel', '4')
+if ($Target) {
+    $buildArgs += '--target'
+    $buildArgs += $Target
+}
+if ($KeepGoing) {
+    $buildArgs += @('--', '-k', '0')
+}
+Invoke-Checked cmake $buildArgs
+
+if ($SkipTests) {
+    Write-Host "Build completed, tests skipped. GUI: $build\bin\deskflow.exe"
+    return
+}
+
+$opensslBin = Join-Path $vcpkgInstalled 'x64-windows\bin'
 if ($BuildType -eq 'Debug') {
-    $opensslBin = Join-Path $build 'vcpkg_installed\x64-windows\debug\bin'
+    $opensslBin = Join-Path $vcpkgInstalled 'x64-windows\debug\bin'
 }
 $env:PATH = "$opensslBin;$env:PATH"
 $env:QT_QPA_PLATFORM = 'offscreen'
-Invoke-Checked ctest @('--test-dir', (Join-Path $build 'src\unittests'), '--output-on-failure')
+$ctestArgs = @('--test-dir', (Join-Path $build 'src\unittests'), '--output-on-failure')
+if ($TestFilter) {
+    $ctestArgs += @('-R', $TestFilter)
+}
+Invoke-Checked ctest $ctestArgs
 Write-Host "Build and tests completed. GUI: $build\bin\deskflow.exe"
