@@ -8,6 +8,7 @@
 
 #include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
+#include "gui/style/FontScale.h"
 #include "gui/style/LookFollower.h"
 
 #include <QApplication>
@@ -61,9 +62,7 @@ QWidget *SectionHeader::trailingWidget() const
 
 void SectionHeader::applyLook()
 {
-  auto font = QApplication::font(this);
-  if (font.pointSizeF() > 0)
-    font.setPointSizeF(font.pointSizeF() * metrics::fontSubtitle / metrics::fontBody);
+  auto font = scaleFont(QApplication::font(this), qreal(metrics::fontSubtitle) / metrics::fontBody);
   font.setWeight(QFont::DemiBold);
   m_title->setFont(font);
 

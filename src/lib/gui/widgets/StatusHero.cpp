@@ -8,11 +8,13 @@
 
 #include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
+#include "gui/style/FontScale.h"
 #include "gui/style/Icons.h"
 #include "gui/style/LookFollower.h"
 
 #include <QAccessible>
 #include <QApplication>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
@@ -35,9 +37,7 @@ QString defaultIcon(StatusChip::Kind kind)
 
 QFont scaled(const QWidget *widget, int pixels, QFont::Weight weight)
 {
-  auto font = QApplication::font(widget);
-  if (font.pointSizeF() > 0)
-    font.setPointSizeF(font.pointSizeF() * pixels / metrics::fontBody);
+  auto font = scaleFont(QApplication::font(widget), qreal(pixels) / metrics::fontBody);
   font.setWeight(weight);
   return font;
 }
@@ -106,22 +106,79 @@ StatusHero::StatusHero(QWidget *parent)
   m_chipLayout->setSpacing(metrics::spaceSm);
   m_chipLayout->addStretch(1);
 
-  auto *texts = new QVBoxLayout;
+  auto *textsBox = new QWidget(this);
+  auto *texts = new QVBoxLayout(textsBox);
   texts->setContentsMargins(0, 0, 0, 0);
   texts->setSpacing(metrics::spaceXs);
   texts->addWidget(m_headline);
   texts->addWidget(m_detail);
   texts->addLayout(m_chipLayout);
+  // what the window puts beside the state (the address of the server) has a line of its own under the chips
+  m_accessoryLayout = new QHBoxLayout;
+  m_accessoryLayout->setContentsMargins(0, 0, 0, 0);
+  m_accessoryLayout->setSpacing(metrics::spaceSm);
+  m_accessoryLayout->addStretch(1);
+  texts->addLayout(m_accessoryLayout);
 
-  auto *layout = new QHBoxLayout(this);
-  layout->setContentsMargins(0, 0, 0, 0);
-  layout->setSpacing(kGap);
-  layout->addWidget(m_orb, 0, Qt::AlignTop);
-  layout->addLayout(texts, 1);
+  m_actionBox = new QWidget(this);
+  m_actionLayout = new QHBoxLayout(m_actionBox);
+  m_actionLayout->setContentsMargins(0, 0, 0, 0);
+  m_actionLayout->setSpacing(metrics::spaceSm);
+  m_actionBox->hide();
+
+  m_grid = new QGridLayout(this);
+  m_grid->setContentsMargins(0, 0, 0, 0);
+  m_grid->setHorizontalSpacing(kGap);
+  m_grid->setVerticalSpacing(metrics::spaceMd);
+  m_grid->addWidget(m_orb, 0, 0, 2, 1, Qt::AlignTop);
+  m_grid->addWidget(textsBox, 0, 1);
+  m_grid->setColumnStretch(1, 1);
+  placeActions();
 
   m_detail->setVisible(false);
   m_orb->setState(m_kind, defaultIcon(m_kind));
   new LookFollower(this, [this] { applyLook(); });
+}
+
+void StatusHero::addAccessory(QWidget *widget)
+{
+  widget->setParent(this);
+  m_accessoryLayout->insertWidget(m_accessoryLayout->count() - 1, widget);
+}
+
+void StatusHero::setActions(const QList<QWidget *> &actions)
+{
+  for (auto *action : actions) {
+    action->setParent(m_actionBox);
+    m_actionLayout->addWidget(action);
+  }
+  m_actionBox->setVisible(!actions.isEmpty());
+  placeActions();
+}
+
+bool StatusHero::actionsAreBelow() const
+{
+  return m_actionsBelow;
+}
+
+void StatusHero::placeActions()
+{
+  // beside the text in a hero that is wide, and under it when it is not
+  m_grid->removeWidget(m_actionBox);
+  if (m_actionsBelow)
+    m_grid->addWidget(m_actionBox, 1, 1, 1, 2, Qt::AlignLeft | Qt::AlignVCenter);
+  else
+    m_grid->addWidget(m_actionBox, 0, 2, 2, 1, Qt::AlignRight | Qt::AlignVCenter);
+}
+
+void StatusHero::resizeEvent(QResizeEvent *event)
+{
+  PanelWidget::resizeEvent(event);
+  const bool below = width() < kWrapWidth;
+  if (below != m_actionsBelow) {
+    m_actionsBelow = below;
+    placeActions();
+  }
 }
 
 StatusChip::Kind StatusHero::kind() const
@@ -183,9 +240,9 @@ void StatusHero::setDetail(const QString &detail)
 StatusChip *StatusHero::addChip(const QString &text, StatusChip::Kind kind)
 {
   auto *chip = new StatusChip(text, kind, this);
+  // the chips are first on the line, then what the window put beside them, then the stretch
+  m_chipLayout->insertWidget(int(m_chips.size()), chip);
   m_chips.append(chip);
-  // before the stretch at the end
-  m_chipLayout->insertWidget(m_chipLayout->count() - 1, chip);
   return chip;
 }
 

@@ -9,6 +9,7 @@
 #include "StatusChip.h"
 #include "gui/style/PanelWidget.h"
 
+class QGridLayout;
 class QHBoxLayout;
 class QLabel;
 class StatusOrb;
@@ -43,13 +44,31 @@ public:
   void clearChips();
   QList<StatusChip *> chips() const;
 
+  //! A widget of the window under the chips (the address of the server); the hero takes it over
+  void addAccessory(QWidget *widget);
+  //! The buttons at the end of the hero (Start, Restart); they go under the text when the hero is narrower than
+  //! kWrapWidth. The hero takes them over.
+  void setActions(const QList<QWidget *> &actions);
+  bool actionsAreBelow() const;
+
+  static constexpr int kWrapWidth = 600;
+
+protected:
+  void resizeEvent(QResizeEvent *event) override;
+
 private:
   void applyLook();
+  void placeActions();
 
   StatusOrb *m_orb = nullptr;
   QLabel *m_headline = nullptr;
   QLabel *m_detail = nullptr;
   QHBoxLayout *m_chipLayout = nullptr;
+  QHBoxLayout *m_accessoryLayout = nullptr;
+  QGridLayout *m_grid = nullptr;
+  QWidget *m_actionBox = nullptr;
+  QHBoxLayout *m_actionLayout = nullptr;
+  bool m_actionsBelow = false;
   QList<StatusChip *> m_chips;
   StatusChip::Kind m_kind = StatusChip::Kind::Neutral;
 };

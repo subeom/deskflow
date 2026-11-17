@@ -67,6 +67,21 @@ QList<SettingRow *> SettingCard::rows() const
   return m_rows;
 }
 
+void SettingCard::clearRows()
+{
+  for (auto *row : std::as_const(m_rows)) {
+    m_layout->removeWidget(row);
+    row->hide();
+    row->deleteLater();
+  }
+  m_rows.clear();
+  // a card without rows has nothing that hid it
+  if (m_hiddenByRows) {
+    m_hiddenByRows = false;
+    show();
+  }
+}
+
 void SettingCard::refreshDividers()
 {
   bool first = true;

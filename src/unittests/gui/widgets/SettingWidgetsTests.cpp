@@ -24,6 +24,7 @@
 #include <QLineEdit>
 #include <QPixmapCache>
 #include <QPointer>
+#include <QPushButton>
 #include <QRadioButton>
 #include <QSignalSpy>
 #include <QSpinBox>
@@ -622,6 +623,107 @@ void SettingWidgetsTests::hero_announcesAHeadlineThatChanges()
 #else
   QSKIP("Announcements need Qt 6.8");
 #endif
+}
+
+void SettingWidgetsTests::hero_putsItsActionsAtTheEndAndUnderTheTextWhenItIsNarrow()
+{
+  install();
+  StatusHero hero;
+  hero.setHeadline(QStringLiteral("Not sharing"));
+  hero.setDetail(QStringLiteral("Deskflow is not running"));
+  auto *start = new QPushButton(QStringLiteral("Start"));
+  auto *restart = new QPushButton(QStringLiteral("Restart"));
+  hero.setActions({start, restart});
+  const auto detail = [&] {
+    for (auto *label : hero.findChildren<QLabel *>()) {
+      if (label->text() == hero.detail())
+        return label;
+    }
+    return static_cast<QLabel *>(nullptr);
+  }();
+  QVERIFY(detail);
+  const auto top = [&](const QWidget *w) { return w->mapTo(&hero, QPoint(0, 0)); };
+
+  showWithWidth(hero, 800);
+  QVERIFY(!hero.actionsAreBelow());
+  // at the end of the line of the text, and the buttons are next to each other
+  QVERIFY(top(start).x() > hero.width() / 2);
+  QVERIFY(top(restart).x() > top(start).x());
+  QVERIFY(top(start).y() < top(detail).y() + detail->height());
+
+  hero.setFixedWidth(StatusHero::kWrapWidth - 40);
+  QCoreApplication::processEvents();
+  QVERIFY(hero.actionsAreBelow());
+  QVERIFY(top(start).y() >= top(detail).y() + detail->height());
+  QVERIFY(top(start).x() < hero.width() / 2);
+
+  hero.setFixedWidth(800);
+  QCoreApplication::processEvents();
+  QVERIFY(!hero.actionsAreBelow());
+}
+
+void SettingWidgetsTests::hero_holdsAnAccessoryUnderTheChips_evenWhenChipsComeAfterIt()
+{
+  install();
+  StatusHero hero;
+  hero.setHeadline(QStringLiteral("Waiting for clients"));
+  auto *address = new QLabel(QStringLiteral("192.168.0.12"));
+  hero.addAccessory(address);
+  hero.addChip(QStringLiteral("Encrypted"), StatusChip::Kind::Success);
+  showWithWidth(hero, 700);
+
+  QCOMPARE(hero.chips().size(), 1);
+  const auto y = [&](const QWidget *w) { return w->mapTo(&hero, QPoint(0, 0)).y(); };
+  QVERIFY(y(hero.chips().first()) < y(address));
+  // the chips are made again with each state: the accessory stays where it is
+  hero.clearChips();
+  hero.addChip(QStringLiteral("Not encrypted"), StatusChip::Kind::Warning);
+  hero.addChip(QStringLiteral("Beta"));
+  QCoreApplication::processEvents();
+  QVERIFY(y(hero.chips().first()) < y(address));
+  QVERIFY(y(hero.chips().last()) < y(address));
+  QCOMPARE(address->parentWidget() != nullptr, true);
+  QVERIFY(address->isVisibleTo(&hero));
+}
+
+void SettingWidgetsTests::card_clearRowsDeletesTheRowsAndLeavesTheCardUsable()
+{
+  install();
+  QWidget page;
+  auto *card = new SettingCard(QStringLiteral("Other computers"), &page);
+  QPointer<SettingRow> first = new SettingRow(QStringLiteral("PC"));
+  card->addRow(first);
+  card->addRow(new SettingRow(QStringLiteral("MINI")));
+  page.show();
+  QCOMPARE(card->rows().size(), 2);
+
+  card->clearRows();
+  QVERIFY(card->rows().isEmpty());
+  QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+  QVERIFY(first.isNull());
+  // a card that has no rows is not one that its rows hid
+  QVERIFY(card->isVisible());
+
+  auto *again = new SettingRow(QStringLiteral("PC"));
+  card->addRow(again);
+  QCOMPARE(card->rows(), QList<SettingRow *>{again});
+}
+
+void SettingWidgetsTests::card_hiddenByItsRowsIsShownAgainWhenTheRowsAreCleared()
+{
+  install();
+  QWidget page;
+  auto *card = new SettingCard(QStringLiteral("Windows"), &page);
+  auto *row = new SettingRow(QStringLiteral("Keep in the foreground"));
+  auto *box = new QCheckBox;
+  box->setVisible(false);
+  row->addControl(box);
+  card->addRow(row);
+  page.show();
+  QVERIFY(card->isHidden());
+
+  card->clearRows();
+  QVERIFY(!card->isHidden());
 }
 
 void SettingWidgetsTests::widgets_followTheLookWhenItChanges()

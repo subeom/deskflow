@@ -35,6 +35,8 @@ public:
   //! The card owns the row; rows are in the order that they were added
   void addRow(SettingRow *row);
   QList<SettingRow *> rows() const;
+  //! Takes every row away and deletes it (a list that is made again, the computers)
+  void clearRows();
 
   //! A row is the first when it is the first one that is shown
   void refreshDividers();

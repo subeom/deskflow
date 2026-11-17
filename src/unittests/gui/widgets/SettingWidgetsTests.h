@@ -44,6 +44,10 @@ private Q_SLOTS:
   void hero_showsTheStateTheDetailAndTheChips();
   void hero_badgeHasTheColourOfItsKind();
   void hero_announcesAHeadlineThatChanges();
+  void hero_putsItsActionsAtTheEndAndUnderTheTextWhenItIsNarrow();
+  void hero_holdsAnAccessoryUnderTheChips_evenWhenChipsComeAfterIt();
+  void card_clearRowsDeletesTheRowsAndLeavesTheCardUsable();
+  void card_hiddenByItsRowsIsShownAgainWhenTheRowsAreCleared();
 
   void widgets_followTheLookWhenItChanges();
 };

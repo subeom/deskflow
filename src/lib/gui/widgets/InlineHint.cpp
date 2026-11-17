@@ -7,6 +7,7 @@
 #include "InlineHint.h"
 
 #include "gui/style/Appearance.h"
+#include "gui/style/FontScale.h"
 #include "gui/style/LookFollower.h"
 
 #include <QApplication>
@@ -31,9 +32,7 @@ InlineHint::InlineHint(const QString &text, QWidget *parent) : InlineHint(parent
 void InlineHint::applyLook()
 {
   // the size is a ratio of the size the system gives text, so that it follows the text size that the user set
-  auto font = QApplication::font(this);
-  if (font.pointSizeF() > 0)
-    font.setPointSizeF(font.pointSizeF() * metrics::fontCaption / metrics::fontBody);
+  auto font = scaleFont(QApplication::font(this), qreal(metrics::fontCaption) / metrics::fontBody);
   setFont(font);
 
   auto palette = this->palette();
