@@ -24,6 +24,7 @@ private Q_SLOTS:
   void aProcessThatNeverListens_failsWithATimeOut();
   void aListenerThatIsNotOpened_failsWithATimeOut();
   void aPortThatIsBusy_givesWayToAFreeOne();
+  void aPortTakenAfterTheCheck_isNotTheTunnel_andTheStartGoesOnOnAFreePort();
   void anEdgeThatRefuses_isShownWhileTheTunnelListens();
   void aProcessThatDiesWhileListening_isStartedAgain();
   void aLeftoverProcessOfACrashedRun_isEndedAtTheNextStart();

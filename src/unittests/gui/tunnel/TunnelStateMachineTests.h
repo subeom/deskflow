@@ -15,6 +15,9 @@ private Q_SLOTS:
   void start_launchesAndWaitsForTheLocalPort();
   void listening_needsAnOpenPortThatStaysOpenForTheProcessToo();
   void probing_startsByTimeWhenTheListenerLineIsNeverSeen();
+  void listening_needsTheListenerLineOfCloudflaredToo();
+  void listening_withoutTheLine_isAcceptedOnlyAfterALongerWatch();
+  void aBindFailureAfterTheTunnelListens_isAPortConflictToo();
   void probing_isRepeatedUntilThePortOpens();
   void aPortThatDoesNotOpenInTime_failsAndKillsTheProcess();
   void aPortThatSomethingElseHolds_isNotTakenForTheTunnel();

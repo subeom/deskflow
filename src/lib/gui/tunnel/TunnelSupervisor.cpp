@@ -156,6 +156,11 @@ void TunnelSupervisor::publish()
     Q_EMIT statusChanged(status);
   }
   if (status.state == TunnelState::Listening && previous != TunnelState::Listening) {
+    if (!m_machine.listenerLineSeen()) {
+      log(QStringLiteral(
+          "cloudflared did not log its listener line; accepted because the port is open and the process stayed up"
+      ));
+    }
     Q_EMIT listening();
   }
   if (status.state == TunnelState::Failed) {
@@ -182,6 +187,8 @@ bool TunnelSupervisor::start(const TunnelRequest &request)
 
   m_pending.reset();
   m_request = request;
+  m_portRetried = false;
+  m_portRetryPending = false;
   const auto now = advanceClock();
   m_machine.setTarget(request.hostname, request.preferredPort);
 
@@ -267,6 +274,7 @@ bool TunnelSupervisor::start(const TunnelRequest &request)
 void TunnelSupervisor::stop()
 {
   m_pending.reset();
+  m_portRetryPending = false;
   execute(m_machine.stop(advanceClock()));
   settle();
   publish();
@@ -454,8 +462,38 @@ void TunnelSupervisor::onOutputLine(const QString &line)
     ++m_originFailures;
     m_lastOriginFailure = event.problem;
   }
+  if (event.kind == LogEventKind::BindFailed && !m_portRetried && m_process != nullptr &&
+      (m_machine.status().state == TunnelState::Starting || m_machine.status().state == TunnelState::Listening)) {
+    // A program of this computer took the port between the check and the listen of cloudflared (and may have answered
+    // the probe in the meantime). Once, the start goes on with a port that is free: the failure is not told to the
+    // machine, which would stop the start of the core; the process is ended and the retry follows when it is gone.
+    m_portRetried = true;
+    m_portRetryPending = true;
+    execute(Command::Kill);
+    publish();
+    return;
+  }
   execute(m_machine.logEvent(event, advanceClock()));
   publish();
+}
+
+void TunnelSupervisor::retryOnAnotherPort()
+{
+  m_portRetryPending = false;
+  if (m_machine.status().state != TunnelState::Backoff) {
+    // stopped by the user in the meantime, or the process ended for a reason that the machine already judged
+    return;
+  }
+  const auto taken = m_port;
+  const auto port = m_deps.prober->findFreePort();
+  if (port > 0) {
+    log(QStringLiteral("Local port %1 was taken by another program, using port %2 instead").arg(taken).arg(port));
+    setPort(port);
+    m_machine.setTarget(m_request.hostname, port);
+    return;
+  }
+  log(failureText(TunnelFailure::PortBusy));
+  execute(m_machine.rejectStart(TunnelFailure::PortBusy));
 }
 
 void TunnelSupervisor::onFinished(int exitCode)
@@ -468,6 +506,9 @@ void TunnelSupervisor::onFinished(int exitCode)
   removeOrphanRecord(m_deps.orphanFile);
   releaseProcess(false);
   execute(m_machine.processExited(exitCode, advanceClock()));
+  if (m_portRetryPending) {
+    retryOnAnotherPort();
+  }
   settle();
   publish();
 

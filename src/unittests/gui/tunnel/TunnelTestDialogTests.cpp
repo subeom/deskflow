@@ -116,9 +116,7 @@ void TunnelTestDialogTests::aTunnelThatWorks_saysSoAndAllowsTheSummaryToBeCopied
   Rig rig(m_dir);
   TunnelTestDialog dialog(nullptr, rig.dependencies());
   dialog.runTest();
-  rig.tunnel.advance(400);
-  rig.tunnel.prober->answer(true);
-  rig.tunnel.advance(400);
+  rig.tunnel.finishStart();
   QCOMPARE(rig.holds.size(), size_t(1));
 
   rig.holds.front()(HoldOutcome::Held);

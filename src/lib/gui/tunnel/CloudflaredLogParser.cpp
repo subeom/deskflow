@@ -94,7 +94,9 @@ LogEvent parseCloudflaredLine(const QString &line)
       has(text, "waiting for login")) {
     event.kind = LogEventKind::LoginRequired;
     event.problem = TunnelFailure::LoginRequired;
-  } else if (has(text, "failed to start forwarding server")) {
+  } else if (has(text, "failed to start forwarding server") || has(text, "address already in use") ||
+             has(text, "only one usage of each socket address")) {
+    // the words of the forwarding server, or the words of the system for a port that is taken (Unix and Windows)
     event.kind = LogEventKind::BindFailed;
     event.problem = TunnelFailure::PortBusy;
   } else if (has(text, "start websocket listener")) {

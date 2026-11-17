@@ -153,9 +153,7 @@ void TunnelStatusWidgetTests::theWidget_followsTheStateOfTheTunnelAndOfTheServer
   rig.controller->acquire();
   QCOMPARE(statusLabel(widget)->text(), QStringLiteral("Tunnel: starting"));
 
-  rig.advance(400);
-  rig.prober->answer(true);
-  rig.advance(400);
+  rig.finishStart();
   QCOMPARE(statusLabel(widget)->text(), QStringLiteral("Tunnel: listening (local port open)"));
   QCOMPARE(widget.statusText(), statusLabel(widget)->text());
 

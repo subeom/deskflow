@@ -41,6 +41,14 @@ void bringToListening(TunnelStateMachine &m, qint64 &now, qint64 startAt = 0)
   now = startAt + 400;
 }
 
+// after a start at \p now: the line of cloudflared, the open port and the time to watch: Listening
+void listen(TunnelStateMachine &m, qint64 now)
+{
+  m.logEvent(logLine(LogEventKind::ListenerStarted), now + 5);
+  m.portProbeFinished(true, now + 10);
+  m.tick(now + 400);
+}
+
 } // namespace
 
 void TunnelStateMachineTests::aNewMachine_isIdleAndKnowsItsTarget()
@@ -94,10 +102,64 @@ void TunnelStateMachineTests::probing_startsByTimeWhenTheListenerLineIsNeverSeen
   // not again at once
   QCOMPARE(m.tick(301), Command::None);
   m.portProbeFinished(true, 310);
-  QCOMPARE(m.tick(609), Command::None);
-  QCOMPARE(m.status().state, TunnelState::Starting);
+  // an open port and a process that runs are not enough without the line (see the tests of the line below)
   QCOMPARE(m.tick(610), Command::None);
+  QCOMPARE(m.status().state, TunnelState::Starting);
+}
+
+void TunnelStateMachineTests::listening_needsTheListenerLineOfCloudflaredToo()
+{
+  auto m = machine();
+  QCOMPARE(m.start(0), Command::Launch);
+  // a program of this computer holds the port: it answers the probe, and cloudflared has not said anything
+  m.portProbeFinished(true, 310);
+  QCOMPARE(m.tick(700), Command::None);
+  QCOMPARE(m.tick(2000), Command::None);
+  QCOMPARE(m.status().state, TunnelState::Starting);
+  QVERIFY(!m.listenerLineSeen());
+
+  // the line comes: the watch of the process starts from it, and the state is Listening when it was quiet long enough
+  m.logEvent(logLine(LogEventKind::ListenerStarted), 2100);
+  QCOMPARE(m.tick(2399), Command::None);
+  QCOMPARE(m.status().state, TunnelState::Starting);
+  QCOMPARE(m.tick(2400), Command::None);
   QCOMPARE(m.status().state, TunnelState::Listening);
+  QVERIFY(m.listenerLineSeen());
+}
+
+// The wording of cloudflared can change; a tunnel that works must not stop working for that. The line is necessary, and
+// when it does not come the port has to stay open for the process for longer, which a program that took the port while
+// cloudflared fails to listen cannot do: cloudflared stops, or says that the address is in use.
+void TunnelStateMachineTests::listening_withoutTheLine_isAcceptedOnlyAfterALongerWatch()
+{
+  auto m = machine();
+  QCOMPARE(m.start(0), Command::Launch);
+  m.portProbeFinished(true, 310);
+  QCOMPARE(m.tick(3309), Command::None);
+  QCOMPARE(m.status().state, TunnelState::Starting);
+  QCOMPARE(m.tick(3310), Command::None);
+  QCOMPARE(m.status().state, TunnelState::Listening);
+  QVERIFY(!m.listenerLineSeen());
+
+  // and a process that stops during the watch is not Listening
+  auto stops = machine();
+  QCOMPARE(stops.start(0), Command::Launch);
+  stops.portProbeFinished(true, 310);
+  QCOMPARE(stops.tick(2000), Command::None);
+  stops.processExited(1, 2100);
+  QCOMPARE(stops.status().state, TunnelState::Backoff);
+}
+
+void TunnelStateMachineTests::aBindFailureAfterTheTunnelListens_isAPortConflictToo()
+{
+  auto m = machine();
+  qint64 now = 0;
+  bringToListening(m, now);
+
+  // the program that held the port answered the probe, and cloudflared says that it could not listen
+  QCOMPARE(m.logEvent(logLine(LogEventKind::BindFailed, TunnelFailure::PortBusy), now + 10), Command::Kill);
+  QCOMPARE(m.status().state, TunnelState::Failed);
+  QCOMPARE(m.status().failure, TunnelFailure::PortBusy);
 }
 
 void TunnelStateMachineTests::probing_isRepeatedUntilThePortOpens()
@@ -236,8 +298,7 @@ void TunnelStateMachineTests::aProcessThatStops_isStartedAgainWithGrowingPauses(
     QCOMPARE(m.status().state, TunnelState::Starting);
     QVERIFY(m.processRunning());
 
-    m.portProbeFinished(true, now + 10);
-    QCOMPARE(m.tick(now + 400), Command::None);
+    listen(m, now);
     QCOMPARE(m.status().state, TunnelState::Listening);
     now += 400;
   }
@@ -255,8 +316,7 @@ void TunnelStateMachineTests::thePausesStartOverAfterAStableRun()
   QCOMPARE(m.status().restartInSeconds, 1);
   now += 1000;
   QCOMPARE(m.tick(now), Command::Launch);
-  m.portProbeFinished(true, now + 10);
-  m.tick(now + 400);
+  listen(m, now);
   now += 400;
 
   now += 10000;
@@ -264,8 +324,7 @@ void TunnelStateMachineTests::thePausesStartOverAfterAStableRun()
   QCOMPARE(m.status().restartInSeconds, 2);
   now += 2000;
   QCOMPARE(m.tick(now), Command::Launch);
-  m.portProbeFinished(true, now + 10);
-  m.tick(now + 400);
+  listen(m, now);
   now += 400;
 
   // then it runs for more than a minute and stops: the pause is the first one again

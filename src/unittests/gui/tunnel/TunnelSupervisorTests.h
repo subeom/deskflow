@@ -42,6 +42,11 @@ private Q_SLOTS:
   void stopAndWait_dropsAProcessThatNeverReports();
   void theSupervisorGoing_endsTheProcessAndRemovesTheRecord();
 
+  void aForeignListenerThatAnswersTheProbe_isNotTakenForTheTunnel_andABindFailureRetriesOnAFreePort();
+  void aSecondBindFailure_failsAndIsNotRetried();
+  void aBindFailureWithNoOtherFreePort_fails();
+  void aBindFailureAfterTheTunnelListens_restartsOnAFreePortOnce();
+  void aTunnelWithoutTheListenerLine_isAcceptedAfterTheLongerWatchAndSaysSo();
   void aSleep_doesNotTimeOutAStart();
   void aSleep_restartsAProcessWhoseListenerIsGone();
   void aSleep_leavesAProcessWhoseListenerIsThere();

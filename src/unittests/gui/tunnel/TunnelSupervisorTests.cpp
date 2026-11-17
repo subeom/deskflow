@@ -132,6 +132,8 @@ struct Rig
     if (!supervisor->start(request)) {
       return false;
     }
+    // cloudflared says that it listens, then the port is open and stays open
+    process()->write(kListenerLine);
     advance(400);
     prober->answer(true);
     advance(400);
@@ -279,6 +281,7 @@ void TunnelSupervisorTests::theTunnelListens_whenThePortIsOpenAndTheProcessStays
   QCOMPARE(rig.prober->probes.front().first, kPreferred);
   QCOMPARE(rig.listeningCount, 0);
 
+  rig.process()->write(kListenerLine);
   rig.prober->answer(true);
   rig.advance(400);
   QCOMPARE(rig.state(), TunnelState::Listening);
@@ -596,6 +599,114 @@ void TunnelSupervisorTests::theSupervisorGoing_endsTheProcessAndRemovesTheRecord
   }
 }
 
+// The port that was chosen was free when it was chosen. A program of this computer can take it before cloudflared does:
+// it answers the probe, cloudflared cannot listen and says so. The tunnel is not Listening on that, and the start goes
+// on once more on a port that is free.
+void TunnelSupervisorTests::
+    aForeignListenerThatAnswersTheProbe_isNotTakenForTheTunnel_andABindFailureRetriesOnAFreePort()
+{
+  Rig rig;
+  QVERIFY(rig.supervisor->start(rig.request));
+  rig.advance(400);
+  rig.prober->answer(true); // the other program
+  rig.advance(1500);
+  QCOMPARE(rig.state(), TunnelState::Starting);
+  QCOMPARE(rig.listeningCount, 0);
+
+  rig.process()->write(kBindFailedLine);
+  QCOMPARE(rig.state(), TunnelState::Backoff);
+  QVERIFY(rig.failures.isEmpty());
+  QCOMPARE(rig.supervisor->activePort(), kFree);
+  QCOMPARE(rig.supervisor->status().localPort, kFree);
+  QCOMPARE(rig.ports.last(), kFree);
+  QVERIFY(rig.logsContain(QStringLiteral("24800")));
+  QVERIFY(rig.logsContain(QStringLiteral("51234")));
+
+  rig.advance(1200);
+  QCOMPARE(rig.processes.size(), size_t(2));
+  QVERIFY(rig.process()->spec.arguments.contains(QStringLiteral("127.0.0.1:%1").arg(kFree)));
+  // the token is still the user's: it was not forgotten for the retry
+  QCOMPARE(rig.process()->spec.environment.value(QStringLiteral("TUNNEL_SERVICE_TOKEN_SECRET")), kSecret);
+  QCOMPARE(rig.storeState->loadCount, 1);
+
+  rig.process()->write(kListenerLine);
+  rig.advance(400);
+  rig.prober->answer(true);
+  rig.advance(400);
+  QCOMPARE(rig.state(), TunnelState::Listening);
+  QCOMPARE(rig.supervisor->status().localPort, kFree);
+  QVERIFY(rig.failures.isEmpty());
+}
+
+void TunnelSupervisorTests::aSecondBindFailure_failsAndIsNotRetried()
+{
+  Rig rig;
+  QVERIFY(rig.supervisor->start(rig.request));
+  rig.process()->write(kBindFailedLine);
+  rig.advance(1200);
+  QCOMPARE(rig.processes.size(), size_t(2));
+
+  rig.process()->write(kBindFailedLine);
+  QCOMPARE(rig.state(), TunnelState::Failed);
+  QCOMPARE(rig.supervisor->status().failure, TunnelFailure::PortBusy);
+  QCOMPARE(rig.failures, QList<TunnelFailure>{TunnelFailure::PortBusy});
+  rig.advance(20000);
+  QCOMPARE(rig.processes.size(), size_t(2));
+
+  // a new start of the user is a new try, with one retry again
+  QVERIFY(rig.supervisor->start(rig.request));
+  rig.process()->write(kBindFailedLine);
+  QCOMPARE(rig.state(), TunnelState::Backoff);
+}
+
+void TunnelSupervisorTests::aBindFailureWithNoOtherFreePort_fails()
+{
+  Rig rig;
+  rig.prober->freePort = 0;
+  QVERIFY(rig.supervisor->start(rig.request));
+  rig.prober->preferredFree = true;
+  rig.process()->write(kBindFailedLine);
+
+  QCOMPARE(rig.state(), TunnelState::Failed);
+  QCOMPARE(rig.supervisor->status().failure, TunnelFailure::PortBusy);
+  rig.advance(20000);
+  QCOMPARE(rig.processes.size(), size_t(1));
+}
+
+void TunnelSupervisorTests::aBindFailureAfterTheTunnelListens_restartsOnAFreePortOnce()
+{
+  Rig rig;
+  QVERIFY(rig.bringUp());
+  QCOMPARE(rig.listeningCount, 1);
+
+  // the other program answered the probe, cloudflared could not listen and says so a moment after
+  rig.process()->write(kBindFailedLine);
+  QCOMPARE(rig.state(), TunnelState::Backoff);
+  QCOMPARE(rig.supervisor->status().localPort, kFree);
+  rig.advance(1200);
+  QCOMPARE(rig.processes.size(), size_t(2));
+  QVERIFY(rig.process()->spec.arguments.contains(QStringLiteral("127.0.0.1:%1").arg(kFree)));
+}
+
+// The wording of cloudflared can change: a line that is never seen does not stop a tunnel that works, which has to stay
+// up for longer to be taken for listening, and the log says that the line was missing
+void TunnelSupervisorTests::aTunnelWithoutTheListenerLine_isAcceptedAfterTheLongerWatchAndSaysSo()
+{
+  Rig rig;
+  QVERIFY(rig.supervisor->start(rig.request));
+  rig.advance(400);
+  rig.prober->answer(true);
+  rig.advance(1500);
+  QCOMPARE(rig.state(), TunnelState::Starting);
+  QVERIFY(!rig.logsContain(QStringLiteral("listener line")));
+
+  rig.advance(2500);
+  rig.prober->answer(true);
+  rig.advance(400);
+  QCOMPARE(rig.state(), TunnelState::Listening);
+  QVERIFY(rig.logsContain(QStringLiteral("did not log its listener line")));
+}
+
 void TunnelSupervisorTests::aSleep_doesNotTimeOutAStart()
 {
   Rig rig;
@@ -609,6 +720,7 @@ void TunnelSupervisorTests::aSleep_doesNotTimeOutAStart()
   rig.prober->answer(false);
 
   // the start goes on as before: the port opens and the tunnel listens
+  rig.process()->write(kListenerLine);
   rig.advance(300);
   rig.prober->answer(true);
   rig.advance(400);

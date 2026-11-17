@@ -42,7 +42,7 @@ struct Rig
   int processesStarted = 0;
   QString orphanFile = dir.filePath(QStringLiteral("state/tunnel.json"));
 
-  explicit Rig(const QString &mode, TunnelPolicy policy = {})
+  explicit Rig(const QString &mode, TunnelPolicy policy = {}, std::shared_ptr<IPortProber> racing = nullptr)
   {
     storeState->token = ServiceToken(kClientId, kSecret);
     request.hostname = QStringLiteral("%1.example.com").arg(mode);
@@ -62,6 +62,9 @@ struct Rig
       ++processesStarted;
       return real(parent);
     };
+    if (racing) {
+      deps.prober = std::move(racing);
+    }
     deps.inspector = inspector;
     deps.orphanFile = orphanFile;
     deps.policy = std::move(policy);
@@ -105,6 +108,17 @@ TunnelPolicy quick()
   policy.backoffSeconds = {0};
   return policy;
 }
+
+// A prober for the moment between the check and the listen of cloudflared: the port is told free once, and another
+// program holds it already
+class RacingProber : public QtPortProber
+{
+public:
+  bool canListen(int) override
+  {
+    return true;
+  }
+};
 
 // Whether a connection to the port is made. It waits for the signals of the socket: waitForConnected() of Qt tells true
 // for a connection that was refused, on some systems.
@@ -278,6 +292,30 @@ void TunnelSupervisorProcessTests::aPortThatIsBusy_givesWayToAFreeOne()
   QVERIFY(rig.supervisor->activePort() > 0);
   QCOMPARE(rig.supervisor->status().localPort, rig.supervisor->activePort());
   QVERIFY(connectTo(rig.supervisor->activePort()));
+}
+
+// A program took the port after it was checked. It answers the probe, cloudflared cannot listen and says so, and exits:
+// the tunnel is not taken for listening on the other program, and the start goes on once on a free port.
+void TunnelSupervisorProcessTests::aPortTakenAfterTheCheck_isNotTheTunnel_andTheStartGoesOnOnAFreePort()
+{
+  QTcpServer other;
+  QVERIFY(other.listen(QHostAddress::LocalHost, 0));
+  const auto taken = other.serverPort();
+
+  Rig rig(QStringLiteral("ok"), quick(), std::make_shared<RacingProber>());
+  rig.request.preferredPort = taken;
+
+  QVERIFY(rig.supervisor->start(rig.request));
+  QTRY_COMPARE_WITH_TIMEOUT(rig.state(), TunnelState::Listening, 8000);
+  const auto port = rig.supervisor->activePort();
+  QVERIFY(port > 0);
+  QVERIFY(port != static_cast<int>(taken));
+  QVERIFY(rig.logsContain(QStringLiteral("was taken by another program")));
+  QVERIFY(connectTo(port));
+  QCOMPARE(rig.processesStarted, 2);
+  for (const auto &status : std::as_const(rig.statuses)) {
+    QVERIFY(status.state != TunnelState::Failed);
+  }
 }
 
 void TunnelSupervisorProcessTests::anEdgeThatRefuses_isShownWhileTheTunnelListens()

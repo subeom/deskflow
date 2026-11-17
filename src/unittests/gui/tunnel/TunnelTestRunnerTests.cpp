@@ -64,9 +64,7 @@ struct Rig
   // from the start of the tunnel to its listening
   void bringTheTunnelUp()
   {
-    tunnel.advance(400);
-    tunnel.prober->answer(true);
-    tunnel.advance(400);
+    tunnel.finishStart();
   }
 
   StageState state(TestStage stage) const

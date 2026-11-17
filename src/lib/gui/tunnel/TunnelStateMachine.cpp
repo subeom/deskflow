@@ -55,6 +55,7 @@ Command TunnelStateMachine::launch(qint64 now)
   m_lastProbeAt = -1;
   m_firstOpenProbeAt = -1;
   m_listenerLogged = false;
+  m_listenerLoggedAt = -1;
   m_stopAskedAgain = false;
   return Command::Launch;
 }
@@ -118,6 +119,7 @@ Command TunnelStateMachine::logEvent(const LogEvent &event, qint64 now)
   case LogEventKind::ListenerStarted:
     if (m_status.state == TunnelState::Starting) {
       m_listenerLogged = true;
+      m_listenerLoggedAt = now;
       if (m_firstOpenProbeAt < 0) {
         m_lastProbeAt = now;
         return Command::ProbePort;
@@ -129,10 +131,9 @@ Command TunnelStateMachine::logEvent(const LogEvent &event, qint64 now)
     return fail(TunnelFailure::LoginRequired, true);
 
   case LogEventKind::BindFailed:
-    if (m_status.state == TunnelState::Starting) {
-      return fail(TunnelFailure::PortBusy, true);
-    }
-    return Command::None;
+    // also when the tunnel listens: a program of this computer that took the port answers the probe, and cloudflared
+    // says that it could not listen a moment later
+    return fail(TunnelFailure::PortBusy, true);
 
   case LogEventKind::OriginFailed:
     // the process runs and the port is open: it is the connection through it that failed
@@ -276,7 +277,13 @@ Command TunnelStateMachine::tick(qint64 now)
   }
 
   if (m_firstOpenProbeAt >= 0) {
-    if (m_running && now - m_firstOpenProbeAt >= m_policy.confirmMs) {
+    // Listening needs the process (it runs) and the port (open) and the line in which cloudflared says that it listens,
+    // and all of it for a moment: an open port alone can be another program that took it. When the line never comes
+    // (the words of cloudflared changed) the port has to stay open longer.
+    const auto sinceTheLine = m_listenerLogged ? now - std::max(m_firstOpenProbeAt, m_listenerLoggedAt) : -1;
+    const bool lineWatched = m_listenerLogged && sinceTheLine >= m_policy.confirmMs;
+    const bool quietWatched = !m_listenerLogged && now - m_firstOpenProbeAt >= m_policy.listenerLineGraceMs;
+    if (m_running && (lineWatched || quietWatched)) {
       m_status.state = TunnelState::Listening;
       m_listeningSince = now;
     }

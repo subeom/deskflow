@@ -21,7 +21,10 @@ struct TunnelPolicy
   qint64 readyTimeoutMs = 8000; //!< from the start to the local port being open
   qint64 probeStartMs = 300;    //!< probing starts this long after the start, or when the listener is logged
   qint64 probeIntervalMs = 200; //!< between two probes
-  qint64 confirmMs = 300;       //!< the process must still run this long after the first open probe
+  qint64 confirmMs = 300; //!< the process must still run this long after the first open probe and the listener line
+  //! Without the listener line of cloudflared the port has to stay open, with the process running, for this long after
+  //! the first open probe before the tunnel is taken for listening (the wording of cloudflared can change)
+  qint64 listenerLineGraceMs = 3000;
   qint64 stopTimeoutMs = 3000;  //!< after which a process that was asked to go is asked again
   qint64 stableAfterMs = 60000; //!< a process that listened this long starts the pauses over
   qint64 quickExitMs = 2000;    //!< a process that stops sooner than this after its start stopped at once
@@ -63,6 +66,11 @@ public:
   {
     return m_running;
   }
+  //! cloudflared said that it was about to listen, in this run
+  bool listenerLineSeen() const
+  {
+    return m_listenerLogged;
+  }
 
   //! From Idle, Failed or Backoff: start. In any other state it is ignored.
   Command start(qint64 now);
@@ -94,6 +102,7 @@ private:
   qint64 m_lastProbeAt = -1;
   qint64 m_firstOpenProbeAt = -1;
   bool m_listenerLogged = false;
+  qint64 m_listenerLoggedAt = -1;
   qint64 m_restartAt = 0;
   qint64 m_stopAskedAt = 0;
   bool m_stopAskedAgain = false;

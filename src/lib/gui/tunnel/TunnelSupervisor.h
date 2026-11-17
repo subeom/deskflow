@@ -156,6 +156,7 @@ private:
   void onStartFailed(const QString &detail);
   void onOutputLine(const QString &line);
   void onFinished(int exitCode);
+  void retryOnAnotherPort();
   void releaseProcess(bool immediately);
   void wipeToken();
   void settle();
@@ -184,6 +185,9 @@ private:
   bool m_killSent = false;
   quint64 m_generation = 0;
   quint64 m_originFailures = 0;
+  //! a program took the local port before cloudflared could listen: the start goes on once on a free port
+  bool m_portRetried = false;
+  bool m_portRetryPending = false;
   TunnelFailure m_lastOriginFailure = TunnelFailure::None;
   TunnelStatus m_published;
   bool m_publishedOnce = false;

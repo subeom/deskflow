@@ -36,6 +36,13 @@ inline const QString kHost = QStringLiteral("mbp.example.com");
 inline const QString kProgram = QStringLiteral("/opt/test/cloudflared");
 inline constexpr int kPreferred = 24800;
 inline constexpr int kFree = 51234;
+//! what cloudflared writes when it is about to listen on the local port, and when it cannot
+inline const QString kListenerLine =
+    QStringLiteral("2026-01-01T00:00:00Z INF Start Websocket listener host=127.0.0.1:24800");
+inline const QString kBindFailedLine = QStringLiteral(
+    "2026-01-01T00:00:00Z ERR failed to start forwarding server error=\"listen tcp 127.0.0.1:24800: bind: address "
+    "already in use\""
+);
 
 class FakeProcess : public ITunnelProcess
 {
@@ -250,6 +257,10 @@ struct ControllerRig
   // the time that a tunnel that was asked for needs to listen
   void finishStart()
   {
+    // cloudflared says that it listens, then the port is open and stays open
+    if (auto *running = process(); running != nullptr && running->isRunning()) {
+      running->write(kListenerLine);
+    }
     advance(400);
     prober->answer(true);
     advance(400);

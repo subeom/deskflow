@@ -34,6 +34,17 @@ void CloudflaredLogParserTests::line_isRecognisedInTheConsoleAndTheJsonFormat_da
              "tcp 127.0.0.1:24800: bind: address already in use\""
          )
       << LogEventKind::BindFailed << TunnelFailure::PortBusy;
+  // without the words of the forwarding server: an address that is in use is a port conflict in whatever words it comes
+  QTest::newRow(
+      "address-in-use-alone"
+  ) << QStringLiteral("2026-11-17T04:00:00Z ERR listen tcp 127.0.0.1:24800: bind: address already in use")
+    << LogEventKind::BindFailed << TunnelFailure::PortBusy;
+  QTest::newRow("address-in-use-windows-alone")
+      << QStringLiteral(
+             "2026-11-17T04:00:00Z ERR listen tcp 127.0.0.1:24800: bind: Only one usage of each socket address "
+             "(protocol/network address/port) is normally permitted."
+         )
+      << LogEventKind::BindFailed << TunnelFailure::PortBusy;
   QTest::newRow("bind-failed-windows")
       << QStringLiteral(
              "{\"level\":\"error\",\"error\":\"failed to start forwarding server: listen tcp 127.0.0.1:24800: bind: "
