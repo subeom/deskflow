@@ -52,8 +52,9 @@ other failing test is a finding: send me its name and its output.
 ```
 
 Expected: `deskflow-core v1.27.0.<N> (<sha8>), protocol v1.9` with `<N>` and `<sha8>` of the commit that you checked
-out in step 1. The macOS build of the same commit prints the same `1.27.0.<N>` (counted by `git rev-list --count
-v1.27.0..HEAD`, 112 at `b03048c50`, one more for every commit after it). If it prints `1.27.45.x` or `1.27.0.9999`,
+out in step 1. The macOS build of the same commit prints the same `1.27.0.<N>`. `<N>` is what `git rev-list --count
+v1.27.0..HEAD` prints in step 1, and it grows with every commit: compare with that, not with a number written in a
+document. If it prints `1.27.45.x` or `1.27.0.9999`,
 the clone has no tag `v1.27.0` (`git fetch --tags`) or the version was read from an old CMake cache: delete
 `build\windows-Release\CMakeCache.txt` and run the script again.
 
