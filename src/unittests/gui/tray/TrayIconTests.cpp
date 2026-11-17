@@ -9,6 +9,7 @@
 
 #include <QApplication>
 #include <QPixmapCache>
+#include <QtMath>
 
 using namespace deskflow::gui::tray;
 
@@ -123,6 +124,46 @@ void TrayIconTests::everyStateHasAShapeOfItsOwn_atTheSmallSizes()
     }
   }
   qInfo().noquote() << QStringLiteral("%1 px: the two states that are the closest, %2, differ by %3 pixels").arg(size).arg(leastPair).arg(least);
+}
+
+void TrayIconTests::shape_isCutOutOfTheMarkAroundIt()
+{
+  // at 64 pixels a unit is a pixel. The shapes of the lower right have a ring of clear around them where the waves are not,
+  // so that they read at the small sizes
+  const auto clearAround = [](TrayState state, const QList<QPoint> &points) {
+    const auto picture = image(state, 64);
+    int clear = 0;
+    for (const auto &point : points)
+      clear += qAlpha(picture.pixel(point)) < 40;
+    return clear;
+  };
+  QList<QPoint> ring;
+  for (int degrees = 0; degrees < 360; degrees += 15) {
+    const auto radians = qDegreesToRadians(static_cast<qreal>(degrees));
+    const QPoint point(qRound(49 + 13.5 * std::cos(radians)), qRound(49 + 13.5 * std::sin(radians)));
+    if (point.x() >= 0 && point.x() < 64 && point.y() >= 0 && point.y() < 64)
+      ring.append(point);
+  }
+  QVERIFY(ring.size() >= 20);
+  // the mark alone has ink in a good part of the ring: the test is of something
+  QVERIFY(clearAround(TrayState::Idle, ring) < ring.size() - 4);
+  QCOMPARE(clearAround(TrayState::Connected, ring), ring.size());
+  QCOMPARE(clearAround(TrayState::Waiting, ring), ring.size());
+
+  // a dot of an update has a ring of clear as well
+  const auto with = image(TrayState::Idle, 64, TrayTone::Template, true);
+  int clear = 0;
+  int taken = 0;
+  for (int degrees = 0; degrees < 360; degrees += 15) {
+    const auto radians = qDegreesToRadians(static_cast<qreal>(degrees));
+    const QPoint point(qRound(54 + 9.5 * std::cos(radians)), qRound(10 + 9.5 * std::sin(radians)));
+    if (point.x() < 0 || point.x() >= 64 || point.y() < 0 || point.y() >= 64)
+      continue;
+    ++taken;
+    clear += qAlpha(with.pixel(point)) < 40;
+  }
+  QVERIFY(taken >= 12);
+  QCOMPARE(clear, taken);
 }
 
 void TrayIconTests::colour_neverChangesTheShape()

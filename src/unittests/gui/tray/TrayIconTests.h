@@ -16,6 +16,7 @@ private Q_SLOTS:
   void template_isBlackAndClear();
   void everyStateHasAShapeOfItsOwn_atTheSmallSizes_data();
   void everyStateHasAShapeOfItsOwn_atTheSmallSizes();
+  void shape_isCutOutOfTheMarkAroundIt();
   void colour_neverChangesTheShape();
   void update_isADotAtTheUpperRightOfAnyState();
   void tones_haveTheContrastThatTheirBarNeeds();
