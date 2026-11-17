@@ -6,6 +6,7 @@
 
 #include "ServerConfigAdvanced.h"
 
+#include "CardBuilders.h"
 #include "gui/style/BackdropWidget.h"
 #include "gui/style/DesignTokens.h"
 #include "gui/style/LookFollower.h"
@@ -63,55 +64,10 @@ private:
   QList<QWidget *> m_targets;
 };
 
-template <class T> T *find(QWidget *tab, const char *name)
-{
-  return tab->findChild<T *>(QString::fromLatin1(name));
-}
-
-// A tooltip that is a line of text is guidance for the row; one in rich text (a list, italics) is not
-QString plainTip(const QWidget *widget)
-{
-  const auto tip = widget->toolTip();
-  return Qt::mightBeRichText(tip) ? QString() : tip;
-}
-
-// "Experimental: multi-monitor aware cursor mapping" under a card that is called "Experimental" is "Multi-monitor aware
-// cursor mapping"
-QString withoutPrefix(const QString &title, const QString &prefix)
-{
-  const auto lead = prefix + QStringLiteral(": ");
-  if (prefix.isEmpty() || !title.startsWith(lead))
-    return title;
-  auto rest = title.mid(lead.size());
-  if (!rest.isEmpty())
-    rest[0] = rest[0].toUpper();
-  return rest;
-}
-
-QString withoutColon(QString text)
-{
-  while (text.endsWith(QLatin1Char(':')) || text.endsWith(QLatin1Char(' ')))
-    text.chop(1);
-  return text;
-}
-
-// A row of a switch, with the controls that go before it (a number): the text of the switch is the title, and a
-// tooltip in plain text is the guidance under it
-SettingRow *switchRow(ToggleSwitch *toggle, const QList<QWidget *> &before = {}, const QString &cardTitle = {})
-{
-  auto *row = new SettingRow;
-  const auto tip = plainTip(toggle);
-  if (!tip.isEmpty())
-    toggle->setToolTip({});
-  for (auto *control : before)
-    row->addControl(control);
-  row->addControl(toggle);
-  if (!tip.isEmpty())
-    row->setDescription(tip);
-  if (!cardTitle.isEmpty())
-    row->setTitle(withoutPrefix(row->rawTitle(), cardTitle));
-  return row;
-}
+using cards::find;
+using cards::plainTip;
+using cards::switchRow;
+using cards::withoutColon;
 
 QString plainTitle(const QGroupBox *group)
 {

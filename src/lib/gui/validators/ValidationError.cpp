@@ -42,11 +42,11 @@ void ValidationError::setMessage(const QString &message)
 
   m_message = message;
 
-  if (!m_label)
-    return;
-
-  m_label->setAutoFillBackground(!message.isEmpty());
-  m_label->setText(message);
+  if (m_label) {
+    m_label->setAutoFillBackground(!message.isEmpty());
+    m_label->setText(message);
+  }
+  Q_EMIT messageChanged(m_message);
 }
 
 } // namespace validators

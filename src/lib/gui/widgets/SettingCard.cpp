@@ -69,6 +69,16 @@ void SettingCard::addNote(QWidget *note)
   m_layout->insertWidget(m_header ? 1 : 0, note);
 }
 
+void SettingCard::addContent(QWidget *content)
+{
+  // after the rows, with the room of a row around it
+  auto *box = new QWidget(this);
+  auto *boxLayout = new QVBoxLayout(box);
+  boxLayout->setContentsMargins(metrics::spaceXl, metrics::spaceSm, metrics::spaceXl, metrics::spaceMd);
+  boxLayout->addWidget(content);
+  m_layout->addWidget(box);
+}
+
 QList<SettingRow *> SettingCard::rows() const
 {
   return m_rows;

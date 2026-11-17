@@ -80,9 +80,12 @@ add_library(${target} STATIC
   dialogs/ActionDialog.cpp
   dialogs/ActionDialog.h
   dialogs/ActionDialog.ui
+  dialogs/CardBuilders.h
   dialogs/ClientConfigDialog.h
   dialogs/ClientConfigDialog.cpp
   dialogs/ClientConfigDialog.ui
+  dialogs/ComputerSettingsCards.cpp
+  dialogs/ComputerSettingsCards.h
   dialogs/ComputerSettingsDialog.cpp
   dialogs/ComputerSettingsDialog.h
   dialogs/ComputerSettingsDialog.ui

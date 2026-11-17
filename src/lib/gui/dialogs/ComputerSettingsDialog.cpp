@@ -8,7 +8,9 @@
 #include "ComputerSettingsDialog.h"
 #include "ui_ComputerSettingsDialog.h"
 
+#include "ComputerSettingsCards.h"
 #include "gui/config/Computer.h"
+#include "gui/style/Appearance.h"
 #include "server/Arrangement.h"
 #include "server/MonitorGeometry.h"
 #include "validators/AliasValidator.h"
@@ -126,6 +128,10 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
   auto *lblSize = new QLabel(tr("Screen size (no monitors above):"), this);
   auto *lblTimes = new QLabel(QStringLiteral("×"), this);
   auto *lblScale = new QLabel(tr("Display scale:"), this);
+  // named for the new look, which lays the controls out in rows
+  lblSize->setObjectName(QStringLiteral("lblArrangementSize"));
+  lblTimes->setObjectName(QStringLiteral("lblArrangementTimes"));
+  lblScale->setObjectName(QStringLiteral("lblDisplayScale"));
   lblSize->setBuddy(m_sbArrangementWidth);
   lblScale->setBuddy(m_sbDisplayScale);
   for (QWidget *widget :
@@ -193,6 +199,10 @@ ComputerSettingsDialog::ComputerSettingsDialog(QWidget *parent, Computer *comput
       ui->textMonitorLayout, &QPlainTextEdit::textChanged, this, &ComputerSettingsDialog::updateMonitorLayoutStatus
   );
   connect(ui->btnImportMonitorLayout, &QPushButton::clicked, this, &ComputerSettingsDialog::chooseMonitorLayoutFile);
+
+  // the new look: the groups are cards, and the dialog is as small as it was
+  if (deskflow::gui::style::isDeskflowStyleInstalled())
+    deskflow::gui::applyComputerSettingsCards(this, valNameError, valAliasError);
 }
 
 void ComputerSettingsDialog::accept()

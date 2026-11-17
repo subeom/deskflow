@@ -74,7 +74,7 @@
        </widget>
       </item>
       <item>
-       <widget class="QCheckBox" name="chkShareClipboard">
+       <widget class="ToggleSwitch" name="chkShareClipboard">
         <property name="toolTip">
          <string>Turn this off to keep this computer out of clipboard sharing: its clipboard is not sent to the other computers and theirs is not sent to it.</string>
         </property>
@@ -438,7 +438,7 @@
           <item>
            <layout class="QHBoxLayout" name="layoutDeadCornersTop">
             <item>
-             <widget class="QCheckBox" name="chkDeadTopLeft">
+             <widget class="ToggleSwitch" name="chkDeadTopLeft">
               <property name="minimumSize">
                <size>
                 <width>0</width>
@@ -454,7 +454,7 @@
              </widget>
             </item>
             <item>
-             <widget class="QCheckBox" name="chkDeadTopRight">
+             <widget class="ToggleSwitch" name="chkDeadTopRight">
               <property name="minimumSize">
                <size>
                 <width>0</width>
@@ -513,7 +513,7 @@
           <item>
            <layout class="QHBoxLayout" name="layoutDeadCornersBottom">
             <item>
-             <widget class="QCheckBox" name="chkDeadBottomLeft">
+             <widget class="ToggleSwitch" name="chkDeadBottomLeft">
               <property name="minimumSize">
                <size>
                 <width>0</width>
@@ -526,7 +526,7 @@
              </widget>
             </item>
             <item>
-             <widget class="QCheckBox" name="chkDeadBottomRight">
+             <widget class="ToggleSwitch" name="chkDeadBottomRight">
               <property name="minimumSize">
                <size>
                 <width>0</width>
@@ -557,7 +557,7 @@
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_3">
           <item>
-           <widget class="QCheckBox" name="chkFixScrollLock">
+           <widget class="ToggleSwitch" name="chkFixScrollLock">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
               <horstretch>0</horstretch>
@@ -570,7 +570,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="chkFixCapsLock">
+           <widget class="ToggleSwitch" name="chkFixCapsLock">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
               <horstretch>0</horstretch>
@@ -583,7 +583,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="chkFixNumLock">
+           <widget class="ToggleSwitch" name="chkFixNumLock">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
               <horstretch>0</horstretch>
@@ -596,7 +596,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="chkFixXTest">
+           <widget class="ToggleSwitch" name="chkFixXTest">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
               <horstretch>0</horstretch>
@@ -612,7 +612,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="chkWeakX11Focus">
+           <widget class="ToggleSwitch" name="chkWeakX11Focus">
             <property name="toolTip">
              <string>X11 computers Only, When enabled the client will not give focus to its focused window as soon as the client is switched to. This can help prevent unwanted focus stealing with some X11 setups.</string>
             </property>
@@ -787,7 +787,7 @@
         <item row="1" column="0" colspan="2">
          <layout class="QHBoxLayout" name="layoutCrossOSInvert">
           <item>
-           <widget class="QCheckBox" name="chkCrossOSInvertX">
+           <widget class="ToggleSwitch" name="chkCrossOSInvertX">
             <property name="toolTip">
              <string>Inverts horizontal scrolling sent from the macOS source. Scroll inversion in Client Configuration is applied afterwards, so enabling both can compound.</string>
             </property>
@@ -797,7 +797,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="chkCrossOSInvertY">
+           <widget class="ToggleSwitch" name="chkCrossOSInvertY">
             <property name="toolTip">
              <string>Inverts vertical scrolling sent from the macOS source. Scroll inversion in Client Configuration is applied afterwards, so enabling both can compound.</string>
             </property>
@@ -836,7 +836,7 @@
          </widget>
         </item>
         <item row="3" column="0" colspan="2">
-         <widget class="QCheckBox" name="chkCrossOSSemanticMedia">
+         <widget class="ToggleSwitch" name="chkCrossOSSemanticMedia">
           <property name="toolTip">
            <string>Enable volume, previous/next track, play/pause, and stop keys through Windows virtual media keys.</string>
           </property>
@@ -971,6 +971,13 @@
   <tabstop>textMonitorLayout</tabstop>
   <tabstop>btnImportMonitorLayout</tabstop>
  </tabstops>
+ <customwidgets>
+  <customwidget>
+   <class>ToggleSwitch</class>
+   <extends>QCheckBox</extends>
+   <header>widgets/ToggleSwitch.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

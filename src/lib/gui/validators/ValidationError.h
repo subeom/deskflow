@@ -16,10 +16,16 @@ namespace validators {
 
 class ValidationError : public QObject
 {
+  Q_OBJECT
+
 public:
   explicit ValidationError(QObject *parent, QLabel *label = nullptr);
   const QString &message() const;
   void setMessage(const QString &message);
+
+Q_SIGNALS:
+  //! The message is not the one that it was (a form that shows it in another way follows it)
+  void messageChanged(const QString &message);
 
 private:
   void clear();
