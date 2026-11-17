@@ -24,9 +24,49 @@
 #include <functional>
 #include <memory>
 
+#ifdef Q_OS_WIN
+#include "common/Constants.h"
+
+#include <windows.h>
+#endif
+
 using deskflow::EventTypes;
 
 namespace {
+
+#ifdef Q_OS_WIN
+// The application object of Windows has an event thread that opens the machine-wide event that closes Deskflow, the one
+// that the GUI signals to stop a core (kCloseEventName). It is made when the application is, and the process stops if
+// it cannot be: when a Deskflow runs on the computer it owns the event, and a test that opens it as well would be
+// stopped with that one. So the tests run only when the event is theirs to make.
+bool closeEventIsFree(QString &why)
+{
+  SetLastError(0);
+  HANDLE event = CreateEventW(nullptr, TRUE, FALSE, kCloseEventName);
+  const auto error = GetLastError();
+  if (event == nullptr) {
+    why = QStringLiteral("the machine-wide close event of Deskflow cannot be made (Windows error %1)").arg(error);
+    return false;
+  }
+  CloseHandle(event);
+  if (error == ERROR_ALREADY_EXISTS) {
+    why = QStringLiteral("a Deskflow is running on this computer and owns its machine-wide close event");
+    return false;
+  }
+  return true;
+}
+#endif
+
+// Windows does not report a connection to a port that nothing listens on at once: it sends the SYN again after the
+// reset and says "refused" after about two seconds (not checked here: the tests tell the time that it took). The time
+// limit of the client has to be longer than that for the refusal to be what is reported, and what is waited for is
+// longer by that.
+#ifdef Q_OS_WIN
+constexpr double kRefusalSeconds = 3.0;
+#else
+constexpr double kRefusalSeconds = 0.0;
+#endif
+constexpr double kLongTimeLimitSeconds = 10.0;
 
 // the application of a client, with a computer that does nothing and so touches nothing of the system; everything
 // else, the addresses, the sockets and the events, is the real one
@@ -147,6 +187,12 @@ bool runUntil(EventQueue &events, const std::function<bool()> &done, double limi
 void ClientAppConnectTests::initTestCase()
 {
   QVERIFY(m_dir.isValid());
+#ifdef Q_OS_WIN
+  QString why;
+  if (!closeEventIsFree(why)) {
+    QSKIP(qPrintable(QStringLiteral("not run: %1. Stop Deskflow to run these tests.").arg(why)));
+  }
+#endif
   m_arch.init();
   m_log.setFilter(LogLevel::Level::Debug);
 }
@@ -219,6 +265,7 @@ void ClientAppConnectTests::connect_firstAddressRefuses_triesTheSecondAtOnceAfte
   QVERIFY(second.listen(QHostAddress::LocalHost, 0));
   QVERIFY(closedPort != 0);
   USE_CONFIGURATION(QStringLiteral("\"127.0.0.1:%1,127.0.0.1:%2\"").arg(closedPort).arg(second.serverPort()));
+  Settings::setValue(Settings::Client::ConnectTimeout, kLongTimeLimitSeconds);
 
   CapturingOutputter log;
   m_log.insert(&log, true);
@@ -229,7 +276,7 @@ void ClientAppConnectTests::connect_firstAddressRefuses_triesTheSecondAtOnceAfte
   clock.start();
   QVERIFY(app.startClient());
 
-  const bool reached = runUntil(events, [&] { return second.waitForNewConnection(0); }, 6.0);
+  const bool reached = runUntil(events, [&] { return second.waitForNewConnection(0); }, 6.0 + kRefusalSeconds);
   const auto elapsed = clock.elapsed();
   app.stopClient();
   m_log.remove(&log);
@@ -240,7 +287,10 @@ void ClientAppConnectTests::connect_firstAddressRefuses_triesTheSecondAtOnceAfte
       qPrintable(log.dump())
   );
   // the refusal is at once, the next address is tried after the retry delay of a second
-  QVERIFY2(elapsed >= 900 && elapsed < 3000, qPrintable(QString::number(elapsed)));
+  QVERIFY2(
+      elapsed >= 900 && elapsed < 3000 + static_cast<qint64>(kRefusalSeconds * 1000),
+      qPrintable(QString::number(elapsed))
+  );
 }
 
 // A server that takes the connection and never says hello is given the time limit of the client (here 1 s), and then
@@ -302,6 +352,7 @@ void ClientAppConnectTests::connect_afterAFullRoundOfFailures_startsAgainWithThe
   const auto closedPortB = closedLocalPort();
   QVERIFY(closedPortA != 0 && closedPortB != 0 && closedPortA != closedPortB);
   USE_CONFIGURATION(QStringLiteral("\"127.0.0.1:%1,127.0.0.1:%2\"").arg(closedPortA).arg(closedPortB));
+  Settings::setValue(Settings::Client::ConnectTimeout, kLongTimeLimitSeconds);
 
   CapturingOutputter log;
   m_log.insert(&log, true);
@@ -310,8 +361,9 @@ void ClientAppConnectTests::connect_afterAFullRoundOfFailures_startsAgainWithThe
   app.parseArgs();
   QVERIFY(app.startClient());
 
-  const bool reached =
-      runUntil(events, [&] { return log.count(QStringLiteral("trying next server in list")) >= 2; }, 8.0);
+  const bool reached = runUntil(
+      events, [&] { return log.count(QStringLiteral("trying next server in list")) >= 2; }, 8.0 + 2 * kRefusalSeconds
+  );
   app.stopClient();
   m_log.remove(&log);
 

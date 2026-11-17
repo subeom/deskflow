@@ -26,12 +26,12 @@ using namespace probetest;
 
 namespace {
 
-QList<ProbeResult> runToTheEnd(ConnectionProbe &probe, const QList<ServerEntry> &entries)
+QList<ProbeResult> runToTheEnd(ConnectionProbe &probe, const QList<ServerEntry> &entries, int limitMs = 5000)
 {
   QSignalSpy finished(&probe, &ConnectionProbe::finished);
   probe.start(entries);
   // an entry that needs no network (a bad port) is done before start() returns
-  if (finished.isEmpty() && !finished.wait(5000)) {
+  if (finished.isEmpty() && !finished.wait(limitMs)) {
     return {};
   }
   return qvariant_cast<QList<ProbeResult>>(finished.first().at(0));
@@ -438,13 +438,24 @@ void ConnectionProbeTests::system_closedLocalPort_isRefused()
     QVERIFY(server.listen(QHostAddress::LocalHost, 0));
     port = server.serverPort();
   }
-  std::unique_ptr<ConnectionProbe> probe(ConnectionProbe::createSystem(nullptr, 2000));
+  // Windows does not say "refused" at once: it sends the SYN again after the reset, and the refusal comes after about
+  // two seconds (the time that it took is in the message when the test fails). A limit of 2 s would be reached as soon,
+  // and the result would be a timeout: the limit here is longer than that.
+  std::unique_ptr<ConnectionProbe> probe(ConnectionProbe::createSystem(nullptr, 10000));
+  QElapsedTimer clock;
+  clock.start();
 
-  const auto results = runToTheEnd(*probe, entriesOf(QStringLiteral("127.0.0.1:%1").arg(port)));
+  const auto results = runToTheEnd(*probe, entriesOf(QStringLiteral("127.0.0.1:%1").arg(port)), 15000);
+  const auto after = QStringLiteral("after %1 ms").arg(clock.elapsed());
 
-  QCOMPARE(results.size(), 1);
-  QVERIFY(!results[0].open);
-  QCOMPARE(results[0].kind, FailureKind::Refused);
+  QVERIFY2(results.size() == 1, qPrintable(after));
+  QVERIFY2(!results[0].open, qPrintable(after));
+  QVERIFY2(
+      results[0].kind == FailureKind::Refused, qPrintable(QStringLiteral("%1: the kind is %2, %3")
+                                                              .arg(after)
+                                                              .arg(static_cast<int>(results[0].kind))
+                                                              .arg(results[0].detail))
+  );
 }
 
 void ConnectionProbeTests::system_localhostName_isResolvedAndTried()

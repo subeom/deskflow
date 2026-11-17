@@ -242,6 +242,46 @@ library (a symbol of `KeyMap`, `IKeyState`, `Clipboard*Policy`, `Event`... is in
 of the first one, build with `cmake --build build\windows-Release --parallel 4 -- -k 0` (ninja goes on with the targets
 that can still be built); then `windows-build.ps1` again for the tests.
 
+### The tests that failed on the first run of `b361da336` (7 of 53)
+
+The programs built, linked and report `1.27.0.119`. `ctest` passed 46 of 53. The PC is **Windows 11 on ARM64**; the build
+is x64 and runs under emulation. **A Deskflow is installed and running on it** (the GUI and the core of the session, the
+daemon of session 0, the service): **do not run all of `ctest` on a PC where Deskflow is running** (see the options of
+`windows-build.ps1` below: build, and run only the tests that you name). What is known of the seven, and what is not (the Mac
+cannot run Windows: "proxy" below is an object-level check with llvm-mingw, not a link with MSVC):
+
+| Test | Status | Cause | What changed |
+|:--|:--|:--|:--|
+| `MSWindowsKeyStateTests` (did not link, 65 unresolved) | **fixed**, proxy-checked | the test links `platform` and `base arch` only; a `MSWindowsKeyState` is a `KeyState` with a `KeyMap` and a `PlatformComputer`, in `app.lib`, and uses the threads of `mt.lib`. The `server -> app` edge is Unix only | `LIBS base arch io mt net app version` (`src/unittests/platform/CMakeLists.txt`, WIN32 only). Proxy: the objects of the libraries compiled for Windows, resolved the way a static link does: before, **65 symbols of `app` and 13 of `mt`** are missing (65 is the count of the LNK1120); after, none. `MSWindowsClipboardTests` (links today) has none missing in the same check |
+| `ServerConfigTests::clipboardSizeOption`, `ArrangementTests::property_derivedLinks_areReadByTheCoreAsTheyAreMeant` (crash, `0xc0000005` at **address 0**) | **fixed**; the cause is certain from the code and the report, the fix is not run on Windows | reading a server configuration resolves its network address (`NetworkAddress::resolve` -> `ArchNetworkWinsock::setAddrPort` -> `htons_winsock`), a function pointer that `Arch::init()` sets, and **`Arch::init()` exists on Windows only**. Both tests have an `Arch m_arch` and never called `m_arch.init()` (the eight other tests that have one do). A call through a null pointer is an access violation at address 0, as in the report. On macOS and Linux there is nothing to initialise | `m_arch.init()` in `initTestCase()` of both |
+| `ClientAppConnectTests` (`0xc0000409`, "failed to create event for windows event loop") | **not run when Deskflow is running**; the cause is probable (not shown) | an application object of Windows (`AppUtilWindows`) opens the machine-wide event `Global\DeskflowClose` in a thread, and the process ends if it cannot be made (an exception in a thread). The installed Deskflow (the daemon of session 0) owns it; the probable error is *access denied* | `initTestCase()` makes the event itself and **skips the whole test**, with the reason, when it exists or cannot be made (the CMake file says so too). Stop Deskflow (the GUI, its core and the service) to run it. See the safety note below |
+| `ClientConnectDiagnosisTests::connect_toAClosedLocalPort_logsTheRefusalOfTheRealSocket`, `ConnectionProbeTests::system_closedLocalPort_isRefused` | **confirmed on the PC**, tests adapted | the log of the first one shows `connecting to '127.0.0.1:47301'` and exactly 2 s later `cannot reach the server ...: the connection timed out (no answer within 2 s)`: Windows does not hand the refusal over at once (it sends the SYN again after the reset), so a limit of 2 s ends as a timeout. The mapping `WSAECONNREFUSED` -> refused is there (`ArchNetworkWinsock.cpp`) | the limits are 10 s, and the failure messages tell **how long it took** and what the kind is. The product consequence is in `docs/connecting-across-networks.md` |
+| `DialogLayoutTests::serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing` (crash) | **not understood** | no cause found in the code | see below |
+
+**Safety, `ClientAppConnectTests`.** Could a test stop the Deskflow that runs on the PC? No: the only code that signals
+`Global\DeskflowClose` is `MSWindowsProcess::shutdown` (what the GUI and the service use to stop a core); no test calls it,
+and the application object only waits on the event and closes its handle. The other way round is possible (the GUI that
+stops its core signals the event, and a test that shares it quits), which is why the test is skipped and not run when the
+event exists. The same code makes a core that cannot create the event stop with `0xc0000409` instead of a message:
+that is in the program too, not only in the test, and it is **not changed here** (not verifiable without Windows).
+
+**`DialogLayoutTests`, ranked, with what to run.** It is the first test of the file that shows the arrangement canvas; the
+dialogs before it passed. Nothing of it is Windows specific in the source (no `Q_OS_WIN`, the GUI does not use `ARCH`).
+
+1. *A stack that is too small* (a main thread has 1 MB with MSVC, 8 MB on macOS). Check: the exception code in the Event
+   Viewer (*Windows Logs > Application*, the *Application Error* of `DialogLayoutTests.exe`): `0xc00000fd` is a stack
+   overflow, `0xc0000005` an access violation. Or run it once with a big stack:
+   `editbin /STACK:16777216 build\windows-Release\src\unittests\gui\dialogs\DialogLayoutTests.exe` (from a Developer
+   PowerShell) and run the test again: if it passes, it is the stack.
+2. *The painting of the canvas* (fonts, `QPainter`) on the `offscreen` platform of Windows. Run
+   `$env:QT_QPA_PLATFORM='offscreen'; .\DialogLayoutTests.exe serverConfigDialog_computersTab_withTheArrangement_isLaidOutWithoutSqueezing -v2`
+   in `build\windows-Release\src\unittests\gui\dialogs`: the last lines say which row (style, font, size) it died in. Then
+   the same with `$env:QT_QPA_PLATFORM='windows'` (a window appears for a moment).
+3. *The library set of the test* (as the test above): the link works, but an object that is not on the line is
+   replaced by another. Less likely, the test was passing the link.
+
+Send the last 30 lines of the `-v2` output and the exception code.
+
 ## 6. Cross-compile check (done on the Mac, for what could be checked)
 
 I cannot build or run Windows here. A syntax-only check (`clang -fsyntax-only`, llvm-mingw 20261104, Windows SDK

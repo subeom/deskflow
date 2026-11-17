@@ -102,6 +102,15 @@ Reading what you get:
 | refused | The server computer answered: wrong address or port, or the server is not running. |
 | no route to host | No path: other network, isolation, or the local network permission of macOS. |
 
+> **Windows:** Windows does not hand a *refused* over at once. After the reset it sends the first packet again, and the
+> refusal is reported **after about two seconds**: on a Windows 11 PC a client that connected to a port of the same
+> computer that nothing listens on ended exactly 2 s later with *the connection timed out (no answer within 2 s)*, not with
+> *refused*. A client with the default time limit of 2 s therefore may say *timed out* for a port that nothing listens on
+> (the server is not running, another port), where macOS says *refused*, and the hint that goes with it (a firewall that
+> drops the packets) is then misleading. If the log says *timed out*, also check that the server is running and listens on
+> that port; or set `client/connectTimeout` to 5 and look again. The *Test connection* of the GUI waits 3 s and may tell the
+> two apart on Windows (an estimate, not tried). `Test-NetConnection SERVER_IP -Port 24800` shows how long it takes.
+
 ### The probe scripts
 
 Two small scripts, `tools/tcp_probe.py` and `tools/tcp_probe.ps1` in the source tree of Deskflow, do the same and a little more. They make an ordinary TCP connection, send nothing
@@ -169,7 +178,8 @@ code of the client):
   before the next entry of the list.
 - A failed address is followed by the next after a **pause of 1 second** (5 s to 5 min later, when you switched on
   `client/dynamicConnectionInterval`, after many rounds of failure).
-- An address that answers *refused* costs only that second. One that does **not answer** costs the connect time limit
+- An address that answers *refused* costs only that second (on Windows the refusal itself may take about 2 s: see the note
+  under *Reading what you get*). One that does **not answer** costs the connect time limit
   as well: with the default that is 2 s and 1 s pause, **3 s per address**; with `client/connectTimeout` = 1, 2 s.
 - The same holds for a failure that is not a silent address: a TLS or greeting failure ends as the time limit does and then
   the next address is tried. A server that answers *but sends the client away* (unknown name, name in use) is not

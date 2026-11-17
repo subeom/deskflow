@@ -24,6 +24,7 @@
 #include "net/SocketMultiplexer.h"
 #include "net/TCPSocketFactory.h"
 
+#include <QElapsedTimer>
 #include <QTcpServer>
 #include <QTemporaryDir>
 #include <QTest>
@@ -668,6 +669,10 @@ void ClientConnectDiagnosisTests::connect_toAClosedLocalPort_logsTheRefusalOfThe
     port = server.serverPort();
   }
   Settings::setValue(Settings::Security::TlsEnabled, false);
+  // Windows does not say "refused" at once: it sends the SYN again after the reset, and the refusal comes after about
+  // two seconds (the time that it took is in the message when the test fails). The time limit of the client, 2 s by
+  // default, would be reached about as soon, and the failure would be a timeout: here the limit is longer than that.
+  Settings::setValue(Settings::Client::ConnectTimeout, 10.0);
 
   CapturingOutputter log;
   m_log.insert(&log, true);
@@ -687,20 +692,27 @@ void ClientConnectDiagnosisTests::connect_toAClosedLocalPort_logsTheRefusalOfThe
     delete info;
     events.addEvent(Event(EventTypes::Quit));
   });
-  auto *guard = events.newOneShotTimer(5.0, nullptr);
+  auto *guard = events.newOneShotTimer(15.0, nullptr);
   events.addHandler(EventTypes::Timer, guard, [&](const Event &) {
     timedOut = true;
     events.addEvent(Event(EventTypes::Quit));
   });
 
+  QElapsedTimer clock;
+  clock.start();
   client.connect();
   events.loop();
+  const auto elapsed = clock.elapsed();
   events.deleteTimer(guard);
   m_log.remove(&log);
 
-  QVERIFY(!timedOut);
-  QVERIFY2(log.has(QStringLiteral("the server 127.0.0.1:%1 refused the connection").arg(port)), qPrintable(log.dump()));
-  QVERIFY2(failure.contains(QStringLiteral("refused"), Qt::CaseInsensitive), qPrintable(failure));
+  const auto after = QStringLiteral("\n(after %1 ms)\n").arg(elapsed);
+  QVERIFY2(!timedOut, qPrintable(after + log.dump()));
+  QVERIFY2(
+      log.has(QStringLiteral("the server 127.0.0.1:%1 refused the connection").arg(port)),
+      qPrintable(after + log.dump())
+  );
+  QVERIFY2(failure.contains(QStringLiteral("refused"), Qt::CaseInsensitive), qPrintable(after + failure));
 }
 
 // A real secure socket against a peer that takes the connection and says nothing: TCP is up and the handshake has
