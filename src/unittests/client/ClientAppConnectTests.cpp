@@ -159,6 +159,26 @@ bool useConfiguration(const QString &directory, const QString &remoteHost)
   return true;
 }
 
+// a configuration that is given as the whole text (for the keys of the tunnel and of TLS)
+bool useConfigurationText(const QString &directory, const QString &text)
+{
+  static int counter = 0;
+  QFile file(QStringLiteral("%1/Deskflow-text-%2.conf").arg(directory).arg(++counter));
+  if (!file.open(QFile::WriteOnly | QFile::Truncate)) {
+    return false;
+  }
+  file.write(text.toUtf8());
+  file.close();
+  Settings::setSettingsFile(file.fileName());
+  return true;
+}
+
+int g_byeCode = -1;
+void recordBye(int code)
+{
+  g_byeCode = code;
+}
+
 // runs the events of \p events until \p done says so; false when it did not within \p limitSeconds
 bool runUntil(EventQueue &events, const std::function<bool()> &done, double limitSeconds)
 {
@@ -255,6 +275,107 @@ void ClientAppConnectTests::parseArgs_singleAddress_isOneAddress()
   m_log.remove(&log);
 
   QVERIFY2(log.count(QStringLiteral("configured 1 server address(es)")) == 1, qPrintable(log.dump()));
+}
+
+void ClientAppConnectTests::parseArgs_tunnelOnAndUsable_dialsTheLocalAddressOnly()
+{
+  QVERIFY(useConfigurationText(
+      m_dir.path(), QStringLiteral(
+                        "[client]\nremoteHost=10.0.0.5\n[core]\ncomputerName=test\nport=24800\n"
+                        "[security]\ntlsEnabled=true\n[tunnel]\nenabled=true\nhostname=mbp.example.com\n"
+                    )
+  ));
+  CapturingOutputter log;
+  m_log.insert(&log, true);
+  EventQueue events;
+  TestClientApp app(&events, QStringLiteral("test"));
+  g_byeCode = -1;
+  app.setByeFunc(&recordBye);
+
+  app.parseArgs();
+  m_log.remove(&log);
+
+  QVERIFY2(log.count(QStringLiteral("configured 1 server address(es)")) == 1, qPrintable(log.dump()));
+  QVERIFY2(log.indexOf(QStringLiteral("added server address: 127.0.0.1:24800")) >= 0, qPrintable(log.dump()));
+  QCOMPARE(log.count(QStringLiteral("10.0.0.5")), 0);
+  QCOMPARE(g_byeCode, -1);
+}
+
+void ClientAppConnectTests::parseArgs_tunnelOnAndNotUsable_doesNotGoToTheSavedAddress_data()
+{
+  QTest::addColumn<QString>("tls");
+  QTest::addColumn<QString>("hostname");
+  QTest::addColumn<QString>("reason");
+  QTest::newRow("tls off") << "false" << "mbp.example.com" << "TLS";
+  QTest::newRow("hostname empty") << "true" << "" << "hostname";
+  QTest::newRow("hostname is an address") << "true" << "10.0.0.5" << "hostname";
+  QTest::newRow("hostname with a scheme") << "true" << "https://mbp.example.com" << "hostname";
+}
+
+// The tunnel is on in the settings and cannot be used. The client must not connect to the saved address instead: that
+// would be a connection that the user meant to make through the tunnel, made without it (and with TLS off, in the
+// clear)
+void ClientAppConnectTests::parseArgs_tunnelOnAndNotUsable_doesNotGoToTheSavedAddress()
+{
+  QFETCH(QString, tls);
+  QFETCH(QString, hostname);
+  QFETCH(QString, reason);
+
+  QVERIFY(useConfigurationText(
+      m_dir.path(), QStringLiteral(
+                        "[client]\nremoteHost=10.0.0.5\n[core]\ncomputerName=test\nport=24800\n"
+                        "[security]\ntlsEnabled=%1\n[tunnel]\nenabled=true\nhostname=\"%2\"\n"
+                    )
+                        .arg(tls, hostname)
+  ));
+  CapturingOutputter log;
+  m_log.insert(&log, true);
+  EventQueue events;
+  TestClientApp app(&events, QStringLiteral("test"));
+  g_byeCode = -1;
+  app.setByeFunc(&recordBye);
+
+  app.parseArgs();
+  m_log.remove(&log);
+
+  // no address is made, one clear line says why, and the application ends the way that a bad configuration ends it
+  QCOMPARE(log.count(QStringLiteral("added server address")), 0);
+  QCOMPARE(log.count(QStringLiteral("configured")), 0);
+  QCOMPARE(log.count(QStringLiteral("10.0.0.5")), 0);
+  QCOMPARE(log.count(QStringLiteral("Cloudflare Tunnel")), 1);
+  QVERIFY2(log.indexOf(reason) >= 0, qPrintable(log.dump()));
+  QCOMPARE(g_byeCode, 4);
+}
+
+// With the tunnel off or unset nothing is different: the keys of the tunnel and what TLS is do not matter
+void ClientAppConnectTests::parseArgs_tunnelOffOrAbsent_isTheSavedAddressWhateverElseTheTunnelKeysHold()
+{
+  for (const auto &text :
+       {QStringLiteral(
+            "[client]\nremoteHost=10.0.0.5\n[core]\ncomputerName=test\nport=24800\n"
+            "[security]\ntlsEnabled=false\n"
+        ),
+        QStringLiteral(
+            "[client]\nremoteHost=10.0.0.5\n[core]\ncomputerName=test\nport=24800\n"
+            "[security]\ntlsEnabled=false\n[tunnel]\nenabled=false\n"
+            "hostname=\"not a host name\"\n"
+        )}) {
+    QVERIFY(useConfigurationText(m_dir.path(), text));
+    CapturingOutputter log;
+    m_log.insert(&log, true);
+    EventQueue events;
+    TestClientApp app(&events, QStringLiteral("test"));
+    g_byeCode = -1;
+    app.setByeFunc(&recordBye);
+
+    app.parseArgs();
+    m_log.remove(&log);
+
+    QVERIFY2(log.count(QStringLiteral("configured 1 server address(es)")) == 1, qPrintable(log.dump()));
+    QVERIFY2(log.indexOf(QStringLiteral("added server address: 10.0.0.5")) >= 0, qPrintable(log.dump()));
+    QCOMPARE(log.count(QStringLiteral("Cloudflare Tunnel")), 0);
+    QCOMPARE(g_byeCode, -1);
+  }
 }
 
 // What a client does with "A,B" when A does not take it: it goes on to B, after the retry delay of 1 s

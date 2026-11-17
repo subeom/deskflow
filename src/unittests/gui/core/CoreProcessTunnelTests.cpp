@@ -33,8 +33,14 @@ public:
   bool required = true;
   bool listeningNow = false;
   bool failOnAcquire = false;
+  TunnelFailure problem = TunnelFailure::None;
   int acquired = 0;
   int released = 0;
+
+  TunnelFailure validate() const override
+  {
+    return problem;
+  }
 
   bool isRequired() const override
   {
@@ -165,6 +171,28 @@ void CoreProcessTunnelTests::aTunnelThatFailsAtOnce_endsTheStart()
   QCOMPARE(gate.acquired, 1);
   QCOMPARE(core.processState(), ProcessState::Stopped);
   QCOMPARE(core.connectionState(), ConnectionState::Disconnected);
+}
+
+void CoreProcessTunnelTests::aTunnelThatListensAfterTheSettingsBecameUnusable_endsTheStartInsteadOfStartingTheCore()
+{
+  const ServerConfig serverConfig;
+  CoreProcess core(serverConfig);
+  FakeGate gate;
+  core.setTunnelGate(&gate);
+  core.setMode(Settings::CoreMode::Client);
+  core.start();
+  QCOMPARE(core.processState(), ProcessState::Starting);
+  QSignalSpy errors(&core, &CoreProcess::error);
+
+  // TLS was switched off while the tunnel came up: the core is not started (it would dial the saved address)
+  gate.problem = TunnelFailure::TlsRequired;
+  gate.tellListening();
+
+  QCOMPARE(core.processState(), ProcessState::Stopped);
+  QCOMPARE(core.connectionState(), ConnectionState::Disconnected);
+  QVERIFY(!core.isStarted());
+  QCOMPARE(gate.released, 1);
+  QCOMPARE(errors.count(), 0);
 }
 
 void CoreProcessTunnelTests::aStopWhileTheStartWaits_cancelsItAndLetsTheTunnelGo()

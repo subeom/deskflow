@@ -110,6 +110,8 @@ QString TunnelTestDialog::hintText(TunnelFailure failure)
   case TunnelFailure::StartTimedOut:
   case TunnelFailure::ProcessExited:
     return tr("Look at the log (View menu) for what cloudflared wrote.");
+  case TunnelFailure::SettingsChanged:
+    return tr("The settings changed while the test ran. Run the test again.");
   }
   return {};
 }

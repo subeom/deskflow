@@ -162,7 +162,7 @@ void TunnelTestDialogTests::everyFailureHasAHint()
 {
   QVERIFY(TunnelTestDialog::hintText(TunnelFailure::None).isEmpty());
   for (int value = static_cast<int>(TunnelFailure::TlsRequired);
-       value <= static_cast<int>(TunnelFailure::ProcessExited); ++value) {
+       value <= static_cast<int>(TunnelFailure::SettingsChanged); ++value) {
     const auto hint = TunnelTestDialog::hintText(static_cast<TunnelFailure>(value));
     QVERIFY2(!hint.isEmpty(), qPrintable(failureKey(static_cast<TunnelFailure>(value))));
     // no hint tells the user to type the secret into a place other than the field of the dialog

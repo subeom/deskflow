@@ -27,6 +27,8 @@ private Q_SLOTS:
   void thePortThatWasAsked_isNotWrittenAsAnActivePort();
   void aStaleActivePort_isClearedWhenTheControllerIsMade();
   void aStartThatCannotHappen_isToldAsFailed_andTheTunnelStaysRequired();
+  void validate_saysWhatIsWrongWithTheConfigurationNow();
+  void validate_noticesAChangeThatHappenedWhileTheTunnelCameUp();
   void shutdown_endsTheProcess();
   void theLog_isForwardedWithoutTheToken();
   void theServerConnecting_clearsAProblemOfTheConnection();

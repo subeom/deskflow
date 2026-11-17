@@ -51,6 +51,17 @@ ClientApp::ClientApp(IEventQueue *events, const QString &processName) : App(even
 
 void ClientApp::parseArgs()
 {
+  // The Cloudflare Tunnel is on and cannot be used (TLS off, no usable hostname): the saved address is not dialled
+  // instead
+  if (const auto block = deskflow::tunnel::remoteHostBlock(); block != deskflow::tunnel::RemoteHostBlock::None) {
+    LOG_CRIT(
+        "%s: the Cloudflare Tunnel is on but cannot be used (%s): not connecting to the saved address" BYE,
+        qPrintable(processName()), qPrintable(deskflow::tunnel::remoteHostBlockText(block)), qPrintable(processName())
+    );
+    bye(s_exitConfig);
+    return;
+  }
+
   // save server addresses (comma-separated list supported); with a Cloudflare Tunnel in use it is the local address of
   // the tunnel instead, otherwise exactly the saved address
   if (const auto addressList = deskflow::tunnel::effectiveRemoteHost(); !addressList.isEmpty()) {

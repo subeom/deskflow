@@ -269,6 +269,49 @@ void TunnelControllerTests::aStartThatCannotHappen_isToldAsFailed_andTheTunnelSt
   QCOMPARE(rig.controller->status().state, TunnelState::Failed);
 }
 
+void TunnelControllerTests::validate_saysWhatIsWrongWithTheConfigurationNow()
+{
+  ControllerRig rig(m_dir);
+  rig.turnOn();
+  QVERIFY(rig.bringUp());
+  QCOMPARE(rig.controller->validate(), TunnelFailure::None);
+
+  Settings::setValue(Settings::Security::TlsEnabled, false);
+  QCOMPARE(rig.controller->validate(), TunnelFailure::TlsRequired);
+  Settings::setValue(Settings::Security::TlsEnabled, true);
+  QCOMPARE(rig.controller->validate(), TunnelFailure::None);
+
+  Settings::setValue(Settings::Tunnel::Hostname, QString());
+  QCOMPARE(rig.controller->validate(), TunnelFailure::InvalidHostname);
+  Settings::setValue(Settings::Tunnel::Hostname, QStringLiteral("10.0.0.5"));
+  QCOMPARE(rig.controller->validate(), TunnelFailure::InvalidHostname);
+  Settings::setValue(Settings::Tunnel::Hostname, QStringLiteral("mbp.example.com"));
+  QCOMPARE(rig.controller->validate(), TunnelFailure::None);
+
+  Settings::setValue(Settings::Tunnel::Enabled, false);
+  QCOMPARE(rig.controller->validate(), TunnelFailure::SettingsChanged);
+  Settings::setValue(Settings::Tunnel::Enabled, true);
+  QCOMPARE(rig.controller->validate(), TunnelFailure::None);
+
+  rig.controller->setClientMode(false);
+  QCOMPARE(rig.controller->validate(), TunnelFailure::SettingsChanged);
+}
+
+void TunnelControllerTests::validate_noticesAChangeThatHappenedWhileTheTunnelCameUp()
+{
+  ControllerRig rig(m_dir);
+  rig.turnOn();
+  rig.controller->acquire();
+  QCOMPARE(rig.controller->status().state, TunnelState::Starting);
+
+  // the tunnel that is on its way was started for another hostname: it is not the tunnel of the settings any more
+  Settings::setValue(Settings::Tunnel::Hostname, QStringLiteral("other.example.com"));
+  rig.finishStart();
+  QCOMPARE(rig.controller->status().state, TunnelState::Listening);
+  QVERIFY(!rig.controller->isListening());
+  QCOMPARE(rig.controller->validate(), TunnelFailure::SettingsChanged);
+}
+
 void TunnelControllerTests::shutdown_endsTheProcess()
 {
   ControllerRig rig(m_dir);

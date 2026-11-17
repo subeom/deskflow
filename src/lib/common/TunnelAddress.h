@@ -63,10 +63,31 @@ struct TunnelConfig
   static TunnelConfig fromSettings();
 };
 
+//! Why a client that is told to use the tunnel must not connect at all
+enum class RemoteHostBlock
+{
+  None,
+  TlsRequired,    //!< Deskflow's TLS is off: the tunnel would carry the connection in plain text
+  InvalidHostname //!< the hostname of the tunnel is empty or is not a host name
+};
+
 /**
- * The address list that the client dials. With the tunnel off, or not usable (see TunnelConfig::isActive), it is
- * \p configuredRemoteHost, unchanged. With it on, it is the local address of the tunnel and nothing else: the saved
- * list is not tried, so a failing tunnel never falls back to a path that bypasses it without the user knowing.
+ * Whether the tunnel is turned on and cannot be used. Then the client must not connect to the saved address instead:
+ * the user asked for the tunnel, and a connection to the saved address (maybe in plain text, with TLS off) is not what
+ * was asked for. Nothing when the tunnel is off, or on and usable.
+ */
+RemoteHostBlock remoteHostBlock(const TunnelConfig &config);
+RemoteHostBlock remoteHostBlock();
+
+//! One English sentence for the log of the core ("TLS is off ..."); empty for None
+QString remoteHostBlockText(RemoteHostBlock block);
+
+/**
+ * The address list that the client dials.
+ * - Tunnel off (or never set): \p configuredRemoteHost, unchanged.
+ * - Tunnel on and usable (see TunnelConfig::isActive): the local address of the tunnel and nothing else. The saved list
+ * is not tried, so a failing tunnel never falls back to a path that bypasses it.
+ * - Tunnel on and not usable (see remoteHostBlock): empty. Nothing is dialled; it is not the saved address.
  */
 QString effectiveRemoteHost(const TunnelConfig &config, const QString &configuredRemoteHost);
 

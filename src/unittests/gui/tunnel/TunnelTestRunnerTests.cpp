@@ -373,7 +373,7 @@ void TunnelTestRunnerTests::theSummaryLine_isEnglishAndNamesNoToken()
 void TunnelTestRunnerTests::failureKeys_areTheSameInEveryLanguage()
 {
   QStringList keys;
-  for (int value = static_cast<int>(TunnelFailure::None); value <= static_cast<int>(TunnelFailure::ProcessExited);
+  for (int value = static_cast<int>(TunnelFailure::None); value <= static_cast<int>(TunnelFailure::SettingsChanged);
        ++value) {
     const auto key = failureKey(static_cast<TunnelFailure>(value));
     QVERIFY(!key.isEmpty());

@@ -236,14 +236,59 @@ void TunnelAddressTests::effectiveRemoteHost_isTheSavedAddressUnchangedWhenTheTu
   off.cloudflaredPath = QStringLiteral("/opt/homebrew/bin/cloudflared");
   QCOMPARE(effectiveRemoteHost(off, saved), saved);
 
-  // on but not usable: the same
+  // (on but not usable is not "not used": nothing is dialled then, see
+  // effectiveRemoteHost_isNothingWhenTheTunnelIsOnAndNotUsable)
+}
+
+void TunnelAddressTests::effectiveRemoteHost_isNothingWhenTheTunnelIsOnAndNotUsable_data()
+{
+  QTest::addColumn<QString>("saved");
+  for (const auto &saved : kSavedAddresses) {
+    QTest::newRow(saved.isEmpty() ? "empty" : qPrintable(saved)) << saved;
+  }
+}
+
+// The user turned the tunnel on, so the client must not go to the saved address behind the back of the tunnel: with TLS
+// off that would be a connection without encryption to the address that the user meant to reach through the tunnel
+void TunnelAddressTests::effectiveRemoteHost_isNothingWhenTheTunnelIsOnAndNotUsable()
+{
+  QFETCH(QString, saved);
+
   TunnelConfig noTls = usable();
   noTls.tlsEnabled = false;
-  QCOMPARE(effectiveRemoteHost(noTls, saved), saved);
+  QVERIFY(effectiveRemoteHost(noTls, saved).isEmpty());
+  QCOMPARE(remoteHostBlock(noTls), RemoteHostBlock::TlsRequired);
 
   TunnelConfig noHostname = usable();
   noHostname.hostname.clear();
-  QCOMPARE(effectiveRemoteHost(noHostname, saved), saved);
+  QVERIFY(effectiveRemoteHost(noHostname, saved).isEmpty());
+  QCOMPARE(remoteHostBlock(noHostname), RemoteHostBlock::InvalidHostname);
+
+  TunnelConfig addressAsHostname = usable();
+  addressAsHostname.hostname = QStringLiteral("10.0.0.5");
+  QVERIFY(effectiveRemoteHost(addressAsHostname, saved).isEmpty());
+  QCOMPARE(remoteHostBlock(addressAsHostname), RemoteHostBlock::InvalidHostname);
+
+  // both wrong: the reason that the user can act on first is TLS
+  TunnelConfig both = noTls;
+  both.hostname.clear();
+  QCOMPARE(remoteHostBlock(both), RemoteHostBlock::TlsRequired);
+}
+
+void TunnelAddressTests::remoteHostBlock_isNothingWhenTheTunnelIsOffOrUsable()
+{
+  TunnelConfig off;
+  QCOMPARE(remoteHostBlock(off), RemoteHostBlock::None);
+  // off, whatever else is set
+  off.hostname = QStringLiteral("not a host name");
+  off.tlsEnabled = false;
+  QCOMPARE(remoteHostBlock(off), RemoteHostBlock::None);
+
+  QCOMPARE(remoteHostBlock(usable()), RemoteHostBlock::None);
+
+  QVERIFY(remoteHostBlockText(RemoteHostBlock::None).isEmpty());
+  QVERIFY(remoteHostBlockText(RemoteHostBlock::TlsRequired).contains(QStringLiteral("TLS")));
+  QVERIFY(remoteHostBlockText(RemoteHostBlock::InvalidHostname).contains(QStringLiteral("hostname")));
 }
 
 void TunnelAddressTests::effectiveRemoteHost_isTheLocalAddressAndNothingElseWhenTheTunnelIsUsed()
@@ -391,14 +436,28 @@ void TunnelAddressTests::settings_effectiveRemoteHostFollowsTheSavedAddressWhenO
       Settings::value(Settings::Client::RecentRemoteHosts).toStringList(), QStringList{QStringLiteral("10.0.0.5")}
   );
 
+  // on and not usable: nothing is dialled, and the saved address is not touched
+  Settings::setValue(Settings::Security::TlsEnabled, false);
+  QVERIFY(effectiveRemoteHost().isEmpty());
+  QCOMPARE(remoteHostBlock(), RemoteHostBlock::TlsRequired);
+  QCOMPARE(Settings::textValue(Settings::Client::RemoteHost), QStringLiteral("10.0.0.5"));
+  Settings::setValue(Settings::Security::TlsEnabled, true);
+  Settings::setValue(Settings::Tunnel::Hostname, QStringLiteral("not a host name"));
+  QVERIFY(effectiveRemoteHost().isEmpty());
+  QCOMPARE(remoteHostBlock(), RemoteHostBlock::InvalidHostname);
+  Settings::setValue(Settings::Tunnel::Hostname, QStringLiteral("mbp.example.com"));
+  QCOMPARE(remoteHostBlock(), RemoteHostBlock::None);
+
   // off again: the saved address is dialled again
   Settings::setValue(Settings::Tunnel::Enabled, false);
+  QCOMPARE(remoteHostBlock(), RemoteHostBlock::None);
   QCOMPARE(effectiveRemoteHost(), QStringLiteral("10.0.0.5"));
 
-  // TLS off blocks the tunnel even when it is on
+  // TLS off with the tunnel on: the tunnel is not used and the saved address is not dialled either
   Settings::setValue(Settings::Tunnel::Enabled, true);
   Settings::setValue(Settings::Security::TlsEnabled, false);
-  QCOMPARE(effectiveRemoteHost(), QStringLiteral("10.0.0.5"));
+  QVERIFY(effectiveRemoteHost().isEmpty());
+  QCOMPARE(Settings::textValue(Settings::Client::RemoteHost), QStringLiteral("10.0.0.5"));
 }
 
 QTEST_MAIN(TunnelAddressTests)

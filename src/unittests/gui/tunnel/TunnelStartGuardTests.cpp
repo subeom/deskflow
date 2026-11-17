@@ -18,12 +18,19 @@ public:
   bool required = true;
   bool listeningNow = false;
   bool failOnAcquire = false;
+  //! what validate() says: the configuration as it is now
+  TunnelFailure problem = TunnelFailure::None;
   int acquired = 0;
   int released = 0;
 
   bool isRequired() const override
   {
     return required;
+  }
+
+  TunnelFailure validate() const override
+  {
+    return problem;
   }
 
   bool isListening() const override
@@ -232,6 +239,61 @@ void TunnelStartGuardTests::aListeningThatCameAfterAStop_doesNotStartTheCore()
   guard.coreStopped();
   gate.tunnelListens();
   QCOMPARE(core.started, 0);
+}
+
+void TunnelStartGuardTests::aTunnelThatListensAfterTheConfigurationBecameUnusable_doesNotStartTheCore_data()
+{
+  QTest::addColumn<TunnelFailure>("problem");
+  QTest::newRow("tls switched off") << TunnelFailure::TlsRequired;
+  QTest::newRow("hostname cleared") << TunnelFailure::InvalidHostname;
+  QTest::newRow("tunnel disabled or settings changed") << TunnelFailure::SettingsChanged;
+}
+
+void TunnelStartGuardTests::aTunnelThatListensAfterTheConfigurationBecameUnusable_doesNotStartTheCore()
+{
+  QFETCH(TunnelFailure, problem);
+
+  FakeGate gate;
+  Core core;
+  TunnelStartGuard guard(&gate, core.actions());
+  core.guard = &guard;
+
+  core.start();
+  QVERIFY(guard.isWaiting());
+
+  // while the tunnel came up the user changed the settings: the core must not dial anything on the old ones
+  gate.problem = problem;
+  gate.tunnelListens();
+
+  QCOMPARE(core.started, 0);
+  QCOMPARE(core.failedWaiting, 1);
+  QCOMPARE(core.failedRunning, 0);
+  QCOMPARE(core.lastFailure, problem);
+  QVERIFY(!guard.isWaiting());
+  // and the tunnel that was started for it is let go
+  QCOMPARE(gate.released, 1);
+}
+
+void TunnelStartGuardTests::theStartAfterAnUnusableResume_asksTheTunnelAgain()
+{
+  FakeGate gate;
+  Core core;
+  TunnelStartGuard guard(&gate, core.actions());
+  core.guard = &guard;
+
+  core.start();
+  gate.problem = TunnelFailure::TlsRequired;
+  gate.tunnelListens();
+  QCOMPARE(core.started, 0);
+
+  // the user fixes the settings and starts again
+  gate.problem = TunnelFailure::None;
+  gate.listeningNow = false;
+  core.start();
+  QCOMPARE(core.waiting, 2);
+  QCOMPARE(gate.acquired, 2);
+  gate.tunnelListens();
+  QCOMPARE(core.started, 1);
 }
 
 void TunnelStartGuardTests::everyStopReleasesTheTunnel()

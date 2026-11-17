@@ -37,7 +37,8 @@ enum class TunnelFailure
   HandshakeRejected,  //!< Cloudflare refused the connection (the Access policy or the tunnel at the server)
   ConnectFailed,      //!< cloudflared could not open the connection to the server, for a reason that is not known
   StartTimedOut,      //!< cloudflared did not open the local port in time
-  ProcessExited       //!< cloudflared keeps stopping
+  ProcessExited,      //!< cloudflared keeps stopping
+  SettingsChanged //!< the settings were changed while the tunnel came up: it is not the tunnel that they ask for now
 };
 
 /**

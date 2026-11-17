@@ -54,6 +54,7 @@ public:
   // ITunnelGate
   bool isRequired() const override;
   bool isListening() const override;
+  TunnelFailure validate() const override;
   void acquire() override;
   void release() override;
 

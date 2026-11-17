@@ -75,6 +75,22 @@ bool TunnelController::isListening() const
   return m_supervisor->status().state == TunnelState::Listening && m_supervisor->request() == currentRequest();
 }
 
+TunnelFailure TunnelController::validate() const
+{
+  const auto current = config();
+  if (!m_clientMode || !current.enabled) {
+    return TunnelFailure::SettingsChanged;
+  }
+  if (!current.tlsEnabled) {
+    return TunnelFailure::TlsRequired;
+  }
+  if (!isValidHostname(current.hostname)) {
+    return TunnelFailure::InvalidHostname;
+  }
+  // the hostname, the port or the path of cloudflared is not the one that the running tunnel was started with
+  return isListening() ? TunnelFailure::None : TunnelFailure::SettingsChanged;
+}
+
 void TunnelController::acquire()
 {
   m_lingerTimer->stop();

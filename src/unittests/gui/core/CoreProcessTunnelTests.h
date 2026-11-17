@@ -20,6 +20,7 @@ private Q_SLOTS:
   void aStartThatWaitsForTheTunnel_isPostponedAndShowsAsStarting();
   void aTunnelThatFailsWhileTheStartWaits_endsTheStart();
   void aTunnelThatFailsAtOnce_endsTheStart();
+  void aTunnelThatListensAfterTheSettingsBecameUnusable_endsTheStartInsteadOfStartingTheCore();
   void aStopWhileTheStartWaits_cancelsItAndLetsTheTunnelGo();
   void aTunnelThatListensAfterAStop_doesNotStartTheCore();
   void aCleanupOfACoreThatIsNotRunning_leavesTheTunnelAlone();

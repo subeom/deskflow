@@ -447,7 +447,8 @@ void TunnelStateMachineTests::status_hasTheTextForEveryStateAndFailure()
        {TunnelFailure::TlsRequired, TunnelFailure::InvalidHostname, TunnelFailure::CloudflaredMissing,
         TunnelFailure::CredentialsMissing, TunnelFailure::PortBusy, TunnelFailure::LoginRequired,
         TunnelFailure::HostUnresolvable, TunnelFailure::EdgeUnreachable, TunnelFailure::HandshakeRejected,
-        TunnelFailure::ConnectFailed, TunnelFailure::StartTimedOut, TunnelFailure::ProcessExited}) {
+        TunnelFailure::ConnectFailed, TunnelFailure::StartTimedOut, TunnelFailure::ProcessExited,
+        TunnelFailure::SettingsChanged}) {
     status.failure = failure;
     QVERIFY(!failureText(failure).isEmpty());
     QVERIFY(status.text().startsWith(QStringLiteral("Tunnel: failed (")));
@@ -466,7 +467,7 @@ void TunnelStateMachineTests::needsUserAction_isTrueWhereRestartingCannotHelp()
   for (const auto failure :
        {TunnelFailure::None, TunnelFailure::HostUnresolvable, TunnelFailure::EdgeUnreachable,
         TunnelFailure::HandshakeRejected, TunnelFailure::ConnectFailed, TunnelFailure::StartTimedOut,
-        TunnelFailure::ProcessExited}) {
+        TunnelFailure::ProcessExited, TunnelFailure::SettingsChanged}) {
     QVERIFY(!needsUserAction(failure));
   }
 }

@@ -97,8 +97,43 @@ TunnelConfig TunnelConfig::fromSettings()
   return config;
 }
 
+RemoteHostBlock remoteHostBlock(const TunnelConfig &config)
+{
+  if (!config.enabled) {
+    return RemoteHostBlock::None;
+  }
+  if (!config.tlsEnabled) {
+    return RemoteHostBlock::TlsRequired;
+  }
+  if (!isValidHostname(config.hostname)) {
+    return RemoteHostBlock::InvalidHostname;
+  }
+  return RemoteHostBlock::None;
+}
+
+RemoteHostBlock remoteHostBlock()
+{
+  return remoteHostBlock(TunnelConfig::fromSettings());
+}
+
+QString remoteHostBlockText(RemoteHostBlock block)
+{
+  switch (block) {
+  case RemoteHostBlock::None:
+    return {};
+  case RemoteHostBlock::TlsRequired:
+    return QStringLiteral("TLS is off: the tunnel would carry the connection in plain text");
+  case RemoteHostBlock::InvalidHostname:
+    return QStringLiteral("the hostname of the tunnel is empty or is not a host name");
+  }
+  return {};
+}
+
 QString effectiveRemoteHost(const TunnelConfig &config, const QString &configuredRemoteHost)
 {
+  if (remoteHostBlock(config) != RemoteHostBlock::None) {
+    return {};
+  }
   return config.isActive() ? config.localAddress() : configuredRemoteHost;
 }
 

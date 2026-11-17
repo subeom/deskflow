@@ -247,12 +247,18 @@ struct ControllerRig
     }
   }
 
-  bool bringUp()
+  // the time that a tunnel that was asked for needs to listen
+  void finishStart()
   {
-    controller->acquire();
     advance(400);
     prober->answer(true);
     advance(400);
+  }
+
+  bool bringUp()
+  {
+    controller->acquire();
+    finishStart();
     return controller->status().state == TunnelState::Listening;
   }
 };

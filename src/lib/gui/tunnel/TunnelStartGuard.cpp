@@ -51,6 +51,18 @@ void TunnelStartGuard::onListening()
     return;
   }
 
+  // The settings may have changed while the tunnel came up (TLS switched off, the hostname cleared, the tunnel turned
+  // off): the core is started only on the settings that the tunnel was started for, otherwise it would dial the saved
+  // address
+  if (const auto problem = m_gate->validate(); problem != TunnelFailure::None) {
+    m_waiting = false;
+    m_gate->release();
+    if (m_actions.failed) {
+      m_actions.failed(problem, true);
+    }
+    return;
+  }
+
   m_waiting = false;
   m_resuming = true;
   if (m_actions.resume) {

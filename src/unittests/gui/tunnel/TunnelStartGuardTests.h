@@ -20,5 +20,8 @@ private Q_SLOTS:
   void aTunnelThatFailsAfterTheCoreStarted_reportsItAsNotWaiting();
   void aStopWhileWaiting_cancelsTheStartAndReleasesTheTunnel();
   void aListeningThatCameAfterAStop_doesNotStartTheCore();
+  void aTunnelThatListensAfterTheConfigurationBecameUnusable_doesNotStartTheCore_data();
+  void aTunnelThatListensAfterTheConfigurationBecameUnusable_doesNotStartTheCore();
+  void theStartAfterAnUnusableResume_asksTheTunnelAgain();
   void everyStopReleasesTheTunnel();
 };

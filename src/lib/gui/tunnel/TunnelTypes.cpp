@@ -84,6 +84,8 @@ QString failureText(TunnelFailure failure, int exitCode)
     return TunnelTexts::tr("cloudflared did not open the local port in time.");
   case TunnelFailure::ProcessExited:
     return TunnelTexts::tr("cloudflared keeps stopping (last exit code %1).").arg(exitCode);
+  case TunnelFailure::SettingsChanged:
+    return TunnelTexts::tr("The tunnel settings were changed while the tunnel was starting. Start the client again.");
   }
   return {};
 }
@@ -117,6 +119,8 @@ QString failureKey(TunnelFailure failure)
     return QStringLiteral("start-timed-out");
   case TunnelFailure::ProcessExited:
     return QStringLiteral("process-exited");
+  case TunnelFailure::SettingsChanged:
+    return QStringLiteral("settings-changed");
   }
   return QStringLiteral("unknown");
 }
