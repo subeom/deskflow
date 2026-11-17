@@ -11,9 +11,11 @@
 #include "gui/tunnel/InMemorySecretStore.h"
 #include "gui/widgets/TunnelSettingsGroup.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QDir>
 #include <QFile>
+#include <QFocusEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -105,6 +107,13 @@ struct Widgets
   {
   }
 
+  // the user clicks into the Client ID field: the secure store is asked, once
+  void reveal() const
+  {
+    QFocusEvent in(QEvent::FocusIn);
+    QApplication::sendEvent(clientId, &in);
+  }
+
   QCheckBox *enabled;
   QLabel *note;
   QLabel *startNote;
@@ -181,7 +190,8 @@ void TunnelSettingsGroupTests::defaults_areOffAndEmptyAndTheSecretIsNeverRead()
   QVERIFY(w.clientId->text().isEmpty());
   QVERIFY(w.secret->text().isEmpty());
   QCOMPARE(w.secret->echoMode(), QLineEdit::Password);
-  QVERIFY(w.status->text().startsWith(QStringLiteral("No credentials stored")));
+  // the secure store is not asked until it is needed: the line says so
+  QVERIFY(w.status->text().startsWith(QStringLiteral("Credentials are checked")));
   QVERIFY(!w.remove->isEnabled());
   QVERIFY(w.error->isHidden());
   QVERIFY(group.isDefault());
@@ -199,6 +209,7 @@ void TunnelSettingsGroupTests::defaults_areOffAndEmptyAndTheSecretIsNeverRead()
   QVERIFY(w.tlsNote->isHidden());
 
   QCOMPARE(store->state()->loadCount, 0);
+  QCOMPARE(store->state()->idReadCount, 0);
 }
 
 void TunnelSettingsGroupTests::tlsOff_blocksEnablingAndSaysWhy()
@@ -360,6 +371,7 @@ void TunnelSettingsGroupTests::save_storesTheTokenAndNeverShowsTheSecretAgain()
   // a dialog that is opened again shows the same, and still does not read the Secret
   TunnelSettingsGroup again(dependencies(world, store));
   const Widgets v(again);
+  v.reveal();
   QCOMPARE(v.clientId->text(), kId);
   QVERIFY(v.secret->text().isEmpty());
   QVERIFY(v.status->text().contains(QStringLiteral("...a1b2c3")));
@@ -439,6 +451,7 @@ void TunnelSettingsGroupTests::removeCredentials_asksAndThenRemoves()
   const Widgets w(group);
   QSignalSpy changed(&group, &TunnelSettingsGroup::changed);
 
+  w.reveal();
   QVERIFY(w.remove->isEnabled());
   world->confirmAnswer = false;
   w.remove->click();
@@ -496,6 +509,7 @@ void TunnelSettingsGroupTests::aStoreThatCannotBeRead_isSaidAndNothingBreaks()
   TunnelSettingsGroup group(dependencies(world, store));
   const Widgets w(group);
 
+  w.reveal();
   QVERIFY(w.status->text().contains(QStringLiteral("unreadable")));
   QVERIFY(w.status->text().contains(QStringLiteral("access to the keychain was denied")));
   QVERIFY(!w.remove->isEnabled());
@@ -601,17 +615,20 @@ void TunnelSettingsGroupTests::credentialLine_saysWhereAPersistentTokenIsAndThat
   const auto memory = std::make_shared<InMemorySecretStore>();
   QVERIFY(memory->save(ServiceToken(kId, kSecret)).ok);
   TunnelSettingsGroup inMemory(dependencies(world, memory));
+  Widgets(inMemory).reveal();
   QVERIFY(Widgets(inMemory).status->text().contains(QStringLiteral("memory only")));
   QVERIFY(Widgets(inMemory).status->text().contains(QStringLiteral("forgotten")));
 
   const auto persistent = std::make_shared<PersistentTestStore>();
   QVERIFY(persistent->save(ServiceToken(kId, kSecret)).ok);
   TunnelSettingsGroup stored(dependencies(world, persistent));
+  Widgets(stored).reveal();
   QVERIFY(!Widgets(stored).status->text().contains(QStringLiteral("forgotten")));
   QVERIFY(Widgets(stored).status->text().contains(QStringLiteral("Test keychain")));
 
   // and a system without a secure store says so before anything is stored
   TunnelSettingsGroup empty(dependencies(world, std::make_shared<InMemorySecretStore>()));
+  Widgets(empty).reveal();
   QVERIFY(Widgets(empty).status->text().contains(QStringLiteral("no secure storage")));
 }
 
@@ -623,6 +640,7 @@ void TunnelSettingsGroupTests::notWritable_disablesEveryEntry()
   QVERIFY(store->save(ServiceToken(kId, kSecret)).ok);
   TunnelSettingsGroup group(dependencies(world, store));
   const Widgets w(group);
+  w.reveal();
 
   group.setWritable(false);
   QVERIFY(!w.enabled->isEnabled());
@@ -661,6 +679,163 @@ void TunnelSettingsGroupTests::saveInTheOtherDirection_aSavedTunnelIsShownAgain(
   QCOMPARE(v.port->value(), 24801);
   QCOMPARE(v.path->text(), QStringLiteral("/opt/tools/cloudflared"));
   QVERIFY(!again.isModified());
+}
+
+// Asking the secure store can make the system ask the user for a password (a locked keychain), so it is not asked until
+// the user has a reason: turns the tunnel on, or goes into the fields of the token
+void TunnelSettingsGroupTests::openingWithTheTunnelOff_makesNoCallToTheSecureStore()
+{
+  useConfig();
+  const auto world = std::make_shared<World>();
+  const auto store = std::make_shared<InMemorySecretStore>();
+  QVERIFY(store->save(ServiceToken(kId, kSecret)).ok);
+  const auto saves = store->state()->saveCount;
+
+  TunnelSettingsGroup group(dependencies(world, store));
+  const Widgets w(group);
+  // the dialog loads the group again when it is made and when it is reset
+  group.load();
+  group.load();
+  QVERIFY(!group.isModified());
+  QVERIFY(group.isDefault());
+  QVERIFY(group.validationProblem().isEmpty());
+  group.resetToDefault();
+  group.setWritable(false);
+  group.setWritable(true);
+
+  QCOMPARE(store->state()->idReadCount, 0);
+  QCOMPARE(store->state()->loadCount, 0);
+  QCOMPARE(store->state()->removeCount, 0);
+  QCOMPARE(store->state()->saveCount, saves);
+  QVERIFY(w.clientId->text().isEmpty());
+  QVERIFY(w.status->text().startsWith(QStringLiteral("Credentials are checked")));
+}
+
+void TunnelSettingsGroupTests::openingWithTheTunnelOn_looksUpOnce()
+{
+  useConfig(
+      "[core]\ncomputerName=test-pc\n\n[security]\ntlsEnabled=true\n\n[tunnel]\nenabled=true\n"
+      "hostname=mbp.example.com\n"
+  );
+  const auto world = std::make_shared<World>();
+  const auto store = std::make_shared<InMemorySecretStore>();
+  QVERIFY(store->save(ServiceToken(kId, kSecret)).ok);
+
+  TunnelSettingsGroup group(dependencies(world, store));
+  const Widgets w(group);
+  group.load();
+
+  QCOMPARE(store->state()->idReadCount, 1);
+  QCOMPARE(store->state()->loadCount, 0);
+  QCOMPARE(w.clientId->text(), kId);
+  QVERIFY(w.remove->isEnabled());
+}
+
+void TunnelSettingsGroupTests::turningTheTunnelOn_looksUpOnceAndTheAnswerIsKept()
+{
+  useConfig();
+  const auto world = std::make_shared<World>();
+  const auto store = std::make_shared<InMemorySecretStore>();
+  QVERIFY(store->save(ServiceToken(kId, kSecret)).ok);
+
+  TunnelSettingsGroup group(dependencies(world, store));
+  const Widgets w(group);
+  QCOMPARE(store->state()->idReadCount, 0);
+
+  w.enabled->setChecked(true);
+  QCOMPARE(store->state()->idReadCount, 1);
+  QCOMPARE(w.clientId->text(), kId);
+  QVERIFY(w.remove->isEnabled());
+
+  // off, on, the fields, the dialog loading again: the answer that was got is kept for the life of the dialog
+  w.enabled->setChecked(false);
+  w.enabled->setChecked(true);
+  w.reveal();
+  group.load();
+  QCOMPARE(store->state()->idReadCount, 1);
+  QCOMPARE(store->state()->loadCount, 0);
+}
+
+void TunnelSettingsGroupTests::goingIntoTheFieldsOfTheToken_looksUpOnce()
+{
+  useConfig();
+  const auto world = std::make_shared<World>();
+  const auto store = std::make_shared<InMemorySecretStore>();
+  QVERIFY(store->save(ServiceToken(kId, kSecret)).ok);
+  TunnelSettingsGroup group(dependencies(world, store));
+  const Widgets w(group);
+
+  // the Secret field as well as the Client ID field
+  QFocusEvent in(QEvent::FocusIn);
+  QApplication::sendEvent(w.secret, &in);
+  QCOMPARE(store->state()->idReadCount, 1);
+  QCOMPARE(w.clientId->text(), kId);
+  QVERIFY(w.status->text().contains(QStringLiteral("Client ID ...a1b2c3")));
+
+  w.reveal();
+  QCOMPARE(store->state()->idReadCount, 1);
+  QCOMPARE(store->state()->loadCount, 0);
+}
+
+void TunnelSettingsGroupTests::typingInAField_looksUpOnceAndDoesNotOverwriteWhatWasTyped()
+{
+  useConfig();
+  const auto world = std::make_shared<World>();
+  const auto store = std::make_shared<InMemorySecretStore>();
+  QVERIFY(store->save(ServiceToken(kId, kSecret)).ok);
+  TunnelSettingsGroup group(dependencies(world, store));
+  const Widgets w(group);
+
+  w.clientId->setText(QStringLiteral("typed-id.access"));
+  QCOMPARE(store->state()->idReadCount, 1);
+  QCOMPARE(w.clientId->text(), QStringLiteral("typed-id.access"));
+  w.clientId->setText(QStringLiteral("typed-id-2.access"));
+  QCOMPARE(store->state()->idReadCount, 1);
+}
+
+void TunnelSettingsGroupTests::savingWithoutTouchingTheToken_makesNoCallToTheSecureStore()
+{
+  const auto file = useConfig();
+  const auto world = std::make_shared<World>();
+  const auto store = std::make_shared<InMemorySecretStore>();
+  QVERIFY(store->save(ServiceToken(kId, kSecret)).ok);
+  const auto saves = store->state()->saveCount;
+  TunnelSettingsGroup group(dependencies(world, store));
+  const Widgets w(group);
+
+  // another setting changed with the tunnel off, and the dialog was accepted
+  w.hostname->setText(QStringLiteral("mbp.example.com"));
+  QVERIFY(group.validationProblem().isEmpty());
+  QVERIFY(group.save());
+
+  QCOMPARE(store->state()->idReadCount, 0);
+  QCOMPARE(store->state()->loadCount, 0);
+  QCOMPARE(store->state()->saveCount, saves);
+  QCOMPARE(Settings::value(Settings::Tunnel::Hostname).toString(), QStringLiteral("mbp.example.com"));
+  QVERIFY(!confHas(file, QStringLiteral("tunnel/enabled")));
+}
+
+void TunnelSettingsGroupTests::savingATypedToken_storesItAndShowsWhatIsStored()
+{
+  useConfig();
+  const auto world = std::make_shared<World>();
+  const auto store = std::make_shared<InMemorySecretStore>();
+  TunnelSettingsGroup group(dependencies(world, store));
+  const Widgets w(group);
+
+  w.clientId->setText(kId);
+  w.secret->setText(kSecret);
+  QVERIFY(group.validationProblem().isEmpty());
+  QVERIFY(group.save());
+
+  QCOMPARE(store->state()->saveCount, 1);
+  QCOMPARE(store->state()->loadCount, 0);
+  // the typing looked the store up once (before the token was saved), and the save shows what is stored now
+  QVERIFY(store->state()->idReadCount <= 2);
+  QVERIFY(w.secret->text().isEmpty());
+  QCOMPARE(w.clientId->text(), kId);
+  QVERIFY(w.status->text().contains(QStringLiteral("...a1b2c3")));
+  QVERIFY(w.remove->isEnabled());
 }
 
 QTEST_MAIN(TunnelSettingsGroupTests)

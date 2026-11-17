@@ -87,9 +87,18 @@ Q_SIGNALS:
 
 protected:
   void changeEvent(QEvent *event) override;
+  //! A click or a tab into the Client ID or the Secret field asks the secure store (once, see ensureCredentialsLoaded)
+  bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
   void retranslate();
+  /**
+   * Asks the secure store for the Client ID of the stored token, once for the life of the dialog; the answer is kept.
+   * The store is not asked when the dialog is made: on macOS a locked keychain can ask the user for a password even for
+   * a lookup of the attributes. It is asked when the tunnel is on or turned on, and when the user goes into the fields
+   * of the token. The Secret is never read here.
+   */
+  void ensureCredentialsLoaded();
   void updateControls();
   void updateStatusLines();
   void edited();
@@ -104,6 +113,7 @@ private:
   std::shared_ptr<deskflow::tunnel::ISecretStore> m_store;
   std::optional<QString> m_storedClientId;
   QString m_storeProblem;
+  bool m_credentialsLoaded = false;
   bool m_writable = true;
 
   QCheckBox *m_enabled;

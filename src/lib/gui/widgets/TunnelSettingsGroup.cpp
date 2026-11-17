@@ -137,12 +137,23 @@ TunnelSettingsGroup::TunnelSettingsGroup(TunnelSettingsDependencies dependencies
   layout->addWidget(m_error, 12, 0, 1, 3);
   layout->setColumnStretch(1, 1);
 
-  connect(m_enabled, &QCheckBox::toggled, this, &TunnelSettingsGroup::edited);
+  // the secure store is asked when the tunnel is turned on and when the fields of the token are used, and not before
+  connect(m_enabled, &QCheckBox::toggled, this, [this](bool on) {
+    if (on) {
+      ensureCredentialsLoaded();
+    }
+    edited();
+  });
   connect(m_hostname, &QLineEdit::textChanged, this, &TunnelSettingsGroup::edited);
   connect(m_port, &QSpinBox::valueChanged, this, &TunnelSettingsGroup::edited);
   connect(m_path, &QLineEdit::textChanged, this, &TunnelSettingsGroup::edited);
-  connect(m_clientId, &QLineEdit::textChanged, this, &TunnelSettingsGroup::edited);
-  connect(m_secret, &QLineEdit::textChanged, this, &TunnelSettingsGroup::edited);
+  for (auto *field : {m_clientId, m_secret}) {
+    field->installEventFilter(this);
+    connect(field, &QLineEdit::textChanged, this, [this] {
+      ensureCredentialsLoaded();
+      edited();
+    });
+  }
   connect(m_browse, &QPushButton::clicked, this, &TunnelSettingsGroup::browseForCloudflared);
   connect(m_remove, &QPushButton::clicked, this, &TunnelSettingsGroup::removeCredentials);
 
@@ -206,16 +217,46 @@ void TunnelSettingsGroup::load()
   m_port->setValue(port != 0 ? port : kDefaultLocalPort);
   m_path->setText(Settings::value(Settings::Tunnel::CloudflaredPath).toString().trimmed());
 
-  // only the Client ID is read: the Secret is not asked for, and it is never put into a field
-  StoreResult result;
-  m_storedClientId = m_store->storedClientId(&result);
-  m_storeProblem = result.ok || result.notFound ? QString() : result.detail;
+  // what the store was asked before is kept: it is asked once for the life of the dialog, and only when there is a
+  // reason (the tunnel is on, or the fields of the token are used). The Secret is not asked for, and it is never put
+  // into a field.
   m_clientId->setText(m_storedClientId.value_or(QString()));
   m_secret->clear();
 
   showError(QString());
+  if (m_enabled->isChecked()) {
+    ensureCredentialsLoaded();
+  }
   updateControls();
   updateStatusLines();
+}
+
+void TunnelSettingsGroup::ensureCredentialsLoaded()
+{
+  if (m_credentialsLoaded) {
+    return;
+  }
+  m_credentialsLoaded = true;
+
+  StoreResult result;
+  m_storedClientId = m_store->storedClientId(&result);
+  m_storeProblem = result.ok || result.notFound ? QString() : result.detail;
+
+  // what the user has typed is not replaced by what is stored
+  if (m_storedClientId.has_value() && m_clientId->text().trimmed().isEmpty()) {
+    const QSignalBlocker blockClientId(m_clientId);
+    m_clientId->setText(*m_storedClientId);
+  }
+  updateControls();
+  updateStatusLines();
+}
+
+bool TunnelSettingsGroup::eventFilter(QObject *watched, QEvent *event)
+{
+  if (event->type() == QEvent::FocusIn && (watched == m_clientId || watched == m_secret)) {
+    ensureCredentialsLoaded();
+  }
+  return QGroupBox::eventFilter(watched, event);
 }
 
 void TunnelSettingsGroup::updateControls()
@@ -278,7 +319,13 @@ void TunnelSettingsGroup::updateStatusLines()
   }
 
   const auto appName = QString::fromLatin1(kAppName);
-  if (!m_storeProblem.isEmpty()) {
+  if (!m_credentialsLoaded) {
+    setLine(
+        m_credentialStatus, tr("Credentials are checked when the tunnel is turned on"),
+        tr("The secure store is asked only when the tunnel is turned on or when you go into the Client ID and Secret "
+           "fields, so that opening this window never asks the system for access.")
+    );
+  } else if (!m_storeProblem.isEmpty()) {
     setLine(m_credentialStatus, tr("Credentials unreadable: %1").arg(m_storeProblem));
   } else if (m_storedClientId.has_value()) {
     if (m_store->isPersistent()) {
@@ -370,6 +417,7 @@ QString TunnelSettingsGroup::validationProblem() const
 bool TunnelSettingsGroup::save()
 {
   // the token first: when the secure store refuses it, nothing is written and the user is told why
+  bool tokenSaved = false;
   if (!m_secret->text().isEmpty()) {
     const ServiceToken token(m_clientId->text().trimmed(), m_secret->text());
     const auto result = m_store->save(token);
@@ -378,6 +426,7 @@ bool TunnelSettingsGroup::save()
       return false;
     }
     m_secret->clear();
+    tokenSaved = true;
   }
 
   bool changedAnySetting = false;
@@ -405,10 +454,15 @@ bool TunnelSettingsGroup::save()
     Settings::setValue(Settings::Tunnel::ActivePort);
   }
 
-  StoreResult result;
-  m_storedClientId = m_store->storedClientId(&result);
-  m_storeProblem = result.ok || result.notFound ? QString() : result.detail;
-  m_clientId->setText(m_storedClientId.value_or(m_clientId->text().trimmed()));
+  // what is stored is looked at again only when it can have changed or has been looked at before: a dialog that was
+  // accepted without anybody going to the token does not ask the store
+  if (tokenSaved || m_credentialsLoaded) {
+    m_credentialsLoaded = true;
+    StoreResult result;
+    m_storedClientId = m_store->storedClientId(&result);
+    m_storeProblem = result.ok || result.notFound ? QString() : result.detail;
+    m_clientId->setText(m_storedClientId.value_or(m_clientId->text().trimmed()));
+  }
   showError(QString());
   updateControls();
   updateStatusLines();
@@ -447,6 +501,7 @@ void TunnelSettingsGroup::removeCredentials()
 
   m_storedClientId.reset();
   m_storeProblem.clear();
+  m_credentialsLoaded = true;
   const QSignalBlocker blockClientId(m_clientId);
   const QSignalBlocker blockSecret(m_secret);
   m_clientId->clear();

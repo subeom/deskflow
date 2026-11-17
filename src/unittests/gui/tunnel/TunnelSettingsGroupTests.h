@@ -35,4 +35,12 @@ private Q_SLOTS:
   void credentialLine_saysWhereAPersistentTokenIsAndThatAMemoryOneIsForgotten();
   void notWritable_disablesEveryEntry();
   void saveInTheOtherDirection_aSavedTunnelIsShownAgain();
+
+  void openingWithTheTunnelOff_makesNoCallToTheSecureStore();
+  void openingWithTheTunnelOn_looksUpOnce();
+  void turningTheTunnelOn_looksUpOnceAndTheAnswerIsKept();
+  void goingIntoTheFieldsOfTheToken_looksUpOnce();
+  void typingInAField_looksUpOnceAndDoesNotOverwriteWhatWasTyped();
+  void savingWithoutTouchingTheToken_makesNoCallToTheSecureStore();
+  void savingATypedToken_storesItAndShowsWhatIsStored();
 };

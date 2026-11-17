@@ -242,4 +242,32 @@ void ClientConfigDialogTunnelTests::theGroup_isModifiedMakesTheDialogSaveable()
   QVERIFY(group->isModified());
 }
 
+// What the review found: the dialog asked the secure store twice when it was made, with the tunnel off, and on macOS a
+// locked keychain can ask the user for a password for that. With the tunnel off the store is not asked at all, also
+// when the dialog is accepted without anybody having gone to the token.
+void ClientConfigDialogTunnelTests::
+    openingTheDialogWithTheTunnelOff_andAcceptingItWithoutTheToken_neverAsksTheSecureStore()
+{
+  useConfig();
+  const auto store = std::make_shared<InMemorySecretStore>();
+  QVERIFY(store->save(ServiceToken(kId, kSecret)).ok);
+  const auto saves = store->state()->saveCount;
+  QVERIFY(!Settings::value(Settings::Tunnel::Enabled).toBool());
+
+  {
+    ClientConfigDialog dialog(nullptr, dependencies(store));
+    QCOMPARE(store->state()->idReadCount, 0);
+    QCOMPARE(store->state()->loadCount, 0);
+    QCOMPARE(store->state()->removeCount, 0);
+
+    // the scroll scale of the client is what the user changed, and the dialog is accepted
+    pressSave(dialog);
+  }
+
+  QCOMPARE(store->state()->idReadCount, 0);
+  QCOMPARE(store->state()->loadCount, 0);
+  QCOMPARE(store->state()->removeCount, 0);
+  QCOMPARE(store->state()->saveCount, saves);
+}
+
 QTEST_MAIN(ClientConfigDialogTunnelTests)

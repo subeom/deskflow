@@ -22,4 +22,5 @@ private Q_SLOTS:
   void save_thatTheStoreRefuses_staysOpen();
   void restoreDefaults_resetsTheGroupToo();
   void theGroup_isModifiedMakesTheDialogSaveable();
+  void openingTheDialogWithTheTunnelOff_andAcceptingItWithoutTheToken_neverAsksTheSecureStore();
 };

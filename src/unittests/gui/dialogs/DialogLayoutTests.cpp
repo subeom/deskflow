@@ -435,9 +435,17 @@ void DialogLayoutTests::clientConfigDialog_isLaidOutWithoutSqueezing()
   QFETCH(int, sizeMode);
 
   QVERIFY(QApplication::setStyle(style) != nullptr);
+  // the secure store of this process (the one in memory, set by initTestCase): opening the dialog with the tunnel off does not
+  // ask it, which on macOS can ask the user for the password of a locked keychain
+  const auto sessionStore =
+      std::dynamic_pointer_cast<deskflow::tunnel::InMemorySecretStore>(deskflow::tunnel::sessionSecretStore());
+  QVERIFY(sessionStore != nullptr);
+  const auto readsBefore = sessionStore->state()->idReadCount + sessionStore->state()->loadCount;
   ClientConfigDialog dialog;
+  QCOMPARE(sessionStore->state()->idReadCount + sessionStore->state()->loadCount, readsBefore);
   showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
   QVERIFY(dialog.isVisible());
+  QCOMPARE(sessionStore->state()->idReadCount + sessionStore->state()->loadCount, readsBefore);
   grabIfRequested(QStringLiteral("ClientConfigDialog"), dialog);
 
   const auto violations = findLayoutViolations(dialog);
