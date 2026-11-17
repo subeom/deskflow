@@ -125,11 +125,15 @@ add_library(${target} STATIC
   style/Appearance.cpp
   style/Appearance.h
   style/AccessibleInterfaces.cpp
+  style/AccessibleItems.cpp
+  style/AccessibleItems.h
   style/AccessibleInterfaces.h
   style/AppearanceHints.cpp
   style/AppearanceHints.h
   style/BackdropWidget.cpp
   style/BackdropWidget.h
+  style/CanvasTheme.cpp
+  style/CanvasTheme.h
   style/Contrast.cpp
   style/Contrast.h
   style/DeskflowStyle.cpp
@@ -181,6 +185,8 @@ add_library(${target} STATIC
   widgets/ArrangementCanvas.h
   widgets/ArrangementPanel.cpp
   widgets/ArrangementPanel.h
+  widgets/DisclosureBox.cpp
+  widgets/DisclosureBox.h
   widgets/LayoutNoticeBar.cpp
   widgets/LayoutNoticeBar.h
   widgets/MonitorEditorWidget.cpp

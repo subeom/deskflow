@@ -5,12 +5,19 @@
 
 #include "ArrangementCanvas.h"
 
+#include "gui/style/AccessibleInterfaces.h"
+#include "gui/style/Appearance.h"
+#include "gui/style/LookFollower.h"
+
+#include <QAccessible>
 #include <QApplication>
+#include <QFocusEvent>
 #include <QFontMetrics>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPolygonF>
 #include <QToolTip>
 #include <QWheelEvent>
 
@@ -94,6 +101,19 @@ ArrangementCanvas::ArrangementCanvas(QWidget *parent) : QWidget(parent)
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
   setAccessibleName(tr("Arrangement of the computers"));
   setAccessibleDescription(tr("Drag a computer to put it where its screen is. Arrow keys move the selected computer."));
+  installAccessibleInterfaces();
+  new deskflow::gui::style::LookFollower(this, [this] { followLook(); });
+}
+
+// The colours are the ones of the look that the application has now; with no style layer they are the ones that the
+// canvas always had
+void ArrangementCanvas::followLook()
+{
+  m_themed = deskflow::gui::style::isDeskflowStyleInstalled();
+  if (m_themed)
+    m_theme = deskflow::gui::style::currentCanvasTheme();
+  m_backdrop = QPixmap();
+  update();
 }
 
 QSize ArrangementCanvas::sizeHint() const
@@ -137,8 +157,12 @@ void ArrangementCanvas::setSelected(const QString &computer)
   if (name == m_selected)
     return;
   m_selected = name;
+  if (!name.isEmpty())
+    m_cursor = name;
   Q_EMIT selectedChanged(m_selected);
   update();
+  if (themed() && !name.isEmpty())
+    deskflow::gui::style::announceSelectedItem(this, computersInOrder().indexOf(name));
 }
 
 void ArrangementCanvas::zoomToFit()
@@ -254,12 +278,16 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
   painter.setRenderHint(QPainter::Antialiasing);
   painter.setRenderHint(QPainter::TextAntialiasing);
 
-  const auto base = palette().color(QPalette::Base);
-  const auto frame = palette().color(QPalette::Mid);
-  painter.fillRect(rect(), base);
-  painter.setPen(QPen(frame, 1));
-  painter.setBrush(Qt::NoBrush);
-  painter.drawRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5));
+  if (themed()) {
+    painter.drawPixmap(0, 0, backdrop(painter.device()->devicePixelRatioF()));
+  } else {
+    const auto base = palette().color(QPalette::Base);
+    const auto frame = palette().color(QPalette::Mid);
+    painter.fillRect(rect(), base);
+    painter.setPen(QPen(frame, 1));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5));
+  }
 
   const auto shown = shownArrangement();
   const bool dragging = m_drag.index >= 0 && m_drag.moved && !m_drag.resizing;
@@ -284,8 +312,10 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
   }
 
   if (shown.computers.empty()) {
-    painter.setPen(palette().color(QPalette::PlaceholderText));
+    painter.setPen(themed() ? m_theme.textSecondary : palette().color(QPalette::PlaceholderText));
     painter.drawText(rect(), Qt::AlignCenter | Qt::TextWordWrap, tr("No computers yet. Add a computer to arrange it."));
+    if (themed() && hasFocus())
+      paintFocus(painter);
     return;
   }
 
@@ -309,10 +339,10 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
     const bool vertical = contact.sideA == Direction::Left || contact.sideA == Direction::Right;
     const auto a = vertical ? toWidget(contact.line, contact.from) : toWidget(contact.from, contact.line);
     const auto b = vertical ? toWidget(contact.line, contact.to) : toWidget(contact.to, contact.line);
-    QPen outline(palette().color(QPalette::Base), 7, Qt::SolidLine, Qt::RoundCap);
+    QPen outline(themed() ? m_theme.linkEdge : palette().color(QPalette::Base), 7, Qt::SolidLine, Qt::RoundCap);
     painter.setPen(outline);
     painter.drawLine(a, b);
-    QPen link(QColor(24, 168, 92), 4, Qt::SolidLine, Qt::RoundCap);
+    QPen link(themed() ? m_theme.link : QColor(24, 168, 92), 4, Qt::SolidLine, Qt::RoundCap);
     painter.setPen(link);
     painter.drawLine(a, b);
   }
@@ -332,8 +362,8 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
         QPointF(r.center().x(), r.bottom()),
         r.bottomRight()
     };
-    painter.setPen(QPen(palette().color(QPalette::Highlight).darker(130), 1.5));
-    painter.setBrush(palette().color(QPalette::Base));
+    painter.setPen(QPen(themed() ? m_theme.selected : palette().color(QPalette::Highlight).darker(130), 1.5));
+    painter.setBrush(themed() ? m_theme.fill : palette().color(QPalette::Base));
     for (const auto &point : points) {
       painter.drawRect(
           QRectF(point.x() - kHandlePixels / 2, point.y() - kHandlePixels / 2, kHandlePixels, kHandlePixels)
@@ -342,7 +372,7 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
   };
   if (const auto hovered = indexOf(m_hovered); hovered >= 0 && !m_drag.resizing && !dragging) {
     const auto r = toWidget(shown.computers[static_cast<size_t>(hovered)].box());
-    painter.setPen(QPen(palette().color(QPalette::Highlight), 3));
+    painter.setPen(QPen(themed() ? m_theme.selected : palette().color(QPalette::Highlight), 3));
     painter.setBrush(Qt::NoBrush);
     painter.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), 4, 4);
     drawHandles(hovered);
@@ -352,7 +382,7 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
 
   // the guides of the edges that are in line, as macOS draws them while a display is dragged
   for (const auto &guide : resizing ? m_drag.resizeGuides : std::vector<deskflow::server::arrangement::Guide>()) {
-    painter.setPen(QPen(QColor(226, 42, 142), 1.5, Qt::DashLine));
+    painter.setPen(QPen(themed() ? m_theme.guide : QColor(226, 42, 142), 1.5, Qt::DashLine));
     if (guide.vertical)
       painter.drawLine(toWidget(guide.position, guide.from), toWidget(guide.position, guide.to));
     else
@@ -360,7 +390,10 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
   }
   if (dragging) {
     for (const auto &guide : m_drag.snapped.guides) {
-      QPen pen(QColor(226, 42, 142), guide.touching ? 2.0 : 1.0, guide.touching ? Qt::SolidLine : Qt::DashLine);
+      QPen pen(
+          themed() ? m_theme.guide : QColor(226, 42, 142), guide.touching ? 2.0 : 1.0,
+          guide.touching ? Qt::SolidLine : Qt::DashLine
+      );
       painter.setPen(pen);
       if (guide.vertical)
         painter.drawLine(toWidget(guide.position, guide.from), toWidget(guide.position, guide.to));
@@ -368,6 +401,10 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
         painter.drawLine(toWidget(guide.from, guide.position), toWidget(guide.to, guide.position));
     }
   }
+
+  // where the keys are
+  if (themed() && hasFocus())
+    paintFocus(painter);
 
   // the size, while the outline of a computer is dragged
   if (m_drag.resizing && m_drag.moved && m_drag.previewValid && !m_drag.info.isEmpty()) {
@@ -377,10 +414,10 @@ void ArrangementCanvas::paintEvent(QPaintEvent *)
     at.setX(std::clamp(at.x(), 4.0, std::max(4.0, width() - size.width() - 4)));
     at.setY(std::clamp(at.y(), 4.0, std::max(4.0, height() - size.height() - 4)));
     const QRectF bubble(at, size);
-    painter.setPen(QPen(QColor(0, 0, 0, 90), 1));
-    painter.setBrush(QColor(32, 32, 32, 230));
+    painter.setPen(themed() ? QPen(m_theme.bubble, 1) : QPen(QColor(0, 0, 0, 90), 1));
+    painter.setBrush(themed() ? m_theme.bubble : QColor(32, 32, 32, 230));
     painter.drawRoundedRect(bubble, 5, 5);
-    painter.setPen(QColor(255, 255, 255));
+    painter.setPen(themed() ? m_theme.bubbleText : QColor(255, 255, 255));
     painter.drawText(bubble, Qt::AlignCenter, m_drag.info);
   }
 }
@@ -490,11 +527,13 @@ void ArrangementCanvas::paintComputer(
   if (rects.empty())
     return;
 
-  const auto color = colorOf(index, computer.isServer);
-  const auto border = color.darker(150);
+  // with the style layer a computer is the same neutral as the others, and the one that is this computer is the tint of
+  // the accent: colour is for what it tells
+  const auto color = themed() ? (computer.isServer ? m_theme.fillThis : m_theme.fill) : colorOf(index, computer.isServer);
+  const auto border = themed() ? (computer.isServer ? m_theme.borderThis : m_theme.border) : color.darker(150);
   // its size is a guess: nothing says what it is
   const bool assumed = m_assumed.contains(name, Qt::CaseInsensitive);
-  const auto text = luminance(color) > 0.6 ? QColor(24, 24, 24) : QColor(255, 255, 255);
+  const auto text = themed() ? m_theme.text : luminance(color) > 0.6 ? QColor(24, 24, 24) : QColor(255, 255, 255);
 
   painter.save();
   if (dragged)
@@ -514,14 +553,14 @@ void ArrangementCanvas::paintComputer(
     painter.drawRoundedRect(r.adjusted(0.75, 0.75, -0.75, -0.75), 3, 3);
     if (monitors[i].contains(0, 0)) {
       painter.setPen(Qt::NoPen);
-      painter.setBrush(QColor(255, 255, 255, 200));
+      painter.setBrush(themed() ? m_theme.mainBar : QColor(255, 255, 255, 200));
       painter.drawRoundedRect(
           QRectF(r.left() + 3, r.top() + 3, std::max(0.0, r.width() - 6), std::min(5.0, r.height() / 8)), 1.5, 1.5
       );
     }
     if (overlapping) {
-      painter.setPen(QPen(QColor(210, 30, 40), 2, Qt::DashLine));
-      painter.setBrush(QBrush(QColor(210, 30, 40, 90), Qt::BDiagPattern));
+      painter.setPen(QPen(themed() ? m_theme.error : QColor(210, 30, 40), 2, Qt::DashLine));
+      painter.setBrush(QBrush(themed() ? m_theme.errorHatch : QColor(210, 30, 40, 90), Qt::BDiagPattern));
       painter.drawRect(r.adjusted(1, 1, -1, -1));
     }
   }
@@ -570,7 +609,10 @@ void ArrangementCanvas::paintComputer(
     );
     y += nameMetrics.height();
     painter.setFont(smallFont);
-    painter.setPen(luminance(color) > 0.6 ? QColor(24, 24, 24, 190) : QColor(255, 255, 255, 215));
+    painter.setPen(
+        themed() ? m_theme.textSecondary
+                 : luminance(color) > 0.6 ? QColor(24, 24, 24, 190) : QColor(255, 255, 255, 215)
+    );
     for (const auto &line : lines) {
       painter.drawText(
           QRectF(area.left(), y, area.width(), smallMetrics.height()), Qt::AlignHCenter | Qt::AlignVCenter,
@@ -583,19 +625,35 @@ void ArrangementCanvas::paintComputer(
   // whether it is connected, and what nothing touches
   const auto status = m_status.value(name, Status::Unknown);
   const auto box = toWidget(computer.box());
-  if (status != Status::Unknown) {
+  if (status != Status::Unknown && themed()) {
+    // a connection is a disc with a check, one that is not is a ring: they differ in their shape as well as their colour
+    const QPointF at(box.right() - 10, box.top() + 10);
+    if (status == Status::Connected) {
+      painter.setPen(Qt::NoPen);
+      painter.setBrush(m_theme.connected);
+      painter.drawEllipse(at, 6.0, 6.0);
+      painter.setPen(QPen(m_theme.fill, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+      painter.setBrush(Qt::NoBrush);
+      painter.drawPolyline(QPolygonF({at + QPointF(-2.7, 0.2), at + QPointF(-0.8, 2.2), at + QPointF(2.8, -2.2)}));
+    } else {
+      painter.setPen(QPen(m_theme.offline, 1.8));
+      painter.setBrush(Qt::NoBrush);
+      painter.drawEllipse(at, 5.2, 5.2);
+    }
+  } else if (status != Status::Unknown) {
     painter.setPen(QPen(border, 1));
     painter.setBrush(status == Status::Connected ? QColor(40, 190, 90) : QColor(150, 150, 150));
     painter.drawEllipse(QPointF(box.right() - 9, box.top() + 9), 4.5, 4.5);
   }
   if (unconnected) {
-    painter.setPen(QPen(QColor(235, 150, 0), 2, Qt::DashLine));
+    // not an error, and not another colour: a dashed outline that is as neutral as the edge of the computer
+    painter.setPen(QPen(themed() ? m_theme.offline : QColor(235, 150, 0), 2, Qt::DashLine));
     painter.setBrush(Qt::NoBrush);
     for (const auto &r : rects)
       painter.drawRect(toWidget(r).adjusted(2, 2, -2, -2));
   }
   if (name == m_selected) {
-    painter.setPen(QPen(palette().color(QPalette::Highlight), 3));
+    painter.setPen(QPen(themed() ? m_theme.selected : palette().color(QPalette::Highlight), 3));
     painter.setBrush(Qt::NoBrush);
     for (const auto &r : rects)
       painter.drawRoundedRect(toWidget(r).adjusted(-1, -1, 1, 1), 4, 4);
@@ -934,6 +992,14 @@ void ArrangementCanvas::keyPressEvent(QKeyEvent *event)
     }
     QWidget::keyPressEvent(event);
     return;
+  case Qt::Key_Space:
+  case Qt::Key_Return:
+  case Qt::Key_Enter:
+    // a computer that is selected already leaves the key to the dialog (Enter is its default button)
+    if (themed() && selectAtTheKeys())
+      break;
+    QWidget::keyPressEvent(event);
+    return;
   case Qt::Key_0:
     zoomToFit();
     break;
@@ -953,6 +1019,176 @@ void ArrangementCanvas::keyPressEvent(QKeyEvent *event)
     return;
   }
   event->accept();
+}
+
+bool ArrangementCanvas::selectAtTheKeys()
+{
+  if (!m_selected.isEmpty())
+    return false;
+  auto name = indexOf(m_cursor) >= 0 ? m_cursor : QString();
+  if (name.isEmpty()) {
+    const auto order = computersInOrder();
+    if (order.isEmpty())
+      return false;
+    name = order.first();
+  }
+  setSelected(name);
+  return true;
+}
+
+// Tab goes from one computer to the next, from the left to the right, and out of the canvas after the last (and Shift+Tab
+// before the first): the keys are never held by it
+bool ArrangementCanvas::focusNextPrevChild(bool next)
+{
+  if (themed() && hasFocus()) {
+    const auto order = computersInOrder();
+    const auto target = static_cast<int>(order.indexOf(m_selected)) + (next ? 1 : -1);
+    if (target >= 0 && target < order.size()) {
+      setSelected(order.at(target));
+      return true;
+    }
+  }
+  return QWidget::focusNextPrevChild(next);
+}
+
+void ArrangementCanvas::focusInEvent(QFocusEvent *event)
+{
+  QWidget::focusInEvent(event);
+  // it is come to with Tab: a computer is where the keys are, the first when it is from the left, the last when it is from
+  // the right
+  const auto reason = event->reason();
+  if (themed() && m_selected.isEmpty() && (reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason)) {
+    const auto order = computersInOrder();
+    if (!order.isEmpty())
+      setSelected(reason == Qt::TabFocusReason ? order.first() : order.last());
+  }
+  update();
+}
+
+void ArrangementCanvas::focusOutEvent(QFocusEvent *event)
+{
+  QWidget::focusOutEvent(event);
+  update();
+}
+
+// Where the keys are, which the ring of the selection is not
+void ArrangementCanvas::paintFocus(QPainter &painter) const
+{
+  QList<QRectF> around;
+  if (const auto index = indexOf(m_selected); index >= 0) {
+    for (const auto &r : shownArrangement().computers[static_cast<size_t>(index)].monitorRects())
+      around << toWidget(r);
+  }
+  deskflow::gui::style::paintCanvasFocus(&painter, m_theme, size(), around);
+}
+
+// The canvas as it is with nothing on it, kept for the size and the device pixel ratio that it is painted at: a drag
+// paints the rest at every move
+const QPixmap &ArrangementCanvas::backdrop(qreal dpr) const
+{
+  const auto pixels = QSizeF(size() * dpr).toSize();
+  if (m_backdrop.isNull() || m_backdrop.size() != pixels || !qFuzzyCompare(m_backdrop.devicePixelRatio(), dpr))
+    m_backdrop = deskflow::gui::style::paintCanvasBackdrop(m_theme, size(), dpr);
+  return m_backdrop;
+}
+
+//
+// What a screen reader is told
+//
+
+QStringList ArrangementCanvas::computersInOrder() const
+{
+  struct Keyed
+  {
+    double x;
+    double y;
+    QString name;
+  };
+  std::vector<Keyed> keyed;
+  for (const auto &computer : m_arrangement.computers) {
+    const auto box = computer.box();
+    keyed.push_back({box.x + box.w / 2.0, box.y + box.h / 2.0, QString::fromStdString(computer.name)});
+  }
+  std::stable_sort(keyed.begin(), keyed.end(), [](const Keyed &a, const Keyed &b) {
+    return a.x != b.x ? a.x < b.x : a.y < b.y;
+  });
+  QStringList names;
+  for (const auto &k : keyed)
+    names << k.name;
+  return names;
+}
+
+QString ArrangementCanvas::describeComputer(const QString &name) const
+{
+  const auto index = indexOf(name);
+  if (index < 0)
+    return {};
+  const auto &computer = m_arrangement.computers[static_cast<size_t>(index)];
+  QStringList parts;
+  if (computer.isServer)
+    parts << tr("this computer");
+  switch (m_status.value(name, Status::Unknown)) {
+  case Status::Connected:
+    parts << tr("connected");
+    break;
+  case Status::Offline:
+    parts << tr("not connected");
+    break;
+  case Status::Unknown:
+    break;
+  }
+  parts << sizeText(computer);
+  if (const auto zoom = zoomText(computer); !zoom.isEmpty())
+    parts << zoom;
+  if (m_assumed.contains(name, Qt::CaseInsensitive))
+    parts << tr("size assumed");
+  if (m_fromReport.contains(name, Qt::CaseInsensitive))
+    parts << tr("reported by the computer");
+  auto text = parts.join(QStringLiteral(", "));
+  // what is wrong is said in words: the canvas draws it, and a colour is not heard
+  QStringList issues;
+  for (const auto &issue : m_issues) {
+    if (issue.computer == computer.name || issue.other == computer.name)
+      issues << describe(issue);
+  }
+  if (!issues.isEmpty())
+    text += QStringLiteral(". ") + issues.join(QLatin1Char(' '));
+  return text;
+}
+
+int ArrangementCanvas::accessibleItemCount() const
+{
+  return static_cast<int>(m_arrangement.computers.size());
+}
+
+QString ArrangementCanvas::accessibleItemName(int index) const
+{
+  const auto order = computersInOrder();
+  return index >= 0 && index < order.size() ? order.at(index) : QString();
+}
+
+QString ArrangementCanvas::accessibleItemDescription(int index) const
+{
+  return describeComputer(accessibleItemName(index));
+}
+
+QRect ArrangementCanvas::accessibleItemRect(int index) const
+{
+  return boxOf(accessibleItemName(index)).toAlignedRect();
+}
+
+bool ArrangementCanvas::accessibleItemSelected(int index) const
+{
+  const auto name = accessibleItemName(index);
+  return !name.isEmpty() && name == m_selected;
+}
+
+void ArrangementCanvas::selectAccessibleItem(int index)
+{
+  if (const auto name = accessibleItemName(index); !name.isEmpty()) {
+    setFocus(Qt::OtherFocusReason);
+    setSelected(name);
+  }
 }
 
 void ArrangementCanvas::wheelEvent(QWheelEvent *event)

@@ -45,6 +45,10 @@ private Q_SLOTS:
   void rememberArrangements_isOffByDefault_andIsLoadedSavedAndRestoredToOff();
   void rememberArrangements_makesTheDialogModified_andCancelDoesNotSaveIt();
 
+  // phase 5: the toolbar of the arrangement in the new look; with the system look it is what it was
+  void newLook_theToolbarOfTheArrangementIsGroupedAndStillHasEveryHook();
+  void systemLook_theToolbarOfTheArrangementIsWhatItWas();
+
 private:
   QTemporaryDir m_settingsDir;
 };

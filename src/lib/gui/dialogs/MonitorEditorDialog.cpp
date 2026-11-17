@@ -7,13 +7,21 @@
 #include "MonitorEditorDialog.h"
 
 #include "gui/config/MonitorEditing.h"
+#include "gui/style/Appearance.h"
+#include "gui/style/BackdropWidget.h"
+#include "gui/style/DesignTokens.h"
+#include "gui/style/Icons.h"
+#include "gui/style/PanelWidget.h"
 #include "gui/style/StatusColors.h"
+#include "gui/widgets/DisclosureBox.h"
+#include "gui/widgets/InlineHint.h"
 #include "gui/widgets/MonitorEditorWidget.h"
 
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
+#include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -65,7 +73,7 @@ MonitorEditorDialog::MonitorEditorDialog(
       m_redo(new QPushButton(tr("Redo"), this)),
       m_stretchButton(new QPushButton(tr("Stretch to the reported size"), this)),
       m_drawOwn(new QPushButton(tr("Draw my own instead"), this)),
-      m_advanced(new QGroupBox(tr("Advanced: numbers"), this)),
+      m_advanced(new DisclosureBox(tr("Advanced: numbers"), this)),
       m_advancedContent(new QWidget(this)),
       m_numbers(new QPlainTextEdit(this)),
       m_numbersStatus(new QLabel(this)),
@@ -133,26 +141,6 @@ MonitorEditorDialog::MonitorEditorDialog(
   m_numbers->setLineWrapMode(QPlainTextEdit::NoWrap);
   m_numbers->setMinimumHeight(60);
 
-  auto *top = new QHBoxLayout;
-  top->addWidget(new QLabel(tr("Monitor"), this));
-  top->addWidget(m_resolution, 1);
-  top->addWidget(m_pixelsW);
-  top->addWidget(m_times);
-  top->addWidget(m_pixelsH);
-  top->addWidget(new QLabel(tr("Display scale"), this));
-  top->addWidget(m_scale);
-  top->addWidget(m_rotate);
-  top->addWidget(m_makeMain);
-
-  auto *bottom = new QHBoxLayout;
-  bottom->addWidget(m_add);
-  bottom->addWidget(m_remove);
-  bottom->addWidget(m_undo);
-  bottom->addWidget(m_redo);
-  bottom->addStretch(1);
-  bottom->addWidget(m_drawOwn);
-  bottom->addWidget(m_stretchButton);
-
   auto *numbersButtons = new QHBoxLayout;
   numbersButtons->addWidget(m_import);
   numbersButtons->addWidget(m_apply);
@@ -169,13 +157,10 @@ MonitorEditorDialog::MonitorEditorDialog(
   m_advanced->setChecked(false);
   m_advancedContent->setVisible(false);
 
-  auto *layout = new QVBoxLayout(this);
-  layout->addWidget(m_status);
-  layout->addWidget(m_widget, 1);
-  layout->addLayout(top);
-  layout->addLayout(bottom);
-  layout->addWidget(m_advanced);
-  layout->addWidget(m_buttons);
+  if (deskflow::gui::style::isDeskflowStyleInstalled())
+    buildDeskflowLayout();
+  else
+    buildClassicLayout();
 
   connect(m_widget, &MonitorEditorWidget::drawingChanged, this, [this](const Layout &layout) {
     m_history.push(layout);
@@ -242,6 +227,137 @@ MonitorEditorDialog::MonitorEditorDialog(
   m_widget->setDrawing(drawing);
   m_widget->setSelected(0);
   refresh();
+}
+
+// The layout that the editor has always had: a row of the controls of the selected monitor over a row of the buttons
+void MonitorEditorDialog::buildClassicLayout()
+{
+  auto *top = new QHBoxLayout;
+  top->addWidget(new QLabel(tr("Monitor"), this));
+  top->addWidget(m_resolution, 1);
+  top->addWidget(m_pixelsW);
+  top->addWidget(m_times);
+  top->addWidget(m_pixelsH);
+  top->addWidget(new QLabel(tr("Display scale"), this));
+  top->addWidget(m_scale);
+  top->addWidget(m_rotate);
+  top->addWidget(m_makeMain);
+
+  auto *bottom = new QHBoxLayout;
+  bottom->addWidget(m_add);
+  bottom->addWidget(m_remove);
+  bottom->addWidget(m_undo);
+  bottom->addWidget(m_redo);
+  bottom->addStretch(1);
+  bottom->addWidget(m_drawOwn);
+  bottom->addWidget(m_stretchButton);
+
+  auto *layout = new QVBoxLayout(this);
+  layout->addWidget(m_status);
+  layout->addWidget(m_widget, 1);
+  layout->addLayout(top);
+  layout->addLayout(bottom);
+  layout->addWidget(m_advanced);
+  layout->addWidget(m_buttons);
+}
+
+// The layout of the new look: the actions on the monitors in a bar over the canvas, what the selected monitor is (its
+// size and its scale) in a column beside it, then what is said of the drawing, the numbers closed under a disclosure, and
+// the hint with the buttons. The same widgets, so that what finds them finds them; the panel is the one of the other
+// dialogs of the look
+void MonitorEditorDialog::buildDeskflowLayout()
+{
+  using namespace deskflow::gui::style;
+
+  const struct
+  {
+    QPushButton *button;
+    const char *icon;
+  } icons[] = {
+      {m_rotate, "arrow-clockwise"}, {m_makeMain, "star"},
+      {m_add, "plus"},               {m_remove, "minus"},
+      {m_undo, "arrow-u-up-left"},   {m_redo, "arrow-u-up-right"},
+  };
+  for (const auto &entry : icons) {
+    entry.button->setIcon(icon(QString::fromLatin1(entry.icon)));
+    entry.button->setFlat(true);
+  }
+  // the one capsule of the dialog is OK, which is what Enter does: no other button is its default (the style paints the
+  // default button as the primary one)
+  for (auto *button : {m_rotate, m_makeMain, m_add, m_remove, m_undo, m_redo, m_stretchButton, m_drawOwn, m_import, m_apply})
+    button->setAutoDefault(false);
+
+  auto *tools = new QHBoxLayout;
+  tools->setSpacing(metrics::spaceXs);
+  for (auto *button : {m_rotate, m_makeMain, m_add, m_remove})
+    tools->addWidget(button);
+  auto *divider = new QFrame(this);
+  divider->setFrameShape(QFrame::VLine);
+  divider->setFrameShadow(QFrame::Plain);
+  divider->setObjectName(QStringLiteral("monitorEditorToolsDivider"));
+  tools->addSpacing(metrics::spaceSm);
+  tools->addWidget(divider);
+  tools->addSpacing(metrics::spaceSm);
+  for (auto *button : {m_undo, m_redo})
+    tools->addWidget(button);
+  tools->addStretch(1);
+
+  // what the selected monitor is, with the name of each control over it
+  auto *side = new QVBoxLayout;
+  side->setSpacing(metrics::spaceXs);
+  side->addWidget(new QLabel(tr("Monitor"), this));
+  side->addWidget(m_resolution);
+  auto *pixels = new QHBoxLayout;
+  pixels->addWidget(m_pixelsW, 1);
+  pixels->addWidget(m_times);
+  pixels->addWidget(m_pixelsH, 1);
+  side->addLayout(pixels);
+  side->addSpacing(metrics::spaceSm);
+  side->addWidget(new QLabel(tr("Display scale"), this));
+  side->addWidget(m_scale);
+  side->addSpacing(metrics::spaceMd);
+  side->addWidget(m_stretchButton);
+  side->addWidget(m_drawOwn);
+  side->addStretch(1);
+  auto *sideBox = new QWidget(this);
+  sideBox->setLayout(side);
+  side->setContentsMargins(0, 0, 0, 0);
+  sideBox->setFixedWidth(sideBox->sizeHint().width() < 220 ? 220 : sideBox->sizeHint().width());
+
+  auto *middle = new QHBoxLayout;
+  middle->setSpacing(metrics::spaceLg);
+  middle->addWidget(m_widget, 1);
+  middle->addWidget(sideBox);
+
+  // what the canvas is for: the words of its tool tip, which are not only for the pointer
+  auto *hint = new InlineHint(m_widget->toolTip(), this);
+  hint->setObjectName(QStringLiteral("lblMonitorEditorHint"));
+  hint->setWordWrap(true);
+  // it takes the width that the buttons leave: a long line must not make the dialog wide
+  hint->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
+  auto *footer = new QHBoxLayout;
+  footer->addWidget(hint, 1);
+  footer->addWidget(m_buttons);
+
+  auto *backdrop = new BackdropWidget(this);
+  backdrop->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  auto *panel = new PanelWidget(PanelWidget::Density::Dense, backdrop);
+  panel->setPadding(metrics::spaceLg);
+  auto *content = new QVBoxLayout(panel);
+  content->setContentsMargins(0, 0, 0, 0);
+  content->setSpacing(metrics::spaceMd);
+  content->addLayout(tools);
+  content->addLayout(middle, 1);
+  content->addWidget(m_status);
+  content->addWidget(m_advanced);
+  content->addLayout(footer);
+  auto *frame = new QVBoxLayout(backdrop);
+  frame->setContentsMargins(metrics::spaceMd, metrics::spaceMd, metrics::spaceMd, metrics::spaceMd);
+  frame->addWidget(panel);
+
+  auto *layout = new QVBoxLayout(this);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->addWidget(backdrop);
 }
 
 const Layout &MonitorEditorDialog::drawing() const

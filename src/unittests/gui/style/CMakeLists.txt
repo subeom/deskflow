@@ -56,3 +56,12 @@ create_test(
   SOURCE DeskflowStyleTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+# The canvas of the arrangement and the monitor editor (phase 5)
+create_test(
+  NAME CanvasThemeTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE CanvasThemeTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)

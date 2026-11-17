@@ -14,6 +14,7 @@
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
 #include "gui/widgets/ComputerSetupView.h"
+#include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/SettingsDialogButtonBox.h"
 
 #include <QApplication>
@@ -101,6 +102,24 @@ bool saveIsEnabled(const ServerConfigDialog &dialog)
 {
   return buttons(dialog)->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Save)->isEnabled();
 }
+
+// The look of the application while the test runs: the one of Appearance=Deskflow; the system look (Fusion) again at the end
+struct DeskflowLook
+{
+  DeskflowLook()
+  {
+    auto *style = new deskflow::gui::style::DeskflowStyle;
+    QApplication::setStyle(style);
+    deskflow::gui::style::Look look;
+    look.reduceTransparency = true;
+    look.reduceMotion = true;
+    style->useLook(look);
+  }
+  ~DeskflowLook()
+  {
+    QApplication::setStyle(QStringLiteral("Fusion"));
+  }
+};
 
 } // namespace
 
@@ -959,6 +978,77 @@ void ServerConfigDialogTests::rememberArrangements_makesTheDialogModified_andCan
   box->setChecked(true);
   Q_EMIT buttons(dialog)->rejected();
   QVERIFY(!Settings::value(Settings::Server::RememberArrangements).toBool());
+}
+
+void ServerConfigDialogTests::newLook_theToolbarOfTheArrangementIsGroupedAndStillHasEveryHook()
+{
+  DeskflowLook look;
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  dialog.show();
+  auto *panel = panelOf(dialog);
+  QVERIFY(panel->isVisibleTo(&dialog));
+
+  // every button that was there is there, by its name
+  for (const auto *name :
+       {"btnUseClassicGrid", "btnArrangementFit", "btnArrangementReset", "btnArrangementAdd", "btnArrangementMonitors",
+        "btnArrangementEdit", "btnArrangementRemove", "btnRememberedLayouts"})
+    QVERIFY2(buttonNamed(dialog, name) && buttonNamed(dialog, name)->isVisibleTo(&dialog), name);
+  QVERIFY(panel->findChild<QCheckBox *>(QStringLiteral("cbRememberArrangements")));
+
+  // the view is one icon, which has a name for a screen reader; the other buttons have an icon with their text
+  auto *fit = buttonNamed(dialog, "btnArrangementFit");
+  QVERIFY(fit->text().isEmpty() && !fit->icon().isNull());
+  QCOMPARE(fit->accessibleName(), QStringLiteral("Zoom to fit"));
+  QVERIFY(!fit->toolTip().isEmpty());
+  for (const auto *name :
+       {"btnArrangementReset", "btnArrangementAdd", "btnArrangementMonitors", "btnArrangementEdit", "btnArrangementRemove"}) {
+    auto *button = buttonNamed(dialog, name);
+    QVERIFY2(!button->icon().isNull() && !button->text().isEmpty(), name);
+  }
+
+  // what is done to the arrangement is on the left, what is done to the computer that is selected on the right, and the
+  // button that takes it out is apart from the others
+  const auto x = [&](const char *name) { return buttonNamed(dialog, name)->mapTo(&dialog, QPoint(0, 0)).x(); };
+  QVERIFY(x("btnArrangementAdd") < x("btnArrangementReset"));
+  QVERIFY(x("btnArrangementReset") < x("btnArrangementMonitors"));
+  QVERIFY(x("btnArrangementMonitors") < x("btnArrangementEdit"));
+  QVERIFY(x("btnArrangementEdit") < x("btnArrangementRemove"));
+  QVERIFY(panel->findChild<QWidget *>(QStringLiteral("arrangementToolsDivider")));
+  QVERIFY(buttonNamed(dialog, "btnArrangementRemove")->isFlat());
+
+  // and they work as before
+  auto *canvas = panel->canvas();
+  QVERIFY(!buttonNamed(dialog, "btnArrangementEdit")->isEnabled());
+  canvas->setSelected(QStringLiteral("PC"));
+  QVERIFY(buttonNamed(dialog, "btnArrangementEdit")->isEnabled());
+  QVERIFY(buttonNamed(dialog, "btnArrangementRemove")->isEnabled());
+  QSignalSpy remember(panel, &ArrangementPanel::rememberArrangementsToggled);
+  panel->findChild<QCheckBox *>(QStringLiteral("cbRememberArrangements"))->setChecked(true);
+  QCOMPARE(remember.count(), 1);
+}
+
+void ServerConfigDialogTests::systemLook_theToolbarOfTheArrangementIsWhatItWas()
+{
+  writeThreeComputers();
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  Settings::setValue(Settings::Server::UseArrangement, true);
+  ServerConfig config;
+  ServerConfigDialog dialog(nullptr, config);
+  dialog.show();
+  auto *fit = buttonNamed(dialog, "btnArrangementFit");
+  QCOMPARE(fit->text(), QStringLiteral("Zoom to fit"));
+  QVERIFY(fit->icon().isNull() && !fit->isFlat());
+  // the row of the buttons: the view and the reset on the left, the others on the right, as it was
+  const auto x = [&](const char *name) { return buttonNamed(dialog, name)->mapTo(&dialog, QPoint(0, 0)).x(); };
+  QVERIFY(x("btnArrangementFit") < x("btnArrangementReset"));
+  QVERIFY(x("btnArrangementReset") < x("btnArrangementAdd"));
+  QVERIFY(x("btnArrangementAdd") < x("btnArrangementMonitors"));
+  QVERIFY(buttonNamed(dialog, "btnArrangementAdd")->icon().isNull());
+  QVERIFY(!panelOf(dialog)->findChild<QWidget *>(QStringLiteral("arrangementToolsDivider")));
 }
 
 QTEST_MAIN(ServerConfigDialogTests)

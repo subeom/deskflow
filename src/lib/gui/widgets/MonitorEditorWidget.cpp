@@ -6,6 +6,11 @@
 
 #include "MonitorEditorWidget.h"
 
+#include "gui/style/AccessibleInterfaces.h"
+#include "gui/style/Appearance.h"
+#include "gui/style/LookFollower.h"
+
+#include <QFocusEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
@@ -72,6 +77,29 @@ MonitorEditorWidget::MonitorEditorWidget(QWidget *parent) : QWidget(parent)
   setFocusPolicy(Qt::StrongFocus);
   setMouseTracking(true);
   setAutoFillBackground(false);
+  setAccessibleName(tr("Monitors of the computer"));
+  setAccessibleDescription(tr("Drag a monitor to move it. Arrow keys move the selected monitor."));
+  installAccessibleInterfaces();
+  new deskflow::gui::style::LookFollower(this, [this] { followLook(); });
+}
+
+// The colours are the ones of the look that the application has now; with no style layer they are the ones that the
+// editor always had
+void MonitorEditorWidget::followLook()
+{
+  m_themed = deskflow::gui::style::isDeskflowStyleInstalled();
+  if (m_themed)
+    m_theme = deskflow::gui::style::currentCanvasTheme();
+  m_backdrop = QPixmap();
+  update();
+}
+
+const QPixmap &MonitorEditorWidget::backdrop(qreal dpr) const
+{
+  const auto pixels = QSizeF(size() * dpr).toSize();
+  if (m_backdrop.isNull() || m_backdrop.size() != pixels || !qFuzzyCompare(m_backdrop.devicePixelRatio(), dpr))
+    m_backdrop = deskflow::gui::style::paintCanvasBackdrop(m_theme, size(), dpr);
+  return m_backdrop;
 }
 
 QSize MonitorEditorWidget::sizeHint() const
@@ -101,8 +129,12 @@ void MonitorEditorWidget::setSelected(int index)
   if (index == m_selected)
     return;
   m_selected = index;
+  if (index >= 0)
+    m_cursor = index;
   Q_EMIT selectionChanged(index);
   QWidget::update();
+  if (m_themed && index >= 0)
+    deskflow::gui::style::announceSelectedItem(this, index);
 }
 
 void MonitorEditorWidget::fit() const
@@ -218,9 +250,13 @@ void MonitorEditorWidget::paintEvent(QPaintEvent *)
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing);
   const auto &palette = this->palette();
-  painter.fillRect(rect(), palette.color(QPalette::Base));
-  painter.setPen(QPen(palette.color(QPalette::Mid), 1));
-  painter.drawRect(rect().adjusted(0, 0, -1, -1));
+  if (m_themed) {
+    painter.drawPixmap(0, 0, backdrop(painter.device()->devicePixelRatioF()));
+  } else {
+    painter.fillRect(rect(), palette.color(QPalette::Base));
+    painter.setPen(QPen(palette.color(QPalette::Mid), 1));
+    painter.drawRect(rect().adjusted(0, 0, -1, -1));
+  }
 
   const auto problems = check(layout);
   std::vector<bool> overlapping(layout.monitors.size(), false);
@@ -239,34 +275,35 @@ void MonitorEditorWidget::paintEvent(QPaintEvent *)
   for (size_t i = 0; i < layout.monitors.size(); ++i) {
     const auto &monitor = layout.monitors[i];
     const auto r = rectOf(static_cast<int>(i));
-    const auto color = colorOf(i);
+    // with the style layer every monitor is the same neutral: colour is for the selected one and for what is wrong
+    const auto color = m_themed ? m_theme.fill : colorOf(i);
     const bool selected = static_cast<int>(i) == m_selected;
-    painter.setPen(
-        QPen(selected ? palette.color(QPalette::Highlight).darker(110) : color.darker(150), selected ? 2.5 : 1.5)
-    );
+    const auto edge = m_themed ? (selected ? m_theme.selected : m_theme.border)
+                               : (selected ? palette.color(QPalette::Highlight).darker(110) : color.darker(150));
+    painter.setPen(QPen(edge, selected ? 2.5 : 1.5));
     painter.setBrush(color);
     painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), 3, 3);
     if (i == 0) {
       painter.setPen(Qt::NoPen);
-      painter.setBrush(QColor(255, 255, 255, 200));
+      painter.setBrush(m_themed ? m_theme.mainBar : QColor(255, 255, 255, 200));
       painter.drawRoundedRect(
           QRectF(r.left() + 4, r.top() + 4, std::max(0.0, r.width() - 8), std::min(6.0, r.height() / 8)), 2, 2
       );
     }
     if (overlapping[i]) {
-      painter.setPen(QPen(QColor(210, 30, 40), 2, Qt::DashLine));
-      painter.setBrush(QBrush(QColor(210, 30, 40, 90), Qt::BDiagPattern));
+      painter.setPen(QPen(m_themed ? m_theme.error : QColor(210, 30, 40), 2, Qt::DashLine));
+      painter.setBrush(QBrush(m_themed ? m_theme.errorHatch : QColor(210, 30, 40, 90), Qt::BDiagPattern));
       painter.drawRect(r.adjusted(2, 2, -2, -2));
     }
     if (alone[i]) {
-      painter.setPen(QPen(QColor(210, 30, 40), 2, Qt::DashLine));
+      painter.setPen(QPen(m_themed ? m_theme.error : QColor(210, 30, 40), 2, Qt::DashLine));
       painter.setBrush(Qt::NoBrush);
       painter.drawRoundedRect(r.adjusted(2, 2, -2, -2), 3, 3);
     }
 
     const auto area = r.adjusted(6, 10, -6, -6);
     if (area.width() > 30 && area.height() > 18) {
-      painter.setPen(luminance(color) > 0.6 ? QColor(24, 24, 24) : QColor(255, 255, 255));
+      painter.setPen(m_themed ? m_theme.text : luminance(color) > 0.6 ? QColor(24, 24, 24) : QColor(255, 255, 255));
       auto big = nameFont;
       big.setPixelSize(std::clamp(static_cast<int>(area.height() * 0.2), 11, 22));
       painter.setFont(big);
@@ -288,6 +325,8 @@ void MonitorEditorWidget::paintEvent(QPaintEvent *)
       );
       y += bigMetrics.height();
       painter.setFont(small);
+      if (m_themed)
+        painter.setPen(m_theme.textSecondary);
       painter.drawText(
           QRectF(area.left(), y, area.width(), smallMetrics.height()), Qt::AlignHCenter | Qt::AlignVCenter,
           smallMetrics.elidedText(second, Qt::ElideRight, static_cast<int>(area.width()))
@@ -308,21 +347,30 @@ void MonitorEditorWidget::paintEvent(QPaintEvent *)
         QPointF(r.center().x(), r.bottom()),
         r.bottomRight()
     };
-    painter.setPen(QPen(palette.color(QPalette::Highlight).darker(130), 1.5));
-    painter.setBrush(palette.color(QPalette::Base));
+    painter.setPen(QPen(m_themed ? m_theme.selected : palette.color(QPalette::Highlight).darker(130), 1.5));
+    painter.setBrush(m_themed ? m_theme.fill : palette.color(QPalette::Base));
     for (const auto &point : points)
       painter.drawRect(QRectF(point.x() - kHandleSize / 2, point.y() - kHandleSize / 2, kHandleSize, kHandleSize));
   }
 
   // the guides of the edges that are in line or touch
   for (const auto &guide : m_drag.guides) {
-    painter.setPen(
-        QPen(QColor(226, 42, 142), guide.touching ? 2.0 : 1.5, guide.touching ? Qt::SolidLine : Qt::DashLine)
-    );
+    painter.setPen(QPen(
+        m_themed ? m_theme.guide : QColor(226, 42, 142), guide.touching ? 2.0 : 1.5,
+        guide.touching ? Qt::SolidLine : Qt::DashLine
+    ));
     if (guide.vertical)
       painter.drawLine(toWidget(guide.position, guide.from), toWidget(guide.position, guide.to));
     else
       painter.drawLine(toWidget(guide.from, guide.position), toWidget(guide.to, guide.position));
+  }
+
+  // where the keys are
+  if (m_themed && hasFocus() && !m_readOnly) {
+    QList<QRectF> around;
+    if (m_selected >= 0 && m_selected < static_cast<int>(layout.monitors.size()))
+      around << rectOf(m_selected);
+    deskflow::gui::style::paintCanvasFocus(&painter, m_theme, size(), around);
   }
 
   // the size, while a monitor is dragged
@@ -334,10 +382,10 @@ void MonitorEditorWidget::paintEvent(QPaintEvent *)
     at.setX(std::clamp(at.x(), 4.0, std::max(4.0, width() - size.width() - 4)));
     at.setY(std::clamp(at.y(), 4.0, std::max(4.0, height() - size.height() - 4)));
     const QRectF bubble(at, size);
-    painter.setPen(QPen(QColor(0, 0, 0, 90), 1));
-    painter.setBrush(QColor(32, 32, 32, 230));
+    painter.setPen(m_themed ? QPen(m_theme.bubble, 1) : QPen(QColor(0, 0, 0, 90), 1));
+    painter.setBrush(m_themed ? m_theme.bubble : QColor(32, 32, 32, 230));
     painter.drawRoundedRect(bubble, 5, 5);
-    painter.setPen(QColor(255, 255, 255));
+    painter.setPen(m_themed ? m_theme.bubbleText : QColor(255, 255, 255));
     painter.drawText(bubble, Qt::AlignCenter, m_drag.info);
   }
 }
@@ -491,6 +539,12 @@ void MonitorEditorWidget::keyPressEvent(QKeyEvent *event)
     event->ignore();
     return;
   }
+  if (m_themed && m_selected < 0 && !m_drag.active &&
+      (event->key() == Qt::Key_Space || event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) &&
+      selectAtTheKeys()) {
+    event->accept();
+    return;
+  }
   if (m_selected < 0 || m_selected >= static_cast<int>(m_layout.monitors.size()) || m_drag.active) {
     QWidget::keyPressEvent(event);
     return;
@@ -523,4 +577,93 @@ void MonitorEditorWidget::keyPressEvent(QKeyEvent *event)
     return;
   }
   event->accept();
+}
+
+bool MonitorEditorWidget::selectAtTheKeys()
+{
+  const auto count = static_cast<int>(m_layout.monitors.size());
+  if (count == 0)
+    return false;
+  setSelected(m_cursor >= 0 && m_cursor < count ? m_cursor : 0);
+  return true;
+}
+
+// Tab goes from one monitor to the next, and out of the editor after the last (and Shift+Tab before the first)
+bool MonitorEditorWidget::focusNextPrevChild(bool next)
+{
+  if (m_themed && hasFocus() && !m_readOnly) {
+    const auto target = m_selected + (next ? 1 : -1);
+    if (target >= 0 && target < static_cast<int>(m_layout.monitors.size())) {
+      setSelected(target);
+      return true;
+    }
+  }
+  return QWidget::focusNextPrevChild(next);
+}
+
+void MonitorEditorWidget::focusInEvent(QFocusEvent *event)
+{
+  QWidget::focusInEvent(event);
+  const auto reason = event->reason();
+  const auto count = static_cast<int>(m_layout.monitors.size());
+  if (m_themed && !m_readOnly && m_selected < 0 && count > 0 &&
+      (reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason))
+    setSelected(reason == Qt::TabFocusReason ? 0 : count - 1);
+  update();
+}
+
+void MonitorEditorWidget::focusOutEvent(QFocusEvent *event)
+{
+  QWidget::focusOutEvent(event);
+  update();
+}
+
+//
+// What a screen reader is told
+//
+
+int MonitorEditorWidget::accessibleItemCount() const
+{
+  return static_cast<int>(m_layout.monitors.size());
+}
+
+QString MonitorEditorWidget::accessibleItemName(int index) const
+{
+  return index >= 0 && index < accessibleItemCount() ? tr("Monitor %1").arg(index + 1) : QString();
+}
+
+QString MonitorEditorWidget::accessibleItemDescription(int index) const
+{
+  if (index < 0 || index >= accessibleItemCount())
+    return {};
+  QStringList parts{describe(m_layout.monitors[static_cast<size_t>(index)])};
+  if (index == 0)
+    parts << tr("main");
+  // what is wrong is said in words: it is drawn, and a colour is not heard
+  for (const auto &problem : check(m_layout)) {
+    const auto i = static_cast<size_t>(index);
+    if (problem.kind == Problem::Kind::Overlap && (problem.first == i || problem.second == i))
+      parts << tr("overlaps another monitor");
+    else if (problem.kind == Problem::Kind::NotConnected && problem.first == i)
+      parts << tr("does not touch the others");
+  }
+  return parts.join(QStringLiteral(", "));
+}
+
+QRect MonitorEditorWidget::accessibleItemRect(int index) const
+{
+  return rectOf(index).toAlignedRect();
+}
+
+bool MonitorEditorWidget::accessibleItemSelected(int index) const
+{
+  return index >= 0 && index == m_selected;
+}
+
+void MonitorEditorWidget::selectAccessibleItem(int index)
+{
+  if (m_readOnly || index < 0 || index >= accessibleItemCount())
+    return;
+  setFocus(Qt::OtherFocusReason);
+  setSelected(index);
 }

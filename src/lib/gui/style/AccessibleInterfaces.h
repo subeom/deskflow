@@ -14,6 +14,8 @@
  *  - SettingRow, SettingCard, StatusHero: a group, named by its title (the headline)
  *  - SectionHeader: a heading
  *  - StatusChip: static text, named "<kind>: <text>" so that the kind is not told by the colour alone
+ *  - ArrangementCanvas, MonitorEditorWidget (when the application has the style layer): a list whose items are the
+ *    computers, or the monitors, that are painted: selectable list items with a name and a description
  *
  * The widgets set their own accessible names; this only gives them the roles and, for the switch, the state and the
  * actions. Call it once before the first widget is made: the widgets do it themselves.

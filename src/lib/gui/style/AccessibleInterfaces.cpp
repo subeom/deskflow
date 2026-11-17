@@ -6,6 +6,7 @@
 
 #include "AccessibleInterfaces.h"
 
+#include "AccessibleItems.h"
 #include "Appearance.h"
 #include "LookFollower.h"
 #include "gui/widgets/NavRail.h"
@@ -13,6 +14,7 @@
 #include <QAbstractButton>
 #include <QAccessible>
 #include <QAccessibleWidget>
+#include <QGroupBox>
 #include <QLabel>
 
 namespace {
@@ -229,6 +231,57 @@ public:
   }
 };
 
+// A group box that is opened by ticking it: a button that is expanded or collapsed
+class DisclosureAccessible : public QAccessibleWidget
+{
+public:
+  explicit DisclosureAccessible(QGroupBox *box) : QAccessibleWidget(box, QAccessible::Button)
+  {
+  }
+
+  QAccessible::State state() const override
+  {
+    auto state = QAccessibleWidget::state();
+    const bool expanded = box()->isChecked();
+    state.expandable = true;
+    state.expanded = expanded;
+    state.collapsed = !expanded;
+    return state;
+  }
+
+  QString text(QAccessible::Text text) const override
+  {
+    auto result = QAccessibleWidget::text(text);
+    if (text == QAccessible::Name && result.isEmpty())
+      result = withoutMnemonic(box()->title());
+    return result;
+  }
+
+  QStringList actionNames() const override
+  {
+    return {
+        QAccessibleActionInterface::toggleAction(), QAccessibleActionInterface::pressAction(),
+        QAccessibleActionInterface::setFocusAction()
+    };
+  }
+
+  void doAction(const QString &name) override
+  {
+    if (name == QAccessibleActionInterface::toggleAction() || name == QAccessibleActionInterface::pressAction()) {
+      if (box()->isEnabled())
+        box()->setChecked(!box()->isChecked());
+      return;
+    }
+    QAccessibleWidget::doAction(name);
+  }
+
+private:
+  QGroupBox *box() const
+  {
+    return static_cast<QGroupBox *>(widget());
+  }
+};
+
 QAccessibleInterface *factory(const QString &className, QObject *object)
 {
   auto *widget = qobject_cast<QWidget *>(object);
@@ -263,6 +316,19 @@ QAccessibleInterface *factory(const QString &className, QObject *object)
     return new RoleAccessible(widget, QAccessible::AlertMessage);
   if (className == QLatin1String("StatusChip"))
     return new RoleAccessible(widget, QAccessible::StaticText);
+  if (className == QLatin1String("DisclosureBox")) {
+    // the group box with a check box that it always was, for a screen reader as well, when there is no style layer
+    if (!deskflow::gui::style::isDeskflowStyleInstalled())
+      return nullptr;
+    return new DisclosureAccessible(static_cast<QGroupBox *>(widget));
+  }
+  if (className == QLatin1String("ArrangementCanvas") || className == QLatin1String("MonitorEditorWidget")) {
+    // the canvas that was always there, for a screen reader as well, when there is no style layer
+    if (!deskflow::gui::style::isDeskflowStyleInstalled())
+      return nullptr;
+    if (auto *source = dynamic_cast<deskflow::gui::style::AccessibleItemSource *>(widget))
+      return deskflow::gui::style::createItemListAccessible(widget, source);
+  }
   return nullptr;
 }
 
