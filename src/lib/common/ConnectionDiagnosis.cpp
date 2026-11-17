@@ -45,6 +45,12 @@ bool keepsDetail(FailureKind kind)
 constexpr auto kMacLocalNetworkCause =
     " On macOS 15 or later, Deskflow also needs permission under System Settings > Privacy & Security > Local Network.";
 
+// Windows reports a connection to a port that nothing listens on after about two seconds (it sends the first packet
+// again after the reset), which the default limit of 2 s ends as a timeout: to the client the two cannot be told apart
+constexpr auto kWindowsClosedPortCause =
+    " Windows also reports a port that nothing listens on this way, about 2 s after the attempt: the server may simply "
+    "not be running.";
+
 } // namespace
 
 std::string formatTarget(const std::string &host, const std::string &resolvedAddress, int port)
@@ -144,6 +150,10 @@ Diagnosis diagnose(const Failure &failure)
       result.cause = "A firewall on the server computer or a network that keeps computers from talking to each other "
                      "drops it silently.";
       result.hints = {Hint::ServerFirewall, Hint::NetworkIsolation, Hint::SwapRoles};
+      if (failure.platform == InputPlatform::Windows) {
+        result.cause += kWindowsClosedPortCause;
+        result.hints.insert(result.hints.begin() + 1, Hint::StartServer);
+      }
       if (mac) {
         result.cause += kMacLocalNetworkCause;
         result.hints.push_back(Hint::MacLocalNetwork);

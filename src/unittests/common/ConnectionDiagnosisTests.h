@@ -17,6 +17,7 @@ private Q_SLOTS:
   void timeout_saysWhichPhaseWasReached();
   void timeout_statesTheLimitThatWasUsed();
   void macLocalNetworkHint_isOnlyForMacOs();
+  void windowsTimeout_saysThatAClosedPortLooksTheSame();
   void serverFirewallHint_namesThePort();
   void detail_isKeptForTheKindsThatCarryAnOsMessage();
   void line_endsWithThePointerToTheDocs();

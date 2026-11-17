@@ -155,6 +155,45 @@ void ConnectionDiagnosisTests::macLocalNetworkHint_isOnlyForMacOs()
   QVERIFY(!hasHint(diagnose(refused), Hint::MacLocalNetwork));
 }
 
+// Windows reports a port that nothing listens on only after about two seconds (it sends the SYN again after the reset),
+// which the default limit of 2 s ends as a timeout: so on Windows a timeout while connecting says that the server may
+// simply not be running. Nowhere else, and not in the phases after the connection was made
+void ConnectionDiagnosisTests::windowsTimeout_saysThatAClosedPortLooksTheSame()
+{
+  auto failure = failureOf(FailureKind::TimedOut);
+  const auto before = diagnose(failure);
+
+  failure.platform = InputPlatform::Windows;
+  const auto onWindows = diagnose(failure);
+  QVERIFY(hasHint(onWindows, Hint::StartServer));
+  QVERIFY2(
+      textOf(onWindows.cause).contains(QStringLiteral("Windows also reports a port that nothing listens on this way")),
+      qPrintable(textOf(onWindows.cause))
+  );
+  QVERIFY(textOf(onWindows.line()).contains(QStringLiteral("the server may simply not be running")));
+  // what was said before is still said, in the same order
+  QVERIFY(textOf(onWindows.cause).startsWith(textOf(before.cause)));
+  auto without = onWindows.hints;
+  std::erase(without, Hint::StartServer);
+  QVERIFY(without == before.hints);
+
+  for (const auto platform : {InputPlatform::MacOS, InputPlatform::Linux, InputPlatform::Other}) {
+    failure.platform = platform;
+    const auto elsewhere = diagnose(failure);
+    QVERIFY(!hasHint(elsewhere, Hint::StartServer));
+    QVERIFY(!textOf(elsewhere.cause).contains(QStringLiteral("Windows")));
+  }
+
+  for (const auto phase : {Phase::Tls, Phase::Hello}) {
+    auto later = failureOf(FailureKind::TimedOut, phase);
+    const auto elsewhere = diagnose(later);
+    later.platform = InputPlatform::Windows;
+    const auto onWindowsLater = diagnose(later);
+    QCOMPARE(textOf(onWindowsLater.cause), textOf(elsewhere.cause));
+    QVERIFY(onWindowsLater.hints == elsewhere.hints);
+  }
+}
+
 void ConnectionDiagnosisTests::serverFirewallHint_namesThePort()
 {
   const auto text = textOf(hintText(Hint::ServerFirewall, 24801));
