@@ -65,6 +65,7 @@ void TrayPolicyTests::trayClick_canCrashOnMacOS27WithQtBefore6113_data()
   QTest::addColumn<bool>("crashes");
 
   QTest::newRow("6.9.3 (the Intel build), macOS 27") << "6.9.3" << 27 << true;
+  QTest::newRow("6.9.3, macOS 26") << "6.9.3" << 26 << false;
   QTest::newRow("6.9.3, macOS 15") << "6.9.3" << 15 << false;
   QTest::newRow("6.10.3, macOS 27") << "6.10.3" << 27 << true;
   QTest::newRow("6.11.2, macOS 27") << "6.11.2" << 27 << true;
