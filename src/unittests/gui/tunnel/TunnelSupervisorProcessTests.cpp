@@ -177,6 +177,47 @@ void TunnelSupervisorProcessTests::aProcessThatWritesTheToken_isNeverLoggedWithI
   }
 }
 
+// the end of the process flushes the last line, which had no end: it goes through the mask as every line does
+void TunnelSupervisorProcessTests::aTokenInTheLastLineWithoutAnEnd_isMaskedLikeEveryLine()
+{
+  Rig rig(QStringLiteral("noend"), quick());
+  QVERIFY(rig.supervisor->start(rig.request));
+  QTRY_VERIFY_WITH_TIMEOUT(rig.logsContain(QStringLiteral("ERR the last words")), 8000);
+
+  QVERIFY(rig.logsContain(QString::fromLatin1(SecretRedactor::kMask)));
+  for (const auto &line : rig.logs) {
+    QVERIFY2(!line.contains(kSecret), qPrintable(line));
+    QVERIFY2(!line.contains(kClientId), qPrintable(line));
+  }
+}
+
+void TunnelSupervisorProcessTests::aTokenInALongLine_neverReachesTheLog()
+{
+  Rig rig(QStringLiteral("long"), quick());
+  QVERIFY(rig.supervisor->start(rig.request));
+  QTRY_VERIFY_WITH_TIMEOUT(rig.logsContain(QStringLiteral("after the long line")), 15000);
+
+  QVERIFY(rig.logsContain(QStringLiteral("cloudflared output line too long, skipped")));
+  for (const auto &line : rig.logs) {
+    QVERIFY2(!line.contains(kSecret.left(12)), "the first part of the token is in the log");
+    QVERIFY2(!line.contains(kSecret.right(12)), "the last part of the token is in the log");
+  }
+}
+
+void TunnelSupervisorProcessTests::aTokenCutBetweenTwoWrites_isMasked()
+{
+  Rig rig(QStringLiteral("split"), quick());
+  QVERIFY(rig.supervisor->start(rig.request));
+  QTRY_VERIFY_WITH_TIMEOUT(rig.logsContain(QStringLiteral("end of the line")), 10000);
+
+  QVERIFY(rig.logsContain(QString::fromLatin1(SecretRedactor::kMask)));
+  for (const auto &line : rig.logs) {
+    QVERIFY2(!line.contains(kSecret), qPrintable(line));
+    QVERIFY2(!line.contains(kSecret.left(12)), qPrintable(line));
+    QVERIFY2(!line.contains(kSecret.right(12)), qPrintable(line));
+  }
+}
+
 void TunnelSupervisorProcessTests::aLoginThatIsAskedFor_failsAndLeavesNoProcess()
 {
   Rig rig(QStringLiteral("login"), quick());

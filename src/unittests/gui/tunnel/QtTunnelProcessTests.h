@@ -18,4 +18,8 @@ private Q_SLOTS:
   void terminate_endsTheProcess();
   void kill_endsTheProcess();
   void aProcessThatIsStillThereWhenTheObjectGoes_isEnded();
+  void aLongLineWithTheTokenAcrossTheLimit_isSkippedAndNoPartOfTheTokenIsGiven();
+  void aTokenCutBetweenTwoWrites_arrivesWholeInOneLine();
+  void carriageReturnAlone_endsALine();
+  void theLastLineWithoutAnEnd_isGivenWhenTheProcessEnds();
 };

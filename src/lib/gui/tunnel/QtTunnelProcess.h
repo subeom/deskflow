@@ -7,8 +7,7 @@
 #pragma once
 
 #include "gui/tunnel/ITunnelProcess.h"
-
-#include <QByteArray>
+#include "gui/tunnel/OutputLineSplitter.h"
 
 class QProcess;
 
@@ -37,10 +36,9 @@ public:
 
 private:
   void readOutput();
-  void emitLines(bool flush);
 
   QProcess *m_process;
-  QByteArray m_buffer;
+  OutputLineSplitter m_splitter;
 };
 
 } // namespace deskflow::tunnel

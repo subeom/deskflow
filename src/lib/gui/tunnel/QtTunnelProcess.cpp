@@ -22,13 +22,6 @@
 
 namespace deskflow::tunnel {
 
-namespace {
-
-// a line that never ends is not kept for ever
-constexpr qsizetype kMaxPendingBytes = 64 * 1024;
-
-} // namespace
-
 QtTunnelProcess::QtTunnelProcess(QObject *parent) : ITunnelProcess(parent), m_process(new QProcess(this))
 {
   connect(m_process, &QProcess::started, this, [this] {
@@ -49,7 +42,10 @@ QtTunnelProcess::QtTunnelProcess(QObject *parent) : ITunnelProcess(parent), m_pr
 
   connect(m_process, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus status) {
     readOutput();
-    emitLines(true);
+    // the last line, which had no end, is whole now: nothing follows it
+    for (const auto &line : m_splitter.finish()) {
+      Q_EMIT outputLine(line);
+    }
     Q_EMIT finished(status == QProcess::CrashExit ? -1 : exitCode);
   });
 }
@@ -65,7 +61,7 @@ QtTunnelProcess::~QtTunnelProcess()
 
 void QtTunnelProcess::start(const LaunchSpec &spec)
 {
-  m_buffer.clear();
+  m_splitter = OutputLineSplitter();
   m_process->setProgram(spec.program);
   m_process->setArguments(spec.arguments);
   m_process->setProcessEnvironment(spec.environment);
@@ -116,33 +112,10 @@ qint64 QtTunnelProcess::processId() const
 
 void QtTunnelProcess::readOutput()
 {
-  m_buffer.append(m_process->readAllStandardOutput());
-  emitLines(false);
-}
-
-void QtTunnelProcess::emitLines(bool flush)
-{
-  for (;;) {
-    const auto end = m_buffer.indexOf('\n');
-    const auto carriage = m_buffer.indexOf('\r');
-    const auto cut = end < 0 ? carriage : (carriage < 0 ? end : qMin(end, carriage));
-    if (cut < 0) {
-      break;
-    }
-
-    const auto line = QString::fromUtf8(m_buffer.left(cut)).trimmed();
-    m_buffer.remove(0, cut + 1);
-    if (!line.isEmpty()) {
-      Q_EMIT outputLine(line);
-    }
-  }
-
-  if ((flush || m_buffer.size() > kMaxPendingBytes) && !m_buffer.isEmpty()) {
-    const auto line = QString::fromUtf8(m_buffer).trimmed();
-    m_buffer.clear();
-    if (!line.isEmpty()) {
-      Q_EMIT outputLine(line);
-    }
+  // only whole lines are given: a token that is cut between two reads is whole in the line that holds it, and a line
+  // that is too long is skipped (see OutputLineSplitter)
+  for (const auto &line : m_splitter.feed(m_process->readAllStandardOutput())) {
+    Q_EMIT outputLine(line);
   }
 }
 

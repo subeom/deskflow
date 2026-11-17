@@ -17,6 +17,12 @@
 //   deny.      listens, and closes every connection after writing what cloudflared writes when the edge refuses it
 //   leak.      like ok. and also writes the Service Token (to prove that what it writes is made safe by the tunnel)
 //   noport.    runs and writes that it listens, never does
+//   long.      writes one line of 200 KB with the Service Token across the 64 KB mark (and in other places), then a
+//   line
+//              that says "after the long line", and runs
+//   split.     writes a line whose token is cut between two writes with a pause between them, then runs
+//   cr.        writes three lines that end with a carriage return alone, then runs
+//   noend.     writes the token as the last words without an end of line, and stops with the code 3
 //
 // The first line it writes says what it found in its environment and arguments; the value of the secret never appears
 // in it (only the leak. mode writes it, on purpose).
@@ -26,6 +32,7 @@
 #include <QProcessEnvironment>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QThread>
 #include <QTimer>
 
 #include <cstdio>
@@ -91,6 +98,43 @@ int main(int argc, char *argv[])
 
   if (mode == QLatin1String("exit")) {
     say(QStringLiteral("2026-01-01T00:00:00Z ERR fake: the connection to the edge failed"));
+    return 3;
+  }
+
+  if (mode == QLatin1String("long")) {
+    QByteArray line(200 * 1024, 'a');
+    const auto token = secret.toUtf8();
+    for (const qsizetype at :
+         {qsizetype(65536 - 10), qsizetype(65536), qsizetype(65536 - token.size() + 3), qsizetype(100 * 1024),
+          qsizetype(150 * 1024)}) {
+      line.replace(at, token.size(), token);
+    }
+    std::fwrite(line.constData(), 1, static_cast<size_t>(line.size()), stdout);
+    say(QString());
+    say(QStringLiteral("after the long line"));
+    return app.exec();
+  }
+
+  if (mode == QLatin1String("split")) {
+    const auto token = secret.toUtf8();
+    const auto half = token.size() / 2;
+    std::fprintf(stdout, "ERR token cut in two: %s", token.left(half).constData());
+    std::fflush(stdout);
+    QThread::msleep(300);
+    std::fprintf(stdout, "%s end of the line\n", token.mid(half).constData());
+    std::fflush(stdout);
+    return app.exec();
+  }
+
+  if (mode == QLatin1String("cr")) {
+    std::fprintf(stdout, "cr one\rcr two\rcr three\n");
+    std::fflush(stdout);
+    return app.exec();
+  }
+
+  if (mode == QLatin1String("noend")) {
+    std::fprintf(stdout, "ERR the last words, with the secret %s", secret.toUtf8().constData());
+    std::fflush(stdout);
     return 3;
   }
 

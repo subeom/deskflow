@@ -16,6 +16,9 @@ private Q_SLOTS:
   void aTunnelThatWorks_listensCarriesAConnectionAndStops();
   void theTokenReachesTheProcessThroughTheEnvironmentOnly();
   void aProcessThatWritesTheToken_isNeverLoggedWithIt();
+  void aTokenInTheLastLineWithoutAnEnd_isMaskedLikeEveryLine();
+  void aTokenInALongLine_neverReachesTheLog();
+  void aTokenCutBetweenTwoWrites_isMasked();
   void aLoginThatIsAskedFor_failsAndLeavesNoProcess();
   void aProcessThatStopsAtOnce_failsAfterItsRestarts();
   void aProcessThatNeverListens_failsWithATimeOut();

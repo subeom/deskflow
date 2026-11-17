@@ -75,6 +75,13 @@ create_test(
 # the real one, and listen on ports that the system hands out.
 add_subdirectory(fake)
 
+create_test(
+  NAME OutputLineSplitterTests
+  DEPENDS gui
+  SOURCE OutputLineSplitterTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
 foreach(tunnel_io_test PortProberTests OrphanRecordTests QtTunnelProcessTests TunnelSupervisorProcessTests)
   create_test(
     NAME ${tunnel_io_test}

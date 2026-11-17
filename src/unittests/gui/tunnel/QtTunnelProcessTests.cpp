@@ -8,6 +8,7 @@
 
 #include "gui/tunnel/CloudflaredLaunch.h"
 #include "gui/tunnel/OrphanRecord.h"
+#include "gui/tunnel/OutputLineSplitter.h"
 #include "gui/tunnel/QtPortProber.h"
 #include "gui/tunnel/QtTunnelProcess.h"
 
@@ -165,6 +166,73 @@ void QtTunnelProcessTests::aProcessThatIsStillThereWhenTheObjectGoes_isEnded()
 
   process.reset();
   QTRY_VERIFY_WITH_TIMEOUT(!inspector->inspect(pid).has_value(), 5000);
+}
+
+void QtTunnelProcessTests::aLongLineWithTheTokenAcrossTheLimit_isSkippedAndNoPartOfTheTokenIsGiven()
+{
+  Output output;
+  auto process = run(fakeSpec(QStringLiteral("long"), 0), output);
+  QTRY_VERIFY_WITH_TIMEOUT(output.contains(QStringLiteral("after the long line")), 15000);
+
+  // the line of 200 KB is not given, and no part of the token that it holds is given: the mask looks for the whole
+  // token
+  const auto secret = kToken.secret;
+  for (const auto &line : output.lines) {
+    QVERIFY2(!line.contains(secret.left(12)), "the first part of the token is in a line");
+    QVERIFY2(!line.contains(secret.right(12)), "the last part of the token is in a line");
+    QVERIFY(line.size() < 64 * 1024);
+  }
+  QCOMPARE(
+      static_cast<int>(std::ranges::count(output.lines, QString::fromLatin1(OutputLineSplitter::kTooLongNotice))), 1
+  );
+
+  QSignalSpy finished(process.get(), &ITunnelProcess::finished);
+  process->kill();
+  QVERIFY(finished.wait(10000));
+}
+
+void QtTunnelProcessTests::aTokenCutBetweenTwoWrites_arrivesWholeInOneLine()
+{
+  Output output;
+  auto process = run(fakeSpec(QStringLiteral("split"), 0), output);
+  QTRY_VERIFY_WITH_TIMEOUT(output.contains(QStringLiteral("end of the line")), 10000);
+
+  const auto found = std::ranges::find_if(output.lines, [](const QString &line) {
+    return line.contains(QStringLiteral("token cut in two"));
+  });
+  QVERIFY(found != output.lines.end());
+  // one line, with the whole token: whoever masks it sees all of it
+  QVERIFY2(found->contains(kToken.secret), qPrintable(*found));
+
+  QSignalSpy finished(process.get(), &ITunnelProcess::finished);
+  process->kill();
+  QVERIFY(finished.wait(10000));
+}
+
+void QtTunnelProcessTests::carriageReturnAlone_endsALine()
+{
+  Output output;
+  auto process = run(fakeSpec(QStringLiteral("cr"), 0), output);
+  QTRY_VERIFY_WITH_TIMEOUT(output.contains(QStringLiteral("cr three")), 10000);
+
+  QVERIFY(output.lines.contains(QStringLiteral("cr one")));
+  QVERIFY(output.lines.contains(QStringLiteral("cr two")));
+  QVERIFY(output.lines.contains(QStringLiteral("cr three")));
+
+  QSignalSpy finished(process.get(), &ITunnelProcess::finished);
+  process->kill();
+  QVERIFY(finished.wait(10000));
+}
+
+void QtTunnelProcessTests::theLastLineWithoutAnEnd_isGivenWhenTheProcessEnds()
+{
+  Output output;
+  auto process = run(fakeSpec(QStringLiteral("noend"), 0), output);
+  QSignalSpy finished(process.get(), &ITunnelProcess::finished);
+  QVERIFY(finished.wait(10000));
+  QCOMPARE(finished.takeFirst().at(0).toInt(), 3);
+  // it is given as it is (the mask is applied by whoever reads it, like for every line)
+  QVERIFY(output.contains(QStringLiteral("ERR the last words, with the secret")));
 }
 
 QTEST_MAIN(QtTunnelProcessTests)

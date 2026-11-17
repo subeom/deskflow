@@ -183,6 +183,8 @@ target_sources(${target} PRIVATE
   tunnel/MacKeychainStore.h
   tunnel/OrphanRecord.cpp
   tunnel/OrphanRecord.h
+  tunnel/OutputLineSplitter.cpp
+  tunnel/OutputLineSplitter.h
   tunnel/ProcessInspector.h
   tunnel/QtPortProber.cpp
   tunnel/QtPortProber.h
