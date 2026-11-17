@@ -46,6 +46,38 @@ public:
   }
 };
 
+// An inspector whose number passes to another program between the look and the end: inspect() still shows the process
+// of the record, and the one step that judges and ends (terminateIf) meets the new owner of the number
+class SwappingInspector : public IProcessInspector
+{
+public:
+  ProcessInfo shown;
+  ProcessInfo atTheEnd;
+  int ended = 0;
+  int judged = 0;
+
+  std::optional<ProcessInfo> inspect(qint64) const override
+  {
+    return shown;
+  }
+
+  bool terminate(qint64, bool) override
+  {
+    ++ended;
+    return true;
+  }
+
+  TerminateResult terminateIf(qint64, bool, const ProcessMatcher &matches) override
+  {
+    ++judged;
+    if (!matches(atTheEnd)) {
+      return TerminateResult::NotMatching;
+    }
+    ++ended;
+    return TerminateResult::Done;
+  }
+};
+
 constexpr qint64 kPid = 4242;
 constexpr qint64 kStart = 1'700'000'000'000;
 const QString kProgram = QStringLiteral("/opt/cloudflared/cloudflared");
@@ -224,6 +256,72 @@ void OrphanRecordTests::aStartTimeWithinTheTolerance_isTheSameProcess()
   QCOMPARE(cleanUpOrphan(file, inspector, 100).outcome, OrphanOutcome::Different);
 }
 
+// Where the system tells the start time of a process in exact steps and the same at every read (Windows, macOS), the
+// tolerance is small; only where it is derived from a boot time that can move (Linux) is it large
+void OrphanRecordTests::theToleranceIsSmallWhereTheSystemIsExact()
+{
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+  QVERIFY(kStartTimeToleranceMs <= 100);
+  QTemporaryDir dir;
+  const auto file = dir.filePath(QStringLiteral("tunnel.json"));
+  QVERIFY(writeOrphanRecord(file, sampleRecord()));
+  FakeInspector inspector;
+  inspector.processes[kPid] = {kStart + 1000, kProgram};
+  QCOMPARE(cleanUpOrphan(file, inspector, 100).outcome, OrphanOutcome::Different);
+  QVERIFY(inspector.asked.empty());
+#else
+  QVERIFY(kStartTimeToleranceMs >= 1000);
+#endif
+}
+
+// the process is judged and ended in one step, so that the process that was judged is the process that is ended
+void OrphanRecordTests::theProcessThatIsJudged_isTheProcessThatIsEnded()
+{
+  QTemporaryDir dir;
+  const auto file = dir.filePath(QStringLiteral("tunnel.json"));
+  QVERIFY(writeOrphanRecord(file, sampleRecord()));
+
+  SwappingInspector inspector;
+  inspector.shown = {kStart, kProgram};
+  inspector.atTheEnd = {kStart + 60'000, QStringLiteral("/usr/bin/other")};
+  QCOMPARE(cleanUpOrphan(file, inspector, 100).outcome, OrphanOutcome::Different);
+  QVERIFY(inspector.judged > 0);
+  QCOMPARE(inspector.ended, 0);
+  QVERIFY(!QFile::exists(file));
+
+  // the same program, but not the same process: the start time decides
+  QVERIFY(writeOrphanRecord(file, sampleRecord()));
+  inspector.atTheEnd = {kStart + 60'000, kProgram};
+  QCOMPARE(cleanUpOrphan(file, inspector, 100).outcome, OrphanOutcome::Different);
+  QCOMPARE(inspector.ended, 0);
+}
+
+void OrphanRecordTests::theDefaultOfTerminateIf_looksFirstAndEndsOnlyWhatMatches()
+{
+  FakeInspector inspector;
+  const auto always = [](const ProcessInfo &) { return true; };
+  const auto never = [](const ProcessInfo &) { return false; };
+
+  QCOMPARE(inspector.terminateIf(kPid, false, always), TerminateResult::NotRunning);
+  QVERIFY(inspector.asked.empty());
+
+  inspector.processes[kPid] = {kStart, kProgram};
+  QCOMPARE(inspector.terminateIf(kPid, false, never), TerminateResult::NotMatching);
+  QVERIFY(inspector.asked.empty());
+  QVERIFY(inspector.processes.contains(kPid));
+
+  ProcessInfo seen;
+  const auto remember = [&seen](const ProcessInfo &info) {
+    seen = info;
+    return true;
+  };
+  QCOMPARE(inspector.terminateIf(kPid, true, remember), TerminateResult::Done);
+  QCOMPARE(seen.startTimeMs, kStart);
+  QCOMPARE(seen.path, kProgram);
+  QCOMPARE(inspector.asked.size(), size_t(1));
+  QCOMPARE(inspector.asked.front().second, true);
+}
+
 void OrphanRecordTests::theSameProcess_isAskedToGoFirstAndEndedOnlyWhenItStays()
 {
   QTemporaryDir dir;
@@ -328,6 +426,42 @@ void OrphanRecordTests::theInspector_refusesToEndThisProgramAndTheSystemProcesse
   QVERIFY(!inspector->terminate(0, true));
   QVERIFY(!inspector->terminate(1, true));
   QVERIFY(!inspector->terminate(-1, true));
+}
+
+void OrphanRecordTests::theInspector_endsOnlyAProcessThatTheMatcherAccepts()
+{
+  auto process = startFake();
+  QVERIFY(process->waitForStarted(5000));
+  const auto inspector = createSystemProcessInspector();
+  const auto pid = static_cast<qint64>(process->processId());
+  QTRY_VERIFY_WITH_TIMEOUT(inspector->inspect(pid).has_value(), 5000);
+  const auto info = inspector->inspect(pid);
+  QVERIFY(info.has_value());
+
+  QCOMPARE(inspector->terminateIf(pid, true, [](const ProcessInfo &) { return false; }), TerminateResult::NotMatching);
+  QCOMPARE(process->state(), QProcess::Running);
+
+  ProcessInfo judged;
+  const auto result = inspector->terminateIf(pid, true, [&judged](const ProcessInfo &seen) {
+    judged = seen;
+    return true;
+  });
+  QCOMPARE(result, TerminateResult::Done);
+  QCOMPARE(judged.startTimeMs, info->startTimeMs);
+  QCOMPARE(judged.path, info->path);
+  QVERIFY(process->waitForFinished(5000));
+
+  QCOMPARE(inspector->terminateIf(pid, true, [](const ProcessInfo &) { return true; }), TerminateResult::NotRunning);
+}
+
+void OrphanRecordTests::theInspector_neverEndsThisProgramThroughTerminateIf()
+{
+  const auto inspector = createSystemProcessInspector();
+  const auto always = [](const ProcessInfo &) { return true; };
+  QVERIFY(inspector->terminateIf(QCoreApplication::applicationPid(), true, always) != TerminateResult::Done);
+  QVERIFY(inspector->terminateIf(0, true, always) != TerminateResult::Done);
+  QVERIFY(inspector->terminateIf(1, true, always) != TerminateResult::Done);
+  QVERIFY(inspector->terminateIf(-1, true, always) != TerminateResult::Done);
 }
 
 void OrphanRecordTests::aRealLeftoverProcess_isEnded()

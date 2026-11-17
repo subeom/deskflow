@@ -36,11 +36,18 @@ bool looksLikeCloudflared(const QString &path)
   return QFileInfo(path).completeBaseName().startsWith(QLatin1String("cloudflared"), Qt::CaseInsensitive);
 }
 
+// whether the process that was found is the process of the record: its start time, its program and its name
+bool isTheRecordedProcess(const ProcessInfo &info, const OrphanRecord &record)
+{
+  return std::llabs(info.startTimeMs - record.startTimeMs) <= kStartTimeToleranceMs && !info.path.isEmpty() &&
+         samePath(info.path, record.path) && looksLikeCloudflared(info.path);
+}
+
 // whether the process of the record is still there
 bool stillThere(const IProcessInspector &inspector, const OrphanRecord &record)
 {
   const auto info = inspector.inspect(record.pid);
-  return info.has_value() && std::llabs(info->startTimeMs - record.startTimeMs) <= kStartTimeToleranceMs;
+  return info.has_value() && isTheRecordedProcess(*info, record);
 }
 
 bool waitUntilGone(const IProcessInspector &inspector, const OrphanRecord &record, int waitMs)
@@ -128,25 +135,22 @@ OrphanCleanup cleanUpOrphan(const QString &recordFile, IProcessInspector &inspec
   }
   result.record = *record;
 
-  const auto info = inspector.inspect(record->pid);
-  if (!info.has_value()) {
+  // the process is judged and asked to go in one step (see IProcessInspector::terminateIf)
+  const auto matches = [&record](const ProcessInfo &info) { return isTheRecordedProcess(info, *record); };
+  const auto asked = inspector.terminateIf(record->pid, false, matches);
+  if (asked == TerminateResult::NotRunning) {
     removeOrphanRecord(recordFile);
     result.outcome = OrphanOutcome::NotRunning;
     return result;
   }
-
-  const bool sameProcess = std::llabs(info->startTimeMs - record->startTimeMs) <= kStartTimeToleranceMs &&
-                           !info->path.isEmpty() && samePath(info->path, record->path) &&
-                           looksLikeCloudflared(info->path);
-  if (!sameProcess) {
+  if (asked == TerminateResult::NotMatching) {
     removeOrphanRecord(recordFile);
     result.outcome = OrphanOutcome::Different;
     return result;
   }
 
-  inspector.terminate(record->pid, false);
   if (!waitUntilGone(inspector, *record, waitMs)) {
-    inspector.terminate(record->pid, true);
+    inspector.terminateIf(record->pid, true, matches);
     waitUntilGone(inspector, *record, waitMs);
   }
 

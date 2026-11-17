@@ -21,6 +21,9 @@ private Q_SLOTS:
   void aProcessWithAnotherProgram_isLeftAlone();
   void aProcessThatIsNotCloudflared_isLeftAloneEvenWhenTheRecordSaysSo();
   void aStartTimeWithinTheTolerance_isTheSameProcess();
+  void theToleranceIsSmallWhereTheSystemIsExact();
+  void theProcessThatIsJudged_isTheProcessThatIsEnded();
+  void theDefaultOfTerminateIf_looksFirstAndEndsOnlyWhatMatches();
   void theSameProcess_isAskedToGoFirstAndEndedOnlyWhenItStays();
   void aProcessThatCannotBeEnded_isReported();
   void theRecordIsRemovedInEveryCase();
@@ -28,6 +31,8 @@ private Q_SLOTS:
   void theInspector_knowsTheProcessOfThisProgram();
   void theInspector_doesNotKnowAProcessThatIsGone();
   void theInspector_refusesToEndThisProgramAndTheSystemProcesses();
+  void theInspector_endsOnlyAProcessThatTheMatcherAccepts();
+  void theInspector_neverEndsThisProgramThroughTerminateIf();
   void aRealLeftoverProcess_isEnded();
   void aRealProcessWithAnotherStartTime_isNotTouched();
 };

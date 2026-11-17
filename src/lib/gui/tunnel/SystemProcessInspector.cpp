@@ -35,6 +35,34 @@ bool isRefused(qint64 pid)
 
 #if defined(Q_OS_WIN)
 
+// What the system tells of the process behind an open handle; nothing when the process has ended
+std::optional<ProcessInfo> describe(HANDLE process)
+{
+  FILETIME created = {};
+  FILETIME exited = {};
+  FILETIME kernel = {};
+  FILETIME user = {};
+  DWORD exitCode = 0;
+  const bool alive = GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
+  if (!alive || GetProcessTimes(process, &created, &exited, &kernel, &user) == FALSE) {
+    return std::nullopt;
+  }
+
+  ProcessInfo info;
+  // 100 ns steps since 1601; 11644473600 s lie between that and 1970
+  ULARGE_INTEGER ticks;
+  ticks.LowPart = created.dwLowDateTime;
+  ticks.HighPart = created.dwHighDateTime;
+  info.startTimeMs = static_cast<qint64>(ticks.QuadPart / 10000ULL) - 11644473600000LL;
+
+  wchar_t buffer[32768];
+  DWORD size = static_cast<DWORD>(std::size(buffer));
+  if (QueryFullProcessImageNameW(process, 0, buffer, &size)) {
+    info.path = QString::fromWCharArray(buffer, static_cast<qsizetype>(size));
+  }
+  return info;
+}
+
 class WindowsInspector : public IProcessInspector
 {
 public:
@@ -48,33 +76,8 @@ public:
     if (process == nullptr) {
       return std::nullopt;
     }
-
-    ProcessInfo info;
-    FILETIME created = {};
-    FILETIME exited = {};
-    FILETIME kernel = {};
-    FILETIME user = {};
-    DWORD exitCode = 0;
-    const bool alive = GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
-    const bool timed = GetProcessTimes(process, &created, &exited, &kernel, &user) != FALSE;
-    if (alive && timed) {
-      // 100 ns steps since 1601; 11644473600 s lie between that and 1970
-      ULARGE_INTEGER ticks;
-      ticks.LowPart = created.dwLowDateTime;
-      ticks.HighPart = created.dwHighDateTime;
-      info.startTimeMs = static_cast<qint64>(ticks.QuadPart / 10000ULL) - 11644473600000LL;
-
-      wchar_t buffer[32768];
-      DWORD size = static_cast<DWORD>(std::size(buffer));
-      if (QueryFullProcessImageNameW(process, 0, buffer, &size)) {
-        info.path = QString::fromWCharArray(buffer, static_cast<qsizetype>(size));
-      }
-    }
+    const auto info = describe(process);
     CloseHandle(process);
-
-    if (!alive || !timed) {
-      return std::nullopt;
-    }
     return info;
   }
 
@@ -91,6 +94,42 @@ public:
     const BOOL ended = TerminateProcess(process, 1);
     CloseHandle(process);
     return ended != FALSE;
+  }
+
+  // One handle for the look and for the end: a handle stays the process that it was opened for, even when its number is
+  // given to another program afterwards, so what is judged is what is ended
+  TerminateResult terminateIf(qint64 pid, bool, const ProcessMatcher &matches) override
+  {
+    if (isRefused(pid)) {
+      return TerminateResult::Failed;
+    }
+
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE, FALSE, static_cast<DWORD>(pid));
+    if (process == nullptr) {
+      // no process with the number, or one that this user may not end: the second is told apart by asking for less
+      HANDLE lookOnly = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+      if (lookOnly == nullptr) {
+        return TerminateResult::NotRunning;
+      }
+      const auto info = describe(lookOnly);
+      CloseHandle(lookOnly);
+      if (!info.has_value()) {
+        return TerminateResult::NotRunning;
+      }
+      return matches(*info) ? TerminateResult::Failed : TerminateResult::NotMatching;
+    }
+
+    const auto info = describe(process);
+    TerminateResult result = TerminateResult::NotRunning;
+    if (info.has_value()) {
+      if (!matches(*info)) {
+        result = TerminateResult::NotMatching;
+      } else {
+        result = TerminateProcess(process, 1) != FALSE ? TerminateResult::Done : TerminateResult::Failed;
+      }
+    }
+    CloseHandle(process);
+    return result;
   }
 };
 
@@ -127,6 +166,8 @@ public:
     return info;
   }
 
+  // terminateIf() is the default of the interface: look, then kill(2); there is no handle to hold the process on this
+  // system
   bool terminate(qint64 pid, bool force) override
   {
     return !isRefused(pid) && ::kill(static_cast<pid_t>(pid), force ? SIGKILL : SIGTERM) == 0;

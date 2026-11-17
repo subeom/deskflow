@@ -14,8 +14,14 @@
 
 namespace deskflow::tunnel {
 
-//! The two start times are the same when they are this close (the clocks of the systems tell it in different steps)
+//! The two start times are the same when they are this close. Windows and macOS tell the start time of a process in
+//! steps of a millisecond or less, and the same at every read, so the tolerance is small there. Linux derives it from
+//! the boot time, which the kernel can move by up to a second.
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+inline constexpr qint64 kStartTimeToleranceMs = 50;
+#else
 inline constexpr qint64 kStartTimeToleranceMs = 2000;
+#endif
 
 /**
  * The cloudflared that this program started last, written to a file while it runs and removed when it is gone. A
