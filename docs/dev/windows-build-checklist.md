@@ -226,6 +226,21 @@ nothing else. If it fails on Windows, it fails with **unresolved external symbol
 at the link line of `deskflow.exe` (`ninja -C build\windows-Release -v`, the line of the last step): `server.lib` must be on it
 **after** `gui.lib`. The fix would be a line in `src/lib/gui/CMakeLists.txt` and nothing else.
 
+### The tests that link `server` (found on the first Windows build of `55423b5cd`)
+
+`ComputerTests.exe` did not link on Windows: 9 unresolved symbols (`KeyMap::parseKey/parseModifiers/formatKey`,
+`IKeyState::KeyInfo::alloc` x3, `join`, `split`, `ClipboardSharePolicy::sizeOptionKiB`). The test itself uses
+`deskflow::server::Config`, which pulls `Config.cpp` and `InputFilter.cpp` out of `server.lib`, and those need the objects
+of `app.lib`. **`server` links `app` on Unix only**, so on Windows the test has to name `app` (as the tests of `server`
+do: `base arch version app mt net`). The programs are not affected: `deskflow.exe` and `deskflow-core.exe` do not use
+`Config` from the GUI side and linked. The gui tests that link `server` now have those libraries on Windows
+(`gui_server_libs` in `src/unittests/gui/CMakeLists.txt`, empty on Unix, so the link lines on macOS and Linux are
+byte-identical). `ninja` stops at the first failing target: if another test fails to link, the symbols tell the
+library (a symbol of `KeyMap`, `IKeyState`, `Clipboard*Policy`, `Event`... is in `app.lib` or `base.lib`; one of
+`Arch*` is in `arch.lib`), and the fix is the same one line of `LIBS` of that test. To see every failure at once instead
+of the first one, build with `cmake --build build\windows-Release --parallel 4 -- -k 0` (ninja goes on with the targets
+that can still be built); then `windows-build.ps1` again for the tests.
+
 ## 6. Cross-compile check (done on the Mac, for what could be checked)
 
 I cannot build or run Windows here. A syntax-only check (`clang -fsyntax-only`, llvm-mingw 20261104, Windows SDK

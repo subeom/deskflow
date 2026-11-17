@@ -4,7 +4,7 @@
 create_test(
   NAME ArrangementCanvasTests
   DEPENDS gui
-  LIBS server
+  LIBS server ${gui_server_libs}
   SOURCE ArrangementCanvasTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )

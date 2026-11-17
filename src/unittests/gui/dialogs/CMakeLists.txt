@@ -4,7 +4,7 @@
 create_test(
   NAME DialogLayoutTests
   DEPENDS gui
-  LIBS server
+  LIBS server ${gui_server_libs}
   SOURCE DialogLayoutTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
@@ -12,7 +12,7 @@ create_test(
 create_test(
   NAME ServerConfigDialogTests
   DEPENDS gui
-  LIBS server
+  LIBS server ${gui_server_libs}
   SOURCE ServerConfigDialogTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
@@ -20,7 +20,7 @@ create_test(
 create_test(
   NAME MonitorEditorDialogTests
   DEPENDS gui
-  LIBS server
+  LIBS server ${gui_server_libs}
   SOURCE MonitorEditorDialogTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
@@ -28,7 +28,7 @@ create_test(
 create_test(
   NAME ConnectionTestDialogTests
   DEPENDS gui
-  LIBS server
+  LIBS server ${gui_server_libs}
   SOURCE ConnectionTestDialogTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
