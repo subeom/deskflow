@@ -694,7 +694,7 @@ void DialogLayoutTests::serverConfigDialog_computersTab_withTheLayoutNotice_isLa
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   layout_rig::arrangeT();
   Settings::setValue(Settings::Server::RememberArrangements, true);
   {
@@ -742,7 +742,7 @@ void DialogLayoutTests::layoutProfilesDialog_isLaidOutWithoutSqueezing()
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   layout_rig::arrangeT();
   {
     layout_rig::ServiceRig rig(m_settingsDir.filePath(QStringLiteral("layout-profiles.json")));
