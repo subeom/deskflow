@@ -115,6 +115,8 @@ add_library(${target} STATIC
   ipc/CoreIpcClient.h
   style/Appearance.cpp
   style/Appearance.h
+  style/AccessibleInterfaces.cpp
+  style/AccessibleInterfaces.h
   style/AppearanceHints.cpp
   style/AppearanceHints.h
   style/BackdropWidget.cpp
@@ -127,8 +129,11 @@ add_library(${target} STATIC
   style/DesignTokens.h
   style/Icons.cpp
   style/Icons.h
+  style/LookFollower.cpp
+  style/LookFollower.h
   style/PanelWidget.cpp
   style/PanelWidget.h
+  style/PixelSnap.h
   style/StatusColors.cpp
   style/StatusColors.h
   style/phosphor.qrc
@@ -176,8 +181,22 @@ add_library(${target} STATIC
   widgets/RemoveComputerWidget.h
   widgets/SearchWidget.h
   widgets/SearchWidget.cpp
+  widgets/SectionHeader.cpp
+  widgets/SectionHeader.h
+  widgets/SettingCard.cpp
+  widgets/SettingCard.h
+  widgets/SettingRow.cpp
+  widgets/SettingRow.h
   widgets/StatusBar.cpp
   widgets/StatusBar.h
+  widgets/StatusChip.cpp
+  widgets/StatusChip.h
+  widgets/StatusHero.cpp
+  widgets/StatusHero.h
+  widgets/InlineHint.cpp
+  widgets/InlineHint.h
+  widgets/ToggleSwitch.cpp
+  widgets/ToggleSwitch.h
   widgets/SettingsDialogButtonBox.cpp
   widgets/SettingsDialogButtonBox.h
 )
