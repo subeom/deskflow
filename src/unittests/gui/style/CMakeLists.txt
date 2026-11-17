@@ -26,6 +26,22 @@ create_test(
 )
 
 create_test(
+  NAME BackdropPanelTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE BackdropPanelTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
+  NAME IconsTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE IconsTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
   NAME DeskflowStyleTests
   DEPENDS gui
   LIBS server ${gui_server_libs}

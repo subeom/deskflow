@@ -113,12 +113,14 @@ Tokens tokensFor(const Look &look, const QPalette &system)
     c.successSoft = c.surface;
     c.warningSoft = c.surface;
     c.dangerSoft = c.surface;
-    c.panelEdge = c.text;
     if (look.highContrast) {
       c.controlBorder = c.text;
+      c.panelEdge = c.text;
     } else {
       // an edge that is seen, as strongly as the OS draws its own: the text colour dimmed until it is 3:1
       c.controlBorder = ensureContrast(ensureContrast(over(c.text, 0.55, c.bg), c.bg, 3.0), c.surface, 3.0);
+      // the edge of a panel only parts it from what is around it
+      c.panelEdge = over(c.text, 0.18, c.surface);
       // the colours of a state are the ones that the OS surface can carry as text
       for (auto *state : {&c.success, &c.warning, &c.danger})
         *state = ensureContrast(*state, c.surface, 4.5);

@@ -83,4 +83,11 @@ Tokens currentTokens()
   return tokensFor(currentLook(), QApplication::palette());
 }
 
+QMetaObject::Connection onLookChanged(const QObject *context, const std::function<void()> &callback)
+{
+  if (const auto *style = installedStyle())
+    return QObject::connect(style, &DeskflowStyle::lookChanged, context, callback);
+  return {};
+}
+
 } // namespace deskflow::gui::style

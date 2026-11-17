@@ -95,12 +95,19 @@ add_library(${target} STATIC
   style/Appearance.h
   style/AppearanceHints.cpp
   style/AppearanceHints.h
+  style/BackdropWidget.cpp
+  style/BackdropWidget.h
   style/Contrast.cpp
   style/Contrast.h
   style/DeskflowStyle.cpp
   style/DeskflowStyle.h
   style/DesignTokens.cpp
   style/DesignTokens.h
+  style/Icons.cpp
+  style/Icons.h
+  style/PanelWidget.cpp
+  style/PanelWidget.h
+  style/phosphor.qrc
   validators/AliasValidator.cpp
   validators/AliasValidator.h
   validators/ComputerDuplicationsValidator.cpp
@@ -156,4 +163,5 @@ target_link_libraries(${target}
     net
     server
     Qt6::Widgets
+    Qt6::Svg
 )

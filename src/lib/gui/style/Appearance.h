@@ -8,7 +8,10 @@
 
 #include "DesignTokens.h"
 
+#include <QObject>
 #include <QString>
+
+#include <functional>
 
 namespace deskflow::gui::style {
 
@@ -48,5 +51,12 @@ bool isDeskflowStyleInstalled();
  */
 Look currentLook();
 Tokens currentTokens();
+
+/*!
+ * Calls the function when the look of the style layer changes (the OS went dark, the person asked for less
+ * transparency): for widgets that paint with the tokens. It is not connected when there is no style layer. A widget
+ * calls it again when its style is another (QEvent::StyleChange). The connection ends with the context object.
+ */
+QMetaObject::Connection onLookChanged(const QObject *context, const std::function<void()> &callback);
 
 } // namespace deskflow::gui::style
