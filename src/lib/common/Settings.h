@@ -77,6 +77,8 @@ public:
     inline static const auto Autohide = QStringLiteral("gui/autoHide");
     inline static const auto AutoStartCore = QStringLiteral("gui/startCoreWithGui");
     inline static const auto AutoUpdateCheck = QStringLiteral("gui/enableUpdateCheck");
+    // "deskflow": the style of this application on every OS; "system": the look that each OS gave the application
+    inline static const auto Appearance = QStringLiteral("gui/appearance");
     inline static const auto UpdateCheckUrl = QStringLiteral("gui/updateCheckUrl");
     inline static const auto CloseReminder = QStringLiteral("gui/closeReminder");
     inline static const auto CloseToTray = QStringLiteral("gui/closeToTray");
@@ -345,6 +347,7 @@ private:
     , Gui::Autohide
     , Gui::AutoStartCore
     , Gui::AutoUpdateCheck
+    , Gui::Appearance
     , Gui::UpdateCheckUrl
     , Gui::CloseReminder
     , Gui::CloseToTray

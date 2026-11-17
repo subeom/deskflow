@@ -91,6 +91,10 @@ add_library(${target} STATIC
   ipc/DaemonIpcClient.h
   ipc/CoreIpcClient.cpp
   ipc/CoreIpcClient.h
+  style/Contrast.cpp
+  style/Contrast.h
+  style/DesignTokens.cpp
+  style/DesignTokens.h
   validators/AliasValidator.cpp
   validators/AliasValidator.h
   validators/ComputerDuplicationsValidator.cpp

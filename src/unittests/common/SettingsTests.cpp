@@ -95,6 +95,23 @@ void SettingsTests::clipboardTextOnly_isOffByDefaultAndRoundTrips()
   QCOMPARE(Settings::value(key).toBool(), false);
 }
 
+void SettingsTests::appearance_defaultsToSystemAndRoundTrips()
+{
+  const auto key = Settings::Gui::Appearance;
+  QCOMPARE(key, QStringLiteral("gui/appearance"));
+  QVERIFY(Settings::validKeys().contains(key));
+
+  // a config from before the setting existed has no value for it: the look is the one that the OS gave the program
+  Settings::setValue(key);
+  QCOMPARE(Settings::defaultValue(key), QVariant(QStringLiteral("system")));
+  QCOMPARE(Settings::value(key).toString(), QStringLiteral("system"));
+
+  Settings::setValue(key, QStringLiteral("deskflow"));
+  QCOMPARE(Settings::value(key).toString(), QStringLiteral("deskflow"));
+  Settings::setValue(key);
+  QCOMPARE(Settings::value(key).toString(), QStringLiteral("system"));
+}
+
 void SettingsTests::experimentalMultiMonitor_isOffByDefaultAndRoundTrips()
 {
   const auto key = Settings::Server::ExperimentalMultiMonitor;
