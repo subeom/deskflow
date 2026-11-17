@@ -54,6 +54,10 @@ add_library(${target} STATIC
   core/ReportedScreen.cpp
   core/ReportedScreen.h
   core/NetworkMonitor.h
+  layout/DisplaySignature.cpp
+  layout/DisplaySignature.h
+  layout/LayoutMatcher.cpp
+  layout/LayoutMatcher.h
   dialogs/AboutDialog.cpp
   dialogs/AboutDialog.h
   dialogs/AboutDialog.ui
