@@ -282,6 +282,10 @@ void MonitorEditorDialog::buildDeskflowLayout()
     entry.button->setIcon(icon(QString::fromLatin1(entry.icon)));
     entry.button->setFlat(true);
   }
+  // the one capsule of the dialog is OK, which is what Enter does: no other button is its default (the style paints the
+  // default button as the primary one)
+  for (auto *button : {m_rotate, m_makeMain, m_add, m_remove, m_undo, m_redo, m_stretchButton, m_drawOwn, m_import, m_apply})
+    button->setAutoDefault(false);
 
   auto *tools = new QHBoxLayout;
   tools->setSpacing(metrics::spaceXs);

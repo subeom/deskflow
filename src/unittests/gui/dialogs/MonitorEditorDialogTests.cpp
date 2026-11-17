@@ -660,6 +660,20 @@ void MonitorEditorDialogTests::newLook_hasTheBarOfActionsAndTheNumbersClosedUnde
   auto *resolution = child<QComboBox>(opened, "cbResolution");
   QVERIFY(resolution->mapTo(opened.dialog.get(), QPoint(0, 0)).x() > opened.widget->geometry().right());
 
+  // OK is the primary button, which Enter presses: no other button of the dialog is the default, not even the one that
+  // appears when the monitors are the ones that the computer reports
+  MonitorEditorDialog reported(nullptr, QStringLiteral("PC"), windowsPc(), kMatching);
+  reported.showReportedMonitors();
+  reported.show();
+  QApplication::processEvents();
+  auto *ok = reported.findChild<QDialogButtonBox *>(QStringLiteral("monitorEditorButtons"))->button(QDialogButtonBox::Ok);
+  QVERIFY(ok->isDefault());
+  for (auto *button : reported.findChildren<QPushButton *>()) {
+    if (button != ok)
+      QVERIFY2(!button->isDefault(), qPrintable(button->objectName()));
+  }
+  reported.hide();
+
   // the numbers are closed, and what ticks the disclosure opens them
   auto *group = child<QGroupBox>(opened, "groupAdvancedNumbers");
   QVERIFY(qobject_cast<DisclosureBox *>(group));
