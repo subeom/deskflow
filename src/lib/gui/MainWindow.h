@@ -52,6 +52,7 @@ class LayoutMemoryService;
 namespace deskflow::gui::tray {
 class TrayController;
 enum class TrayCommand;
+struct TrayInput;
 }
 
 namespace Ui {
@@ -146,6 +147,9 @@ private:
   //! The tray of the new look: its menu says the state (see TrayController); the window gives it what it knows
   void setupTrayController(QMenu *menu);
   void updateTray();
+  //! The menu bar of the new look: a menu of sharing whose rows are all there, and dimmed when they do not apply
+  void createSharingMenu();
+  void updateSharingMenu(const deskflow::gui::tray::TrayInput &input);
   void trayCommand(deskflow::gui::tray::TrayCommand command);
   void applyConfig();
   void setTrayIcon();
@@ -270,6 +274,13 @@ private:
   QAction *m_actionShowHelp = nullptr;
   //! Only in the window of the new look (View menu): folds and unfolds the sidebar, as its button does
   QAction *m_actionToggleSidebar = nullptr;
+  // Only in the window of the new look: the rows of the menu of sharing (the actions above are the ones of the system look)
+  QAction *m_sharingStart = nullptr;
+  QAction *m_sharingRestart = nullptr;
+  QAction *m_sharingStop = nullptr;
+  QAction *m_sharingTestConnection = nullptr;
+  QAction *m_sharingFingerprint = nullptr;
+  QAction *m_sharingMinimize = nullptr;
 
   // Network monitoring
   NetworkMonitor *m_networkMonitor = nullptr;

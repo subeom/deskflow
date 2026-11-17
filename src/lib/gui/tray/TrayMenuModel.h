@@ -100,6 +100,25 @@ struct TrayInput
   QMap<TrayCommand, QKeySequence> shortcuts;
 };
 
+/*!
+ * Which rows of the menu of sharing of the menu bar of the window can be chosen (the rows are all there, and those that do not
+ * apply are dimmed: the menu bar is not a place where a row comes and goes). It is the same state as the tray has, with
+ * whether there is a fingerprint to show.
+ */
+struct SharingMenuState
+{
+  bool start = false;
+  bool restart = false;
+  bool stop = false;
+  bool testConnection = false;
+  bool fingerprint = false;
+  bool minimize = false;
+
+  bool operator==(const SharingMenuState &other) const = default;
+};
+
+SharingMenuState sharingMenuState(const TrayInput &input, bool fingerprintAvailable);
+
 //! One row of the menu
 struct TrayMenuEntry
 {

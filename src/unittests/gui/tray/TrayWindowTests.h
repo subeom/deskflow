@@ -25,12 +25,15 @@ private Q_SLOTS:
   void systemLook_theWindowAndTheMenuTakeTurnsToOfferTheWindow();
 
   void systemLook_hasNoTrayController_andNoStateInTheTrayIcon();
+  void systemLook_menuBarIsTheOneItHasAlwaysBeen();
 
   void deskflowLook_trayMenuSaysTheStateOfTheCore();
   void deskflowLook_trayHasRowsOfItsOwn_theActionsOfTheWindowAreNotInIt();
   void deskflowLook_chosenRowsDoWhatTheMenuAlwaysDid();
   void deskflowLook_anUpdateIsInTheMenuAndOnTheIcon();
   void deskflowLook_aClientTestsItsConnectionFromTheTray();
+  void deskflowLook_menuBarHasASharingMenuWithEveryRowAndDimsTheOnesThatDoNotApply();
+  void deskflowLook_menuBarOfAClientCanTestTheConnection();
   void deskflowLook_theColourOfTheIconFollowsTheSettingAndNeverTheShape();
 
   void closeToTray_withATray_hidesTheWindow();

@@ -492,4 +492,47 @@ void TrayMenuModelTests::themeIcons_haveANameInTheThemeOfTheDesktop()
   }
 }
 
+void TrayMenuModelTests::sharingMenu_hasEveryRow_andDimsTheOnesThatDoNotApply()
+{
+  auto in = makeInput(ProcessState::Stopped, ConnectionState::Disconnected, false);
+  in.canTestConnection = true;
+  auto state = sharingMenuState(in, true);
+  QVERIFY(state.start);
+  QVERIFY(!state.restart);
+  QVERIFY(!state.stop);
+  QVERIFY(state.testConnection);
+  QVERIFY(state.fingerprint);
+  QVERIFY(state.minimize);
+
+  // it runs: Restart and Stop, no Start
+  in.process = ProcessState::Started;
+  in.connection = ConnectionState::Connected;
+  state = sharingMenuState(in, false);
+  QVERIFY(!state.start);
+  QVERIFY(state.restart);
+  QVERIFY(state.stop);
+  QVERIFY(!state.fingerprint);
+  // retrying is running as well
+  in.process = ProcessState::RetryPending;
+  QVERIFY(sharingMenuState(in, false).stop);
+  // a core that is stopping is not running: Start is there again, as it was in the menu before
+  in.process = ProcessState::Stopping;
+  QVERIFY(!sharingMenuState(in, false).stop);
+  QVERIFY(sharingMenuState(in, false).start);
+
+  // the settings cannot start it, no mode, a server, a window that is not on the screen
+  in.process = ProcessState::Stopped;
+  in.canStart = false;
+  QVERIFY(!sharingMenuState(in, false).start);
+  in.canStart = true;
+  in.hasMode = false;
+  QVERIFY(!sharingMenuState(in, false).start);
+  QVERIFY(!sharingMenuState(in, false).testConnection);
+  in.hasMode = true;
+  in.isServer = true;
+  QVERIFY(!sharingMenuState(in, false).testConnection);
+  in.windowShown = false;
+  QVERIFY(!sharingMenuState(in, false).minimize);
+}
+
 QTEST_APPLESS_MAIN(TrayMenuModelTests)

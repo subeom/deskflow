@@ -806,11 +806,16 @@ void MainWindow::open()
 
 void MainWindow::createMenuBar()
 {
-  m_menuFile->addAction(m_actionStartCore);
-  m_menuFile->addAction(m_actionRestartCore);
-  m_menuFile->addAction(m_actionStopCore);
-  m_menuFile->addSeparator();
-  m_menuFile->addAction(m_actionQuit);
+  const bool newLook = deskflow::gui::style::isDeskflowStyleInstalled();
+  if (newLook) {
+    createSharingMenu();
+  } else {
+    m_menuFile->addAction(m_actionStartCore);
+    m_menuFile->addAction(m_actionRestartCore);
+    m_menuFile->addAction(m_actionStopCore);
+    m_menuFile->addSeparator();
+    m_menuFile->addAction(m_actionQuit);
+  }
 
   m_menuEdit->addAction(m_actionSettings);
 
@@ -821,11 +826,69 @@ void MainWindow::createMenuBar()
 
   auto menuBar = new QMenuBar(this);
   menuBar->addMenu(m_menuFile);
-  menuBar->addMenu(m_menuEdit);
+  // macOS has Preferences in the menu of the application (by its role): the menu of the new look has no menu of its own for it
+  if (!(newLook && deskflow::platform::isMac()))
+    menuBar->addMenu(m_menuEdit);
   menuBar->addMenu(m_menuView);
   menuBar->addMenu(m_menuHelp);
 
   setMenuBar(menuBar);
+}
+
+void MainWindow::createSharingMenu()
+{
+  using deskflow::gui::style::icon;
+  const bool mac = deskflow::platform::isMac();
+  const auto make = [this, mac](const QString &iconName, auto slot) {
+    auto *action = new QAction(this);
+    action->setMenuRole(QAction::NoRole);
+    // the menu bar of macOS has no pictures: the menus of the system have none
+    if (!mac)
+      action->setIcon(icon(iconName));
+    connect(action, &QAction::triggered, this, slot);
+    m_menuFile->addAction(action);
+    return action;
+  };
+  m_sharingStart = make(QStringLiteral("play"), &MainWindow::startCore);
+  m_sharingRestart = make(QStringLiteral("arrow-clockwise"), &MainWindow::resetCore);
+  m_sharingStop = make(QStringLiteral("stop"), &MainWindow::stopCore);
+  m_menuFile->addSeparator();
+  m_sharingTestConnection = make(QStringLiteral("network"), &MainWindow::showConnectionTest);
+  m_sharingFingerprint = make(QStringLiteral("fingerprint"), &MainWindow::showMyFingerprint);
+  m_menuFile->addSeparator();
+  m_sharingMinimize = make(QStringLiteral("sidebar-simple"), &MainWindow::hide);
+  // Preferences and Quit are what the menu of the application of macOS takes by their roles; elsewhere Quit ends the menu
+  if (mac) {
+    m_menuFile->addAction(m_actionSettings);
+    m_menuFile->addAction(m_actionQuit);
+  } else {
+    m_menuFile->addSeparator();
+    m_menuFile->addAction(m_actionQuit);
+  }
+}
+
+void MainWindow::updateSharingMenu(const deskflow::gui::tray::TrayInput &input)
+{
+  if (m_sharingStart == nullptr)
+    return;
+  using deskflow::gui::tray::TrayCommand;
+  m_sharingStart->setText(input.labels.value(TrayCommand::Start));
+  m_sharingRestart->setText(input.labels.value(TrayCommand::Restart));
+  m_sharingStop->setText(input.labels.value(TrayCommand::Stop));
+  m_sharingTestConnection->setText(input.labels.value(TrayCommand::TestConnection));
+  m_sharingFingerprint->setText(m_statusBar->fingerprintToolTip());
+  m_sharingMinimize->setText(input.labels.value(TrayCommand::Minimize));
+  m_sharingStart->setShortcut(input.shortcuts.value(TrayCommand::Start));
+  m_sharingRestart->setShortcut(input.shortcuts.value(TrayCommand::Restart));
+  m_sharingStop->setShortcut(input.shortcuts.value(TrayCommand::Stop));
+
+  const auto state = deskflow::gui::tray::sharingMenuState(input, TlsUtility::isEnabled() && !m_fingerprint.data.isEmpty());
+  m_sharingStart->setEnabled(state.start);
+  m_sharingRestart->setEnabled(state.restart);
+  m_sharingStop->setEnabled(state.stop);
+  m_sharingTestConnection->setEnabled(state.testConnection);
+  m_sharingFingerprint->setEnabled(state.fingerprint);
+  m_sharingMinimize->setEnabled(state.minimize);
 }
 
 void MainWindow::setupTrayIcon()
@@ -940,6 +1003,7 @@ void MainWindow::updateTray()
       {TrayCommand::Quit, m_actionTrayQuit->shortcut()},
   };
   m_trayController->setInput(input);
+  updateSharingMenu(input);
 }
 
 void MainWindow::updateWindowTitle()
@@ -1371,7 +1435,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 
 void MainWindow::updateText()
 {
-  m_menuFile->setTitle(tr("&File"));
+  // the menu of the application of macOS is not a "file" menu: with the new look it is the menu of what is shared
+  m_menuFile->setTitle(
+      deskflow::gui::style::isDeskflowStyleInstalled() && deskflow::platform::isMac() ? tr("&Sharing") : tr("&File")
+  );
   m_menuEdit->setTitle(tr("&Edit"));
   m_menuView->setTitle(tr("&View"));
   m_menuHelp->setTitle(tr("&Help"));

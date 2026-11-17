@@ -29,4 +29,5 @@ private Q_SLOTS:
   void icons_areAllOrNoneInAGroup();
   void longSentences_areCutShortAndKeepTheWholeForTheToolTip();
   void themeIcons_haveANameInTheThemeOfTheDesktop();
+  void sharingMenu_hasEveryRow_andDimsTheOnesThatDoNotApply();
 };

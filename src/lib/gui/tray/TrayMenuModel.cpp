@@ -97,6 +97,19 @@ void evenIcons(Group &group)
 
 } // namespace
 
+SharingMenuState sharingMenuState(const TrayInput &input, bool fingerprintAvailable)
+{
+  SharingMenuState state;
+  const bool running = isRunning(input.process);
+  state.start = !running && input.hasMode && input.canStart;
+  state.restart = running;
+  state.stop = running;
+  state.testConnection = input.hasMode && !input.isServer && input.canTestConnection;
+  state.fingerprint = fingerprintAvailable;
+  state.minimize = input.windowShown;
+  return state;
+}
+
 TrayPlatform TrayPlatform::windows()
 {
   TrayPlatform platform;

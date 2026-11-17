@@ -21,6 +21,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QMenu>
+#include <QMenuBar>
 #include <QPixmapCache>
 #include <QSystemTrayIcon>
 #include <QTimer>
@@ -56,6 +57,17 @@ struct MainWindowTestAccess
   static bool closeAsTheOsDoes(MainWindow &w)
   {
     return w.maybeHideToTray();
+  }
+  static QMenu *menuFile(MainWindow &w)
+  {
+    return w.m_menuFile;
+  }
+  static QStringList menuBarTitles(MainWindow &w)
+  {
+    QStringList titles;
+    for (const auto *action : w.menuBar()->actions())
+      titles << action->text();
+    return titles;
   }
   static deskflow::gui::tray::TrayController *controller(MainWindow &w)
   {
@@ -496,6 +508,78 @@ void TrayWindowTests::deskflowLook_theColourOfTheIconFollowsTheSettingAndNeverTh
   tray->setTone(TrayTone::Template);
   QVERIFY(!tray->iconSpec().coloredBadge);
   QCOMPARE(tray->iconSpec().state, TrayState::Connected);
+}
+
+void TrayWindowTests::systemLook_menuBarIsTheOneItHasAlwaysBeen()
+{
+  auto window = makeWindow();
+  QCOMPARE(
+      Access::menuBarTitles(*window), (QStringList{QStringLiteral("&File"), QStringLiteral("&Edit"),
+                                                    QStringLiteral("&View"), QStringLiteral("&Help")})
+  );
+  const auto *file = Access::menuFile(*window);
+  QStringList rows;
+  for (const auto *action : file->actions())
+    rows << (action->isSeparator() ? QStringLiteral("---") : action->text());
+  QCOMPARE(rows, (QStringList{"Start", "Rest&art", "Stop", "---", "&Quit"}));
+  // the rows of the menu are the actions of the window, which come and go as they always did
+  QVERIFY(file->actions().first() == Access::sharedActions(*window).first());
+}
+
+void TrayWindowTests::deskflowLook_menuBarHasASharingMenuWithEveryRowAndDimsTheOnesThatDoNotApply()
+{
+  auto window = makeWindow(Settings::CoreMode::Server, true);
+  const bool mac = deskflow::platform::isMac();
+  const QStringList titles = mac ? QStringList{"&Sharing", "&View", "&Help"}
+                                 : QStringList{"&File", "&Edit", "&View", "&Help"};
+  QCOMPARE(Access::menuBarTitles(*window), titles);
+  const auto *file = Access::menuFile(*window);
+  // the rows of sharing, in this order, whatever the state is: Start, Restart, Stop, Test connection, fingerprint, Minimize
+  const auto rows = [file] {
+    QList<const QAction *> list;
+    for (const auto *action : file->actions())
+      if (!action->isSeparator() && action->menuRole() == QAction::NoRole)
+        list << action;
+    return list;
+  };
+  QCOMPARE(rows().size(), 6);
+  QCOMPARE(rows().at(0)->text(), QStringLiteral("Start"));
+  QCOMPARE(rows().at(1)->text(), QStringLiteral("Rest&art"));
+  QCOMPARE(rows().at(2)->text(), QStringLiteral("Stop"));
+  QCOMPARE(rows().at(3)->text(), QStringLiteral("Test connection"));
+  QCOMPARE(rows().at(5)->text(), QStringLiteral("&Minimize to tray"));
+  // no row comes and goes: a row that does not apply is dimmed
+  for (const auto *action : rows())
+    QVERIFY(action->isVisible());
+  const auto enabled = [&] {
+    QList<bool> list;
+    for (const auto *action : rows())
+      list << action->isEnabled();
+    return list;
+  };
+  // stopped: Start (the window is not shown: Minimize is dimmed); a server has nothing to test; there is no fingerprint
+  QCOMPARE(enabled(), (QList<bool>{true, false, false, false, false, false}));
+  Access::states(*window, ProcessState::Started, ConnectionState::Listening);
+  QCOMPARE(enabled(), (QList<bool>{false, true, true, false, false, false}));
+  Access::showAndActivate(*window);
+  QCOMPARE(enabled(), (QList<bool>{false, true, true, false, false, true}));
+  // the shortcuts are on the rows of the menu: Ctrl+S is Restart now and Start is dimmed
+  QCOMPARE(rows().at(1)->shortcut(), QKeySequence(QStringLiteral("Ctrl+S")));
+  // the icons are for the menus that Qt draws, and the menu bar of macOS has none
+  QCOMPARE(rows().at(0)->icon().isNull(), mac);
+}
+
+void TrayWindowTests::deskflowLook_menuBarOfAClientCanTestTheConnection()
+{
+  Settings::setValue(Settings::Client::RemoteHost, QStringLiteral("srv"));
+  auto window = makeWindow(Settings::CoreMode::Client, true);
+  const auto *file = Access::menuFile(*window);
+  const QAction *test = nullptr;
+  for (const auto *action : file->actions())
+    if (action->text() == QStringLiteral("Test connection"))
+      test = action;
+  QVERIFY(test);
+  QVERIFY(test->isEnabled());
 }
 
 QTEST_MAIN(TrayWindowTests)
