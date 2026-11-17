@@ -14,6 +14,7 @@
 #include "gui/style/PanelWidget.h"
 #include "gui/style/StatusColors.h"
 #include "gui/widgets/DisclosureBox.h"
+#include "gui/widgets/InlineHint.h"
 #include "gui/widgets/MonitorEditorWidget.h"
 
 #include <QComboBox>
@@ -325,14 +326,11 @@ void MonitorEditorDialog::buildDeskflowLayout()
   middle->addWidget(sideBox);
 
   // what the canvas is for: the words of its tool tip, which are not only for the pointer
-  auto *hint = new QLabel(m_widget->toolTip(), this);
+  auto *hint = new InlineHint(m_widget->toolTip(), this);
   hint->setObjectName(QStringLiteral("lblMonitorEditorHint"));
   hint->setWordWrap(true);
+  // it takes the width that the buttons leave: a long line must not make the dialog wide
   hint->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
-  auto hintFont = hint->font();
-  hintFont.setPixelSize(metrics::fontCaption);
-  hint->setFont(hintFont);
-  hint->setForegroundRole(QPalette::PlaceholderText);
   auto *footer = new QHBoxLayout;
   footer->addWidget(hint, 1);
   footer->addWidget(m_buttons);
