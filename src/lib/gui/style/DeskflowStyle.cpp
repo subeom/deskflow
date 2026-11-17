@@ -8,11 +8,14 @@
 
 #include "AppearanceHints.h"
 #include "Contrast.h"
+#include "LookFollower.h"
 
 #include <QAbstractItemView>
 #include <QAbstractSpinBox>
 #include <QApplication>
 #include <QComboBox>
+#include <QMenu>
+#include <QMenuBar>
 #include <QPainter>
 #include <QPainterPath>
 #include <QStyleFactory>
@@ -26,6 +29,22 @@ namespace {
 constexpr int kMinControlHeight = 30;
 // room that the text of a rounded input needs, at each side, so that it does not touch the curve
 constexpr int kInputPadding = 4;
+
+// the metrics of a menu, in pixels at 100 %
+constexpr int kMenuRowHeight = 36;
+constexpr int kMenuSeparatorHeight = 9;
+// the room between the frame of the menu and its rows, at the sides and above and below
+constexpr int kMenuMargin = 6;
+// the highlight of a row is rounder than a control is not: 8 is what a row of 36 px takes
+constexpr int kMenuRowRadius = 8;
+// what is left of the text at the side of a row: the room for the highlight to curve, the icon, the gap behind it
+constexpr int kMenuTextPadding = 12;
+constexpr int kMenuIconColumn = 20;
+constexpr int kMenuIconGap = 10;
+constexpr int kMenuArrowColumn = 16;
+// what is between the text and the shortcut
+constexpr int kMenuShortcutGap = 28;
+constexpr int kMenuBarPadding = 12;
 
 bool inItemView(const QWidget *widget)
 {
@@ -90,6 +109,38 @@ void drawChevron(QPainter *painter, const QPointF &center, qreal halfWidth, bool
   painter->restore();
 }
 
+void drawChevronRight(QPainter *painter, const QPointF &center, qreal halfHeight, const QColor &color)
+{
+  painter->save();
+  painter->setRenderHint(QPainter::Antialiasing);
+  QPen pen(color, 1.5);
+  pen.setCapStyle(Qt::RoundCap);
+  pen.setJoinStyle(Qt::RoundJoin);
+  painter->setPen(pen);
+  painter->setBrush(Qt::NoBrush);
+  QPainterPath path;
+  path.moveTo(center.x() - halfHeight / 2, center.y() - halfHeight);
+  path.lineTo(center.x() + halfHeight / 2, center.y());
+  path.lineTo(center.x() - halfHeight / 2, center.y() + halfHeight);
+  painter->drawPath(path);
+  painter->restore();
+}
+
+bool hasRoundedFrame(const QWidget *widget)
+{
+  return widget && widget->property(DeskflowStyle::kRoundedMenuProperty).toBool();
+}
+
+QString withoutTab(const QString &text, QString *shortcut)
+{
+  const auto tab = text.lastIndexOf(QLatin1Char('\t'));
+  if (tab < 0)
+    return text;
+  if (shortcut)
+    *shortcut = text.mid(tab + 1);
+  return text.left(tab);
+}
+
 } // namespace
 
 DeskflowStyle::DeskflowStyle() : QProxyStyle(QStyleFactory::create(QStringLiteral("Fusion")))
@@ -149,6 +200,16 @@ int DeskflowStyle::pixelMetric(PixelMetric metric, const QStyleOption *option, c
     if (!inItemView(widget))
       return metrics::toggleCompactHeight;
     break;
+  case PM_MenuHMargin:
+  case PM_MenuVMargin:
+    return kMenuMargin;
+  case PM_MenuPanelWidth:
+    return 1;
+  case PM_SmallIconSize:
+    // the icons of a menu: Fusion has 16, which is small for a row of 36
+    if (qobject_cast<const QMenu *>(widget) || qobject_cast<const QMenuBar *>(widget))
+      return kMenuIconColumn - 2;
+    break;
   default:
     break;
   }
@@ -175,6 +236,14 @@ QSize DeskflowStyle::sizeFromContents(
     size.rwidth() += 2 * kInputPadding;
     size.setHeight(qMax(size.height(), kMinControlHeight));
     break;
+  case CT_MenuItem:
+    if (const auto *menuItem = qstyleoption_cast<const QStyleOptionMenuItem *>(option))
+      return menuItemSize(menuItem, contentsSize);
+    break;
+  case CT_MenuBarItem:
+    size.rwidth() += 2 * (kMenuBarPadding - 8);
+    size.setHeight(qMax(size.height(), kMinControlHeight));
+    break;
   default:
     break;
   }
@@ -199,6 +268,144 @@ QRect DeskflowStyle::subControlRect(
     rect.adjust(kInputPadding, 0, 0, 0);
   }
   return rect;
+}
+
+int DeskflowStyle::styleHint(
+    StyleHint hint, const QStyleOption *option, const QWidget *widget, QStyleHintReturn *returnData
+) const
+{
+  // a menu with a frame of its own is round and clear at the corners: no mask that cuts them
+  if (hint == SH_Menu_Mask && hasRoundedFrame(widget))
+    return 0;
+  return QProxyStyle::styleHint(hint, option, widget, returnData);
+}
+
+QSize DeskflowStyle::menuItemSize(const QStyleOptionMenuItem *option, const QSize &) const
+{
+  if (option->menuItemType == QStyleOptionMenuItem::Separator)
+    return {10, kMenuSeparatorHeight};
+
+  QString shortcut;
+  const auto label = withoutMnemonic(withoutTab(option->text, &shortcut));
+  const QFontMetrics metrics(option->font);
+  int width = 2 * kMenuTextPadding + metrics.horizontalAdvance(label);
+  if (option->maxIconWidth > 0 || option->menuHasCheckableItems)
+    width += kMenuIconColumn + kMenuIconGap;
+  if (!shortcut.isEmpty())
+    width += kMenuShortcutGap + metrics.horizontalAdvance(shortcut);
+  if (option->menuItemType == QStyleOptionMenuItem::SubMenu)
+    width += kMenuArrowColumn;
+  return {width, qMax(kMenuRowHeight, metrics.height() + 2 * metrics::spaceSm)};
+}
+
+void DeskflowStyle::paintMenuItem(const QStyleOptionMenuItem *option, QPainter *painter, const QWidget *) const
+{
+  const auto &c = m_tokens.colors;
+  const auto &rect = option->rect;
+  const bool enabled = option->state & State_Enabled;
+
+  if (option->menuItemType == QStyleOptionMenuItem::Separator) {
+    const QRect line(rect.left() + kMenuTextPadding, rect.center().y(), rect.width() - 2 * kMenuTextPadding, 1);
+    painter->fillRect(line, over(c.text, 0.14, c.surface));
+    return;
+  }
+
+  const bool selected = enabled && (option->state & State_Selected);
+  if (selected)
+    drawRounded(painter, rect, kMenuRowRadius, c.accentSoft, c.accent, 1);
+
+  const QColor textColor = enabled ? c.text : c.textDisabled;
+  const QColor secondary = enabled ? c.textSecondary : c.textDisabled;
+  QPalette palette = option->palette;
+  for (const auto group : {QPalette::Active, QPalette::Inactive, QPalette::Disabled}) {
+    palette.setColor(group, QPalette::Text, textColor);
+    palette.setColor(group, QPalette::WindowText, textColor);
+  }
+
+  int x = rect.left() + kMenuTextPadding;
+  int right = rect.right() - kMenuTextPadding + 1;
+  if (option->menuItemType == QStyleOptionMenuItem::SubMenu)
+    right -= kMenuArrowColumn;
+
+  // the icon column: the icon, or the mark of a row that is checked
+  if (option->maxIconWidth > 0 || option->menuHasCheckableItems) {
+    const auto side = pixelMetric(PM_SmallIconSize, option, nullptr);
+    const QRect box(x, rect.center().y() - side / 2 + 1, kMenuIconColumn - 2, side);
+    const bool checked = option->checkType != QStyleOptionMenuItem::NotCheckable && option->checked;
+    if (checked && !option->icon.isNull())
+      drawRounded(painter, box.adjusted(-2, -2, 2, 2), 6, c.accentSoft, c.accent, 1);
+    if (!option->icon.isNull()) {
+      const auto mode = !enabled ? QIcon::Disabled : selected ? QIcon::Active : QIcon::Normal;
+      option->icon.paint(painter, box, Qt::AlignCenter, mode, checked ? QIcon::On : QIcon::Off);
+    } else if (checked) {
+      QPen pen(textColor, 1.8);
+      pen.setCapStyle(Qt::RoundCap);
+      pen.setJoinStyle(Qt::RoundJoin);
+      painter->save();
+      painter->setRenderHint(QPainter::Antialiasing);
+      painter->setPen(pen);
+      const auto m = box.center();
+      QPainterPath tick;
+      tick.moveTo(m.x() - 5, m.y());
+      tick.lineTo(m.x() - 1.5, m.y() + 3.5);
+      tick.lineTo(m.x() + 5, m.y() - 4);
+      painter->drawPath(tick);
+      painter->restore();
+    }
+    x += kMenuIconColumn + kMenuIconGap;
+  }
+
+  QString shortcut;
+  const auto label = withoutTab(option->text, &shortcut);
+  painter->save();
+  painter->setFont(option->font);
+  const int flags = Qt::AlignVCenter | Qt::TextSingleLine | Qt::TextDontClip |
+                    (proxy()->styleHint(SH_UnderlineShortcut, option, nullptr) ? Qt::TextShowMnemonic
+                                                                               : Qt::TextHideMnemonic);
+  if (!shortcut.isEmpty()) {
+    QPalette shortcutPalette = palette;
+    for (const auto group : {QPalette::Active, QPalette::Inactive, QPalette::Disabled})
+      shortcutPalette.setColor(group, QPalette::Text, secondary);
+    proxy()->drawItemText(
+        painter, QRect(x, rect.top(), right - x, rect.height()), flags | Qt::AlignRight, shortcutPalette, enabled,
+        shortcut, QPalette::Text
+    );
+  }
+  proxy()->drawItemText(
+      painter, QRect(x, rect.top(), right - x, rect.height()), flags | Qt::AlignLeft, palette, enabled, label,
+      QPalette::Text
+  );
+  painter->restore();
+
+  if (option->menuItemType == QStyleOptionMenuItem::SubMenu)
+    drawChevronRight(painter, QPointF(rect.right() - kMenuTextPadding - 2, rect.center().y() + 0.5), 4, secondary);
+}
+
+void DeskflowStyle::paintMenuBarItem(const QStyleOptionMenuItem *option, QPainter *painter, const QWidget *) const
+{
+  const auto &c = m_tokens.colors;
+  const bool enabled = option->state & State_Enabled;
+  const bool active = enabled && (option->state & (State_Selected | State_Sunken));
+  // the bar is a band of the surface with a hairline under it (see PE_PanelMenuBar): the items are on it
+  painter->fillRect(option->rect, c.surface);
+  painter->fillRect(
+      QRect(option->rect.left(), option->rect.bottom(), option->rect.width(), 1), over(c.text, 0.12, c.surface)
+  );
+  const auto bounds = option->rect.adjusted(2, 3, -2, -3);
+  if (active)
+    drawRounded(painter, bounds, kMenuRowRadius, c.accentSoft, c.accent, 1);
+
+  QPalette palette = option->palette;
+  const QColor textColor = enabled ? c.text : c.textDisabled;
+  for (const auto group : {QPalette::Active, QPalette::Inactive, QPalette::Disabled})
+    palette.setColor(group, QPalette::ButtonText, textColor);
+  const int flags = Qt::AlignCenter | Qt::TextSingleLine | Qt::TextDontClip |
+                    (proxy()->styleHint(SH_UnderlineShortcut, option, nullptr) ? Qt::TextShowMnemonic
+                                                                               : Qt::TextHideMnemonic);
+  painter->save();
+  painter->setFont(option->font);
+  proxy()->drawItemText(painter, option->rect, flags, palette, enabled, option->text, QPalette::ButtonText);
+  painter->restore();
 }
 
 void DeskflowStyle::paintButton(const QStyleOptionButton *option, QPainter *painter, const QWidget *) const
@@ -348,6 +555,35 @@ void DeskflowStyle::drawPrimitive(
       return;
     }
     break;
+  case PE_PanelMenu: {
+    const auto &c = m_tokens.colors;
+    const QColor edge = over(c.text, 0.22, c.surface);
+    if (hasRoundedFrame(widget))
+      drawRounded(painter, option->rect, metrics::radiusControl, c.surface, edge, 1);
+    else
+      painter->fillRect(option->rect, c.surface);
+    return;
+  }
+  case PE_FrameMenu: {
+    // the frame of a menu is a hairline in the colour of the text, soft; a menu with a frame of its own has it already
+    if (hasRoundedFrame(widget))
+      return;
+    const auto &c = m_tokens.colors;
+    painter->save();
+    painter->setPen(over(c.text, 0.22, c.surface));
+    painter->setBrush(Qt::NoBrush);
+    painter->drawRect(QRectF(option->rect).adjusted(0.5, 0.5, -0.5, -0.5));
+    painter->restore();
+    return;
+  }
+  case PE_PanelMenuBar: {
+    const auto &c = m_tokens.colors;
+    painter->fillRect(option->rect, c.surface);
+    painter->fillRect(
+        QRect(option->rect.left(), option->rect.bottom(), option->rect.width(), 1), over(c.text, 0.12, c.surface)
+    );
+    return;
+  }
   case PE_IndicatorCheckBox:
     if (!inItemView(widget)) {
       if (const auto *button = qstyleoption_cast<const QStyleOptionButton *>(option)) {
@@ -366,6 +602,24 @@ void DeskflowStyle::drawControl(
     ControlElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget
 ) const
 {
+  if (element == CE_MenuItem) {
+    if (const auto *menuItem = qstyleoption_cast<const QStyleOptionMenuItem *>(option)) {
+      paintMenuItem(menuItem, painter, widget);
+      return;
+    }
+  } else if (element == CE_MenuBarItem) {
+    if (const auto *menuItem = qstyleoption_cast<const QStyleOptionMenuItem *>(option)) {
+      paintMenuBarItem(menuItem, painter, widget);
+      return;
+    }
+  } else if (element == CE_MenuBarEmptyArea) {
+    // the band that is not covered by an item is the panel of the bar
+    drawPrimitive(PE_PanelMenuBar, option, painter, widget);
+    return;
+  } else if (element == CE_MenuEmptyArea) {
+    // what is behind the rows of a menu is painted by its panel
+    return;
+  }
   if (element == CE_PushButtonLabel) {
     if (const auto *button = qstyleoption_cast<const QStyleOptionButton *>(option);
         button && (button->features & QStyleOptionButton::DefaultButton)) {

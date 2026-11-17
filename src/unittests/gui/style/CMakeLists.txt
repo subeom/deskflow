@@ -65,3 +65,11 @@ create_test(
   SOURCE CanvasThemeTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME MenuStyleTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE MenuStyleTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)

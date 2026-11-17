@@ -20,8 +20,10 @@ namespace deskflow::gui::style {
  * of the tokens, capsule primary buttons, rounded secondary buttons and inputs (radius 12), toggles for check boxes and
  * the focus ring of the design.
  *
- * What the style does not paint (menus, tabs, group boxes, scroll bars, radio buttons, tool tips) is Fusion in the
- * colours of the palette. The fonts are the ones of the OS and the sizes of the contents are the ones of Fusion plus
+ * Menus (the menu bar of a window, the menu of a tray icon on the OS where Qt draws it, context menus) are painted in
+ * the tokens too: rows 36 px high with a rounded highlight, icons in a column of their own, shortcuts in the secondary
+ * colour, hairline separators. What the style does not paint (tabs, group boxes, scroll bars, radio buttons, tool
+ * tips) is Fusion in the colours of the palette. The fonts are the ones of the OS and the sizes of the contents are the ones of Fusion plus
  * the room of the rounder shapes, so that no layout has to change.
  *
  * The look (light or dark, high contrast, less transparency, less motion) follows the OS: the style is asked to polish
@@ -35,6 +37,9 @@ class DeskflowStyle : public QProxyStyle
 public:
   // the property of a widget that is true when what is in it is not valid: the style draws it with the colour of danger
   static constexpr auto kInvalidProperty = "deskflowInvalid";
+  // the property of a menu that is true when it has a frame of its own: no window frame and a clear ground (it is made
+  // translucent by whoever sets it), so that the style draws it with round corners and a shadow
+  static constexpr auto kRoundedMenuProperty = "deskflowRoundedMenu";
 
   DeskflowStyle();
 
@@ -61,6 +66,10 @@ public:
   QRect subControlRect(
       ComplexControl control, const QStyleOptionComplex *option, SubControl subControl, const QWidget *widget = nullptr
   ) const override;
+  int styleHint(
+      StyleHint hint, const QStyleOption *option = nullptr, const QWidget *widget = nullptr,
+      QStyleHintReturn *returnData = nullptr
+  ) const override;
 
   void drawPrimitive(
       PrimitiveElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = nullptr
@@ -82,6 +91,9 @@ private:
   void
   paintInput(const QRect &rect, State state, const QPalette &palette, QPainter *painter, const QWidget *widget) const;
   void paintToggle(const QStyleOptionButton *option, QPainter *painter) const;
+  void paintMenuItem(const QStyleOptionMenuItem *option, QPainter *painter, const QWidget *widget) const;
+  void paintMenuBarItem(const QStyleOptionMenuItem *option, QPainter *painter, const QWidget *widget) const;
+  QSize menuItemSize(const QStyleOptionMenuItem *option, const QSize &contentsSize) const;
 
   Look m_look;
   Tokens m_tokens;

@@ -15,6 +15,7 @@ add_subdirectory(layout)
 add_subdirectory(settings)
 add_subdirectory(shell)
 add_subdirectory(style)
+add_subdirectory(tray)
 add_subdirectory(widgets)
 
 create_test(

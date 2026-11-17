@@ -20,6 +20,11 @@ public:
   void appendLine(const QString &msg);
   void findNext(const QString &text);
   void findPrevious(const QString &text);
+  //! The log as the text of a card of the new look: no frame of its own and no ground of its own (the card is the ground),
+  //! with the room of a card around the lines
+  void useCardLook(const QString &accessibleName);
+  //! The name that a screen reader says for the lines (the card look)
+  void setLogName(const QString &name);
 
 private:
   QPlainTextEdit *m_textLog = nullptr;

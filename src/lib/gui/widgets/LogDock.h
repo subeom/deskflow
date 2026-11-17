@@ -10,6 +10,7 @@
 
 class LogWidget;
 class QLabel;
+class QHBoxLayout;
 class QPushButton;
 class SearchWidget;
 
@@ -26,6 +27,13 @@ protected:
   void changeEvent(QEvent *e) override;
 
 private:
+  //! With the style layer the log is a card of the new look: the header (the title, the search and the two buttons) and the
+  //! lines are in it, and the title bar of the dock has nothing in it
+  void buildCard();
+  void buildTitleBar();
+  void updateButtonIcons();
+
+  bool m_card = false;
   LogWidget *m_textLog = nullptr;
   QPushButton *m_btnClose = nullptr;
   QPushButton *m_btnFloat = nullptr;

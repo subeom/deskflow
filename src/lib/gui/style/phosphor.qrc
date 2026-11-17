@@ -7,6 +7,7 @@
         <file>icons/phosphor/regular/arrows-out.svg</file>
         <file>icons/phosphor/regular/bell.svg</file>
         <file>icons/phosphor/regular/caret-down.svg</file>
+        <file>icons/phosphor/regular/caret-up.svg</file>
         <file>icons/phosphor/regular/caret-right.svg</file>
         <file>icons/phosphor/regular/check-circle.svg</file>
         <file>icons/phosphor/regular/check.svg</file>
@@ -60,6 +61,7 @@
         <file>icons/phosphor/duotone/arrows-out.svg</file>
         <file>icons/phosphor/duotone/bell.svg</file>
         <file>icons/phosphor/duotone/caret-down.svg</file>
+        <file>icons/phosphor/duotone/caret-up.svg</file>
         <file>icons/phosphor/duotone/caret-right.svg</file>
         <file>icons/phosphor/duotone/check-circle.svg</file>
         <file>icons/phosphor/duotone/check.svg</file>

@@ -15,6 +15,8 @@
 #include <QSystemTrayIcon>
 #include <QUrl>
 
+#include <functional>
+
 #include "VersionChecker.h"
 #include "config/ServerConfig.h"
 #include "gui/core/AddressClassifier.h"
@@ -45,6 +47,12 @@ class SettingsPages;
 
 namespace deskflow::gui::layout {
 class LayoutMemoryService;
+}
+
+namespace deskflow::gui::tray {
+class TrayController;
+enum class TrayCommand;
+struct TrayInput;
 }
 
 namespace Ui {
@@ -136,6 +144,13 @@ private:
 
   void createMenuBar();
   void setupTrayIcon();
+  //! The tray of the new look: its menu says the state (see TrayController); the window gives it what it knows
+  void setupTrayController(QMenu *menu);
+  void updateTray();
+  //! The menu bar of the new look: a menu of sharing whose rows are all there, and dimmed when they do not apply
+  void createSharingMenu();
+  void updateSharingMenu(const deskflow::gui::tray::TrayInput &input);
+  void trayCommand(deskflow::gui::tray::TrayCommand command);
   void applyConfig();
   void setTrayIcon();
   void handleUnrecognisedClient(const QString &clientName);
@@ -220,6 +235,11 @@ private:
   QStringList m_checkedClients;
   QStringList m_checkedServers;
   QSystemTrayIcon *m_trayIcon = nullptr;
+  //! Whether the OS has a tray to hide the window in (the tests of the tray say what they need)
+  std::function<bool()> m_trayAvailable = [] { return QSystemTrayIcon::isSystemTrayAvailable(); };
+  // The tray of the new look: null while the application has the look of the system
+  deskflow::gui::tray::TrayController *m_trayController = nullptr;
+  bool m_trayStartFailed = false;
   QLocalServer *m_guiDupeChecker = nullptr;
   deskflow::gui::ipc::DaemonIpcClient *m_daemonIpcClient = nullptr;
 
@@ -254,6 +274,13 @@ private:
   QAction *m_actionShowHelp = nullptr;
   //! Only in the window of the new look (View menu): folds and unfolds the sidebar, as its button does
   QAction *m_actionToggleSidebar = nullptr;
+  // Only in the window of the new look: the rows of the menu of sharing (the actions above are the ones of the system look)
+  QAction *m_sharingStart = nullptr;
+  QAction *m_sharingRestart = nullptr;
+  QAction *m_sharingStop = nullptr;
+  QAction *m_sharingTestConnection = nullptr;
+  QAction *m_sharingFingerprint = nullptr;
+  QAction *m_sharingMinimize = nullptr;
 
   // Network monitoring
   NetworkMonitor *m_networkMonitor = nullptr;

@@ -8,6 +8,13 @@
 #include "LogWidget.h"
 #include "SearchWidget.h"
 
+#include "gui/style/Appearance.h"
+#include "gui/style/DesignTokens.h"
+#include "gui/style/FontScale.h"
+#include "gui/style/Icons.h"
+#include "gui/style/PanelWidget.h"
+
+#include <QApplication>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -43,6 +50,18 @@ LogDock::LogDock(QWidget *parent)
   m_btnClose->setToolTip(tr("Close Log"));
   connect(m_btnClose, &QPushButton::clicked, this, &QDockWidget::hide);
 
+  m_card = deskflow::gui::style::isDeskflowStyleInstalled();
+  if (m_card)
+    buildCard();
+  else
+    buildTitleBar();
+
+  setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetFloatable);
+  setAllowedAreas(Qt::BottomDockWidgetArea);
+}
+
+void LogDock::buildTitleBar()
+{
   auto titleWidget = new QWidget(this);
   titleWidget->installEventFilter(this);
 
@@ -58,9 +77,66 @@ LogDock::LogDock(QWidget *parent)
   auto bodyLayout = new QVBoxLayout(bodyWidget);
   bodyLayout->addWidget(m_textLog);
   setWidget(bodyWidget);
+}
 
-  setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetFloatable);
-  setAllowedAreas(Qt::BottomDockWidgetArea);
+void LogDock::buildCard()
+{
+  using namespace deskflow::gui::style;
+
+  // the title bar of the dock is empty: the card has the header
+  auto *emptyTitle = new QWidget(this);
+  emptyTitle->setFixedHeight(0);
+  emptyTitle->installEventFilter(this);
+  setTitleBarWidget(emptyTitle);
+
+  auto *panel = new PanelWidget(PanelWidget::Density::Dense, this);
+  panel->setElevated(false);
+  panel->setPadding(metrics::spaceMd);
+
+  auto titleFont = scaleFont(QApplication::font(this), qreal(metrics::fontSubtitle) / metrics::fontBody);
+  titleFont.setWeight(QFont::DemiBold);
+  m_lblTitle->setFont(titleFont);
+
+  for (auto *button : {m_btnFloat, m_btnClose}) {
+    button->setFixedSize(28, 28);
+    button->setIconSize(QSize(18, 18));
+  }
+  updateButtonIcons();
+
+  auto *header = new QHBoxLayout;
+  header->setContentsMargins(0, 0, 0, 0);
+  header->setSpacing(metrics::spaceSm);
+  header->addWidget(m_lblTitle, 0, Qt::AlignVCenter);
+  header->addStretch(1);
+  header->addWidget(m_searchWidget, 0, Qt::AlignVCenter);
+  header->addWidget(m_btnFloat, 0, Qt::AlignVCenter);
+  header->addWidget(m_btnClose, 0, Qt::AlignVCenter);
+
+  auto *inside = new QVBoxLayout(panel);
+  inside->setSpacing(metrics::spaceSm);
+  inside->addLayout(header);
+  inside->addWidget(m_textLog, 1);
+  m_textLog->useCardLook(tr("Log"));
+  m_btnFloat->setAccessibleName(m_btnFloat->toolTip());
+  m_btnClose->setAccessibleName(m_btnClose->toolTip());
+
+  // the card has the room of the window around it, as the cards of the page above have
+  auto *body = new QWidget(this);
+  auto *bodyLayout = new QVBoxLayout(body);
+  bodyLayout->setContentsMargins(metrics::spaceMd, 0, metrics::spaceMd, metrics::spaceMd);
+  bodyLayout->addWidget(panel);
+  setWidget(body);
+}
+
+void LogDock::updateButtonIcons()
+{
+  if (!m_card)
+    return;
+  using deskflow::gui::style::icon;
+  // a dock that has just been made is not floating (its flags are those of a window until the main window takes it, so what
+  // isFloating() says at this point is not what it is)
+  m_btnClose->setIcon(icon(QStringLiteral("x")));
+  m_btnFloat->setIcon(icon(QStringLiteral("arrow-square-out")));
 }
 
 void LogDock::appendLine(const QString &msg)
@@ -78,6 +154,13 @@ void LogDock::setFloating(bool floating)
     m_btnFloat->setToolTip(tr("Detach from window"));
     m_btnFloat->setIcon(QIcon::fromTheme(QStringLiteral("window-minimize-pip")));
     setWindowFlags(Qt::Widget);
+  }
+  if (m_card) {
+    // the picture and the name of the button say what it does now (isFloating is what the flags that are set make it)
+    m_btnFloat->setIcon(deskflow::gui::style::icon(
+        floating ? QStringLiteral("arrow-u-up-left") : QStringLiteral("arrow-square-out")
+    ));
+    m_btnFloat->setAccessibleName(m_btnFloat->toolTip());
   }
   m_lblTitle->setVisible(!floating);
   m_btnClose->setVisible(!floating);
@@ -106,4 +189,9 @@ void LogDock::changeEvent(QEvent *e)
     m_btnFloat->setToolTip(tr("Attach to window"));
   else
     m_btnFloat->setToolTip(tr("Detach from window"));
+  if (m_card) {
+    m_btnFloat->setAccessibleName(m_btnFloat->toolTip());
+    m_btnClose->setAccessibleName(m_btnClose->toolTip());
+    m_textLog->setLogName(tr("Log"));
+  }
 }
