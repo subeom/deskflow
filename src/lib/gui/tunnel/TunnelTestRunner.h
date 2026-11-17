@@ -44,6 +44,10 @@ enum class StageState
   Skipped //!< not tried because an earlier stage failed
 };
 
+//! The start of a Client ID, for the screen: the first characters (never more than half of it) and an ellipsis. The
+//! Secret is never shown.
+QString maskedClientId(const QString &clientId);
+
 struct StageResult
 {
   TestStage stage = TestStage::Cloudflared;

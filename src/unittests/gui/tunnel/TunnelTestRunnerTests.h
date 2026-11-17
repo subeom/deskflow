@@ -17,6 +17,7 @@ private Q_SLOTS:
   void aTunnelThatRunsForTheClient_isUsedAndLeftRunning();
   void aTunnelThatIsStartingForTheClient_isWaitedForAndNotLetGoByTheTest();
   void everyPrerequisiteIsReported_andNothingIsStartedWhenOneIsMissing();
+  void aClientIdIsShownByItsFirstCharactersOnly();
   void theSecretIsNotReadToTestThatATokenIsStored();
   void aTunnelThatDoesNotStart_failsAtTheProcessAndSkipsTheRest();
   void aLocalPortThatDoesNotOpen_failsAtThePortAfterTheProcessStarted();

@@ -153,7 +153,10 @@ void TunnelTestDialogTests::runAgain_startsANewTest()
   button(dialog, QStringLiteral("btnRunAgain"))->click();
   QVERIFY(dialog.isTesting());
   QVERIFY(!shown(dialog).contains(QStringLiteral("No Service Token is stored.")));
-  QVERIFY(shown(dialog).contains(kClientId));
+  // the Client ID is shown by its first characters only
+  QVERIFY(shown(dialog).contains(QStringLiteral("Client ID dumm%1").arg(QChar(0x2026))));
+  QVERIFY(!shown(dialog).contains(kClientId));
+  QVERIFY(!shown(dialog).contains(kClientId.left(8)));
 }
 
 void TunnelTestDialogTests::everyFailureHasAHint()

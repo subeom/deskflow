@@ -16,7 +16,14 @@
 #include <QTcpSocket>
 #include <QTimer>
 
+#include <algorithm>
+
 namespace deskflow::tunnel {
+
+QString maskedClientId(const QString &clientId)
+{
+  return clientId.left(std::min<qsizetype>(4, clientId.size() / 2)) + QChar(0x2026);
+}
 
 namespace {
 
@@ -215,7 +222,7 @@ void TunnelTestRunner::checkPrerequisites()
   StoreResult stored;
   const auto clientId = m_deps.store->storedClientId(&stored);
   if (clientId.has_value() && !clientId->isEmpty()) {
-    setStage(TestStage::Credentials, StageState::Ok, TestTexts::tr("Client ID %1").arg(*clientId));
+    setStage(TestStage::Credentials, StageState::Ok, TestTexts::tr("Client ID %1").arg(maskedClientId(*clientId)));
   } else {
     setStage(TestStage::Credentials, StageState::Failed, failureText(TunnelFailure::CredentialsMissing));
     note(TunnelFailure::CredentialsMissing);

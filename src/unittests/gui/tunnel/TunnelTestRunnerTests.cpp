@@ -212,6 +212,19 @@ void TunnelTestRunnerTests::everyPrerequisiteIsReported_andNothingIsStartedWhenO
   QCOMPARE(noHost.runner->report().failure, TunnelFailure::InvalidHostname);
 }
 
+void TunnelTestRunnerTests::aClientIdIsShownByItsFirstCharactersOnly()
+{
+  const auto dots = QString(QChar(0x2026));
+  QCOMPARE(maskedClientId(QStringLiteral("abcdefghij")), QStringLiteral("abcd") + dots);
+  // a short one gives away less: never more than half of it
+  QCOMPARE(maskedClientId(QStringLiteral("abcdef")), QStringLiteral("abc") + dots);
+  QCOMPARE(maskedClientId(QStringLiteral("abcd")), QStringLiteral("ab") + dots);
+  QCOMPARE(maskedClientId(QStringLiteral("ab")), QStringLiteral("a") + dots);
+  QCOMPARE(maskedClientId(QStringLiteral("a")), dots);
+  QCOMPARE(maskedClientId(QString()), dots);
+  QVERIFY(!maskedClientId(kClientId).contains(kClientId));
+}
+
 void TunnelTestRunnerTests::theSecretIsNotReadToTestThatATokenIsStored()
 {
   Rig rig(m_dir);
@@ -219,8 +232,12 @@ void TunnelTestRunnerTests::theSecretIsNotReadToTestThatATokenIsStored()
   // the Client ID was asked for; the Secret is read by the start of the tunnel only
   QVERIFY(rig.tunnel.storeState->idReadCount >= 1);
   QCOMPARE(rig.tunnel.storeState->loadCount, 1);
-  QVERIFY(rig.detail(TestStage::Credentials).contains(kClientId));
-  QVERIFY(!rig.detail(TestStage::Credentials).contains(kSecret));
+  // only the start of the Client ID is shown, and never the Secret
+  const auto shown = rig.detail(TestStage::Credentials);
+  QCOMPARE(shown, QStringLiteral("Client ID dumm%1").arg(QChar(0x2026)));
+  QVERIFY(!shown.contains(kClientId));
+  QVERIFY(!shown.contains(kClientId.left(8)));
+  QVERIFY(!shown.contains(kSecret));
 
   Rig missing(m_dir);
   missing.cloudflaredFound = false;
