@@ -42,6 +42,14 @@ create_test(
 )
 
 create_test(
+  NAME AboutCardsTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE AboutCardsTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
   NAME MonitorEditorDialogTests
   DEPENDS gui
   LIBS server ${gui_server_libs}
@@ -66,6 +74,6 @@ create_test(
 )
 
 # the header of the server configuration dialog includes the headers next to it by their short names
-foreach(test DialogLayoutTests ServerConfigDialogTests ServerConfigAdvancedTabTests ComputerSettingsCardsTests FingerprintDialogTests MonitorEditorDialogTests ConnectionTestDialogTests LayoutProfilesDialogTests)
+foreach(test DialogLayoutTests ServerConfigDialogTests ServerConfigAdvancedTabTests ComputerSettingsCardsTests FingerprintDialogTests AboutCardsTests MonitorEditorDialogTests ConnectionTestDialogTests LayoutProfilesDialogTests)
   target_include_directories(${test} PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
 endforeach()

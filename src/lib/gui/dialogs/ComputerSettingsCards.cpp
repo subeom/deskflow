@@ -7,6 +7,7 @@
 #include "ComputerSettingsCards.h"
 
 #include "CardBuilders.h"
+#include "CardPage.h"
 #include "gui/style/BackdropWidget.h"
 #include "gui/style/DesignTokens.h"
 #include "gui/style/LookFollower.h"
@@ -38,30 +39,6 @@ using cards::find;
 using cards::plainTip;
 using cards::switchRow;
 using cards::withoutColon;
-
-// The cards ask for the room that they need, up to most of the screen: a scroll area that is not told asks for a small
-// part of it (a few lines), and the dialog would open with a strip of its settings.
-class CardScrollArea : public QScrollArea
-{
-public:
-  using QScrollArea::QScrollArea;
-
-  QSize sizeHint() const override
-  {
-    if (!widget())
-      return QScrollArea::sizeHint();
-    auto hint = widget()->sizeHint() + QSize(2 * frameWidth(), 2 * frameWidth());
-    const auto *where = screen();
-    const auto room = where ? where->availableGeometry().size() : QSize(1280, 800);
-    const int tallest = room.height() * 8 / 10;
-    if (hint.height() > tallest) {
-      hint.setHeight(tallest);
-      // the bar is there, and it is not on the cards
-      hint.rwidth() += verticalScrollBar()->sizeHint().width();
-    }
-    return hint;
-  }
-};
 
 // A row for a control that has a label: the text of the label is the title, and a tooltip in plain text is the guidance
 // under it. The label is not shown.
@@ -301,53 +278,12 @@ bool applyComputerSettingsCards(
   monitors->addRow(fieldRow(scaleLabel, scale));
 
   // The page: cards on the backdrop, which scrolls when the dialog is shorter than they are, and the buttons on it
-  auto *backdrop = new style::BackdropWidget(dialog);
-  backdrop->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-  auto *scroll = new CardScrollArea(backdrop);
-  scroll->setWidgetResizable(true);
-  scroll->setFrameShape(QFrame::NoFrame);
-  scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-  auto *content = new QWidget;
-  auto *list = new QVBoxLayout(content);
-  // the cards carry the room of their shadow: the margin of the list is the little that is left to the edge
-  list->setContentsMargins(
-      style::metrics::spaceXs, style::metrics::spaceXs, style::metrics::spaceXs, style::metrics::spaceXs
-  );
-  list->setSpacing(0);
-  for (auto *card : {computer, aliases, modifierCard, cornerCard, fixCard, crossOs, monitors})
-    list->addWidget(card);
-  list->addStretch(1);
-  scroll->setWidget(content);
-  // the scroll area fills what it holds with the colour of the window: the backdrop must show through
-  content->setAutoFillBackground(false);
-  scroll->viewport()->setAutoFillBackground(false);
-
-  auto *footer = new QWidget(backdrop);
-  auto *footerLayout = new QVBoxLayout(footer);
-  footerLayout->setContentsMargins(
-      style::metrics::spaceLg, style::metrics::spaceSm, style::metrics::spaceLg, style::metrics::spaceLg
-  );
-  footerLayout->addWidget(buttons);
-
-  auto *frame = new QVBoxLayout(backdrop);
-  frame->setContentsMargins(0, 0, 0, 0);
-  frame->setSpacing(0);
-  frame->addWidget(scroll, 1);
-  frame->addWidget(footer);
-
   for (auto *group :
        {groupComputer, groupModifiers, groupCorners, groupFixes, groupAliases, groupCrossOs, groupMonitors})
     group->hide();
-  box->setContentsMargins(0, 0, 0, 0);
-  box->setSpacing(0);
-  box->insertWidget(0, backdrop, 1);
-
-  // what the groups asked for is the least that the cards are given: they scroll in it, and are never cut at the side
-  const int cardsWidth = content->minimumSizeHint().width() + 2 * scroll->frameWidth();
-  scroll->setMinimumHeight(
-      qMax(scroll->minimumSizeHint().height(), oldMinimum.height() - footer->minimumSizeHint().height())
+  cards::assemblePage(
+      dialog, {computer, aliases, modifierCard, cornerCard, fixCard, crossOs, monitors}, buttons, oldMinimum
   );
-  scroll->setMinimumWidth(qMax(cardsWidth, oldMinimum.width()));
   return true;
 }
 

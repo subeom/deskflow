@@ -74,6 +74,8 @@ add_library(${target} STATIC
   layout/ServerConfigLayout.h
   layout/ServerConfigLayoutHost.cpp
   layout/ServerConfigLayoutHost.h
+  dialogs/AboutCards.cpp
+  dialogs/AboutCards.h
   dialogs/AboutDialog.cpp
   dialogs/AboutDialog.h
   dialogs/AboutDialog.ui
@@ -81,6 +83,8 @@ add_library(${target} STATIC
   dialogs/ActionDialog.h
   dialogs/ActionDialog.ui
   dialogs/CardBuilders.h
+  dialogs/CardPage.cpp
+  dialogs/CardPage.h
   dialogs/ClientConfigDialog.h
   dialogs/ClientConfigDialog.cpp
   dialogs/ClientConfigDialog.ui
