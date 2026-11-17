@@ -25,6 +25,7 @@ elseif(UNIX)
 endif()
 
 add_library(${lib_name} STATIC ${PLATFORM_CODE}
+  AbsolutePointer.h
   App.cpp
   App.h
   AppUtil.cpp

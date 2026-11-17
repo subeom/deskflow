@@ -159,7 +159,8 @@ reset, or overwrite another PC's work. If using a different branch, replace
 
 ## Other operating systems
 
-This helper is for native Windows x64, not Windows ARM64, Linux, or macOS.
+This helper builds native Windows x64, and native Windows ARM64 with `-Arch arm64` (see
+[windows-arm64.md](windows-arm64.md)); it is not for Linux or macOS.
 For those PCs, clone the same fork and follow [Building Deskflow](build.md) and
 the OS dependency lists in
 `.github\actions\install-dependencies\action.yml`.

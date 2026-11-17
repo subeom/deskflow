@@ -70,6 +70,14 @@ create_test(
 )
 
 create_test(
+  NAME AbsolutePointerTests
+  DEPENDS app
+  LIBS ${extra_libs}
+  SOURCE AbsolutePointerTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+create_test(
   NAME MonitorReportTests
   DEPENDS app
   LIBS arch base io ${extra_libs}
