@@ -40,6 +40,13 @@ create_test(
 )
 
 create_test(
+  NAME TunnelStartGuardTests
+  DEPENDS gui
+  SOURCE TunnelStartGuardTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
   NAME SecretStoreTests
   DEPENDS gui
   SOURCE SecretStoreTests.cpp
@@ -61,5 +68,46 @@ create_test(
   DEPENDS gui
   LIBS server ${gui_server_libs}
   SOURCE ClientConfigDialogTunnelTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+# The process, the ports and the leftover processes of the tunnel. They start the stand-in of cloudflared (./fake), never
+# the real one, and listen on ports that the system hands out.
+add_subdirectory(fake)
+
+foreach(tunnel_io_test PortProberTests OrphanRecordTests QtTunnelProcessTests TunnelSupervisorProcessTests)
+  create_test(
+    NAME ${tunnel_io_test}
+    DEPENDS gui
+    SOURCE ${tunnel_io_test}.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+  )
+  add_dependencies(${tunnel_io_test} cloudflared-fake)
+  target_compile_definitions(${tunnel_io_test} PRIVATE FAKE_CLOUDFLARED_PATH="$<TARGET_FILE:cloudflared-fake>")
+endforeach()
+
+# The supervisor is run with fakes of everything it touches
+create_test(
+  NAME TunnelSupervisorTests
+  DEPENDS gui
+  SOURCE TunnelSupervisorTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+# The controller reads and writes the settings (of a file in a scratch directory) and runs a supervisor made of fakes
+create_test(
+  NAME TunnelControllerTests
+  DEPENDS gui
+  SOURCE TunnelControllerTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+# The two lines of the main window for the tunnel (a widget, so the gui library with the libraries of the server like the
+# tests of the other widgets)
+create_test(
+  NAME TunnelStatusWidgetTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TunnelStatusWidgetTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <QMetaType>
 #include <QString>
 
 namespace deskflow::tunnel {
@@ -64,6 +65,23 @@ struct TunnelStatus
   QString text() const;
 };
 
+//! How the client's connection to the server through the tunnel is going; the core says it, the tunnel does not know
+enum class ServerLink
+{
+  Unknown,
+  Connecting,
+  Connected
+};
+
+//! "Via Cloudflare Tunnel: mbp.example.com (local 127.0.0.1:24800)": what is dialled instead of the saved address
+QString tunnelPathLine(const QString &hostname, int localPort);
+
+/**
+ * The one line for the state of the tunnel and, while it listens, of the connection through it: the local port that is
+ * open and the connection to the server that is made over it are two different things, and the line keeps them apart.
+ */
+QString tunnelStatusLine(const TunnelStatus &status, ServerLink link);
+
 //! The sentence for a failure, in the language of the application; empty for None
 QString failureText(TunnelFailure failure, int exitCode = 0);
 
@@ -71,3 +89,6 @@ QString failureText(TunnelFailure failure, int exitCode = 0);
 bool needsUserAction(TunnelFailure failure);
 
 } // namespace deskflow::tunnel
+
+Q_DECLARE_METATYPE(deskflow::tunnel::TunnelFailure)
+Q_DECLARE_METATYPE(deskflow::tunnel::TunnelStatus)

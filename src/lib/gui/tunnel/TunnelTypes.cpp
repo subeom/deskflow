@@ -6,6 +6,8 @@
 
 #include "gui/tunnel/TunnelTypes.h"
 
+#include "common/TunnelAddress.h"
+
 #include <QCoreApplication>
 
 namespace deskflow::tunnel {
@@ -19,6 +21,33 @@ struct TunnelTexts
 };
 
 } // namespace
+
+QString tunnelPathLine(const QString &hostname, int localPort)
+{
+  if (hostname.trimmed().isEmpty()) {
+    return TunnelTexts::tr("Via Cloudflare Tunnel: no hostname is set");
+  }
+  return TunnelTexts::tr("Via Cloudflare Tunnel: %1 (local %2:%3)")
+      .arg(hostname, QLatin1String(kLoopbackHost))
+      .arg(localPort);
+}
+
+QString tunnelStatusLine(const TunnelStatus &status, ServerLink link)
+{
+  const auto tunnel = status.text();
+  if (status.state != TunnelState::Listening) {
+    return tunnel;
+  }
+  switch (link) {
+  case ServerLink::Connecting:
+    return TunnelTexts::tr("%1 | Server: connecting").arg(tunnel);
+  case ServerLink::Connected:
+    return TunnelTexts::tr("%1 | Server: connected").arg(tunnel);
+  case ServerLink::Unknown:
+    break;
+  }
+  return tunnel;
+}
 
 QString failureText(TunnelFailure failure, int exitCode)
 {

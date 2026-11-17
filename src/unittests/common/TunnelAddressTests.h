@@ -29,6 +29,8 @@ private Q_SLOTS:
   void effectiveRemoteHost_isTheSavedAddressUnchangedWhenTheTunnelIsNotUsed();
   void effectiveRemoteHost_isTheLocalAddressAndNothingElseWhenTheTunnelIsUsed();
 
+  void displayedTunnelHost_isTheHostnameOnlyWhileTheTunnelIsUsed();
+
   void settings_keysAreKnownAndOffByDefault();
   void settings_aConfigFromBeforeTheTunnelIsReadAsOffAndIsNotChangedByReading();
   void settings_valuesOfTheTunnelAreKeptAndUnknownKeysOfItsGroupAreRemoved();

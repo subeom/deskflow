@@ -257,6 +257,25 @@ void TunnelAddressTests::effectiveRemoteHost_isTheLocalAddressAndNothingElseWhen
   QCOMPARE(effectiveRemoteHost(config, QStringLiteral("10.0.0.5")), QStringLiteral("127.0.0.1:51823"));
 }
 
+void TunnelAddressTests::displayedTunnelHost_isTheHostnameOnlyWhileTheTunnelIsUsed()
+{
+  // off: nothing, so that the places that show the saved address keep showing it, unchanged
+  TunnelConfig off;
+  QVERIFY(displayedTunnelHost(off).isEmpty());
+  off.hostname = QStringLiteral("mbp.example.com");
+  QVERIFY(displayedTunnelHost(off).isEmpty());
+
+  TunnelConfig config = usable();
+  QCOMPARE(displayedTunnelHost(config), QStringLiteral("mbp.example.com"));
+  config.hostname = QStringLiteral("other.example.com");
+  QCOMPARE(displayedTunnelHost(config), QStringLiteral("other.example.com"));
+
+  // on but not usable: the tunnel is not what is dialled
+  TunnelConfig noTls = usable();
+  noTls.tlsEnabled = false;
+  QVERIFY(displayedTunnelHost(noTls).isEmpty());
+}
+
 void TunnelAddressTests::settings_keysAreKnownAndOffByDefault()
 {
   const auto keys = Settings::validKeys();

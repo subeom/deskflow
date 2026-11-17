@@ -171,24 +171,45 @@ target_sources(${target} PRIVATE
   tunnel/CloudflaredLocator.h
   tunnel/CloudflaredLogParser.cpp
   tunnel/CloudflaredLogParser.h
+  tunnel/IPortProber.h
   tunnel/ISecretStore.h
+  tunnel/ITunnelGate.h
+  tunnel/ITunnelProcess.h
   tunnel/InMemorySecretStore.cpp
   tunnel/InMemorySecretStore.h
   tunnel/MacKeychainStore.cpp
   tunnel/MacKeychainStore.h
+  tunnel/OrphanRecord.cpp
+  tunnel/OrphanRecord.h
+  tunnel/ProcessInspector.h
+  tunnel/QtPortProber.cpp
+  tunnel/QtPortProber.h
+  tunnel/QtTunnelProcess.cpp
+  tunnel/QtTunnelProcess.h
   tunnel/SecretRedactor.cpp
   tunnel/SecretRedactor.h
   tunnel/SecretStoreFactory.cpp
   tunnel/SecretStoreFactory.h
   tunnel/ServiceToken.h
+  tunnel/SystemProcessInspector.cpp
+  tunnel/TunnelController.cpp
+  tunnel/TunnelController.h
+  tunnel/TunnelStartGuard.cpp
+  tunnel/TunnelStartGuard.h
   tunnel/TunnelStateMachine.cpp
   tunnel/TunnelStateMachine.h
+  tunnel/TunnelSupervisor.cpp
+  tunnel/TunnelSupervisor.h
   tunnel/TunnelTypes.cpp
   tunnel/TunnelTypes.h
   tunnel/WindowsCredentialStore.cpp
   tunnel/WindowsCredentialStore.h
+  tunnel/WindowsKillOnCloseJob.cpp
+  tunnel/WindowsKillOnCloseJob.h
   widgets/TunnelSettingsGroup.cpp
   widgets/TunnelSettingsGroup.h
+  widgets/TunnelStatusWidget.cpp
+  widgets/TunnelStatusWidget.h
 )
 
 # the secure stores of the systems that have one (each file is empty on the others); the Credential Manager is in

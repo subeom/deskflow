@@ -107,4 +107,14 @@ QString effectiveRemoteHost()
   return effectiveRemoteHost(TunnelConfig::fromSettings(), Settings::textValue(Settings::Client::RemoteHost));
 }
 
+QString displayedTunnelHost(const TunnelConfig &config)
+{
+  return config.isActive() ? config.hostname : QString();
+}
+
+QString displayedTunnelHost()
+{
+  return displayedTunnelHost(TunnelConfig::fromSettings());
+}
+
 } // namespace deskflow::tunnel

@@ -73,4 +73,12 @@ QString effectiveRemoteHost(const TunnelConfig &config, const QString &configure
 //! As above with the settings: the saved address is `client/remoteHost`
 QString effectiveRemoteHost();
 
+/**
+ * The host name that is shown instead of the saved address while the tunnel is used (the hostname of the tunnel, which
+ * the user knows, rather than 127.0.0.1, which says nothing); empty when it is not used, and then the saved address is
+ * what is shown, as it always was.
+ */
+QString displayedTunnelHost(const TunnelConfig &config);
+QString displayedTunnelHost();
+
 } // namespace deskflow::tunnel
