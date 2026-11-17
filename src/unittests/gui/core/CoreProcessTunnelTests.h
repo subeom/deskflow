@@ -26,6 +26,17 @@ private Q_SLOTS:
   void aCleanupOfACoreThatIsNotRunning_leavesTheTunnelAlone();
   void aNewGate_replacesTheOldOne();
 
+  // the quit in service mode, with a stand-in of the client of the service
+  void theQuitInServiceMode_stopsTheServiceCoreAndNoStartFollows();
+  void theQuitWhileTheServiceIsNotConnected_connectsAndSendsTheStop();
+  void theQuitThatCannotReachTheService_isBoundedAndWarnsWhatRemains();
+  void aStartThatWaitsForTheService_isCancelledByTheQuitAndANewConnectionDoesNotStartTheCore();
+  void theQuitInServiceModeWithTheTunnelOff_isWhatItWas();
+  void aModeSwitchToTheServerWhileTheStartWaits_resetsTheState();
+  void aModeSwitchToTheServerWhileTheTunnelComesUp_leavesNothingBehind();
+
+  void cleanup();
+
 private:
   QString m_dir;
 };

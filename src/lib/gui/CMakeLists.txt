@@ -48,6 +48,8 @@ add_library(${target} STATIC
   core/ConnectionProbe.h
   core/AddressClassifier.cpp
   core/AddressClassifier.h
+  core/ServiceQuit.cpp
+  core/ServiceQuit.h
   core/NetworkMonitor.cpp
   core/ReportedMonitors.cpp
   core/ReportedMonitors.h

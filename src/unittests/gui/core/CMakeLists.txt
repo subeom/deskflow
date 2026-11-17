@@ -31,3 +31,11 @@ create_test(
   SOURCE CoreProcessTunnelTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+# The stop of the service core at the quit of the program (a stand-in of the client of the service: no daemon, no socket)
+create_test(
+  NAME ServiceQuitTests
+  DEPENDS gui
+  SOURCE ServiceQuitTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)

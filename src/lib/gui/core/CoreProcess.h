@@ -17,6 +17,8 @@
 #include <QProcess>
 #include <QTimer>
 
+#include <functional>
+
 namespace deskflow::tunnel {
 class ITunnelGate;
 class TunnelStartGuard;
@@ -43,7 +45,10 @@ public:
     StartFailed
   };
 
-  explicit CoreProcess(const ServerConfig &serverConfig);
+  //! Makes the client of the service (the daemon); a test gives one that talks to nobody
+  using DaemonClientFactory = std::function<ipc::DaemonIpcClient *(QObject *parent)>;
+
+  explicit CoreProcess(const ServerConfig &serverConfig, DaemonClientFactory daemonClientFactory = {});
 
   void start(std::optional<ProcessMode> processMode = std::nullopt);
   void stop(std::optional<ProcessMode> processMode = std::nullopt);
@@ -86,10 +91,7 @@ public:
   {
     m_address = correctedAddress(address);
   }
-  void setMode(Settings::CoreMode mode)
-  {
-    m_mode = mode;
-  }
+  void setMode(Settings::CoreMode mode);
 
 Q_SIGNALS:
   void error(deskflow::gui::CoreProcess::Error error);
@@ -148,6 +150,10 @@ private:
   deskflow::tunnel::TunnelStartGuard *m_tunnelGuard = nullptr;
   deskflow::tunnel::ITunnelGate *m_tunnelGate = nullptr;
   std::optional<ProcessMode> m_tunnelPendingMode;
+  // the program is ending (Cloudflare Tunnel, service mode): nothing is started or queued any more
+  bool m_quitting = false;
+  QMetaObject::Connection m_pendingDaemonStart;
+  QMetaObject::Connection m_pendingDaemonStop;
 };
 
 } // namespace deskflow::gui
