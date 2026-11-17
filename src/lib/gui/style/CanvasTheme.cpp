@@ -58,7 +58,7 @@ CanvasTheme canvasThemeFor(const Tokens &tokens, const Look &look)
 
   t.error = seenOn(c.danger, {t.background, t.fill, t.fillThis});
   t.errorHatch = t.error;
-  t.errorHatch.setAlphaF(0.30);
+  t.errorHatch.setAlphaF(0.50);
 
   t.connected = seenOn(c.success, {t.fill, t.fillThis});
   t.offline = seenOn(c.textSecondary, {t.fill, t.fillThis});

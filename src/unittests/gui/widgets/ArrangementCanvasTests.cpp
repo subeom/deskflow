@@ -1074,10 +1074,11 @@ void ArrangementCanvasTests::paint_colourMeansThisComputerConnectedSelectedAndEr
   // what is wrong is hatched and dashed in the colour of an error, so that it is not told by the colour alone
   auto wrong = canvasOf({{pc("A", kHd, 0, 0), pc("B", kHd, 1000, 100)}});
   const auto overlap = render(*wrong).toImage();
+  // (inside the outline, which is dashed in the same colour: it is the hatch that is looked for)
   bool hatched = false;
-  const auto overlapBox = wrong->boxOf("B");
+  const auto overlapBox = wrong->boxOf("B").adjusted(8, 8, -8, -8);
   for (int y = static_cast<int>(overlapBox.top()) * 2; y < overlapBox.bottom() * 2 && !hatched; ++y) {
-    for (int x = static_cast<int>(overlapBox.left()) * 2; x < overlapBox.left() * 2 + 400; ++x) {
+    for (int x = static_cast<int>(overlapBox.left()) * 2; x < overlapBox.right() * 2; ++x) {
       const auto p = overlap.pixelColor(x, y);
       if (qAbs(p.hueF() - theme.error.hueF()) < 0.03 && p.saturationF() > 0.2) {
         hatched = true;

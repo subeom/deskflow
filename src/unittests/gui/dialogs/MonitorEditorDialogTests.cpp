@@ -785,9 +785,10 @@ void MonitorEditorDialogTests::newLook_monitorsAreNeutral_andTheSelectedOneAndWh
   wrong.widget->setSelected(-1);
   const auto overlap = wrong.widget->grab().toImage();
   bool hatched = false;
-  const auto box = wrong.widget->rectOf(1);
+  // (inside the outline, which is dashed in the same colour: it is the hatch that is looked for)
+  const auto box = wrong.widget->rectOf(1).adjusted(8, 8, -8, -8);
   for (int y = static_cast<int>(box.top()); y < box.bottom() && !hatched; ++y) {
-    for (int x = static_cast<int>(box.left()); x < box.left() + 200; ++x) {
+    for (int x = static_cast<int>(box.left()); x < box.right(); ++x) {
       const auto p = overlap.pixelColor(x, y);
       if (qAbs(p.hueF() - theme.error.hueF()) < 0.03 && p.saturationF() > 0.2) {
         hatched = true;
