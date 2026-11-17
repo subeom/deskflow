@@ -48,6 +48,8 @@ struct TrayPlatform
   //! The icons are asked of the icon theme by name (the desktop draws the menu): the icons that the program has always
   //! used for these rows. Elsewhere they are the icons of the new look
   bool themeIcons = false;
+  //! The icons are templates (black and clear) that the OS tints to the colour of the text of the row (macOS)
+  bool templateIcons = false;
 
   static TrayPlatform windows();
   static TrayPlatform mac();

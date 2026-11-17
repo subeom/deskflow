@@ -52,3 +52,22 @@ target_include_directories(TrayIconTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gu
 # the mark of the program, which the icons are made of
 target_sources(TrayIconTests PRIVATE "${CMAKE_SOURCE_DIR}/src/apps/res/deskflow.qrc")
 
+create_test(
+  NAME TrayMenuBuilderTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TrayMenuBuilderTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(TrayMenuBuilderTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+target_sources(TrayMenuBuilderTests PRIVATE "${CMAKE_SOURCE_DIR}/src/apps/res/deskflow.qrc")
+
+create_test(
+  NAME TrayControllerTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TrayControllerTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(TrayControllerTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+target_sources(TrayControllerTests PRIVATE "${CMAKE_SOURCE_DIR}/src/apps/res/deskflow.qrc")

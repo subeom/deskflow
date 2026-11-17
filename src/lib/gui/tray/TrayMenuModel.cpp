@@ -107,7 +107,9 @@ TrayPlatform TrayPlatform::windows()
 
 TrayPlatform TrayPlatform::mac()
 {
-  return {};
+  TrayPlatform platform;
+  platform.templateIcons = true;
+  return platform;
 }
 
 TrayPlatform TrayPlatform::linux()

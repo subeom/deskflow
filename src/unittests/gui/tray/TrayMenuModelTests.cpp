@@ -5,6 +5,8 @@
 
 #include "TrayMenuModelTests.h"
 
+#include "TrayTestData.h"
+
 #include "gui/tray/TrayMenuModel.h"
 
 #include <QSet>
@@ -16,34 +18,7 @@ using Kind = TrayMenuEntry::Kind;
 
 namespace {
 
-TrayInput makeInput(ProcessState process, ConnectionState connection, bool server = true, bool windowShown = true)
-{
-  TrayInput input;
-  input.process = process;
-  input.connection = connection;
-  input.isServer = server;
-  input.windowShown = windowShown;
-  input.appName = QStringLiteral("Deskflow");
-  input.headline = QStringLiteral("Headline");
-  input.detail = QStringLiteral("The sentence behind it");
-  input.labels = {
-      {TrayCommand::Start, server ? QStringLiteral("Start") : QStringLiteral("Connect")},
-      {TrayCommand::Restart, QStringLiteral("Rest&art")},
-      {TrayCommand::Stop, server ? QStringLiteral("Stop") : QStringLiteral("Disconnect")},
-      {TrayCommand::TestConnection, QStringLiteral("Test connection")},
-      {TrayCommand::OpenWindow, QStringLiteral("&Open Deskflow")},
-      {TrayCommand::Minimize, QStringLiteral("&Minimize to tray")},
-      {TrayCommand::Preferences, QStringLiteral("&Preferences")},
-      {TrayCommand::Quit, QStringLiteral("&Quit")},
-  };
-  input.shortcuts = {
-      {TrayCommand::Start, QKeySequence(QStringLiteral("Ctrl+S"))},
-      {TrayCommand::Restart, QKeySequence(QStringLiteral("Ctrl+S"))},
-      {TrayCommand::Stop, QKeySequence(QStringLiteral("Ctrl+T"))},
-      {TrayCommand::Quit, QKeySequence(QStringLiteral("Ctrl+Q"))},
-  };
-  return input;
-}
+using tray_test::makeInput;
 
 QStringList ids(const TrayMenuSpec &spec)
 {

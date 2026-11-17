@@ -215,8 +215,14 @@ add_library(${target} STATIC
   shell/MainShell.h
   shell/StatusModel.cpp
   shell/StatusModel.h
+  tray/TrayController.cpp
+  tray/TrayController.h
+  tray/TrayHeaderWidget.cpp
+  tray/TrayHeaderWidget.h
   tray/TrayIcons.cpp
   tray/TrayIcons.h
+  tray/TrayMenuBuilder.cpp
+  tray/TrayMenuBuilder.h
   tray/TrayMenuModel.cpp
   tray/TrayMenuModel.h
   tray/TrayPolicy.cpp
