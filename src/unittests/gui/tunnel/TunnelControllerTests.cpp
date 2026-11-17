@@ -184,6 +184,21 @@ void TunnelControllerTests::release_stopsTheTunnelAfterTheLinger()
   QCOMPARE(finished.count(), 1);
 }
 
+void TunnelControllerTests::release_leavesAFailedTunnelAsItIsSoThatTheReasonStaysOnTheScreen()
+{
+  ControllerRig rig(m_dir, kConfig, 50);
+  rig.turnOn();
+  Settings::setValue(Settings::Security::TlsEnabled, false);
+  rig.controller->acquire();
+  QCOMPARE(rig.controller->status().state, TunnelState::Failed);
+
+  // the core that waited for the tunnel is stopped: it lets the tunnel go, and the reason is still there afterwards
+  rig.controller->release();
+  QTest::qWait(250);
+  QCOMPARE(rig.controller->status().state, TunnelState::Failed);
+  QCOMPARE(rig.controller->status().failure, TunnelFailure::TlsRequired);
+}
+
 void TunnelControllerTests::aSwitchToTheServer_stopsTheTunnelAtOnce()
 {
   ControllerRig rig(m_dir);

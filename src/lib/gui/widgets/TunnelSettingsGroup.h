@@ -23,8 +23,9 @@ class QSpinBox;
 
 namespace deskflow::gui {
 
-//! This version does not start cloudflared yet: while that is so, the group tells the user to start it.
-inline constexpr bool kTunnelSupervisorAvailable = false;
+//! Deskflow runs cloudflared itself (see gui/tunnel/TunnelSupervisor.h). When it does not, the group tells the user to
+//! start it.
+inline constexpr bool kTunnelSupervisorAvailable = true;
 
 //! What the group asks of its surroundings; every part is replaced in tests so that no keychain, file system or dialog
 //! of the system is used

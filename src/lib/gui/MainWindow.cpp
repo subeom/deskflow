@@ -32,8 +32,10 @@
 #include "gui/ipc/DaemonIpcClient.h"
 #include "gui/layout/DisplayProvider.h"
 #include "gui/layout/LayoutMemoryService.h"
+#include "gui/tunnel/TunnelController.h"
 #include "gui/widgets/LayoutNoticeBar.h"
 #include "gui/widgets/LogDock.h"
+#include "gui/widgets/TunnelStatusWidget.h"
 #include "net/FingerprintDatabase.h"
 #include "widgets/StatusBar.h"
 
@@ -141,6 +143,7 @@ MainWindow::MainWindow()
   updateText();
   connectSlots();
   setupTrayIcon();
+  setupTunnel();
   updateComputerName();
   setHelpFilePath();
 
@@ -187,6 +190,10 @@ MainWindow::~MainWindow()
 
   m_guiDupeChecker->close();
   m_coreProcess.cleanup();
+  // Cloudflare Tunnel: the core is stopped first, the tunnel second
+  if (m_tunnelController != nullptr) {
+    m_tunnelController->shutdown();
+  }
 }
 
 void MainWindow::restoreWindow()
@@ -476,7 +483,9 @@ void MainWindow::startCore()
   }
 
   // Invalid client settings
-  if (m_coreProcess.mode() == CoreMode::Client && Settings::textValue(Settings::Client::RemoteHost).isEmpty()) {
+  // (with a Cloudflare Tunnel the saved address is not needed)
+  if (m_coreProcess.mode() == CoreMode::Client && Settings::textValue(Settings::Client::RemoteHost).isEmpty() &&
+      !m_coreProcess.isTunnelRequired()) {
     qDebug().noquote() << "skipping core start, undefined remotehost";
     return;
   }
@@ -590,6 +599,11 @@ void MainWindow::coreModeToggled(bool checked)
   if (m_coreProcess.isStarted() && m_coreProcess.mode() != mode)
     m_coreProcess.stop();
   m_coreProcess.setMode(mode);
+  // Cloudflare Tunnel: a switch to the server stops the tunnel
+  if (m_tunnelController != nullptr) {
+    m_tunnelController->setClientMode(mode == Settings::CoreMode::Client);
+    m_tunnelStatus->refresh();
+  }
 
   Settings::setValue(Settings::Core::CoreMode, mode);
   Settings::save();
@@ -772,6 +786,71 @@ void MainWindow::setupTrayIcon()
   m_trayIcon->show();
 }
 
+// Cloudflare Tunnel: everything that the main window does for it is in these functions and in the lines that name it
+void MainWindow::setupTunnel()
+{
+  m_tunnelController = deskflow::tunnel::TunnelController::createSystem(this);
+  m_coreProcess.setTunnelGate(m_tunnelController);
+
+  // under the row of the options of the client: while the tunnel is used it takes the place of the address field
+  m_tunnelStatus = new TunnelStatusWidget(m_tunnelController, this);
+  ui->verticalLayout->insertWidget(ui->verticalLayout->indexOf(ui->widgetModeOptions) + 1, m_tunnelStatus);
+  connect(m_tunnelStatus, &TunnelStatusWidget::usedChanged, this, &MainWindow::tunnelUsedChanged);
+
+  // the log: what the tunnel does and what cloudflared writes (already without the token)
+  connect(m_tunnelController, &deskflow::tunnel::TunnelController::logLine, this, [](const QString &line) {
+    qInfo().noquote() << "tunnel:" << line;
+  });
+
+  // the tray menu: a line that says how the tunnel is
+  m_actionTunnelStatus = new QAction(this);
+  m_actionTunnelStatus->setEnabled(false);
+  m_actionTunnelStatus->setVisible(false);
+  m_actionTunnelStatus->setMenuRole(QAction::NoRole);
+  if (auto *trayMenu = m_trayIcon->contextMenu(); trayMenu != nullptr) {
+    trayMenu->insertAction(m_actionStartCore, m_actionTunnelStatus);
+  }
+  connect(m_tunnelStatus, &TunnelStatusWidget::statusTextChanged, this, [this](const QString &text) {
+    m_actionTunnelStatus->setText(text);
+  });
+  // with the tunnel off nothing of the window is touched
+  if (m_tunnelStatus->isTunnelUsed()) {
+    tunnelUsedChanged(true);
+  }
+}
+
+void MainWindow::tunnelUsedChanged(bool used)
+{
+  // the saved address stays where it is, only not shown: switching the tunnel off shows it again as it was
+  ui->m_pLabelServerName->setVisible(!used);
+  ui->cbHostname->setVisible(!used);
+  m_actionTunnelStatus->setVisible(used);
+  m_actionTunnelStatus->setText(m_tunnelStatus->statusText());
+  if (used) {
+    ui->btnTestConnection->setEnabled(true);
+  } else {
+    ui->btnTestConnection->setEnabled(!ui->cbHostname->currentText().trimmed().isEmpty());
+  }
+  toggleCanRunCore(canRunCore());
+}
+
+void MainWindow::updateTunnelServerLink(ConnectionState state)
+{
+  using deskflow::tunnel::ServerLink;
+  if (m_tunnelStatus == nullptr) {
+    return;
+  }
+
+  if (state == ConnectionState::Connected) {
+    m_tunnelController->notifyServerConnected();
+    m_tunnelStatus->setServerLink(ServerLink::Connected);
+  } else if (state == ConnectionState::Connecting) {
+    m_tunnelStatus->setServerLink(ServerLink::Connecting);
+  } else {
+    m_tunnelStatus->setServerLink(ServerLink::Unknown);
+  }
+}
+
 void MainWindow::applyConfig()
 {
   if (Settings::value(Settings::Gui::ShowVersionInTitle).toBool()) {
@@ -798,6 +877,10 @@ void MainWindow::applyConfig()
   }
 
   coreModeToggled(true);
+  // Cloudflare Tunnel: the lines for the tunnel show what the dialog saved
+  if (m_tunnelStatus != nullptr) {
+    m_tunnelStatus->refresh();
+  }
 }
 
 void MainWindow::saveSettings() const
@@ -1078,6 +1161,7 @@ void MainWindow::coreConnectionStateChanged(ConnectionState state)
   qDebug() << "core connection state changed:" << static_cast<int>(state);
 
   updateStatus();
+  updateTunnelServerLink(state);
 
   // always assume connection is not secure when connection changes
   // to anything except connected. the only way the padlock shows is
@@ -1085,7 +1169,8 @@ void MainWindow::coreConnectionStateChanged(ConnectionState state)
   if (state != ConnectionState::Connected) {
     secureSocket(false);
   } else {
-    if (m_coreProcess.mode() == CoreMode::Client) {
+    // (through a Cloudflare Tunnel the saved address is not what connected, so it is not put in the recent ones)
+    if (m_coreProcess.mode() == CoreMode::Client && !m_coreProcess.isTunnelRequired()) {
       if (const auto host = ui->cbHostname->currentText(); !host.isEmpty()) {
         QStringList recentHosts = Settings::value(Settings::Client::RecentRemoteHosts).toStringList();
         if (recentHosts.isEmpty() || recentHosts.first() != host) {
@@ -1357,7 +1442,7 @@ void MainWindow::remoteHostChanged(const QString &newRemoteHost)
 {
   m_coreProcess.setAddress(newRemoteHost);
   ui->btnTestConnection->setEnabled(!newRemoteHost.trimmed().isEmpty());
-  toggleCanRunCore(!newRemoteHost.isEmpty() && ui->rbModeClient->isChecked());
+  toggleCanRunCore((!newRemoteHost.isEmpty() || m_coreProcess.isTunnelRequired()) && ui->rbModeClient->isChecked());
   if (newRemoteHost.isEmpty()) {
     Settings::setValue(Settings::Client::RemoteHost);
   } else {
@@ -1476,5 +1561,9 @@ bool MainWindow::canRunCore() const
   const auto mode = m_coreProcess.mode();
   const bool isServer = mode == Settings::CoreMode::Server;
   const bool isClient = mode == Settings::CoreMode::Client;
-  return ((isServer || isClient) && (isClient && !ui->cbHostname->currentText().isEmpty()) || isServer);
+  return (
+      (isServer || isClient) &&
+          (isClient && (!ui->cbHostname->currentText().isEmpty() || m_coreProcess.isTunnelRequired())) ||
+      isServer
+  );
 }

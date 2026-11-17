@@ -47,6 +47,14 @@ namespace deskflow::gui::ipc {
 class DaemonIpcClient;
 }
 
+// Cloudflare Tunnel (see docs/dev/cloudflare-tunnel.md)
+namespace deskflow::tunnel {
+class TunnelController;
+}
+namespace deskflow::gui {
+class TunnelStatusWidget;
+}
+
 class MainWindow : public QMainWindow
 {
   using ConnectionState = deskflow::core::ConnectionState;
@@ -123,6 +131,10 @@ private:
 
   void createMenuBar();
   void setupTrayIcon();
+  // Cloudflare Tunnel
+  void setupTunnel();
+  void tunnelUsedChanged(bool used);
+  void updateTunnelServerLink(ConnectionState state);
   void applyConfig();
   void setTrayIcon();
   void handleUnrecognisedClient(const QString &clientName);
@@ -215,6 +227,11 @@ private:
   QAction *m_actionRestartCore = nullptr;
   QAction *m_actionStopCore = nullptr;
   QAction *m_actionShowHelp = nullptr;
+
+  // Cloudflare Tunnel
+  deskflow::tunnel::TunnelController *m_tunnelController = nullptr;
+  deskflow::gui::TunnelStatusWidget *m_tunnelStatus = nullptr;
+  QAction *m_actionTunnelStatus = nullptr;
 
   // Network monitoring
   NetworkMonitor *m_networkMonitor = nullptr;

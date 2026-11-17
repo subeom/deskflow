@@ -35,6 +35,10 @@ public:
     return m_state == State::Connected;
   }
 
+  //! Writes what was sent and not yet written, waiting up to \p msecs: for a message that is sent right before the
+  //! program ends. False when it was not written in time or the client is not connected.
+  bool flush(int msecs);
+
 Q_SIGNALS:
   void connected();
   void connectionFailed();

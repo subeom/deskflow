@@ -190,8 +190,12 @@ void TunnelSettingsGroupTests::defaults_areOffAndEmptyAndTheSecretIsNeverRead()
 
   // what the group says about the saved address of the server, about this version, and not about TLS
   QVERIFY(w.note->text().contains(QStringLiteral("Your saved server address is kept")));
-  QCOMPARE(w.startNote->isHidden(), kTunnelSupervisorAvailable);
-  QVERIFY(w.startNote->text().contains(QStringLiteral("start it yourself")));
+  // Deskflow starts cloudflared itself: the group says so and does not tell the user to start it
+  QVERIFY(kTunnelSupervisorAvailable);
+  QVERIFY(!w.startNote->isHidden());
+  QVERIFY(w.startNote->text().contains(QStringLiteral("Deskflow starts cloudflared")));
+  QVERIFY(!w.startNote->text().contains(QStringLiteral("start it yourself")));
+  QVERIFY(!w.startNote->toolTip().contains(QStringLiteral("start it yourself with")));
   QVERIFY(w.tlsNote->isHidden());
 
   QCOMPARE(store->state()->loadCount, 0);

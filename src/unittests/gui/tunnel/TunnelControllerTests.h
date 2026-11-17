@@ -21,6 +21,7 @@ private Q_SLOTS:
   void acquire_afterTheConfigurationChanged_startsTheTunnelAgain();
   void release_keepsTheTunnelForAWhileAndAnAcquireCancelsTheStop();
   void release_stopsTheTunnelAfterTheLinger();
+  void release_leavesAFailedTunnelAsItIsSoThatTheReasonStaysOnTheScreen();
   void aSwitchToTheServer_stopsTheTunnelAtOnce();
   void aBusyPort_isWrittenAsTheActivePortAndRemovedAtTheEnd();
   void thePortThatWasAsked_isNotWrittenAsAnActivePort();

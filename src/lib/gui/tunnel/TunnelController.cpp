@@ -95,7 +95,9 @@ void TunnelController::acquire()
 
 void TunnelController::release()
 {
-  if (m_supervisor->status().state == TunnelState::Idle) {
+  const auto state = m_supervisor->status().state;
+  // a tunnel that failed keeps its state, so that the reason stays where the user can read it
+  if (state != TunnelState::Starting && state != TunnelState::Listening && state != TunnelState::Backoff) {
     return;
   }
   m_lingerTimer->start();

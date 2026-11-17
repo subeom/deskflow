@@ -243,12 +243,20 @@ void TunnelSettingsGroup::updateStatusLines()
 
   setLine(m_note, tr("Your saved server address is kept for when the tunnel is off."));
 
-  m_startNote->setVisible(!kTunnelSupervisorAvailable);
-  setLine(
-      m_startNote, tr("This version does not start cloudflared: start it yourself."),
-      tr("While this is on, the client connects to 127.0.0.1 on the local port. This version does not start "
-         "cloudflared for you: start it yourself with the same hostname and port.")
-  );
+  if (kTunnelSupervisorAvailable) {
+    setLine(
+        m_startNote, tr("Deskflow starts cloudflared with the client and stops it with the client."),
+        tr("While this is on, the client connects to 127.0.0.1 on the local port, where the cloudflared that Deskflow "
+           "starts listens. Starting and stopping the client starts and stops cloudflared: you do not start it "
+           "yourself.")
+    );
+  } else {
+    setLine(
+        m_startNote, tr("This version does not start cloudflared: start it yourself."),
+        tr("While this is on, the client connects to 127.0.0.1 on the local port. This version does not start "
+           "cloudflared for you: start it yourself with the same hostname and port.")
+    );
+  }
 
   m_tlsNote->setVisible(!tlsEnabled());
   setLine(m_tlsNote, failureText(TunnelFailure::TlsRequired));
