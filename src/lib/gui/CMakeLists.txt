@@ -171,14 +171,33 @@ target_sources(${target} PRIVATE
   tunnel/CloudflaredLocator.h
   tunnel/CloudflaredLogParser.cpp
   tunnel/CloudflaredLogParser.h
+  tunnel/ISecretStore.h
+  tunnel/InMemorySecretStore.cpp
+  tunnel/InMemorySecretStore.h
+  tunnel/MacKeychainStore.cpp
+  tunnel/MacKeychainStore.h
   tunnel/SecretRedactor.cpp
   tunnel/SecretRedactor.h
+  tunnel/SecretStoreFactory.cpp
+  tunnel/SecretStoreFactory.h
   tunnel/ServiceToken.h
   tunnel/TunnelStateMachine.cpp
   tunnel/TunnelStateMachine.h
   tunnel/TunnelTypes.cpp
   tunnel/TunnelTypes.h
+  tunnel/WindowsCredentialStore.cpp
+  tunnel/WindowsCredentialStore.h
 )
+
+# the secure stores of the systems that have one (each file is empty on the others); the Credential Manager is in
+# advapi32 and the keychain in the Security framework
+if(WIN32)
+  target_link_libraries(${target} PUBLIC advapi32)
+elseif(APPLE)
+  find_library(lib_Security Security REQUIRED)
+  find_library(lib_CoreFoundation CoreFoundation REQUIRED)
+  target_link_libraries(${target} PUBLIC ${lib_Security} ${lib_CoreFoundation})
+endif()
 
 target_link_libraries(${target}
   PUBLIC

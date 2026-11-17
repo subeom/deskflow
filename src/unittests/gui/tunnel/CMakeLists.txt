@@ -38,3 +38,10 @@ create_test(
   SOURCE SecretRedactorTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME SecretStoreTests
+  DEPENDS gui
+  SOURCE SecretStoreTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
