@@ -6,6 +6,7 @@
 
 #include "AccessibleInterfaces.h"
 
+#include "AccessibleItems.h"
 #include "Appearance.h"
 #include "LookFollower.h"
 #include "gui/widgets/NavRail.h"
@@ -263,6 +264,13 @@ QAccessibleInterface *factory(const QString &className, QObject *object)
     return new RoleAccessible(widget, QAccessible::AlertMessage);
   if (className == QLatin1String("StatusChip"))
     return new RoleAccessible(widget, QAccessible::StaticText);
+  if (className == QLatin1String("ArrangementCanvas") || className == QLatin1String("MonitorEditorWidget")) {
+    // the canvas that was always there, for a screen reader as well, when there is no style layer
+    if (!deskflow::gui::style::isDeskflowStyleInstalled())
+      return nullptr;
+    if (auto *source = dynamic_cast<deskflow::gui::style::AccessibleItemSource *>(widget))
+      return deskflow::gui::style::createItemListAccessible(widget, source);
+  }
   return nullptr;
 }
 

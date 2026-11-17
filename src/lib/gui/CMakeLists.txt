@@ -125,6 +125,8 @@ add_library(${target} STATIC
   style/Appearance.cpp
   style/Appearance.h
   style/AccessibleInterfaces.cpp
+  style/AccessibleItems.cpp
+  style/AccessibleItems.h
   style/AccessibleInterfaces.h
   style/AppearanceHints.cpp
   style/AppearanceHints.h

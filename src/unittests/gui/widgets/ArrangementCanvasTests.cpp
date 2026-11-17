@@ -5,9 +5,15 @@
 
 #include "ArrangementCanvasTests.h"
 
+#include "gui/style/CanvasTheme.h"
+#include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/ArrangementCanvas.h"
 
+#include <QAccessible>
 #include <QApplication>
+#include <QLineEdit>
+#include <QMetaEnum>
+#include <QVBoxLayout>
 #include <QDir>
 #include <QImage>
 #include <QMouseEvent>
@@ -115,6 +121,56 @@ void hover(QWidget *widget, const QPoint &point)
       QEvent::MouseMove, QPointF(point), widget->mapToGlobal(QPointF(point)), Qt::NoButton, Qt::NoButton, Qt::NoModifier
   );
   QApplication::sendEvent(widget, &event);
+}
+
+// The look of the application while the test runs: the one of Appearance=Deskflow, in the scheme that is asked for; the
+// system look (Fusion) again when it ends
+struct DeskflowLook
+{
+  explicit DeskflowLook(bool dark = false, bool highContrast = false)
+  {
+    auto *style = new deskflow::gui::style::DeskflowStyle;
+    QApplication::setStyle(style);
+    deskflow::gui::style::Look look;
+    look.scheme = dark ? deskflow::gui::style::Scheme::Dark : deskflow::gui::style::Scheme::Light;
+    look.reduceTransparency = true;
+    look.reduceMotion = true;
+    look.highContrast = highContrast;
+    style->useLook(look);
+  }
+  ~DeskflowLook()
+  {
+    QApplication::setStyle(QStringLiteral("Fusion"));
+  }
+};
+
+// A window with a field before the canvas and one after it: where the focus goes when it leaves the canvas
+struct Focusable
+{
+  explicit Focusable(const Arrangement &arrangement)
+  {
+    window.setLayout(new QVBoxLayout);
+    before = new QLineEdit(&window);
+    canvas = new ArrangementCanvas(&window);
+    after = new QLineEdit(&window);
+    window.layout()->addWidget(before);
+    window.layout()->addWidget(canvas);
+    window.layout()->addWidget(after);
+    canvas->setArrangement(arrangement);
+    window.resize(900, 600);
+    window.show();
+    window.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&window));
+  }
+  QWidget window;
+  QLineEdit *before = nullptr;
+  ArrangementCanvas *canvas = nullptr;
+  QLineEdit *after = nullptr;
+};
+
+QString roleName(QAccessible::Role role)
+{
+  return QString::fromLatin1(QMetaEnum::fromType<QAccessible::Role>().valueToKey(role));
 }
 
 QPixmap render(ArrangementCanvas &canvas)
@@ -806,6 +862,336 @@ void ArrangementCanvasTests::screenshots_areMadeOfTheStatesTheUserSees()
   }});
   save(render(*wrong), QStringLiteral("4-canvas-overlap-and-no-link.png"));
   QVERIFY(!wrong->issues().empty());
+}
+
+void ArrangementCanvasTests::tab_inTheSystemLook_leavesTheCanvasAsItAlwaysDid()
+{
+  Focusable rig(userArrangement());
+  rig.canvas->setSelected("9800X3D-5080");
+  rig.canvas->setFocus();
+  QTest::keyClick(rig.canvas, Qt::Key_Tab);
+  // nothing new: Tab goes to the next field, and what is selected stays
+  QVERIFY(rig.after->hasFocus());
+  QCOMPARE(rig.canvas->selected(), QStringLiteral("9800X3D-5080"));
+}
+
+void ArrangementCanvasTests::tab_goesThroughTheComputersInTheOrderOfTheScreen_andLeavesAtTheEnds()
+{
+  DeskflowLook look;
+  Focusable rig(userArrangement());
+  QSignalSpy selected(rig.canvas, &ArrangementCanvas::selectedChanged);
+  rig.canvas->setFocus();
+  QVERIFY(rig.canvas->hasFocus());
+
+  // from the left to the right, by the middle of each computer
+  const QStringList order = {
+      "9800X3D-5080", "SUBEOM-COPILOT", "Subeoms-MacBook-Pro.local", "Subeoms-Mac-mini.local",
+  };
+  QStringList seen;
+  for (int i = 0; i < order.size(); ++i) {
+    QTest::keyClick(rig.canvas, Qt::Key_Tab);
+    QVERIFY(rig.canvas->hasFocus());
+    seen << rig.canvas->selected();
+  }
+  QCOMPARE(seen, order);
+
+  // at the last one Tab leaves: the canvas does not keep the focus (a keyboard is not trapped in it)
+  QTest::keyClick(rig.canvas, Qt::Key_Tab);
+  QVERIFY(rig.after->hasFocus());
+
+  // and Shift+Tab goes back the same way, and out at the first: the last one was selected when the focus came back
+  rig.canvas->setFocus();
+  seen.clear();
+  for (int i = 0; i < order.size() - 1; ++i) {
+    QTest::keyClick(rig.canvas, Qt::Key_Tab, Qt::ShiftModifier);
+    QVERIFY(rig.canvas->hasFocus());
+    seen << rig.canvas->selected();
+  }
+  QCOMPARE(seen, QStringList({"Subeoms-MacBook-Pro.local", "SUBEOM-COPILOT", "9800X3D-5080"}));
+  QTest::keyClick(rig.canvas, Qt::Key_Tab, Qt::ShiftModifier);
+  QVERIFY(rig.before->hasFocus());
+  QVERIFY(selected.count() >= order.size());
+}
+
+void ArrangementCanvasTests::tab_comingIn_selectsTheFirstOrTheLast()
+{
+  DeskflowLook look;
+  Focusable rig(userArrangement());
+  rig.before->setFocus();
+  QTest::keyClick(rig.before, Qt::Key_Tab);
+  QVERIFY(rig.canvas->hasFocus());
+  QCOMPARE(rig.canvas->selected(), QStringLiteral("9800X3D-5080"));
+
+  rig.canvas->setSelected(QString());
+  rig.after->setFocus();
+  QTest::keyClick(rig.after, Qt::Key_Tab, Qt::ShiftModifier);
+  QVERIFY(rig.canvas->hasFocus());
+  QCOMPARE(rig.canvas->selected(), QStringLiteral("Subeoms-Mac-mini.local"));
+
+  // what is selected already is kept when the focus comes back
+  rig.canvas->setSelected("SUBEOM-COPILOT");
+  rig.after->setFocus();
+  QTest::keyClick(rig.after, Qt::Key_Tab, Qt::ShiftModifier);
+  QCOMPARE(rig.canvas->selected(), QStringLiteral("SUBEOM-COPILOT"));
+}
+
+void ArrangementCanvasTests::enterAndSpace_selectWhereTheKeysAre_andLeaveWhatIsSelectedToTheDialog()
+{
+  DeskflowLook look;
+  auto canvas = canvasOf(userArrangement());
+  QSignalSpy selected(canvas.get(), &ArrangementCanvas::selectedChanged);
+  canvas->setSelected("SUBEOM-COPILOT");
+  // a click on the background takes the selection away: the keys are where they were
+  QTest::mouseClick(canvas.get(), Qt::LeftButton, {}, QPoint(4, 4));
+  QCOMPARE(canvas->selected(), QString());
+  selected.clear();
+
+  QTest::keyClick(canvas.get(), Qt::Key_Space);
+  QCOMPARE(canvas->selected(), QStringLiteral("SUBEOM-COPILOT"));
+  QCOMPARE(selected.count(), 1);
+
+  canvas->setSelected(QString());
+  QTest::keyClick(canvas.get(), Qt::Key_Return);
+  QCOMPARE(canvas->selected(), QStringLiteral("SUBEOM-COPILOT"));
+
+  // with nothing before it, the first computer of the screen is the one
+  auto fresh = canvasOf(userArrangement());
+  QTest::keyClick(fresh.get(), Qt::Key_Enter);
+  QCOMPARE(fresh->selected(), QStringLiteral("9800X3D-5080"));
+
+  // when the computer is selected already the key is not taken: Enter is the default button of the dialog, as it was
+  QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+  enter.setAccepted(true);
+  QApplication::sendEvent(canvas.get(), &enter);
+  QVERIFY(!enter.isAccepted());
+  QKeyEvent space(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier);
+  space.setAccepted(true);
+  QApplication::sendEvent(canvas.get(), &space);
+  QVERIFY(!space.isAccepted());
+}
+
+void ArrangementCanvasTests::arrows_moveTheSelectedComputerByAStep_inTheNewLookToo()
+{
+  DeskflowLook look;
+  auto canvas = canvasOf(twoApart());
+  QSignalSpy changed(canvas.get(), &ArrangementCanvas::arrangementChanged);
+  canvas->setSelected("B");
+  QTest::keyClick(canvas.get(), Qt::Key_Left);
+  QCOMPARE(computerOf(*canvas, "B").originX, 2599.0);
+  QTest::keyClick(canvas.get(), Qt::Key_Down, Qt::ShiftModifier);
+  QCOMPARE(computerOf(*canvas, "B").originY, 310.0);
+  QCOMPARE(changed.count(), 2);
+  // the coordinates are the same ones: a key never puts a computer on another
+  canvas->setArrangement({{pc("A", kHd, 0, 0), pc("B", kHd, 1920, 0)}});
+  canvas->setSelected("B");
+  QTest::keyClick(canvas.get(), Qt::Key_Left);
+  QCOMPARE(computerOf(*canvas, "B").originX, 1920.0);
+  QVERIFY(canvas->issues().empty());
+}
+
+void ArrangementCanvasTests::focus_isSeenOnTheSelectedComputer_andOnTheCanvasWhenNothingIsSelected()
+{
+  DeskflowLook look;
+  Focusable rig(userArrangement());
+  rig.canvas->setSelected("SUBEOM-COPILOT");
+  rig.before->setFocus();
+  const auto without = rig.canvas->grab().toImage();
+  rig.canvas->setFocus();
+  QVERIFY(rig.canvas->hasFocus());
+  const auto with = rig.canvas->grab().toImage();
+  QVERIFY(with != without);
+
+  const auto theme = deskflow::gui::style::currentCanvasTheme();
+  // outside the ring of the selection there is the ring of the keys, in the colour of text on the canvas
+  const auto box = rig.canvas->boxOf("SUBEOM-COPILOT");
+  const auto near = [](const QColor &a, const QColor &b) {
+    return qAbs(a.red() - b.red()) + qAbs(a.green() - b.green()) + qAbs(a.blue() - b.blue()) < 60;
+  };
+  bool found = false;
+  for (int dy = -8; dy <= -3 && !found; ++dy)
+    found = near(with.pixelColor(onBox(box, 0.5, 0.0, 0, dy)), theme.focus);
+  QVERIFY2(found, "the focus ring is not above the selected computer");
+
+  // nothing selected: the canvas itself has the ring at its edge
+  rig.canvas->setSelected(QString());
+  const auto frame = rig.canvas->grab().toImage();
+  bool onFrame = false;
+  for (int inset = 0; inset <= 3 && !onFrame; ++inset)
+    onFrame = near(frame.pixelColor(QPoint(rig.canvas->width() / 2, inset)), theme.focus);
+  QVERIFY2(onFrame, "the focus ring is not at the edge of the canvas");
+}
+
+void ArrangementCanvasTests::paint_inTheSystemLook_isTheOldColours()
+{
+  // each computer has a colour of its own, the server is the blue one: as it has always been
+  auto canvas = canvasOf(userArrangement());
+  const auto image = render(*canvas).toImage();
+  QSet<QRgb> colours;
+  for (const auto &computer : canvas->arrangement().computers) {
+    const auto first = computer.monitorRects().front();
+    colours.insert(image.pixelColor((canvas->toWidget(first.x + first.w * 0.05, first.y + first.h * 0.5) * 2).toPoint()).rgb());
+  }
+  QCOMPARE(colours.size(), 4);
+  QCOMPARE(image.pixelColor(6, 6), QApplication::palette().color(QPalette::Base));
+}
+
+// Colour is for this computer, a connection, the selection and what is wrong; every other computer is the same neutral
+void ArrangementCanvasTests::paint_colourMeansThisComputerConnectedSelectedAndError()
+{
+  DeskflowLook look;
+  const auto theme = deskflow::gui::style::currentCanvasTheme();
+  auto canvas = canvasOf({{
+      pc("Server", kHd, 0, 0, 1.0, true),
+      pc("Right", kHd, 1920, 0),
+      pc("Below", kHd, 0, 1080),
+      pc("Far", kHd, 5000, 3000),
+  }});
+  canvas->setStatus("Right", ArrangementCanvas::Status::Connected);
+  canvas->setStatus("Below", ArrangementCanvas::Status::Offline);
+  canvas->setSelected("Right");
+  const auto image = render(*canvas).toImage();
+  const auto at = [&](const char *name, double fx, double fy) {
+    return image.pixelColor((onBox(canvas->boxOf(name), fx, fy) * 2));
+  };
+
+  // this computer is the tint of the accent; the others are the same surface, whatever their names
+  QCOMPARE(at("Server", 0.5, 0.9), theme.fillThis);
+  QCOMPARE(at("Below", 0.5, 0.9), theme.fill);
+  QCOMPARE(at("Right", 0.5, 0.9), theme.fill);
+  QCOMPARE(at("Far", 0.5, 0.9), theme.fill);
+  // the background of the canvas is the one of the look, with no dots at this place
+  QCOMPARE(image.pixelColor(25, 25).rgb(), theme.background.rgb());
+
+  // where the computers touch: the link is the colour of a connection (a quarter down, between the handles)
+  const auto touching = canvas->toWidget(1920, 270);
+  QCOMPARE(image.pixelColor((touching * 2).toPoint()), theme.link);
+
+  // the selection is a ring of the accent around the computer
+  const auto right = canvas->boxOf("Right");
+  const auto ring = QPoint(static_cast<int>(right.right() * 2) + 2, static_cast<int>((right.top() + right.height() * 0.25) * 2));
+  QCOMPARE(image.pixelColor(ring), theme.selected);
+
+  // what is wrong is hatched and dashed in the colour of an error, so that it is not told by the colour alone
+  auto wrong = canvasOf({{pc("A", kHd, 0, 0), pc("B", kHd, 1000, 100)}});
+  const auto overlap = render(*wrong).toImage();
+  bool hatched = false;
+  const auto overlapBox = wrong->boxOf("B");
+  for (int y = static_cast<int>(overlapBox.top()) * 2; y < overlapBox.bottom() * 2 && !hatched; ++y) {
+    for (int x = static_cast<int>(overlapBox.left()) * 2; x < overlapBox.left() * 2 + 400; ++x) {
+      const auto p = overlap.pixelColor(x, y);
+      if (qAbs(p.hueF() - theme.error.hueF()) < 0.03 && p.saturationF() > 0.2) {
+        hatched = true;
+        break;
+      }
+    }
+  }
+  QVERIFY(hatched);
+}
+
+void ArrangementCanvasTests::paint_followsTheDarkAndTheHighContrastLook_data()
+{
+  QTest::addColumn<bool>("dark");
+  QTest::addColumn<bool>("highContrast");
+  QTest::newRow("light") << false << false;
+  QTest::newRow("dark") << true << false;
+  QTest::newRow("high contrast") << false << true;
+}
+
+void ArrangementCanvasTests::paint_followsTheDarkAndTheHighContrastLook()
+{
+  QFETCH(bool, dark);
+  QFETCH(bool, highContrast);
+  DeskflowLook look(dark, highContrast);
+  const auto theme = deskflow::gui::style::currentCanvasTheme();
+  auto canvas = canvasOf(userArrangement());
+  const auto image = render(*canvas).toImage();
+  QCOMPARE(image.pixelColor(25, 25).rgb(), theme.background.rgb());
+  // a place of the first monitor of the server, away from its name
+  const auto inServer = (canvas->toWidget(200, 1000) * 2).toPoint();
+  QCOMPARE(image.pixelColor(inServer), theme.fillThis);
+  // the look changes while the canvas is there: it is painted again with the colours of the other one
+  QApplication::setStyle(QStringLiteral("Fusion"));
+  const auto after = render(*canvas).toImage();
+  QVERIFY(after.pixelColor(inServer) != theme.fillThis);
+}
+
+void ArrangementCanvasTests::accessibility_isAListOfTheComputers_withNamesRolesAndStates()
+{
+  DeskflowLook look;
+  auto canvas = canvasOf(userArrangement());
+  canvas->setStatus("9800X3D-5080", ArrangementCanvas::Status::Connected);
+  canvas->setStatus("SUBEOM-COPILOT", ArrangementCanvas::Status::Offline);
+  canvas->setSelected("SUBEOM-COPILOT");
+
+  QAccessible::setActive(true);
+  auto *list = QAccessible::queryAccessibleInterface(canvas.get());
+  QVERIFY(list);
+  QCOMPARE(roleName(list->role()), QStringLiteral("List"));
+  QCOMPARE(list->text(QAccessible::Name), QStringLiteral("Arrangement of the computers"));
+  QCOMPARE(list->childCount(), 4);
+
+  // the items are read in the order of Tab
+  QStringList names;
+  for (int i = 0; i < list->childCount(); ++i) {
+    auto *item = list->child(i);
+    QVERIFY(item);
+    QCOMPARE(roleName(item->role()), QStringLiteral("ListItem"));
+    QCOMPARE(list->indexOfChild(item), i);
+    QCOMPARE(item->parent(), list);
+    names << item->text(QAccessible::Name);
+    QVERIFY2(item->state().selectable && item->state().focusable, qPrintable(names.last()));
+    QVERIFY(!item->rect().isEmpty());
+  }
+  QCOMPARE(
+      names, QStringList({"9800X3D-5080", "SUBEOM-COPILOT", "Subeoms-MacBook-Pro.local", "Subeoms-Mac-mini.local"})
+  );
+
+  // what the colour says is said in words as well: this computer, connected or not, the size
+  QCOMPARE(list->child(0)->text(QAccessible::Description), QStringLiteral("connected, 2 displays · 4480 × 1440"));
+  QCOMPARE(list->child(1)->text(QAccessible::Description), QStringLiteral("not connected, 1920 × 1080, scale 125 %"));
+  QVERIFY(list->child(2)->text(QAccessible::Description).startsWith(QStringLiteral("this computer, ")));
+
+  // only the selected one is selected
+  QVERIFY(!list->child(0)->state().selected);
+  QVERIFY(list->child(1)->state().selected);
+
+  // an error is in the words
+  auto wrong = canvasOf({{pc("A", kHd, 0, 0), pc("B", kHd, 1000, 100)}});
+  auto *wrongList = QAccessible::queryAccessibleInterface(wrong.get());
+  QVERIFY(wrongList->child(0)->text(QAccessible::Description).contains(QStringLiteral("A and B overlap.")));
+
+  // the number of items follows the arrangement
+  canvas->setArrangement(twoApart());
+  QCOMPARE(list->childCount(), 2);
+  QVERIFY(list->child(1));
+  QVERIFY(!list->child(2));
+  QAccessible::setActive(false);
+}
+
+void ArrangementCanvasTests::accessibility_pressSelectsTheComputer()
+{
+  DeskflowLook look;
+  auto canvas = canvasOf(userArrangement());
+  QSignalSpy selected(canvas.get(), &ArrangementCanvas::selectedChanged);
+  auto *list = QAccessible::queryAccessibleInterface(canvas.get());
+  auto *item = list->child(3);
+  auto *actions = item->actionInterface();
+  QVERIFY(actions);
+  QVERIFY(actions->actionNames().contains(QAccessibleActionInterface::pressAction()));
+  actions->doAction(QAccessibleActionInterface::pressAction());
+  QCOMPARE(canvas->selected(), QStringLiteral("Subeoms-Mac-mini.local"));
+  QVERIFY(item->state().selected);
+  QCOMPARE(selected.count(), 1);
+}
+
+void ArrangementCanvasTests::accessibility_inTheSystemLook_isWhatItWas()
+{
+  auto canvas = canvasOf(userArrangement());
+  auto *interface = QAccessible::queryAccessibleInterface(canvas.get());
+  QVERIFY(interface);
+  QCOMPARE(interface->childCount(), 0);
+  QVERIFY(roleName(interface->role()) != QStringLiteral("List"));
+  QCOMPARE(interface->text(QAccessible::Name), QStringLiteral("Arrangement of the computers"));
 }
 
 QTEST_MAIN(ArrangementCanvasTests)

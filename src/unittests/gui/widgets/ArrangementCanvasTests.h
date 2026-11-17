@@ -40,4 +40,20 @@ private Q_SLOTS:
   void issues_areFoundAndTold();
   void render_showsTheComputers_andCanBeSaved();
   void screenshots_areMadeOfTheStatesTheUserSees();
+
+  // phase 5: the keys, the colours and the tree of a screen reader in the new look (Appearance=Deskflow); with the system
+  // look nothing of it is there
+  void tab_inTheSystemLook_leavesTheCanvasAsItAlwaysDid();
+  void tab_goesThroughTheComputersInTheOrderOfTheScreen_andLeavesAtTheEnds();
+  void tab_comingIn_selectsTheFirstOrTheLast();
+  void enterAndSpace_selectWhereTheKeysAre_andLeaveWhatIsSelectedToTheDialog();
+  void arrows_moveTheSelectedComputerByAStep_inTheNewLookToo();
+  void focus_isSeenOnTheSelectedComputer_andOnTheCanvasWhenNothingIsSelected();
+  void paint_inTheSystemLook_isTheOldColours();
+  void paint_colourMeansThisComputerConnectedSelectedAndError();
+  void paint_followsTheDarkAndTheHighContrastLook_data();
+  void paint_followsTheDarkAndTheHighContrastLook();
+  void accessibility_isAListOfTheComputers_withNamesRolesAndStates();
+  void accessibility_pressSelectsTheComputer();
+  void accessibility_inTheSystemLook_isWhatItWas();
 };

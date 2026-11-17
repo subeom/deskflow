@@ -5,10 +5,13 @@
 
 #pragma once
 
+#include "gui/style/AccessibleItems.h"
+#include "gui/style/CanvasTheme.h"
 #include "server/Arrangement.h"
 #include "server/MonitorEditor.h"
 
 #include <QHash>
+#include <QPixmap>
 #include <QPointF>
 #include <QRectF>
 #include <QSize>
@@ -22,8 +25,13 @@
 Every computer is drawn as its monitors, in real proportion, in one shared space. A computer is dragged as a unit and
 snaps to the edges of the others; the links of the server configuration are where edges touch, which are highlighted.
 The widget only edits an \c Arrangement; what it means for the settings is done by whoever has it.
+
+With the style layer (Appearance=Deskflow) it is painted from the tokens of the look, with colour for this computer, the
+connected ones, the selected one and what is wrong only; its computers can be gone through with Tab (from the left to the
+right), selected with Enter and Space, moved with the arrow keys, and have a name, a role and a state for a screen reader.
+Without the style layer it is what it always was.
 */
-class ArrangementCanvas : public QWidget
+class ArrangementCanvas : public QWidget, public deskflow::gui::style::AccessibleItemSource
 {
   Q_OBJECT
 
@@ -96,6 +104,20 @@ public:
   QSize sizeHint() const override;
   QSize minimumSizeHint() const override;
 
+  //! The computers in the order that Tab goes through them, and a screen reader reads them: from the left to the right
+  //! by the middle of each, the one that is higher first when they are the same
+  QStringList computersInOrder() const;
+  //! What a screen reader is told of a computer: whether it is this one, whether it is connected, its size, and what is
+  //! wrong with it
+  QString describeComputer(const QString &computer) const;
+
+  int accessibleItemCount() const override;
+  QString accessibleItemName(int index) const override;
+  QString accessibleItemDescription(int index) const override;
+  QRect accessibleItemRect(int index) const override;
+  bool accessibleItemSelected(int index) const override;
+  void selectAccessibleItem(int index) override;
+
 Q_SIGNALS:
   //! A computer was dropped, or moved with the keys
   void arrangementChanged();
@@ -118,6 +140,9 @@ protected:
   void wheelEvent(QWheelEvent *event) override;
   void resizeEvent(QResizeEvent *event) override;
   bool event(QEvent *event) override;
+  void focusInEvent(QFocusEvent *event) override;
+  void focusOutEvent(QFocusEvent *event) override;
+  bool focusNextPrevChild(bool next) override;
 
 private:
   void recompute();
@@ -151,6 +176,16 @@ private:
   QPointF toUnits(const QPointF &point) const;
   void moveSelected(double dx, double dy);
   int indexOf(const QString &computer) const;
+  //! Painted from the tokens of the look: there is a style layer
+  bool themed() const
+  {
+    return m_themed;
+  }
+  void followLook();
+  const QPixmap &backdrop(qreal dpr) const;
+  void paintFocus(QPainter &painter) const;
+  //! Enter and Space select the computer that the keys were at, or the first one, when none is selected
+  bool selectAtTheKeys();
   //! The arrangement as it is while a computer is dragged: with the computer where it would drop
   deskflow::server::arrangement::Arrangement shownArrangement() const;
 
@@ -163,6 +198,13 @@ private:
   QString m_hovered;
   QHash<QString, QSize> m_reportedSizes;
   QString m_selected;
+  // where the keys are: the computer that was selected last, which a key selects again after a click on the background
+  QString m_cursor;
+
+  bool m_themed = false;
+  deskflow::gui::style::CanvasTheme m_theme;
+  // the canvas as it is when nothing is on it (the ground, its frame, the dots), kept for the size and the screen
+  mutable QPixmap m_backdrop;
 
   // arrangement to widget: scale and where the arrangement origin is
   mutable double m_scale = 0.1;
