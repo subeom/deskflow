@@ -61,12 +61,14 @@
 #include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkInterface>
+#include <QOperatingSystemVersion>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QScreen>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QVersionNumber>
 
 #include <memory>
 
@@ -307,8 +309,10 @@ void MainWindow::connectSlots()
   connect(m_actionStopCore, &QAction::triggered, this, &MainWindow::stopCore);
   connect(m_actionShowHelp, &QAction::triggered, this, &MainWindow::showHelpViewer);
 
-  // Mac os tray will only show a menu
-  if (!deskflow::platform::isMac())
+  // The tray menu is opened by the OS on macOS and by the tray extension on GNOME: a click is not taken there
+  if (deskflow::gui::tray::clickTogglesWindow(
+          deskflow::platform::isMac(), qEnvironmentVariable("XDG_CURRENT_DESKTOP")
+      ))
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, &MainWindow::trayIconActivated);
 
   connect(&m_coreProcess, &CoreProcess::connectedClientsChanged, this, &MainWindow::serverClientsChanged);
@@ -822,6 +826,13 @@ void MainWindow::createMenuBar()
 
 void MainWindow::setupTrayIcon()
 {
+  // Qt before 6.11.3 ends the program at a click on the status item of macOS 27 (QTBUG-147449)
+  if (deskflow::gui::tray::trayClickCanCrash(
+          QVersionNumber::fromString(QString::fromLatin1(qVersion())),
+          deskflow::platform::isMac() ? QOperatingSystemVersion::current().majorVersion() : 0
+      ))
+    qWarning() << "this build uses Qt" << qVersion() << ": a click on the tray icon can end the program on macOS 27";
+
   auto trayMenu = new QMenu(this);
   trayMenu->addActions(
       {m_actionStartCore, m_actionRestartCore, m_actionStopCore, m_actionMinimize, m_actionRestore, m_actionTrayQuit}
@@ -1053,6 +1064,14 @@ bool MainWindow::maybeHideToTray()
     return false;
   }
 
+  if (action == CloseAction::Minimize) {
+    // there is no tray (GNOME without its extension): a window that is hidden could not be found again
+    qDebug() << "no system tray, minimizing instead of hiding to tray";
+    Settings::setValue(Settings::Gui::WindowGeometry, geometry());
+    showMinimized();
+    return true;
+  }
+
   if (Settings::value(Settings::Gui::CloseReminder).toBool()) {
     messages::showCloseReminder(this);
     Settings::setValue(Settings::Gui::CloseReminder, false);
@@ -1064,14 +1083,6 @@ bool MainWindow::maybeHideToTray()
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
-  if (action == CloseAction::Minimize) {
-    // there is no tray (GNOME without its extension): a window that is hidden could not be found again
-    qDebug() << "no system tray, minimizing instead of hiding to tray";
-    Settings::setValue(Settings::Gui::WindowGeometry, geometry());
-    showMinimized();
-    return true;
-  }
-
 {
   if (event->spontaneous() && maybeHideToTray()) {
     event->ignore();
