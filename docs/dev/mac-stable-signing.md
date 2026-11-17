@@ -77,8 +77,8 @@ openssl req -x509 -newkey rsa:2048 -noenc -sha256 -days 3650 \
 # A keychain file of its own: not the login keychain and not the system keychain.
 security create-keychain -p "$(cat "$PASSWORD_FILE")" "$KEYCHAIN"
 security list-keychains -d user          # the new keychain must not be in the search list; if it is, put the list back as it was
-security set-keychain-settings -u -t 10800 "$KEYCHAIN"        # it locks again after 3 hours
 security unlock-keychain -p "$(cat "$PASSWORD_FILE")" "$KEYCHAIN"
+security set-keychain-settings "$KEYCHAIN"        # no timeout and no lock on sleep: it stays unlocked (see "Never let a command meet a locked keychain")
 security import "$WORK/id.p12" -k "$KEYCHAIN" -P "$(cat "$PASSWORD_FILE")" -T /usr/bin/codesign
 # so that codesign can use the key without a prompt that nobody can click
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$(cat "$PASSWORD_FILE")" "$KEYCHAIN"
@@ -98,6 +98,7 @@ whoever publishes the releases and is not in this repository (the install rules 
 bundled Qt frameworks do not survive without a Team ID):
 
 ```sh
+# first, every time: unlock; when this fails, stop and do not run codesign (it would open a password window)
 security unlock-keychain -p "$(cat "$PASSWORD_FILE")" "$KEYCHAIN"
 codesign --force --deep --sign 39b1c21df0ba75cdde058fcbb09a1ad38aef8055 --keychain "$KEYCHAIN" --timestamp=none Deskflow.app
 
@@ -108,6 +109,25 @@ codesign -dvvv Deskflow.app         # flags=0x0(none): no hardened runtime; Auth
 
 `--deep` signs every nested Mach-O file (the Qt frameworks, the plug-ins and `deskflow-core`) first and the app last. Every one of those code objects has to
 have the requirement `identifier "<its identifier>" and certificate leaf = H"39b1..."` and no `cdhash`.
+
+## Never let a command meet a locked keychain
+
+The password of the keychain is a random value in a file; nobody knows it by heart. A `security` or `codesign` call that finds the keychain **locked**
+makes macOS open an "enter the keychain password" window on the screen of whoever is logged in, and that includes harmless calls such as
+`security show-keychain-info`. Nobody can answer that window. Killing the call that opened it does not close the window, and in one case it was followed by
+the system service refusing the *right* password for that keychain **file path** (the same file unlocked without a problem under another file name,
+and renaming the file was the way out); the cause was not established.
+
+So:
+
+- Unlock first, every time, right before the keychain is used, with the password from the file, and go on only when the unlock succeeded. When it
+  failed, do not call `security` or `codesign` on that keychain at all.
+- Never lock it again by hand, and give it no timeout (`security set-keychain-settings "$KEYCHAIN"` without `-t` and without `-l`). It then stays
+  unlocked until the user logs out or the Mac restarts, and the next build begins with the unlock again.
+- The unlock can be done through the Security framework with `SecKeychainSetUserInteractionAllowed(false)` (a few lines of Python with `ctypes` are
+  enough): a failed unlock then returns an error and cannot open a window. `SecKeychainGetStatus` tells whether the keychain is locked, which no `security`
+  command tells without the risk of that window.
+- Always name the keychain: a `security` command without a keychain argument acts on the login keychain of the user.
 
 ## Check a build
 
