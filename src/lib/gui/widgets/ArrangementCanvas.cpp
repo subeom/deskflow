@@ -1071,54 +1071,24 @@ void ArrangementCanvas::focusOutEvent(QFocusEvent *event)
   update();
 }
 
-// Where the keys are, which the ring of the selection is not: a ring of the colour of the text outside of it, and when no
-// computer is selected the edge of the canvas
+// Where the keys are, which the ring of the selection is not
 void ArrangementCanvas::paintFocus(QPainter &painter) const
 {
-  painter.save();
-  painter.setBrush(Qt::NoBrush);
-  painter.setPen(QPen(m_theme.focus, 2));
+  QList<QRectF> around;
   if (const auto index = indexOf(m_selected); index >= 0) {
     for (const auto &r : shownArrangement().computers[static_cast<size_t>(index)].monitorRects())
-      painter.drawRoundedRect(toWidget(r).adjusted(-5, -5, 5, 5), 7, 7);
-  } else {
-    painter.drawRoundedRect(QRectF(rect()).adjusted(1, 1, -1, -1), deskflow::gui::style::metrics::radiusControl, deskflow::gui::style::metrics::radiusControl);
+      around << toWidget(r);
   }
-  painter.restore();
+  deskflow::gui::style::paintCanvasFocus(&painter, m_theme, size(), around);
 }
 
-// The canvas as it is with nothing on it: the ground with the frame and the dots of the grid, rounded like the other
-// controls of the look. Kept for the size and the device pixel ratio that it is painted at: a drag paints the rest at
-// every move
+// The canvas as it is with nothing on it, kept for the size and the device pixel ratio that it is painted at: a drag
+// paints the rest at every move
 const QPixmap &ArrangementCanvas::backdrop(qreal dpr) const
 {
   const auto pixels = QSizeF(size() * dpr).toSize();
-  if (!m_backdrop.isNull() && m_backdrop.size() == pixels && qFuzzyCompare(m_backdrop.devicePixelRatio(), dpr))
-    return m_backdrop;
-  QPixmap pixmap(pixels);
-  pixmap.setDevicePixelRatio(dpr);
-  pixmap.fill(Qt::transparent);
-  QPainter p(&pixmap);
-  p.setRenderHint(QPainter::Antialiasing);
-  constexpr auto radius = deskflow::gui::style::metrics::radiusControl;
-  QPainterPath path;
-  path.addRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
-  p.fillPath(path, m_theme.background);
-  if (m_theme.showDots) {
-    p.setClipPath(path);
-    p.setPen(Qt::NoPen);
-    p.setBrush(m_theme.dots);
-    for (int y = 8; y < height(); y += 16) {
-      for (int x = 8; x < width(); x += 16)
-        p.drawEllipse(QPointF(x, y), 1.0, 1.0);
-    }
-    p.setClipping(false);
-  }
-  p.setPen(QPen(m_theme.frame, 1));
-  p.setBrush(Qt::NoBrush);
-  p.drawPath(path);
-  p.end();
-  m_backdrop = pixmap;
+  if (m_backdrop.isNull() || m_backdrop.size() != pixels || !qFuzzyCompare(m_backdrop.devicePixelRatio(), dpr))
+    m_backdrop = deskflow::gui::style::paintCanvasBackdrop(m_theme, size(), dpr);
   return m_backdrop;
 }
 

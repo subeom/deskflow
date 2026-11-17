@@ -30,6 +30,14 @@ private Q_SLOTS:
   void reported_drawingYourOwn_enablesTheEditing();
   void screenshots_areMadeOfTheEditor();
 
+  // phase 5: the editor in the new look (Appearance=Deskflow); with the system look it is what it was
+  void newLook_hasTheBarOfActionsAndTheNumbersClosedUnderADisclosure();
+  void newLook_theDisclosureOpensWithTheMouseAndTheKeys();
+  void newLook_tabGoesThroughTheMonitors_enterAndSpaceSelect();
+  void newLook_monitorsAreNeutral_andTheSelectedOneAndWhatIsWrongHaveColour();
+  void newLook_aScreenReaderGetsAListOfTheMonitors();
+  void systemLook_isTheEditorItWas();
+
 private:
   QTemporaryDir m_settingsDir;
 };

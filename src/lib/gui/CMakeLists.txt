@@ -185,6 +185,8 @@ add_library(${target} STATIC
   widgets/ArrangementCanvas.h
   widgets/ArrangementPanel.cpp
   widgets/ArrangementPanel.h
+  widgets/DisclosureBox.cpp
+  widgets/DisclosureBox.h
   widgets/LayoutNoticeBar.cpp
   widgets/LayoutNoticeBar.h
   widgets/MonitorEditorWidget.cpp

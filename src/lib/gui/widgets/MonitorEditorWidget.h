@@ -6,8 +6,11 @@
 
 #pragma once
 
+#include "gui/style/AccessibleItems.h"
+#include "gui/style/CanvasTheme.h"
 #include "server/MonitorEditor.h"
 
+#include <QPixmap>
 #include <QWidget>
 
 #include <optional>
@@ -20,8 +23,13 @@
  * All the geometry is in \c deskflow::server::editor; this draws it, hands it the mouse, and says when a change is
  * done. A monitor is dragged to move it, its edges and corners are dragged to resize it (with guides and snapping), and
  * the keys nudge, rotate and delete the selected one.
+ *
+ * With the style layer (Appearance=Deskflow) it is painted from the tokens of the look like the arrangement canvas
+ * (neutral monitors, the accent for the selected one, the colour of an error for what is wrong), Tab goes through the
+ * monitors, Enter and Space select, a ring shows where the keys are, and a screen reader gets a list of monitors.
+ * Without the style layer it is what it always was.
  */
-class MonitorEditorWidget : public QWidget
+class MonitorEditorWidget : public QWidget, public deskflow::gui::style::AccessibleItemSource
 {
   Q_OBJECT
 
@@ -62,6 +70,13 @@ public:
   QSize sizeHint() const override;
   QSize minimumSizeHint() const override;
 
+  int accessibleItemCount() const override;
+  QString accessibleItemName(int index) const override;
+  QString accessibleItemDescription(int index) const override;
+  QRect accessibleItemRect(int index) const override;
+  bool accessibleItemSelected(int index) const override;
+  void selectAccessibleItem(int index) override;
+
 Q_SIGNALS:
   //! A change is done: the mouse was released, or a key was pressed
   void drawingChanged(const deskflow::server::editor::Layout &layout);
@@ -75,6 +90,9 @@ protected:
   void mouseReleaseEvent(QMouseEvent *event) override;
   void keyPressEvent(QKeyEvent *event) override;
   void leaveEvent(QEvent *event) override;
+  void focusInEvent(QFocusEvent *event) override;
+  void focusOutEvent(QFocusEvent *event) override;
+  bool focusNextPrevChild(bool next) override;
 
 private:
   bool m_readOnly = false;
@@ -108,6 +126,9 @@ private:
     return m_drag.active ? m_drag.preview : m_layout;
   }
   QColor colorOf(size_t index) const;
+  void followLook();
+  const QPixmap &backdrop(qreal dpr) const;
+  bool selectAtTheKeys();
 
   deskflow::server::editor::Layout m_layout;
   std::optional<std::pair<double, double>> m_targetSize;
@@ -117,4 +138,11 @@ private:
   mutable QPointF m_origin;
   mutable bool m_needsFit = true;
   Drag m_drag;
+
+  // painted from the tokens of the look: there is a style layer
+  bool m_themed = false;
+  deskflow::gui::style::CanvasTheme m_theme;
+  mutable QPixmap m_backdrop;
+  // where the keys are: the monitor that was selected last, which a key selects again after a click on the background
+  int m_cursor = -1;
 };

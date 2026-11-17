@@ -9,6 +9,9 @@
 #include "Appearance.h"
 #include "Contrast.h"
 
+#include <QPainter>
+#include <QPainterPath>
+
 #include <algorithm>
 #include <initializer_list>
 
@@ -70,6 +73,51 @@ CanvasTheme canvasThemeFor(const Tokens &tokens, const Look &look)
 CanvasTheme currentCanvasTheme()
 {
   return canvasThemeFor(currentTokens(), currentLook());
+}
+
+QPixmap paintCanvasBackdrop(const CanvasTheme &theme, const QSize &size, qreal dpr)
+{
+  QPixmap pixmap(QSizeF(size * dpr).toSize());
+  pixmap.setDevicePixelRatio(dpr);
+  pixmap.fill(Qt::transparent);
+  QPainter p(&pixmap);
+  p.setRenderHint(QPainter::Antialiasing);
+  QPainterPath path;
+  path.addRoundedRect(
+      QRectF(QPointF(0, 0), QSizeF(size)).adjusted(0.5, 0.5, -0.5, -0.5), metrics::radiusControl, metrics::radiusControl
+  );
+  p.fillPath(path, theme.background);
+  if (theme.showDots) {
+    p.setClipPath(path);
+    p.setPen(Qt::NoPen);
+    p.setBrush(theme.dots);
+    for (int y = 8; y < size.height(); y += 16) {
+      for (int x = 8; x < size.width(); x += 16)
+        p.drawEllipse(QPointF(x, y), 1.0, 1.0);
+    }
+    p.setClipping(false);
+  }
+  p.setPen(QPen(theme.frame, 1));
+  p.setBrush(Qt::NoBrush);
+  p.drawPath(path);
+  return pixmap;
+}
+
+void paintCanvasFocus(QPainter *painter, const CanvasTheme &theme, const QSize &canvas, const QList<QRectF> &around)
+{
+  painter->save();
+  painter->setBrush(Qt::NoBrush);
+  painter->setPen(QPen(theme.focus, 2));
+  if (around.isEmpty()) {
+    painter->drawRoundedRect(
+        QRectF(QPointF(0, 0), QSizeF(canvas)).adjusted(1, 1, -1, -1), metrics::radiusControl, metrics::radiusControl
+    );
+  } else {
+    // the ring of the selection is 3 px wide, 1 px out: the ring of the keys leaves a gap of 1.5 px from it
+    for (const auto &r : around)
+      painter->drawRoundedRect(r.adjusted(-5, -5, 5, 5), 7, 7);
+  }
+  painter->restore();
 }
 
 } // namespace deskflow::gui::style

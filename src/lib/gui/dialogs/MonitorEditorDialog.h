@@ -60,6 +60,8 @@ public:
   }
 
 private:
+  void buildClassicLayout();
+  void buildDeskflowLayout();
   void changeTo(const deskflow::server::editor::Layout &layout, int selected = -2);
   void refresh();
   void syncControls();

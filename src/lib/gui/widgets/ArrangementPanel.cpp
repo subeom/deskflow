@@ -9,11 +9,16 @@
 #include "gui/dialogs/LayoutProfilesDialog.h"
 #include "gui/layout/LayoutMemoryService.h"
 #include "gui/layout/ServerConfigLayout.h"
+#include "gui/style/Appearance.h"
+#include "gui/style/DesignTokens.h"
+#include "gui/style/Icons.h"
+#include "gui/style/LookFollower.h"
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/LayoutNoticeBar.h"
 
 #include <QCheckBox>
 #include <QFont>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
@@ -105,8 +110,17 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   m_btnEdit->setToolTip(tr("The settings of the selected computer, and its monitors and size as numbers."));
   m_btnRemove->setToolTip(tr("Take the selected computer out of the configuration."));
 
+  const bool themed = deskflow::gui::style::isDeskflowStyleInstalled();
   auto *header = new QHBoxLayout;
   header->addWidget(m_lblTitle, 1);
+  // the view is a thing of the canvas, not of the computers: one icon by the way back, with the name that it has
+  if (themed) {
+    m_btnFit->setIcon(deskflow::gui::style::icon(QStringLiteral("arrows-out")));
+    m_btnFit->setFlat(true);
+    m_btnFit->setText(QString());
+    m_btnFit->setAccessibleName(tr("Zoom to fit"));
+    header->addWidget(m_btnFit);
+  }
   header->addWidget(m_btnClassicGrid);
 
   m_chkRemember->setObjectName(QStringLiteral("cbRememberArrangements"));
@@ -125,13 +139,43 @@ ArrangementPanel::ArrangementPanel(ServerConfig &config, QWidget *parent)
   memory->addWidget(m_btnLayouts);
 
   auto *buttons = new QHBoxLayout;
-  buttons->addWidget(m_btnFit);
-  buttons->addWidget(m_btnReset);
-  buttons->addStretch(1);
-  buttons->addWidget(m_btnAdd);
-  buttons->addWidget(m_btnMonitors);
-  buttons->addWidget(m_btnEdit);
-  buttons->addWidget(m_btnRemove);
+  if (themed) {
+    // what is done to the arrangement on the left, what is done to the computer that is selected on the right, and
+    // what takes it out of the configuration apart from the others
+    using deskflow::gui::style::icon;
+    m_btnAdd->setIcon(icon(QStringLiteral("plus")));
+    m_btnReset->setIcon(icon(QStringLiteral("arrow-clockwise")));
+    m_btnMonitors->setIcon(icon(QStringLiteral("monitor")));
+    m_btnEdit->setIcon(icon(QStringLiteral("pencil-simple")));
+    m_btnRemove->setIcon(icon(QStringLiteral("trash"), deskflow::gui::style::IconColor::Danger));
+    m_btnRemove->setFlat(true);
+    // the text of the button that takes a computer out is the colour of what is not undone
+    new deskflow::gui::style::LookFollower(m_btnRemove, [this] {
+      auto palette = m_btnRemove->palette();
+      for (const auto group : {QPalette::Active, QPalette::Inactive})
+        palette.setColor(group, QPalette::ButtonText, deskflow::gui::style::currentTokens().colors.danger);
+      m_btnRemove->setPalette(palette);
+    });
+    auto *divider = new QFrame(this);
+    divider->setFrameShape(QFrame::VLine);
+    divider->setFrameShadow(QFrame::Plain);
+    divider->setObjectName(QStringLiteral("arrangementToolsDivider"));
+    buttons->addWidget(m_btnAdd);
+    buttons->addWidget(m_btnReset);
+    buttons->addStretch(1);
+    buttons->addWidget(m_btnMonitors);
+    buttons->addWidget(m_btnEdit);
+    buttons->addWidget(divider);
+    buttons->addWidget(m_btnRemove);
+  } else {
+    buttons->addWidget(m_btnFit);
+    buttons->addWidget(m_btnReset);
+    buttons->addStretch(1);
+    buttons->addWidget(m_btnAdd);
+    buttons->addWidget(m_btnMonitors);
+    buttons->addWidget(m_btnEdit);
+    buttons->addWidget(m_btnRemove);
+  }
 
   auto *layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);

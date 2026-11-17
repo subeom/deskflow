@@ -7,9 +7,13 @@
 
 #include "common/Settings.h"
 #include "dialogs/MonitorEditorDialog.h"
+#include "gui/style/CanvasTheme.h"
+#include "gui/style/DeskflowStyle.h"
+#include "gui/widgets/DisclosureBox.h"
 #include "gui/widgets/MonitorEditorWidget.h"
 #include "server/MonitorEditor.h"
 
+#include <QAccessible>
 #include <QApplication>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -17,10 +21,13 @@
 #include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMetaEnum>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QSpinBox>
+#include <QStyle>
+#include <QStyleOptionGroupBox>
 #include <QTest>
 
 #include <cmath>
@@ -132,6 +139,45 @@ void saveGrab(QWidget &widget, const QString &name)
 Realised madeOf(const Opened &opened)
 {
   return opened.dialog->realised();
+}
+
+// The look of the application while the test runs: the one of Appearance=Deskflow; the system look (Fusion) again at the end
+struct DeskflowLook
+{
+  DeskflowLook()
+  {
+    auto *style = new deskflow::gui::style::DeskflowStyle;
+    QApplication::setStyle(style);
+    deskflow::gui::style::Look look;
+    look.reduceTransparency = true;
+    look.reduceMotion = true;
+    style->useLook(look);
+  }
+  ~DeskflowLook()
+  {
+    QApplication::setStyle(QStringLiteral("Fusion"));
+  }
+};
+
+// Counts the presses of a key that reach what it is installed on
+struct KeyCounter : QObject
+{
+  explicit KeyCounter(Qt::Key key) : key(key)
+  {
+  }
+  bool eventFilter(QObject *, QEvent *event) override
+  {
+    if (event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->key() == key)
+      ++count;
+    return false;
+  }
+  Qt::Key key;
+  int count = 0;
+};
+
+QString roleName(QAccessible::Role role)
+{
+  return QString::fromLatin1(QMetaEnum::fromType<QAccessible::Role>().valueToKey(role));
 }
 
 } // namespace
@@ -587,6 +633,235 @@ void MonitorEditorDialogTests::screenshots_areMadeOfTheEditor()
     QApplication::processEvents();
     saveGrab(*opened.dialog, QStringLiteral("12-monitor-editor-reported-monitors.png"));
   }
+}
+
+
+void MonitorEditorDialogTests::newLook_hasTheBarOfActionsAndTheNumbersClosedUnderADisclosure()
+{
+  DeskflowLook look;
+  auto opened = open(windowsPc(), kMatching);
+  // the same widgets, found by the names that they always had
+  for (const auto *name :
+       {"btnRotate", "btnMakeMain", "btnAddMonitor", "btnRemoveMonitor", "btnUndo", "btnRedo", "cbResolution", "cbScale",
+        "btnStretchToReported", "lblMonitorStatus", "groupAdvancedNumbers", "monitorEditorButtons"}) {
+    QVERIFY2(opened.dialog->findChild<QWidget *>(QString::fromLatin1(name)), name);
+  }
+  // the actions on the monitors are a bar of flat buttons with an icon each, over the canvas, in the order of the design
+  const QStringList bar = {"btnRotate", "btnMakeMain", "btnAddMonitor", "btnRemoveMonitor", "btnUndo", "btnRedo"};
+  int previousX = -1;
+  for (const auto &name : bar) {
+    auto *button = child<QPushButton>(opened, qPrintable(name));
+    QVERIFY2(button->isFlat() && !button->icon().isNull(), qPrintable(name));
+    QVERIFY2(button->geometry().bottom() < opened.widget->geometry().top(), qPrintable(name));
+    QVERIFY2(button->mapTo(opened.dialog.get(), QPoint(0, 0)).x() > previousX, qPrintable(name));
+    previousX = button->mapTo(opened.dialog.get(), QPoint(0, 0)).x();
+  }
+  // what the selected monitor is goes in a column beside the canvas
+  auto *resolution = child<QComboBox>(opened, "cbResolution");
+  QVERIFY(resolution->mapTo(opened.dialog.get(), QPoint(0, 0)).x() > opened.widget->geometry().right());
+
+  // the numbers are closed, and what ticks the disclosure opens them
+  auto *group = child<QGroupBox>(opened, "groupAdvancedNumbers");
+  QVERIFY(qobject_cast<DisclosureBox *>(group));
+  QVERIFY(!group->isChecked());
+  QVERIFY(!child<QPlainTextEdit>(opened, "textNumbers")->isVisibleTo(opened.dialog.get()));
+  group->setChecked(true);
+  QVERIFY(child<QPlainTextEdit>(opened, "textNumbers")->isVisibleTo(opened.dialog.get()));
+  QCOMPARE(
+      child<QPlainTextEdit>(opened, "textNumbers")->toPlainText(), QStringLiteral("0,0,2560,1440;-2880,-180,2880,1620")
+  );
+}
+
+void MonitorEditorDialogTests::newLook_theDisclosureOpensWithTheMouseAndTheKeys()
+{
+  DeskflowLook look;
+  auto opened = open(windowsPc(), kMatching);
+  auto *group = child<QGroupBox>(opened, "groupAdvancedNumbers");
+  auto *numbers = child<QPlainTextEdit>(opened, "textNumbers");
+  QVERIFY(!numbers->isVisibleTo(opened.dialog.get()));
+  // the title is what is clicked
+  QStyleOptionGroupBox box;
+  box.initFrom(group);
+  box.text = group->title();
+  box.subControls = QStyle::SC_GroupBoxLabel | QStyle::SC_GroupBoxCheckBox;
+  box.features = QStyleOptionFrame::Flat;
+  box.textAlignment = Qt::AlignLeft;
+  const auto title = group->style()->subControlRect(QStyle::CC_GroupBox, &box, QStyle::SC_GroupBoxLabel, group);
+  QVERIFY(!title.isEmpty());
+  QTest::mouseClick(group, Qt::LeftButton, {}, title.center());
+  QVERIFY(group->isChecked());
+  QVERIFY(numbers->isVisibleTo(opened.dialog.get()));
+  group->setFocus();
+  QTest::keyClick(group, Qt::Key_Space);
+  QVERIFY(!group->isChecked());
+  QVERIFY(!numbers->isVisibleTo(opened.dialog.get()));
+
+  // a screen reader is told that it is a button that is expanded or collapsed, and it can press it
+  auto *interface = QAccessible::queryAccessibleInterface(group);
+  QVERIFY(interface);
+  QCOMPARE(roleName(interface->role()), QStringLiteral("Button"));
+  QCOMPARE(interface->text(QAccessible::Name), QStringLiteral("Advanced: numbers"));
+  QVERIFY(interface->state().expandable && interface->state().collapsed && !interface->state().expanded);
+  interface->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+  QVERIFY(group->isChecked());
+  QVERIFY(interface->state().expanded && !interface->state().collapsed);
+}
+
+void MonitorEditorDialogTests::newLook_tabGoesThroughTheMonitors_enterAndSpaceSelect()
+{
+  DeskflowLook look;
+  auto opened = open(twoApart());
+  opened.widget->setSelected(-1);
+  opened.widget->setFocus();
+  QVERIFY(opened.widget->hasFocus());
+  QSignalSpy selected(opened.widget, &MonitorEditorWidget::selectionChanged);
+
+  QTest::keyClick(opened.widget, Qt::Key_Tab);
+  QCOMPARE(opened.widget->selected(), 0);
+  QTest::keyClick(opened.widget, Qt::Key_Tab);
+  QCOMPARE(opened.widget->selected(), 1);
+  QTest::keyClick(opened.widget, Qt::Key_Tab, Qt::ShiftModifier);
+  QCOMPARE(opened.widget->selected(), 0);
+  QVERIFY(opened.widget->hasFocus());
+  // after the last the focus leaves, as before the first: the keys are not held by the canvas
+  QTest::keyClick(opened.widget, Qt::Key_Tab);
+  QTest::keyClick(opened.widget, Qt::Key_Tab);
+  QVERIFY(!opened.widget->hasFocus());
+  QCOMPARE(opened.widget->selected(), 1);
+  QVERIFY(selected.count() >= 4);
+
+  // a click on the background takes the selection away: Enter and Space give it back, where the keys were
+  opened.widget->setFocus();
+  QTest::mouseClick(opened.widget, Qt::LeftButton, {}, QPoint(3, 3));
+  QCOMPARE(opened.widget->selected(), -1);
+  QTest::keyClick(opened.widget, Qt::Key_Space);
+  QCOMPARE(opened.widget->selected(), 1);
+  // a monitor that is selected leaves Enter to the dialog (its default button), as it was: the key reaches the dialog
+  KeyCounter reaching(Qt::Key_Return);
+  opened.dialog->installEventFilter(&reaching);
+  QTest::keyClick(opened.widget, Qt::Key_Return);
+  QCOMPARE(reaching.count, 1);
+  opened.dialog->removeEventFilter(&reaching);
+
+  // the keys that were there are still there
+  QTest::keyClick(opened.widget, Qt::Key_Right);
+  QCOMPARE(opened.dialog->drawing().monitors[1].x, 2301.0);
+}
+
+void MonitorEditorDialogTests::newLook_monitorsAreNeutral_andTheSelectedOneAndWhatIsWrongHaveColour()
+{
+  DeskflowLook look;
+  const auto theme = deskflow::gui::style::currentCanvasTheme();
+  auto opened = open(twoApart());
+  opened.widget->setSelected(0);
+  opened.widget->clearFocus();
+  const auto image = opened.widget->grab().toImage();
+  // away from the names and the handles: low in each monitor
+  const auto at = [&](int index) {
+    const auto r = opened.widget->rectOf(index);
+    return image.pixelColor(QPoint(static_cast<int>(r.left() + r.width() * 0.85), static_cast<int>(r.top() + r.height() * 0.9)));
+  };
+  QCOMPARE(at(0), theme.fill);
+  QCOMPARE(at(1), theme.fill);
+  // the selected one has the ring of the accent
+  const auto first = opened.widget->rectOf(0);
+  QCOMPARE(image.pixelColor(QPoint(static_cast<int>(first.left() + first.width() * 0.25), static_cast<int>(first.top()) + 1)), theme.selected);
+
+  // an overlap is hatched in the colour of an error
+  auto wrong = open(Layout{{[] {
+                     Monitor m;
+                     m.w = 1920;
+                     m.h = 1080;
+                     return m;
+                   }(),
+                            [] {
+                              Monitor m;
+                              m.x = 600;
+                              m.y = 300;
+                              m.w = 1920;
+                              m.h = 1080;
+                              return m;
+                            }()}});
+  wrong.widget->setSelected(-1);
+  const auto overlap = wrong.widget->grab().toImage();
+  bool hatched = false;
+  const auto box = wrong.widget->rectOf(1);
+  for (int y = static_cast<int>(box.top()); y < box.bottom() && !hatched; ++y) {
+    for (int x = static_cast<int>(box.left()); x < box.left() + 200; ++x) {
+      const auto p = overlap.pixelColor(x, y);
+      if (qAbs(p.hueF() - theme.error.hueF()) < 0.03 && p.saturationF() > 0.2) {
+        hatched = true;
+        break;
+      }
+    }
+  }
+  QVERIFY(hatched);
+}
+
+void MonitorEditorDialogTests::newLook_aScreenReaderGetsAListOfTheMonitors()
+{
+  DeskflowLook look;
+  auto opened = open(windowsPc(), kMatching);
+  opened.widget->setSelected(1);
+  QAccessible::setActive(true);
+  auto *list = QAccessible::queryAccessibleInterface(opened.widget);
+  QVERIFY(list);
+  QCOMPARE(roleName(list->role()), QStringLiteral("List"));
+  QCOMPARE(list->text(QAccessible::Name), QStringLiteral("Monitors of the computer"));
+  QCOMPARE(list->childCount(), 2);
+  QCOMPARE(list->child(0)->text(QAccessible::Name), QStringLiteral("Monitor 1"));
+  QCOMPARE(list->child(1)->text(QAccessible::Name), QStringLiteral("Monitor 2"));
+  QCOMPARE(roleName(list->child(0)->role()), QStringLiteral("ListItem"));
+  QCOMPARE(list->child(0)->text(QAccessible::Description), QStringLiteral("2560 × 1440 · 150 %, main"));
+  QCOMPARE(list->child(1)->text(QAccessible::Description), QStringLiteral("1920 × 1080 · 100 %"));
+  QVERIFY(!list->child(0)->state().selected);
+  QVERIFY(list->child(1)->state().selected);
+  list->child(0)->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+  QCOMPARE(opened.widget->selected(), 0);
+
+  // what is wrong is said in words
+  auto apart = open(Layout{{[] {
+                              Monitor m;
+                              m.w = 1920;
+                              m.h = 1080;
+                              return m;
+                            }(),
+                            [] {
+                              Monitor m;
+                              m.x = 5000;
+                              m.y = 4000;
+                              m.w = 1920;
+                              m.h = 1080;
+                              return m;
+                            }()}});
+  auto *apartList = QAccessible::queryAccessibleInterface(apart.widget);
+  QVERIFY(apartList->child(1)->text(QAccessible::Description).contains(QStringLiteral("does not touch the others")));
+  QAccessible::setActive(false);
+}
+
+void MonitorEditorDialogTests::systemLook_isTheEditorItWas()
+{
+  auto opened = open(windowsPc(), kMatching);
+  // the controls are in the two rows that they have always had, under the canvas
+  const auto below = opened.widget->geometry().bottom();
+  for (const auto *name : {"cbResolution", "cbScale", "btnRotate", "btnMakeMain", "btnAddMonitor", "btnUndo"})
+    QVERIFY2(child<QWidget>(opened, name)->geometry().top() > below, name);
+  QVERIFY(!child<QPushButton>(opened, "btnRotate")->isFlat());
+  QVERIFY(child<QPushButton>(opened, "btnRotate")->icon().isNull());
+  // the numbers are a group box with a check box, and a screen reader is told so
+  auto *group = child<QGroupBox>(opened, "groupAdvancedNumbers");
+  QVERIFY(!group->isChecked());
+  auto *interface = QAccessible::queryAccessibleInterface(group);
+  QVERIFY(roleName(interface->role()) != QStringLiteral("Button"));
+  // the monitors are not told to a screen reader one by one, and each has its own colour
+  QCOMPARE(QAccessible::queryAccessibleInterface(opened.widget)->childCount(), 0);
+  opened.widget->setSelected(-1);
+  const auto image = opened.widget->grab().toImage();
+  const auto at = [&](int index) {
+    const auto r = opened.widget->rectOf(index);
+    return image.pixelColor(QPoint(static_cast<int>(r.left() + r.width() * 0.85), static_cast<int>(r.top() + r.height() * 0.9)));
+  };
+  QVERIFY(at(0) != at(1));
 }
 
 QTEST_MAIN(MonitorEditorDialogTests)

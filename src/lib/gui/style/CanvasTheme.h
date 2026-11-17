@@ -9,6 +9,12 @@
 #include "DesignTokens.h"
 
 #include <QColor>
+#include <QList>
+#include <QPixmap>
+#include <QRectF>
+#include <QSize>
+
+class QPainter;
 
 namespace deskflow::gui::style {
 
@@ -71,5 +77,20 @@ CanvasTheme canvasThemeFor(const Tokens &tokens, const Look &look);
 
 //! The colours of the canvas for the look that the application is painted with now
 CanvasTheme currentCanvasTheme();
+
+/*!
+ * The canvas as it is with nothing on it: the ground, rounded like the other controls of the look, with its frame and the
+ * dots of its grid (when the look has them). For the size (in device independent pixels) and the device pixel ratio that
+ * it is painted at; what is outside the rounded corners is transparent. The widgets keep it, because what is painted over
+ * it is painted at every move of a drag.
+ */
+QPixmap paintCanvasBackdrop(const CanvasTheme &theme, const QSize &size, qreal dpr);
+
+/*!
+ * The ring that tells where the keys are: around each of the rectangles (the monitors of the selected computer, the
+ * selected monitor), outside the ring of the selection, in the colour of the text; when there are none, along the edge of
+ * the canvas.
+ */
+void paintCanvasFocus(QPainter *painter, const CanvasTheme &theme, const QSize &canvas, const QList<QRectF> &around);
 
 } // namespace deskflow::gui::style
