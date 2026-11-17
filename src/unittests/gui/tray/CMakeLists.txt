@@ -13,3 +13,12 @@ create_test(
 target_include_directories(TrayWindowTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
 # the icons of the program (the tray menu asks for them by their names)
 target_sources(TrayWindowTests PRIVATE "${CMAKE_SOURCE_DIR}/src/apps/res/deskflow.qrc")
+
+create_test(
+  NAME TrayPolicyTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TrayPolicyTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(TrayPolicyTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")

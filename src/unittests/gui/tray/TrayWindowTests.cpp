@@ -17,6 +17,7 @@
 #include <QMenu>
 #include <QPixmapCache>
 #include <QSystemTrayIcon>
+#include <QTimer>
 
 #include <memory>
 
@@ -44,6 +45,15 @@ struct MainWindowTestAccess
   static void showAndActivate(MainWindow &w)
   {
     w.showAndActivate();
+  }
+  //! What the window does when the person closes it (a close that the OS sends): true when the program goes on
+  static bool closeAsTheOsDoes(MainWindow &w)
+  {
+    return w.maybeHideToTray();
+  }
+  static void setTrayAvailable(MainWindow &w, bool available)
+  {
+    w.m_trayAvailable = [available] { return available; };
   }
 };
 
@@ -100,6 +110,14 @@ QString row(
       .arg(role);
 }
 
+const QAction *actionNamed(const QMenu *menu, const QString &text)
+{
+  for (const auto *action : menu->actions())
+    if (action->text() == text)
+      return action;
+  return nullptr;
+}
+
 QString quitShortcut()
 {
   return deskflow::platform::isWindows() ? QStringLiteral("Ctrl+Q")
@@ -149,7 +167,7 @@ void TrayWindowTests::cleanup()
        {Settings::Core::CoreMode, Settings::Core::ComputerName, Settings::Security::TlsEnabled,
         Settings::Client::RemoteHost, Settings::Gui::ShownServerFirstStartMessage,
         Settings::Gui::ShownFirstConnectedMessage, Settings::Gui::AutoStartCore, Settings::Gui::Autohide,
-        Settings::Gui::CloseToTray, Settings::Gui::SymbolicTrayIcon, Settings::Gui::WindowGeometry})
+        Settings::Gui::CloseToTray, Settings::Gui::CloseReminder, Settings::Gui::SymbolicTrayIcon, Settings::Gui::WindowGeometry})
     Settings::setValue(key);
 }
 
@@ -220,14 +238,8 @@ void TrayWindowTests::systemLook_theWindowAndTheMenuTakeTurnsToOfferTheWindow()
 {
   auto window = makeWindow();
   const auto *menu = Access::trayIcon(*window)->contextMenu();
-  const auto find = [menu](const QString &text) -> const QAction * {
-    for (const auto *action : menu->actions())
-      if (action->text() == text)
-        return action;
-    return nullptr;
-  };
-  const auto *minimize = find(QStringLiteral("&Minimize to tray"));
-  const auto *open = find(QStringLiteral("&Open Deskflow"));
+  const auto *minimize = actionNamed(menu, QStringLiteral("&Minimize to tray"));
+  const auto *open = actionNamed(menu, QStringLiteral("&Open Deskflow"));
   QVERIFY(minimize && open);
 
   Access::hide(*window);
@@ -237,6 +249,53 @@ void TrayWindowTests::systemLook_theWindowAndTheMenuTakeTurnsToOfferTheWindow()
   Access::showAndActivate(*window);
   QVERIFY(!open->isVisible());
   QVERIFY(minimize->isVisible());
+}
+
+void TrayWindowTests::closeToTray_withATray_hidesTheWindow()
+{
+  Settings::setValue(Settings::Gui::CloseToTray, true);
+  Settings::setValue(Settings::Gui::CloseReminder, false);
+  auto window = makeWindow();
+  Access::setTrayAvailable(*window, true);
+  Access::showAndActivate(*window);
+  QVERIFY(QTest::qWaitForWindowExposed(window.get()));
+  const auto *open = actionNamed(Access::trayIcon(*window)->contextMenu(), QStringLiteral("&Open Deskflow"));
+  QVERIFY(open && !open->isVisible());
+
+  QVERIFY(Access::closeAsTheOsDoes(*window));
+  // the window is hidden (on macOS the program is: the tray then offers the window again)
+  QVERIFY(open->isVisible());
+  QVERIFY(!window->isMinimized());
+}
+
+void TrayWindowTests::closeToTray_withoutATray_keepsTheWindowWhereItCanBeFoundAgain()
+{
+  Settings::setValue(Settings::Gui::CloseToTray, true);
+  // the reminder says that the program is in the notification area: with no tray it is not said
+  Settings::setValue(Settings::Gui::CloseReminder, true);
+  auto window = makeWindow();
+  Access::setTrayAvailable(*window, false);
+  Access::showAndActivate(*window);
+  QVERIFY(QTest::qWaitForWindowExposed(window.get()));
+  const auto *open = actionNamed(Access::trayIcon(*window)->contextMenu(), QStringLiteral("&Open Deskflow"));
+  QVERIFY(open && !open->isVisible());
+
+  bool reminded = false;
+  QTimer::singleShot(200, qApp, [&reminded] {
+    if (auto *modal = QApplication::activeModalWidget()) {
+      reminded = true;
+      modal->close();
+    }
+  });
+  QVERIFY(Access::closeAsTheOsDoes(*window));
+  QTest::qWait(400);
+
+  QVERIFY(!reminded);
+  QVERIFY(Settings::value(Settings::Gui::CloseReminder).toBool());
+  // the window is not hidden for good: it is minimized, and the program goes on. The tray menu does not offer to open it
+  QVERIFY(window->isMinimized());
+  QVERIFY(window->isVisible());
+  QVERIFY(!open->isVisible());
 }
 
 QTEST_MAIN(TrayWindowTests)

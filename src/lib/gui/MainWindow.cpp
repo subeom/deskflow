@@ -40,6 +40,7 @@
 #include "gui/shell/StatusModel.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/Icons.h"
+#include "gui/tray/TrayPolicy.h"
 #include "gui/widgets/LayoutNoticeBar.h"
 #include "gui/widgets/LogDock.h"
 #include "gui/widgets/NavRail.h"
@@ -1045,7 +1046,10 @@ void MainWindow::handlePeerFingerprint(const QString &fingerprint)
 
 bool MainWindow::maybeHideToTray()
 {
-  if (!Settings::value(Settings::Gui::CloseToTray).toBool()) {
+  using deskflow::gui::tray::CloseAction;
+  const auto action =
+      deskflow::gui::tray::closeActionFor(Settings::value(Settings::Gui::CloseToTray).toBool(), m_trayAvailable());
+  if (action == CloseAction::Quit) {
     return false;
   }
 
@@ -1060,6 +1064,14 @@ bool MainWindow::maybeHideToTray()
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
+  if (action == CloseAction::Minimize) {
+    // there is no tray (GNOME without its extension): a window that is hidden could not be found again
+    qDebug() << "no system tray, minimizing instead of hiding to tray";
+    Settings::setValue(Settings::Gui::WindowGeometry, geometry());
+    showMinimized();
+    return true;
+  }
+
 {
   if (event->spontaneous() && maybeHideToTray()) {
     event->ignore();

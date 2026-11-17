@@ -24,6 +24,9 @@ private Q_SLOTS:
   void systemLook_aClientSaysConnectAndDisconnect();
   void systemLook_theWindowAndTheMenuTakeTurnsToOfferTheWindow();
 
+  void closeToTray_withATray_hidesTheWindow();
+  void closeToTray_withoutATray_keepsTheWindowWhereItCanBeFoundAgain();
+
 private:
   QTemporaryDir m_dir;
 };

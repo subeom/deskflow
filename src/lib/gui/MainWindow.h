@@ -15,6 +15,8 @@
 #include <QSystemTrayIcon>
 #include <QUrl>
 
+#include <functional>
+
 #include "VersionChecker.h"
 #include "config/ServerConfig.h"
 #include "gui/core/AddressClassifier.h"
@@ -220,6 +222,8 @@ private:
   QStringList m_checkedClients;
   QStringList m_checkedServers;
   QSystemTrayIcon *m_trayIcon = nullptr;
+  //! Whether the OS has a tray to hide the window in (the tests of the tray say what they need)
+  std::function<bool()> m_trayAvailable = [] { return QSystemTrayIcon::isSystemTrayAvailable(); };
   QLocalServer *m_guiDupeChecker = nullptr;
   deskflow::gui::ipc::DaemonIpcClient *m_daemonIpcClient = nullptr;
 
