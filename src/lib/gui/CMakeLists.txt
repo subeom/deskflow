@@ -130,6 +130,8 @@ add_library(${target} STATIC
   style/AppearanceHints.h
   style/BackdropWidget.cpp
   style/BackdropWidget.h
+  style/CanvasTheme.cpp
+  style/CanvasTheme.h
   style/Contrast.cpp
   style/Contrast.h
   style/DeskflowStyle.cpp
