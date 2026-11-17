@@ -163,6 +163,23 @@ add_library(${target} STATIC
   widgets/SettingsDialogButtonBox.h
 )
 
+# the Cloudflare Tunnel: the logic, without a window and without a process of its own
+target_sources(${target} PRIVATE
+  tunnel/CloudflaredLaunch.cpp
+  tunnel/CloudflaredLaunch.h
+  tunnel/CloudflaredLocator.cpp
+  tunnel/CloudflaredLocator.h
+  tunnel/CloudflaredLogParser.cpp
+  tunnel/CloudflaredLogParser.h
+  tunnel/SecretRedactor.cpp
+  tunnel/SecretRedactor.h
+  tunnel/ServiceToken.h
+  tunnel/TunnelStateMachine.cpp
+  tunnel/TunnelStateMachine.h
+  tunnel/TunnelTypes.cpp
+  tunnel/TunnelTypes.h
+)
+
 target_link_libraries(${target}
   PUBLIC
     common
