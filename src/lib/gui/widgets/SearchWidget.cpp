@@ -6,6 +6,9 @@
 
 #include "SearchWidget.h"
 
+#include "gui/style/Appearance.h"
+#include "gui/style/Icons.h"
+
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLineEdit>
@@ -40,7 +43,21 @@ SearchWidget::SearchWidget(QWidget *parent)
   m_btnPrev->setIcon(QIcon::fromTheme(QIcon::ThemeIcon::GoUp));
   m_btnPrev->setIconSize(iconSize);
 
-  m_searchLine->setMaximumHeight(maxBtnSize.height());
+  if (deskflow::gui::style::isDeskflowStyleInstalled()) {
+    // the icons of the new look, in the size of a button that is easy to hit
+    using deskflow::gui::style::icon;
+    const QSize button(28, 28);
+    for (auto *b : {m_btnToggle, m_btnNext, m_btnPrev}) {
+      b->setFixedSize(button);
+      b->setIconSize(QSize(18, 18));
+    }
+    m_btnToggle->setIcon(icon(QStringLiteral("magnifying-glass")));
+    m_btnNext->setIcon(icon(QStringLiteral("caret-down")));
+    m_btnPrev->setIcon(icon(QStringLiteral("caret-up")));
+    m_searchLine->setMaximumHeight(button.height());
+  } else {
+    m_searchLine->setMaximumHeight(maxBtnSize.height());
+  }
 
   connect(m_btnToggle, &QPushButton::toggled, this, &SearchWidget::toggleVisible);
   connect(m_btnNext, &QPushButton::clicked, this, &SearchWidget::next);
@@ -80,6 +97,13 @@ void SearchWidget::setText()
   m_btnNext->setToolTip(tr("Find next"));
   m_btnPrev->setToolTip(tr("Find previous"));
   m_searchLine->setPlaceholderText(tr("Find..."));
+  if (deskflow::gui::style::isDeskflowStyleInstalled()) {
+    // a button of a picture only has no name for a screen reader but its tool tip
+    m_btnToggle->setAccessibleName(m_btnToggle->toolTip());
+    m_btnNext->setAccessibleName(m_btnNext->toolTip());
+    m_btnPrev->setAccessibleName(m_btnPrev->toolTip());
+    m_searchLine->setAccessibleName(tr("Find..."));
+  }
 }
 
 void SearchWidget::next()
