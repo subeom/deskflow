@@ -53,16 +53,18 @@ Everything is in `src/lib/gui/tunnel/` and is plain Qt without a window, except 
 | Part | Does |
 | --- | --- |
 | `TunnelStateMachine` | the states (Idle, Starting, Listening, Stopping, Backoff, Failed) and what to do next; no clock, no process, no socket of its own |
-| `CloudflaredLocator` | finds cloudflared: the configured path, then the usual places (Windows `C:\Program Files (x86)\cloudflared\cloudflared.exe` and `C:\Program Files\cloudflared\cloudflared.exe`, macOS `/opt/homebrew/bin` and `/usr/local/bin`), then `PATH` |
+| `CloudflaredLocator` | finds cloudflared and gives **one canonical absolute path**: the configured path (it must be absolute), then the usual places (Windows `C:\Program Files (x86)\cloudflared\cloudflared.exe` and `C:\Program Files\cloudflared\cloudflared.exe`, macOS `/opt/homebrew/bin` and `/usr/local/bin`), then `PATH`. That exact path is what is started; the token is never handed to a program that was looked up again by a name |
 | `CloudflaredLaunch` | the command: `access tcp --hostname <host> --url 127.0.0.1:<port> --loglevel info`; the token only in the environment of the child |
 | `CloudflaredLogParser` | what a line of cloudflared means (listener started, bind failed, a login is asked for, a connection could not be opened and why); substring based, so a change in the words makes the tunnel less informative and never wrong |
 | `SecretRedactor` | masks the token and the shapes of the headers and variables that carry it, in every line that leaves the supervisor |
 | `ISecretStore` and the stores | see above |
+| `OutputLineSplitter` | cuts the output of cloudflared into lines (`\n`, `\r`, `\r\n`); a line over 64 KB is dropped as a whole and replaced by one notice line, so a token can never be given in two halves |
 | `ITunnelProcess`, `QtTunnelProcess` | one run of cloudflared: no console window and a job that ends it with the program on Windows, the parent death signal on Linux, stdin closed |
 | `IPortProber`, `QtPortProber` | can a listener be opened, a free port, is a port open (a connection that is closed again at once, no byte sent) |
 | `OrphanRecord`, `IProcessInspector` | the record of the running cloudflared and the way to look at a process by its number |
 | `TunnelSupervisor` | runs it all: the checks before the start, the process, the state machine, the restarts, the wake from sleep |
 | `TunnelController` | the settings on one side, the supervisor on the other; it is the gate that the core asks (`ITunnelGate`) |
+| `ServiceQuit` | the stop of the service core at quit: connects (bounded), sends, flushes, and says what stays running when it cannot |
 | `TunnelStartGuard` | the order: the client core starts when the tunnel listens; the tunnel is let go when the core stops |
 | `TunnelTestRunner`, `TunnelTestDialog` | "Test connection" through the tunnel |
 | `TunnelStatusWidget` (`widgets/`) | the two lines of the main window |
@@ -74,16 +76,39 @@ The GUI **owns** the tunnel, also in Windows service mode. The tunnel lives whil
 to the tray keeps it.
 
 1. The user starts the client. `CoreProcess::start()` asks `TunnelStartGuard`. If the tunnel is on and does not listen, the
-   start is postponed (the process state is Starting) and the tunnel is asked to start.
+   start is postponed (the process state is Starting) and the tunnel is asked to start. **When the tunnel listens, the guard
+   asks the gate again** (`ITunnelGate::validate()`): the tunnel must still be required and the settings must still be usable
+   (TLS on, a valid hostname, the same settings as at the start). If not (TLS was switched off or the hostname cleared during the
+   wait of up to 8 s, or the tunnel was turned off), the start does not go on: the tunnel is let go, the start counts as failed
+   with the reason (`TlsRequired`, `InvalidHostname`, `SettingsChanged`) and the state of the core is set back to Stopped.
 2. `TunnelSupervisor::start()` checks, in this order: TLS is on; the hostname is a host name; cloudflared is found; a Service
-   Token is stored (this is the only place the Secret is read); a cloudflared that an earlier run left behind is ended (see
-   below); the preferred local port can be listened on, otherwise a free port is chosen and written to `tunnel/activePort`.
+   Token is stored (this is the only place the Secret is read); the path of cloudflared is absolute; a cloudflared that an
+   earlier run left behind is ended (see below); the preferred local port can be listened on, otherwise a free port is chosen and written to `tunnel/activePort`.
    A check that fails ends the start with its reason; nothing is started.
 3. cloudflared is started with the token in the environment of the child. The supervisor waits for the local port to
    open (it probes at the latest 300 ms after the start, or when the log says that the listener started), and calls the
-   tunnel **listening** when the port stayed open for 300 ms with the process still running. If this does not happen in 8 s
-   the start fails.
+   tunnel **listening** only when **all three** hold: the process runs, the port is open, and cloudflared logged that it starts
+   its listener (`Start Websocket listener`), for 300 ms. If this does not happen in 8 s the start fails.
+   - An open port alone is not enough: a program of this computer that takes the chosen port after the free-port check would
+     answer the probe while cloudflared is still starting. The listener line is **necessary but not sufficient** (cloudflared
+     logs it just before it binds); it does not prove that the bind worked.
+   - If cloudflared says that the address is in use (the line of its forwarding server, or the words of the system on Unix and
+     Windows), the tunnel is not listening, also when the state was Listening already: the process is ended and the start goes on
+     **once** with the next free port (the log says "Local port N was taken by another program, using port M instead"). A
+     second conflict fails the tunnel with the port busy.
+   - If the line of cloudflared is never seen (the words changed in a new version), the tunnel is accepted after the port stayed
+     open for 3 s with the process running, and the log says "cloudflared did not log its listener line". A tunnel must not stop
+     working because a log line was reworded; a program that took the port cannot satisfy 3 s with cloudflared still running,
+     because cloudflared stops or says that the address is in use.
+   - Whatever listens on the local port, Deskflow's TLS and the fingerprint check remain the real protection (see the security
+     notes); this logic only makes the state honest.
 4. When the tunnel listens, the guard starts the core. The core reads the address with `effectiveRemoteHost()`.
+   **The core fails closed.** When `tunnel/enabled` is true but the settings are not usable (TLS off, an invalid hostname),
+   `effectiveRemoteHost()` is empty and `ClientApp::parseArgs` logs one line ("the Cloudflare Tunnel is on but cannot be used
+   (...): not connecting to the saved address") and exits with the configuration error (code 4); it never dials the saved
+   direct address without TLS. With `tunnel/enabled` false or absent nothing changes. Under the Windows service the watchdog may
+   start the core again after this exit (and log the line again), as it does after any other exit that reports a bad
+   configuration; this has not been tried on Windows.
 5. If cloudflared stops on its own, it is started again after 1, 2, 4, 8, 16, 30, 60 s; five stops in a row within 2 s of
    the start fail the tunnel. A login that is asked for (the Service Token is wrong, expired or not allowed: cloudflared would
    open a browser and wait) ends cloudflared at once and fails the tunnel: it is **not** started again by itself.
@@ -108,14 +133,35 @@ is restarted.
 
 **Orphans.** The supervisor writes `<state dir>/Deskflow-tunnel.json` (process number, start time, the program as the system
 reports it, hostname, port; no token) when cloudflared starts and removes it when it ends. After a crash, the next start ends
-that process only if the number, the start time (within 2 s), and the program path all match and the program is called
-`cloudflared*`. A process is never found or ended by its name.
+that process only if the number, the start time, and the program path all match and the program is called `cloudflared*`. A
+process is never found or ended by its name. The start time must be within 50 ms on Windows and macOS (the system tells it in
+exact steps and the same at every read) and within 2 s on Linux (derived from the boot time, which the kernel can move).
+On Windows the process is opened once, with the right to query and to end it, and **the same handle** is checked and ended
+(`IProcessInspector::terminateIf`), so a process number that passes to another program in between cannot be ended. On Unix
+there is no handle: the check and `kill(2)` are two calls; the process would have to end and its number pass to another
+cloudflared with the same path and a start time within the tolerance in the time between them, which is not a thing that
+happens in practice.
 
 **Quit.** `File > Quit` (and the quit of the tray) stops the core first, then the tunnel, and waits for cloudflared to end.
 Desktop mode: the core is a child of the GUI and stops. **Service mode with the tunnel on:** the service core would keep
-retrying a tunnel that went with the GUI, so it is stopped as well: `CoreProcess::cleanup()` sends the stop to the service and
-`IpcClient::flush()` waits for it to be written. The daemon's stop clears the configuration it keeps for the start at boot,
+retrying a tunnel that went with the GUI, so it is stopped as well: `CoreProcess::cleanup()` first cancels every pending
+"send start/stop after the connect" (a late connect cannot start the core during or after the quit), then `deliverStopToService`
+connects to the daemon if it is not connected (waits at most 1 s), sends the stop and `IpcClient::flush()` waits for it to be
+written (at most 1 s). If the stop cannot be delivered, the quit goes on and the log has a warning that names the consequence:
+the service core keeps running and starts at boot. The daemon's stop clears the configuration it keeps for the start at boot,
 so it does not start at boot either. With the tunnel off the quit does what it always did (the service core keeps running).
+
+**Mode switch.** A switch from client to server while the start waits for the tunnel cancels the waiting start and sets the
+core state back to Stopped (`CoreProcess::setMode()`); it is never left in Starting.
+
+### Known limit: the service started at boot
+
+The Windows service can start the client by itself at boot from the configuration it keeps (the watchdog), before the GUI
+exists and so before the tunnel exists. Until the user opens Deskflow (and the GUI starts the tunnel) that client dials a local
+port where nothing listens, which gives retry noise in the log and no harm. The quit with the tunnel on stops the service core
+and clears that configuration, which keeps it from happening after a normal quit; it can still happen after a crash or a
+power loss. **Advice: with the tunnel on, switch "start at boot" of the service off.** A permanent fix would be a tunnel that
+the daemon owns, which is a different design (decision 1 of the approved design chose the GUI).
 
 ### Security notes
 
@@ -125,12 +171,25 @@ so it does not start at boot either. With the tunnel off the quit does what it a
   child; this is the same exposure as typing the variables in a terminal, and is the reason the token is not stored in a place
   that other users can read.
 - cloudflared is started with `--loglevel info` and no other level: at `debug` it prints the request headers, and the Secret is
-  one of them. The inherited variables that would change what `access tcp` does (`TUNNEL_*`) are removed from the child.
+  one of them. **Every** inherited variable whose name starts with `TUNNEL_` is removed from the child (case-insensitive on
+  Windows) before the two token variables are set, so a `TUNNEL_TOKEN` or any other variable of the parent cannot change what
+  `access tcp` does.
+- **One program.** The locator returns one canonical absolute path and exactly that path is started. A configured path that is
+  not absolute is refused with the install/path message (it would be looked up in the working directory or in `PATH`, and the
+  token would go to whatever was found). A path that the user types or chooses and that is absolute is a trusted choice and is
+  accepted as it is.
+- **Output.** A line of cloudflared over 64 KB is never given in parts: it is dropped whole and one notice line takes its place,
+  so the redactor never sees half of a token. The last line without an end is redacted like every line.
+- **The secure store is not asked while the feature is off.** Opening Configure client with the tunnel off makes no call to the
+  secure store (on macOS a locked login keychain can raise an unlock prompt for a lookup). The Client ID is looked up once,
+  when the tunnel is turned on or when the user touches the credential fields, and kept for the life of the dialog.
 - Every line of cloudflared is redacted before it is read, logged or shown. The summary that "Test connection" copies has no
   token and no Client ID.
 - The local listener is open to every user of the computer. What protects the connection is Deskflow's TLS and the fingerprint
   check (the trusted fingerprints are keyed by the certificate, not by the address), so a different program that listens on the
   port cannot take the place of the server unnoticed.
+- "Test connection" shows only the first characters of the Client ID (never more than half of it) and an ellipsis; the Secret is
+  never shown.
 - The probe that checks the local port is a connection that is closed at once. Through the tunnel it makes cloudflared open one
   connection to the server, which the server sees as a connection that ends at once, once per start.
 - "Remove all settings" also deletes the Service Token from the secure store (`diagnostic::removeStoredCredentials`).
@@ -139,7 +198,8 @@ so it does not start at boot either. With the tunnel off the quit does what it a
 
 With `tunnel/enabled` unset or `false`: `TunnelController::isRequired()` is false, so the core process takes the path it always
 took; the controller writes nothing (it only removes `tunnel/activePort` when it is there); the main window does not hide or
-change any field; the status bar shows the saved address as before; the quit does what it did. The tests that show it:
+change any field; the status bar shows the saved address as before; the quit does what it did; the secure store is not called; `ClientApp` reads the saved address as it always did. The tests that
+show it:
 `TunnelAddressTests` (the address is the saved one for every shape of it), `TunnelControllerTests`
 (`withTheTunnelOff_nothingIsRequiredNothingStartsAndNothingIsWritten`: the bytes of the configuration file are the same),
 `TunnelStatusWidgetTests` (`whileTheTunnelIsOff_theWidgetIsHiddenAndWritesNothing`).
@@ -179,7 +239,7 @@ All tests are in `src/unittests/gui/tunnel/` (and `core/CoreProcessTunnelTests`,
 real cloudflared, the real keychain or the Credential Manager, a real core, the port 24800 or the clipboard.
 
 - `cloudflared-fake` (a test program, `src/unittests/gui/tunnel/fake/`) stands in for cloudflared. The first label of the
-  hostname picks what it does (`ok.`, `silent.`, `login.`, `exit.`, `flaky.`, `deny.`, `leak.`, `noport.`). It tells whether
+  hostname picks what it does (`ok.`, `silent.`, `login.`, `exit.`, `flaky.`, `deny.`, `leak.`, `noport.`, and for the cutting of the output `long.`, `split.`, `cr.`, `noend.`). It tells whether
   it got the token in the environment and not in the arguments (never the value), and in the `leak.` mode it writes the token
   on purpose to prove that the supervisor masks it.
 - The supervisor, the controller, the test runner and the dialogs are also run with fakes of the process, the ports, the clock
