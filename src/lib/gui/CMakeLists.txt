@@ -187,6 +187,8 @@ target_sources(${target} PRIVATE
   tunnel/TunnelTypes.h
   tunnel/WindowsCredentialStore.cpp
   tunnel/WindowsCredentialStore.h
+  widgets/TunnelSettingsGroup.cpp
+  widgets/TunnelSettingsGroup.h
 )
 
 # the secure stores of the systems that have one (each file is empty on the others); the Credential Manager is in

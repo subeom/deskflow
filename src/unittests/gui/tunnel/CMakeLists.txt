@@ -45,3 +45,21 @@ create_test(
   SOURCE SecretStoreTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+# These two open the dialog and the group of the Cloudflare Tunnel, which the gui library builds with the server library
+# like the other tests of dialogs (see ../dialogs for why the Windows libraries are named here)
+create_test(
+  NAME TunnelSettingsGroupTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TunnelSettingsGroupTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
+  NAME ClientConfigDialogTunnelTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE ClientConfigDialogTunnelTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
