@@ -103,6 +103,21 @@ bool isOSXInterfaceStyleDark()
   return (style && [style isKindOfClass:[NSString class]] && NSOrderedSame == [style caseInsensitiveCompare:@"dark"]);
 }
 
+bool isOSXReduceTransparency()
+{
+  return [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldReduceTransparency];
+}
+
+bool isOSXReduceMotion()
+{
+  return [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldReduceMotion];
+}
+
+bool isOSXIncreaseContrast()
+{
+  return [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldIncreaseContrast];
+}
+
 void forceAppActive()
 {
   [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];

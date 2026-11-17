@@ -8,3 +8,27 @@ create_test(
   SOURCE DesignTokensTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME AppearanceHintsTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE AppearanceHintsTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
+  NAME AppearanceTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE AppearanceTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
+  NAME DeskflowStyleTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE DeskflowStyleTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)

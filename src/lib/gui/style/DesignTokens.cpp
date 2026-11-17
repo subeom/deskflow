@@ -97,7 +97,8 @@ Tokens tokensFor(const Look &look, const QPalette &system)
   auto tokens = look.scheme == Scheme::Dark ? darkTokens() : lightTokens();
 
   if (look.highContrast || look.osColors) {
-    // the OS has chosen the colours (in high contrast, the ones that the person needs): the program does not mix its own
+    // the OS has chosen the colours (in high contrast, the ones that the person needs): the program does not mix its
+    // own
     auto &c = tokens.colors;
     c.bg = system.color(QPalette::Window);
     c.surface = system.color(QPalette::Base);
