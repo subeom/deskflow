@@ -14,6 +14,7 @@
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPainter>
 #include <QVBoxLayout>
 
 namespace deskflow::gui::tray {
@@ -24,13 +25,40 @@ namespace {
 
 constexpr int kIconSize = 24;
 // the sentence is as wide as this, and goes on a second line when it is longer
-constexpr int kDetailWidth = 260;
+constexpr int kDetailWidth = 300;
 
 } // namespace
 
+// The icon of the state. The menu disables what is in a row that cannot be chosen, and a disabled QLabel draws its picture
+// grey: the header is not to look unavailable, so it paints the picture as it is
+class TrayHeaderWidget::StateIcon : public QWidget
+{
+public:
+  explicit StateIcon(QWidget *parent) : QWidget(parent)
+  {
+    setFixedSize(kIconSize, kIconSize);
+  }
+
+  void setPixmap(const QPixmap &pixmap)
+  {
+    m_pixmap = pixmap;
+    update();
+  }
+
+protected:
+  void paintEvent(QPaintEvent *) override
+  {
+    QPainter painter(this);
+    painter.drawPixmap(rect(), m_pixmap);
+  }
+
+private:
+  QPixmap m_pixmap;
+};
+
 TrayHeaderWidget::TrayHeaderWidget(QWidget *parent)
     : QWidget(parent),
-      m_icon(new QLabel(this)),
+      m_icon(new StateIcon(this)),
       m_headline(new QLabel(this)),
       m_detail(new QLabel(this)),
       m_chip(new StatusChip(this))
@@ -38,9 +66,6 @@ TrayHeaderWidget::TrayHeaderWidget(QWidget *parent)
   // the menu moves over the header with the keys and the pointer: it does not take either
   setFocusPolicy(Qt::NoFocus);
   setAttribute(Qt::WA_TransparentForMouseEvents);
-
-  m_icon->setFixedSize(kIconSize, kIconSize);
-  m_icon->setAlignment(Qt::AlignCenter);
 
   auto headFont = scaleFont(QApplication::font(this), qreal(metrics::fontSubtitle) / metrics::fontBody);
   headFont.setWeight(QFont::DemiBold);
@@ -150,9 +175,16 @@ void TrayHeaderWidget::updateIcon()
 
 void TrayHeaderWidget::updateColors()
 {
-  auto palette = m_detail->palette();
-  palette.setColor(QPalette::WindowText, currentTokens().colors.textSecondary);
-  m_detail->setPalette(palette);
+  // the colours are the same in the disabled state: a menu disables the widget of a row that cannot be chosen
+  const auto &colors = currentTokens().colors;
+  const auto colorize = [](QLabel *label, const QColor &color) {
+    auto palette = label->palette();
+    for (const auto group : {QPalette::Active, QPalette::Inactive, QPalette::Disabled})
+      palette.setColor(group, QPalette::WindowText, color);
+    label->setPalette(palette);
+  };
+  colorize(m_headline, colors.text);
+  colorize(m_detail, colors.textSecondary);
 }
 
 } // namespace deskflow::gui::tray

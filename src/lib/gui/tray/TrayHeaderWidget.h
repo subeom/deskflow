@@ -41,11 +41,12 @@ public:
   static QString iconName(TrayState state);
 
 private:
+  class StateIcon;
   void updateIcon();
   void updateColors();
 
   TrayState m_state = TrayState::Idle;
-  QLabel *m_icon;
+  StateIcon *m_icon;
   QLabel *m_headline;
   QLabel *m_detail;
   StatusChip *m_chip;
