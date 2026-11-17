@@ -1,0 +1,547 @@
+/*
+ * SPDX-FileCopyrightText: (C) 2026 Deskflow Developers
+ * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
+ */
+
+#include "SettingsPagesTests.h"
+
+#include "common/PlatformInfo.h"
+#include "common/Settings.h"
+#include "gui/config/ServerConfig.h"
+#include "gui/dialogs/SettingsDialog.h"
+#include "gui/settings/RestartBanner.h"
+#include "gui/settings/SettingEffects.h"
+#include "gui/settings/SettingsBinder.h"
+#include "gui/settings/SettingsPage.h"
+#include "gui/settings/SettingsPages.h"
+#include "gui/style/Appearance.h"
+#include "gui/widgets/PageTitle.h"
+#include "gui/widgets/SettingCard.h"
+#include "gui/widgets/SettingRow.h"
+#include "gui/widgets/ToggleSwitch.h"
+
+#include <QAccessible>
+#include <QApplication>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QFile>
+#include <QGroupBox>
+#include <QLineEdit>
+#include <QMetaEnum>
+#include <QPushButton>
+#include <QRadioButton>
+#include <QSettings>
+#include <QSignalSpy>
+#include <QSpinBox>
+
+using namespace deskflow::gui::settings;
+
+namespace {
+
+template <class T> T *find(const SettingsPages &pages, const char *name)
+{
+  for (const auto &entry : pages.entries()) {
+    if (auto *found = entry.page->findChild<T *>(QString::fromLatin1(name)))
+      return found;
+  }
+  return nullptr;
+}
+
+template <class T> T *must(const SettingsPages &pages, const char *name)
+{
+  auto *found = find<T>(pages, name);
+  Q_ASSERT_X(found, "must", name);
+  return found;
+}
+
+// what a person does with the controls: the signals that tell the binder are the ones that a person causes
+void setSwitch(QAbstractButton *button, bool on)
+{
+  button->setChecked(on);
+}
+
+void choose(QComboBox *combo, const QVariant &data)
+{
+  for (int i = 0; i < combo->count(); ++i) {
+    if (SettingsBinder::sameValue(data, combo->itemData(i))) {
+      combo->setCurrentIndex(i);
+      Q_EMIT combo->activated(i);
+      return;
+    }
+  }
+  qFatal("no such choice");
+}
+
+void type(QLineEdit *edit, const QString &text)
+{
+  edit->setText(text);
+  Q_EMIT edit->editingFinished();
+}
+
+QString stored(const QString &key)
+{
+  QSettings file(Settings::settingsFile(), QSettings::IniFormat);
+  return file.value(key).toString();
+}
+
+QByteArray settingsFileContent()
+{
+  QFile file(Settings::settingsFile());
+  return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
+
+// The settings that the dialog of the settings writes when it is accepted, and what each of them needs
+struct DialogKey
+{
+  QString key;
+  Effect effect;
+};
+
+QList<DialogKey> dialogKeys()
+{
+  using S = Settings;
+  return {
+      {S::Core::Port, Effect::RestartSharing},
+      {S::Core::Interface, Effect::RestartSharing},
+      {S::Log::Level, Effect::Live},
+      {S::Log::ToFile, Effect::RestartSharing},
+      {S::Log::File, Effect::RestartSharing},
+      {S::Daemon::Elevate, Effect::RestartSharing},
+      {S::Gui::Autohide, Effect::Live},
+      {S::Gui::AutoUpdateCheck, Effect::Live},
+      {S::Core::PreventSleep, Effect::RestartSharing},
+      {S::Security::Certificate, Effect::RestartSharing},
+      {S::Security::KeySize, Effect::RestartSharing},
+      {S::Security::TlsEnabled, Effect::RestartSharing},
+      {S::Gui::CloseToTray, Effect::Live},
+      {S::Gui::SymbolicTrayIcon, Effect::Live},
+      {S::Security::CheckPeers, Effect::RestartSharing},
+      {S::Core::Language, Effect::Live},
+      {S::Log::GuiDebug, Effect::Live},
+      {S::Gui::ShowVersionInTitle, Effect::Live},
+      {S::Core::EnableEnterCommand, Effect::RestartSharing},
+      {S::Core::EnableExitCommand, Effect::RestartSharing},
+      {S::Core::ComputerEnterCommand, Effect::RestartSharing},
+      {S::Core::ComputerExitCommand, Effect::RestartSharing},
+      {S::Core::ProcessMode, Effect::RestartSharing},
+  };
+}
+
+void forgetAll()
+{
+  for (const auto &entry : dialogKeys())
+    Settings::setValue(entry.key);
+  Settings::setValue(Settings::Gui::Appearance);
+  Settings::setValue(Settings::Core::CoreMode);
+}
+
+} // namespace
+
+void SettingsPagesTests::initTestCase()
+{
+  QVERIFY(m_dir.isValid());
+  Settings::setSettingsFile(m_dir.filePath(QStringLiteral("Deskflow.conf")));
+  Settings::setStateFile(m_dir.filePath(QStringLiteral("Deskflow.state")));
+  QAccessible::setActive(true);
+}
+
+void SettingsPagesTests::cleanup()
+{
+  forgetAll();
+  QApplication::setStyle(QStringLiteral("Fusion"));
+}
+
+void SettingsPagesTests::effects_everyBoundSettingSaysWhatItNeeds()
+{
+  SettingsPages pages;
+  const auto keys = pages.binder()->keys();
+  QVERIFY(keys.size() >= 20);
+  for (const auto &key : keys)
+    QVERIFY2(effectOf(key).has_value(), qPrintable(key));
+  // a key that no page binds has no effect to give
+  QVERIFY(!effectOf(QStringLiteral("computer_x/name")).has_value());
+}
+
+void SettingsPagesTests::effects_theSettingsThatTheCoreReadsNeedARestart()
+{
+  // the dialogs of the system look restart a running core after every Save: the pages ask for it for these, which are
+  // the settings that the core process reads, and for no others
+  for (const auto &entry : dialogKeys()) {
+    const auto effect = effectOf(entry.key);
+    QVERIFY2(effect.has_value(), qPrintable(entry.key));
+    QVERIFY2(*effect == entry.effect, qPrintable(entry.key));
+  }
+  const auto restart = keysWith(Effect::RestartSharing);
+  for (const auto &key :
+       {Settings::Core::Port, Settings::Core::Interface, Settings::Server::EnableClipboard, Settings::Server::Heartbeat,
+        Settings::Server::Protocol, Settings::Server::ExternalConfig}) {
+    QVERIFY2(restart.contains(key), qPrintable(key));
+  }
+  const auto live = keysWith(Effect::Live);
+  for (const auto &key : {Settings::Core::Language, Settings::Log::Level, Settings::Gui::ShowVersionInTitle})
+    QVERIFY2(live.contains(key), qPrintable(key));
+  QVERIFY(restart.size() + live.size() >= dialogKeys().size());
+}
+
+void SettingsPagesTests::pages_areInTheOrderOfTheSidebar_withTitlesAndCards()
+{
+  SettingsPages pages;
+  QStringList ids;
+  for (const auto &entry : pages.entries()) {
+    ids << entry.id;
+    QVERIFY2(!entry.title().isEmpty(), qPrintable(entry.id));
+    QVERIFY(!entry.icon.isEmpty());
+    QCOMPARE(entry.page->pageId(), entry.id);
+    QCOMPARE(entry.page->title(), entry.title());
+    QVERIFY2(!entry.page->cards().isEmpty(), qPrintable(entry.id));
+    for (auto *card : entry.page->cards())
+      QVERIFY2(!card->rows().isEmpty(), qPrintable(entry.id));
+    // no mnemonic in a title
+    QVERIFY2(
+        !entry.title().contains(QLatin1Char('&')) || entry.title().contains(QStringLiteral("& ")),
+        qPrintable(entry.title())
+    );
+  }
+  QCOMPARE(
+      ids, (QStringList{
+               QStringLiteral("settings.security"), QStringLiteral("settings.network"),
+               QStringLiteral("settings.general"), QStringLiteral("settings.advanced")
+           })
+  );
+  QCOMPARE(SettingsPages::generalId(), QStringLiteral("settings.general"));
+  QCOMPARE(pages.page(QStringLiteral("settings.network"))->title(), QStringLiteral("Network"));
+  QCOMPARE(pages.page(QStringLiteral("settings.security"))->title(), QStringLiteral("Security & clipboard"));
+  QVERIFY(!pages.page(QStringLiteral("settings.nothing")));
+}
+
+void SettingsPagesTests::pages_changeIsWrittenAtOnce_andNothingIsWrittenForNoChange()
+{
+  SettingsPages pages;
+  QSignalSpy applied(&pages, &SettingsPages::applied);
+  auto *port = must<QSpinBox>(pages, "sbPort");
+  QCOMPARE(port->value(), Settings::value(Settings::Core::Port).toInt());
+
+  // a number: the file has it as soon as the spin box has it
+  port->setValue(24811);
+  QCOMPARE(stored(Settings::Core::Port), QStringLiteral("24811"));
+  QCOMPARE(applied.count(), 1);
+  QCOMPARE(applied.first().first().toString(), Settings::Core::Port);
+
+  // a switch
+  auto *guiDebug = must<ToggleSwitch>(pages, "cbGuiDebug");
+  const bool before = Settings::value(Settings::Log::GuiDebug).toBool();
+  guiDebug->setChecked(!before);
+  QCOMPARE(Settings::value(Settings::Log::GuiDebug).toBool(), !before);
+  QCOMPARE(stored(Settings::Log::GuiDebug), before ? QStringLiteral("false") : QStringLiteral("true"));
+
+  // a choice of words that are stored as a boolean
+  auto *autoHide = must<QComboBox>(pages, "comboAutoHide");
+  choose(autoHide, true);
+  QVERIFY(Settings::value(Settings::Gui::Autohide).toBool());
+  choose(autoHide, false);
+  QVERIFY(!Settings::value(Settings::Gui::Autohide).toBool());
+
+  // a text, written when the field is left
+  auto *enter = must<QLineEdit>(pages, "lineCommandEnter");
+  enter->setText(QStringLiteral("not left yet"));
+  QVERIFY(Settings::value(Settings::Core::ComputerEnterCommand).toString() != QStringLiteral("not left yet"));
+  Q_EMIT enter->editingFinished();
+  QCOMPARE(Settings::value(Settings::Core::ComputerEnterCommand).toString(), QStringLiteral("not left yet"));
+
+  // the same value again: the file is not touched and nothing is applied
+  applied.clear();
+  const auto content = settingsFileContent();
+  port->setValue(24811);
+  Q_EMIT enter->editingFinished();
+  guiDebug->setChecked(!before);
+  QCOMPARE(applied.count(), 0);
+  QCOMPARE(settingsFileContent(), content);
+}
+
+void SettingsPagesTests::pages_writeWhatTheDialogWritesForTheSameChanges()
+{
+  const auto folder = m_dir.path();
+  struct Target
+  {
+    bool autoHide, autoUpdate, preventSleep, closeToTray, mono, requireClient, tls, guiDebug, showVersion, logToFile,
+        enterOn, exitOn;
+  };
+  using S = Settings;
+  // every one of them the other way from what it is by default
+  Target t{
+      !S::defaultValue(S::Gui::Autohide).toBool(),
+      !S::defaultValue(S::Gui::AutoUpdateCheck).toBool(),
+      !S::defaultValue(S::Core::PreventSleep).toBool(),
+      !S::defaultValue(S::Gui::CloseToTray).toBool(),
+      !S::defaultValue(S::Gui::SymbolicTrayIcon).toBool(),
+      !S::defaultValue(S::Security::CheckPeers).toBool(),
+      !S::defaultValue(S::Security::TlsEnabled).toBool(),
+      !S::defaultValue(S::Log::GuiDebug).toBool(),
+      !S::defaultValue(S::Gui::ShowVersionInTitle).toBool(),
+      !S::defaultValue(S::Log::ToFile).toBool(),
+      true,
+      true,
+  };
+  const auto certificate = folder + QStringLiteral("/cert.pem");
+  const auto logFile = folder + QStringLiteral("/deskflow.log");
+
+  // through the pages
+  QStringList keys;
+  {
+    forgetAll();
+    SettingsPages pages;
+    keys = pages.binder()->keys();
+    must<QSpinBox>(pages, "sbPort")->setValue(24831);
+    choose(must<QComboBox>(pages, "comboLogLevel"), QStringLiteral("DEBUG"));
+    setSwitch(must<ToggleSwitch>(pages, "cbLogToFile"), t.logToFile);
+    type(must<QLineEdit>(pages, "lineLogFilename"), logFile);
+    choose(must<QComboBox>(pages, "comboAutoHide"), t.autoHide);
+    setSwitch(must<ToggleSwitch>(pages, "cbAutoUpdate"), t.autoUpdate);
+    setSwitch(must<ToggleSwitch>(pages, "cbPreventSleep"), t.preventSleep);
+    setSwitch(must<ToggleSwitch>(pages, "cbTlsEnabled"), t.tls);
+    type(must<QLineEdit>(pages, "lineTlsCertPath"), certificate);
+    choose(must<QComboBox>(pages, "comboTlsKeyLength"), 4096);
+    choose(must<QComboBox>(pages, "comboCloseToTray"), t.closeToTray);
+    choose(must<QComboBox>(pages, "comboTrayIcon"), t.mono);
+    setSwitch(must<ToggleSwitch>(pages, "cbRequireClientCert"), t.requireClient);
+    setSwitch(must<ToggleSwitch>(pages, "cbGuiDebug"), t.guiDebug);
+    setSwitch(must<ToggleSwitch>(pages, "cbShowVersion"), t.showVersion);
+    setSwitch(must<ToggleSwitch>(pages, "cbCommandEnter"), t.enterOn);
+    type(must<QLineEdit>(pages, "lineCommandEnter"), QStringLiteral("echo in"));
+    setSwitch(must<ToggleSwitch>(pages, "cbCommandExit"), t.exitOn);
+    type(must<QLineEdit>(pages, "lineCommandExit"), QStringLiteral("echo out"));
+  }
+  QMap<QString, QString> viaPages;
+  for (const auto &key : keys)
+    viaPages[key] = Settings::value(key).toString();
+
+  // through the dialog, with the same values
+  forgetAll();
+  ServerConfig config;
+  {
+    SettingsDialog dialog(nullptr, config);
+    auto check = [&](const char *name) { return dialog.findChild<QCheckBox *>(QString::fromLatin1(name)); };
+    auto radio = [&](const char *name) { return dialog.findChild<QRadioButton *>(QString::fromLatin1(name)); };
+    auto group = [&](const char *name) { return dialog.findChild<QGroupBox *>(QString::fromLatin1(name)); };
+    auto line = [&](const char *name) { return dialog.findChild<QLineEdit *>(QString::fromLatin1(name)); };
+    dialog.findChild<QSpinBox *>(QStringLiteral("sbPort"))->setValue(24831);
+    auto *level = dialog.findChild<QComboBox *>(QStringLiteral("comboLogLevel"));
+    level->setCurrentIndex(level->findData(QStringLiteral("DEBUG")));
+    group("groupLogToFile")->setChecked(t.logToFile);
+    line("lineLogFilename")->setText(logFile);
+    radio(t.autoHide ? "rbAutoHide" : "rbShowOnStart")->setChecked(true);
+    check("cbAutoUpdate")->setChecked(t.autoUpdate);
+    check("cbPreventSleep")->setChecked(t.preventSleep);
+    group("groupSecurity")->setChecked(t.tls);
+    line("lineTlsCertPath")->setText(certificate);
+    auto *keyLength = dialog.findChild<QComboBox *>(QStringLiteral("comboTlsKeyLength"));
+    keyLength->setCurrentIndex(keyLength->findText(QStringLiteral("4096")));
+    radio(t.closeToTray ? "rbCloseToTray" : "rbExitOnClose")->setChecked(true);
+    radio(t.mono ? "rbIconMono" : "rbIconColorful")->setChecked(true);
+    check("cbRequireClientCert")->setChecked(t.requireClient);
+    check("cbGuiDebug")->setChecked(t.guiDebug);
+    check("cbShowVersion")->setChecked(t.showVersion);
+    check("cbRunEnterCommand")->setChecked(t.enterOn);
+    line("lineCommandEnter")->setText(QStringLiteral("echo in"));
+    check("cbRunExitCommand")->setChecked(t.exitOn);
+    line("lineCommandExit")->setText(QStringLiteral("echo out"));
+    // accept() of the dialog is private to it: it is the one of QDialog that the signal of the button reaches
+    static_cast<QDialog &>(dialog).accept();
+  }
+
+  // what the two ways of saving left is the same for every setting that the pages have (the language and the look are
+  // not in the dialog: the language is the dialog's own, and the look is new)
+  int compared = 0;
+  for (const auto &key : keys) {
+    if (key == Settings::Core::Language || key == Settings::Gui::Appearance)
+      continue;
+    QVERIFY2(
+        Settings::value(key).toString() == viaPages.value(key),
+        qPrintable(
+            key + QStringLiteral(": ") + viaPages.value(key) + QStringLiteral(" / ") + Settings::value(key).toString()
+        )
+    );
+    ++compared;
+  }
+  QVERIFY(compared >= 18);
+  QCOMPARE(Settings::value(Settings::Core::Port).toInt(), 24831);
+}
+
+void SettingsPagesTests::pages_takeASettingThatChangedElsewhere()
+{
+  SettingsPages pages;
+  auto *port = must<QSpinBox>(pages, "sbPort");
+  auto *debug = must<ToggleSwitch>(pages, "cbGuiDebug");
+  QSignalSpy applied(&pages, &SettingsPages::applied);
+
+  Settings::setValue(Settings::Core::Port, 24850);
+  QCOMPARE(port->value(), 24850);
+  Settings::setValue(Settings::Log::GuiDebug, !debug->isChecked());
+  QVERIFY(debug->isChecked() == Settings::value(Settings::Log::GuiDebug).toBool());
+  // what comes from elsewhere is not a change that a person made: nothing is applied for it
+  QCOMPARE(applied.count(), 0);
+
+  // the language: the combo shows the native name of the setting (a test has no translation to list: it may be empty)
+  QVERIFY(must<QComboBox>(pages, "comboLanguage"));
+}
+
+void SettingsPagesTests::pages_aValueThatIsNotGoodIsNotWritten_andSaysWhy()
+{
+  SettingsPages pages;
+  auto *path = must<QLineEdit>(pages, "lineTlsCertPath");
+  QSignalSpy applied(&pages, &SettingsPages::applied);
+  const auto before = Settings::value(Settings::Security::Certificate).toString();
+
+  // a file in a folder that is not there
+  type(path, m_dir.path() + QStringLiteral("/no/such/folder/cert.pem"));
+  QCOMPARE(Settings::value(Settings::Security::Certificate).toString(), before);
+  QCOMPARE(applied.count(), 0);
+  SettingRow *row = nullptr;
+  for (QWidget *parent = path->parentWidget(); parent && !row; parent = parent->parentWidget())
+    row = qobject_cast<SettingRow *>(parent);
+  QVERIFY(row);
+  QVERIFY(!row->error().isEmpty());
+  QCOMPARE(row->error(), QStringLiteral("The folder of this file does not exist."));
+  // the error is what a screen reader is told about the field
+  QCOMPARE(path->accessibleDescription(), row->error());
+
+  // an empty path
+  type(path, QString());
+  QVERIFY(!row->error().isEmpty());
+  QCOMPARE(Settings::value(Settings::Security::Certificate).toString(), before);
+
+  // a good one is written, and the error goes
+  const auto good = m_dir.path() + QStringLiteral("/good.pem");
+  type(path, good);
+  QCOMPARE(Settings::value(Settings::Security::Certificate).toString(), good);
+  QVERIFY(row->error().isEmpty());
+  QCOMPARE(applied.count(), 1);
+
+  // the port cannot be set to a number that is no port
+  auto *port = must<QSpinBox>(pages, "sbPort");
+  port->setValue(0);
+  QCOMPARE(port->value(), 1);
+}
+
+void SettingsPagesTests::pages_whatDependsOnAnotherControlFollowsIt()
+{
+  SettingsPages pages;
+  pages.page(QStringLiteral("settings.security"))->show();
+  auto *tls = must<ToggleSwitch>(pages, "cbTlsEnabled");
+  auto *fingerprint = must<QPushButton>(pages, "btnFingerprint");
+
+  tls->setChecked(true);
+  for (const char *name : {"lineTlsCertPath", "btnTlsCertPath", "comboTlsKeyLength", "btnTlsRegenCert"})
+    QVERIFY2(find<QWidget>(pages, name)->isEnabled(), name);
+  QVERIFY(!fingerprint->isHidden());
+
+  // the encryption off: what belongs to it is off, and there is no fingerprint to show
+  tls->setChecked(false);
+  for (const char *name :
+       {"lineTlsCertPath", "btnTlsCertPath", "comboTlsKeyLength", "btnTlsRegenCert", "cbRequireClientCert"})
+    QVERIFY2(!find<QWidget>(pages, name)->isEnabled(), name);
+  QVERIFY(fingerprint->isHidden());
+
+  // the clients are asked for a certificate by a server only
+  tls->setChecked(true);
+  Settings::setValue(Settings::Core::CoreMode, Settings::CoreMode::Client);
+  QVERIFY(!must<ToggleSwitch>(pages, "cbRequireClientCert")->isEnabled());
+  Settings::setValue(Settings::Core::CoreMode, Settings::CoreMode::Server);
+  QVERIFY(must<ToggleSwitch>(pages, "cbRequireClientCert")->isEnabled());
+
+  // the file of the log and the commands follow their switches
+  auto *toFile = must<ToggleSwitch>(pages, "cbLogToFile");
+  toFile->setChecked(false);
+  QVERIFY(!must<QLineEdit>(pages, "lineLogFilename")->isEnabled());
+  toFile->setChecked(true);
+  QVERIFY(must<QLineEdit>(pages, "lineLogFilename")->isEnabled());
+  auto *enter = must<ToggleSwitch>(pages, "cbCommandEnter");
+  enter->setChecked(false);
+  QVERIFY(!must<QLineEdit>(pages, "lineCommandEnter")->isEnabled());
+  enter->setChecked(true);
+  QVERIFY(must<QLineEdit>(pages, "lineCommandEnter")->isEnabled());
+
+  // a level of the log that is above Info says that it costs speed
+  auto *level = must<QComboBox>(pages, "comboLogLevel");
+  choose(level, QStringLiteral("INFO"));
+  SettingRow *levelRow = nullptr;
+  for (QWidget *parent = level->parentWidget(); parent && !levelRow; parent = parent->parentWidget())
+    levelRow = qobject_cast<SettingRow *>(parent);
+  QVERIFY(levelRow);
+  QVERIFY(levelRow->description().isEmpty());
+  choose(level, QStringLiteral("DEBUG"));
+  QVERIFY(!levelRow->description().isEmpty());
+}
+
+namespace {
+QString roleOf(QObject *object)
+{
+  auto *interface = QAccessible::queryAccessibleInterface(object);
+  return interface ? QString::fromLatin1(QMetaEnum::fromType<QAccessible::Role>().valueToKey(interface->role()))
+                   : QString();
+}
+} // namespace
+
+void SettingsPagesTests::pages_haveTheRolesAndTheNamesOfTheirParts()
+{
+  SettingsPages pages;
+  for (const auto &entry : pages.entries()) {
+    auto *title = entry.page->titleLabel();
+    QCOMPARE(roleOf(title), QStringLiteral("Heading"));
+    auto *interface = QAccessible::queryAccessibleInterface(title);
+    QCOMPARE(interface->text(QAccessible::Name), entry.title());
+    for (auto *card : entry.page->cards())
+      QCOMPARE(roleOf(card), QStringLiteral("Grouping"));
+  }
+  // the controls are named by the row that has them
+  auto *port = must<QSpinBox>(pages, "sbPort");
+  QCOMPARE(QAccessible::queryAccessibleInterface(port)->text(QAccessible::Name), QStringLiteral("Port"));
+  auto *tls = must<ToggleSwitch>(pages, "cbTlsEnabled");
+  QCOMPARE(
+      QAccessible::queryAccessibleInterface(tls)->text(QAccessible::Name), QStringLiteral("Enable TLS Encryption")
+  );
+  QCOMPARE(
+      QAccessible::queryAccessibleInterface(tls)->text(QAccessible::Description),
+      QStringLiteral("Both computers must use the same TLS (encryption) setting.")
+  );
+  QCOMPARE(
+      QAccessible::queryAccessibleInterface(must<QPushButton>(pages, "btnClearAllSettings"))->text(QAccessible::Name),
+      QStringLiteral("Remove all settings")
+  );
+}
+
+void SettingsPagesTests::pages_theBackgroundServiceIsOnlyOnWindows()
+{
+  SettingsPages pages;
+  if (deskflow::platform::isWindows() && !Settings::isPortableMode()) {
+    QVERIFY(find<QWidget>(pages, "cbService"));
+    QVERIFY(find<QWidget>(pages, "cbElevateDaemon"));
+  } else {
+    QVERIFY(!find<QWidget>(pages, "cbService"));
+    QVERIFY(!find<QWidget>(pages, "cbElevateDaemon"));
+    QVERIFY(!find<QWidget>(pages, "cardService"));
+  }
+}
+
+void SettingsPagesTests::banner_asksWhenAskedAndTellsItsAlert()
+{
+  RestartBanner banner;
+  QSignalSpy asked(&banner, &RestartBanner::restartRequested);
+  QVERIFY(banner.isHidden());
+  QVERIFY(!banner.isPending());
+  QCOMPARE(roleOf(&banner), QStringLiteral("AlertMessage"));
+  QCOMPARE(QAccessible::queryAccessibleInterface(&banner)->text(QAccessible::Name), banner.text());
+
+  banner.setPending(true);
+  QVERIFY(banner.isPending());
+  QVERIFY(!banner.isHidden());
+  QCOMPARE(banner.button()->text(), QStringLiteral("Restart sharing"));
+  QTest::mouseClick(banner.button(), Qt::LeftButton);
+  QCOMPARE(asked.count(), 1);
+  // it asks, it does not hide itself or restart anything: the window does that
+  QVERIFY(banner.isPending());
+  banner.setPending(false);
+  QVERIFY(banner.isHidden());
+}
+
+QTEST_MAIN(SettingsPagesTests)

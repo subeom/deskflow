@@ -124,6 +124,8 @@ public:
   explicit NavRail(QWidget *parent = nullptr);
 
   NavItem *addPage(const QString &id, const QString &iconName, const QString &text, Region region = Region::Top);
+  //! A page that comes before the entry \p beforeId (the pages of the settings come before what ends the group)
+  NavItem *addPageBefore(const QString &beforeId, const QString &id, const QString &iconName, const QString &text);
   NavItem *addAction(const QString &id, const QString &iconName, const QString &text, Region region = Region::Top);
   NavItem *addStatus(const QString &id, const QString &iconName, const QString &text, Region region = Region::Bottom);
   //! A title for the group of entries that follows. The collapsed rail draws a line for it

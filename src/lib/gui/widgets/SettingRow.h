@@ -45,6 +45,11 @@ public:
   QString description() const;
   void setDescription(const QString &description);
 
+  //! What is wrong with the value that was typed (it was not applied): shown in place of the guidance in the colour of
+  //! an error, until it is set to nothing. A screen reader gets it as the description.
+  QString error() const;
+  void setError(const QString &error);
+
   void addControl(QWidget *control);
   QList<QWidget *> controls() const;
   QWidget *primaryControl() const;
@@ -71,6 +76,7 @@ private:
   void applyLook();
   void updateState();
   void updateNames();
+  void showHint();
   bool clickOnText(const QPoint &pos) const;
 
   QString m_rawTitle;
@@ -83,4 +89,6 @@ private:
   bool m_divider = false;
   bool m_pressedOnText = false;
   bool m_hiddenByControls = false;
+  QString m_description;
+  QString m_error;
 };

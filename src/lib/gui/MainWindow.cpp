@@ -32,6 +32,10 @@
 #include "gui/ipc/DaemonIpcClient.h"
 #include "gui/layout/DisplayProvider.h"
 #include "gui/layout/LayoutMemoryService.h"
+#include "gui/settings/RestartBanner.h"
+#include "gui/settings/SettingEffects.h"
+#include "gui/settings/SettingsPage.h"
+#include "gui/settings/SettingsPages.h"
 #include "gui/shell/MainShell.h"
 #include "gui/shell/StatusModel.h"
 #include "gui/style/Appearance.h"
@@ -576,6 +580,14 @@ void MainWindow::openGetNewVersionUrl() const
 
 void MainWindow::openSettings()
 {
+  // the settings of the new look are pages of the window: the entry of the menu goes to the first one
+  if (m_shell) {
+    m_shell->showPage(deskflow::gui::settings::SettingsPages::generalId());
+    if (!isVisible() || isMinimized())
+      showAndActivate();
+    return;
+  }
+
   auto dialog = SettingsDialog(this, m_serverConfig);
 
   connect(&dialog, &SettingsDialog::requestRemoveAllSettings, this, &MainWindow::clearSettings, Qt::UniqueConnection);
@@ -821,13 +833,18 @@ void MainWindow::setupTrayIcon()
   m_trayIcon->show();
 }
 
-void MainWindow::applyConfig()
+void MainWindow::updateWindowTitle()
 {
   if (Settings::value(Settings::Gui::ShowVersionInTitle).toBool()) {
     setWindowTitle(QStringLiteral("%1 - %2").arg(kAppName, kDisplayVersion));
   } else {
     setWindowTitle(kAppName);
   }
+}
+
+void MainWindow::applyConfig()
+{
+  updateWindowTitle();
 
   const auto host = Settings::textValue(Settings::Client::RemoteHost);
   QSignalBlocker hostnameBlocker(ui->cbHostname);
@@ -1088,6 +1105,9 @@ void MainWindow::updateStatus()
       m_connectedClients.clear();
     if (process == Starting)
       m_logShownByErrorThisRun = false;
+    // a core that is stopped or starts reads the settings as they are now: nothing is left to restart
+    if (process == Stopped || process == Starting)
+      m_shell->restartBanner()->setPending(false);
     m_shell->status()->setClients(m_connectedClients);
     m_shell->status()->setCore(connection, process, isServer);
     updateShellComputers();
@@ -1599,6 +1619,24 @@ void MainWindow::setupShell()
   });
   m_menuView->addAction(m_actionToggleSidebar);
 
+  // the settings are pages of the sidebar; a change is written at once and sharing is restarted by the banner
+  m_settingsPages = new deskflow::gui::settings::SettingsPages(this);
+  for (const auto &entry : m_settingsPages->entries())
+    m_shell->addSettingsPage(entry.id, entry.icon, entry.title(), entry.page);
+  connect(m_settingsPages, &deskflow::gui::settings::SettingsPages::applied, this, &MainWindow::settingApplied);
+  connect(
+      m_settingsPages, &deskflow::gui::settings::SettingsPages::fingerprintRequested, this,
+      &MainWindow::showMyFingerprint
+  );
+  connect(
+      m_settingsPages, &deskflow::gui::settings::SettingsPages::removeAllSettingsRequested, this,
+      &MainWindow::clearSettings
+  );
+  connect(m_shell->restartBanner(), &deskflow::gui::settings::RestartBanner::restartRequested, this, [this] {
+    m_shell->restartBanner()->setPending(false);
+    resetCore();
+  });
+
   // the status bar is what says the state (the sentence, the encryption, the buttons): it is kept as the source,
   // hidden, and the shell shows it
   m_statusBar->setHeadless(true);
@@ -1611,6 +1649,22 @@ void MainWindow::setupShell()
   updateStatus();
 }
 
+void MainWindow::settingApplied(const QString &key)
+{
+  // what the window shows follows at once
+  if (key == Settings::Gui::ShowVersionInTitle)
+    updateWindowTitle();
+  else if (key == Settings::Gui::SymbolicTrayIcon)
+    setTrayIcon();
+
+  // what the core reads is in use when the core starts again
+  using deskflow::gui::settings::Effect;
+  const auto effect = deskflow::gui::settings::effectOf(key);
+  const auto state = m_coreProcess.processState();
+  if (effect == Effect::RestartSharing && (state == ProcessState::Started || state == ProcessState::Starting))
+    m_shell->restartBanner()->setPending(true);
+}
+
 void MainWindow::updateShellTexts()
 {
   deskflow::gui::MainShell::Texts texts;
@@ -1621,6 +1675,9 @@ void MainWindow::updateShellTexts()
   texts.updateAvailable = m_statusBar->updateButtonText();
   m_shell->setTexts(texts);
   m_actionToggleSidebar->setText(m_shell->rail()->toggleButton()->accessibleName());
+  for (const auto &entry : m_settingsPages->entries())
+    m_shell->setPageText(entry.id, entry.title());
+  m_shell->restartBanner()->retranslate();
   updateShellComputers();
   refreshShell();
 }

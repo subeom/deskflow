@@ -8,6 +8,9 @@
 #include "common/Settings.h"
 #include "gui/MainWindow.h"
 #include "gui/core/CoreProcess.h"
+#include "gui/settings/RestartBanner.h"
+#include "gui/settings/SettingsPage.h"
+#include "gui/settings/SettingsPages.h"
 #include "gui/shell/ClientConnectionSection.h"
 #include "gui/shell/MainShell.h"
 #include "gui/shell/StatusModel.h"
@@ -27,6 +30,7 @@
 
 #include <QAccessible>
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDockWidget>
 #include <QFile>
@@ -40,7 +44,9 @@
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSignalSpy>
+#include <QSpinBox>
 #include <QStackedLayout>
+#include <QStackedWidget>
 
 #include <memory>
 
@@ -84,6 +90,18 @@ struct MainWindowTestAccess
   static QAction *toggleSidebarAction(MainWindow &w)
   {
     return w.m_actionToggleSidebar;
+  }
+  static deskflow::gui::settings::SettingsPages *settingsPages(MainWindow &w)
+  {
+    return w.m_settingsPages;
+  }
+  static void openSettings(MainWindow &w)
+  {
+    w.openSettings();
+  }
+  static QAction *settingsAction(MainWindow &w)
+  {
+    return w.m_actionSettings;
   }
 };
 
@@ -240,7 +258,7 @@ void MainShellTests::cleanup()
         Settings::Gui::WindowGeometry, Settings::Core::CoreMode, Settings::Core::ComputerName,
         Settings::Security::TlsEnabled, Settings::Client::RemoteHost, Settings::Client::RecentRemoteHosts,
         Settings::Gui::ShownServerFirstStartMessage, Settings::Gui::ShownFirstConnectedMessage,
-        Settings::Gui::AutoStartCore})
+        Settings::Gui::AutoStartCore, Settings::Core::Port, Settings::Gui::Autohide, Settings::Gui::ShowVersionInTitle})
     Settings::setValue(key);
   auto &settings = Settings::proxy();
   settings.beginGroup(QStringLiteral("internalConfig"));
@@ -568,7 +586,9 @@ void MainShellTests::deskflowLook_theWindowHasTheNamesAndTheRolesOfTheShell()
   QVERIFY2(
       dump.contains(QRegularExpression(QStringLiteral("ListItem \"Computers\" \\[[a-z,]*selected"))), qPrintable(dump)
   );
-  QVERIFY2(dump.contains(QRegularExpression(QStringLiteral("ListItem \"Preferences"))), qPrintable(dump));
+  QVERIFY2(dump.contains(QRegularExpression(QStringLiteral("ListItem \"General\""))), qPrintable(dump));
+  QVERIFY2(dump.contains(QStringLiteral("ListItem \"Security & clipboard\"")), qPrintable(dump));
+  QVERIFY2(dump.contains(QStringLiteral("Heading \"Computers\"")), qPrintable(dump));
   QVERIFY2(dump.contains(QStringLiteral("ListItem \"Log\" [unchecked,focusable]")), qPrintable(dump));
   // the mode is a group of two choices, one of them chosen
   QVERIFY2(dump.contains(QStringLiteral("Grouping \"Mode\"")), qPrintable(dump));
@@ -595,7 +615,7 @@ void MainShellTests::deskflowLook_theWindowHasTheNamesAndTheRolesOfTheShell()
   // the button that has only an icon has its name
   QVERIFY2(!collapsed.contains(QStringLiteral("Button \"\"")), qPrintable(collapsed));
   // the rail that shows only icons is still named in words
-  QVERIFY2(collapsed.contains(QRegularExpression(QStringLiteral("ListItem \"Preferences"))), qPrintable(collapsed));
+  QVERIFY2(collapsed.contains(QRegularExpression(QStringLiteral("ListItem \"General\""))), qPrintable(collapsed));
 
   // the walk is written for whoever wants to read it (the report of the step), when the environment says where
   if (const auto path = qEnvironmentVariable("DESKFLOW_A11Y_DUMP"); !path.isEmpty()) {
@@ -604,6 +624,106 @@ void MainShellTests::deskflowLook_theWindowHasTheNamesAndTheRolesOfTheShell()
       file.write("expanded sidebar:\n" + dump.toUtf8() + "\n\ncollapsed sidebar:\n" + collapsed.toUtf8() + '\n');
     }
   }
+}
+
+void MainShellTests::deskflowLook_theSettingsArePagesOfTheSidebar_andPreferencesOpensTheFirst()
+{
+  auto window = makeWindow(true);
+  auto *shell = Access::shell(*window);
+  showWindow(*window);
+  auto *rail = shell->rail();
+
+  // the pages of the settings are entries of the sidebar under "Settings", in this order, before Log and About; the
+  // entry that opened the dialog is not shown any more
+  QStringList order;
+  for (auto *item : rail->items()) {
+    if (!item->isHidden() && item->kind() != NavItem::Kind::Status && item->id() != QLatin1String("fingerprint") &&
+        item->id() != QLatin1String("update"))
+      order << item->id();
+  }
+  QCOMPARE(
+      order, (QStringList{
+                 QStringLiteral("home"), QStringLiteral("settings.security"), QStringLiteral("settings.network"),
+                 QStringLiteral("settings.general"), QStringLiteral("settings.advanced"), QStringLiteral("log"),
+                 QStringLiteral("about")
+             })
+  );
+  QVERIFY(rail->item(QStringLiteral("preferences"))->isHidden());
+
+  // a page that is chosen is the one that is shown, and the entry is the one that is marked
+  QCOMPARE(shell->currentPageId(), QStringLiteral("home"));
+  QTest::mouseClick(rail->item(QStringLiteral("settings.network")), Qt::LeftButton);
+  QCOMPARE(shell->currentPageId(), QStringLiteral("settings.network"));
+  auto *page = Access::settingsPages(*window)->page(QStringLiteral("settings.network"));
+  QCOMPARE(shell->pages()->currentWidget(), page);
+  QVERIFY(page->isVisible());
+  // the title of the page is a heading, and is what the page is called in the sidebar
+  QCOMPARE(page->title(), rail->item(QStringLiteral("settings.network"))->text());
+
+  // Preferences (the menu, Ctrl+,) goes to the first page of the general settings
+  QTest::mouseClick(rail->item(QStringLiteral("home")), Qt::LeftButton);
+  QCOMPARE(shell->currentPageId(), QStringLiteral("home"));
+  Access::settingsAction(*window)->trigger();
+  QCOMPARE(shell->currentPageId(), QStringLiteral("settings.general"));
+  QCOMPARE(shell->pages()->currentWidget(), Access::settingsPages(*window)->page(QStringLiteral("settings.general")));
+  Access::openSettings(*window);
+  QCOMPARE(shell->currentPageId(), QStringLiteral("settings.general"));
+
+  // the window of the system look has the dialog still
+  window.reset();
+  auto system = makeWindow(false);
+  QVERIFY(!Access::settingsPages(*system));
+}
+
+void MainShellTests::deskflowLook_aChangeThatTheCoreReadsAsksForARestart_andOnlyWhileItRuns()
+{
+  auto window = makeWindow(true);
+  auto *shell = Access::shell(*window);
+  auto *banner = shell->restartBanner();
+  auto *pages = Access::settingsPages(*window);
+  showWindow(*window);
+  auto *port = pages->page(QStringLiteral("settings.network"))->findChild<QSpinBox *>(QStringLiteral("sbPort"));
+  auto *autoHide =
+      pages->page(QStringLiteral("settings.general"))->findChild<QComboBox *>(QStringLiteral("comboAutoHide"));
+  QVERIFY(port && autoHide);
+  QVERIFY(banner->isHidden());
+
+  // the core is stopped: it reads the settings when it starts, nothing is to be restarted
+  port->setValue(port->value() + 1);
+  QVERIFY(banner->isHidden());
+
+  Access::states(*window, ProcessState::Started, ConnectionState::Listening);
+  // a setting that the window follows by itself asks for nothing
+  autoHide->setCurrentIndex(autoHide->currentIndex() == 0 ? 1 : 0);
+  Q_EMIT autoHide->activated(autoHide->currentIndex());
+  QVERIFY(banner->isHidden());
+  // a setting that the core reads asks for the restart, and the banner is above the pages
+  port->setValue(port->value() + 1);
+  QVERIFY(!banner->isHidden());
+  QVERIFY(banner->isVisibleTo(window.get()));
+  QVERIFY(rectIn(*window, banner).bottom() < rectIn(*window, shell->pages()).top());
+  QCOMPARE(banner->button()->text(), QStringLiteral("Restart sharing"));
+
+  // a core that stops has nothing to restart
+  Access::states(*window, ProcessState::Stopped, ConnectionState::Disconnected);
+  QVERIFY(banner->isHidden());
+  Access::states(*window, ProcessState::Started, ConnectionState::Listening);
+  QVERIFY(banner->isHidden());
+  port->setValue(port->value() + 1);
+  QVERIFY(!banner->isHidden());
+  // and so has a core that starts again (it reads the settings as they are)
+  Access::states(*window, ProcessState::Starting, ConnectionState::Disconnected);
+  QVERIFY(banner->isHidden());
+  Access::states(*window, ProcessState::Stopped, ConnectionState::Disconnected);
+
+  // the title of the window follows a setting that is changed on a page, at once
+  auto *version =
+      pages->page(QStringLiteral("settings.general"))->findChild<QCheckBox *>(QStringLiteral("cbShowVersion"));
+  QVERIFY(version);
+  version->setChecked(true);
+  QVERIFY(window->windowTitle().contains(QLatin1Char('-')));
+  version->setChecked(false);
+  QVERIFY(!window->windowTitle().contains(QLatin1Char('-')));
 }
 
 void MainShellTests::deskflowLook_aChangeOfLanguageKeepsTheShell()
@@ -618,7 +738,9 @@ void MainShellTests::deskflowLook_aChangeOfLanguageKeepsTheShell()
   QCoreApplication::processEvents();
 
   QCOMPARE(Access::shell(*window), shell);
-  QVERIFY(shell->rail()->item(QStringLiteral("preferences"))->text().startsWith(QStringLiteral("Preferences")));
+  // the entries of the settings are named again too
+  QCOMPARE(shell->rail()->item(QStringLiteral("settings.general"))->text(), QStringLiteral("General"));
+  QVERIFY(!shell->rail()->item(QStringLiteral("preferences"))->isVisibleTo(shell->rail()));
   QCOMPARE(shell->rail()->item(QStringLiteral("about"))->text().isEmpty(), false);
   QCOMPARE(shell->modeControl()->segmentText(0), QStringLiteral("Share this computer"));
   QCOMPARE(shell->computersCard()->findChildren<SettingRow *>(QStringLiteral("computerRow")).size(), 2);

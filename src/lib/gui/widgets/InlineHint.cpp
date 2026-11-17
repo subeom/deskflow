@@ -29,6 +29,19 @@ InlineHint::InlineHint(const QString &text, QWidget *parent) : InlineHint(parent
   setText(text);
 }
 
+void InlineHint::setDanger(bool danger)
+{
+  if (m_danger == danger)
+    return;
+  m_danger = danger;
+  applyLook();
+}
+
+bool InlineHint::isDanger() const
+{
+  return m_danger;
+}
+
 void InlineHint::applyLook()
 {
   // the size is a ratio of the size the system gives text, so that it follows the text size that the user set
@@ -37,7 +50,7 @@ void InlineHint::applyLook()
 
   auto palette = this->palette();
   const auto &c = currentTokens().colors;
-  palette.setColor(QPalette::WindowText, c.textSecondary);
+  palette.setColor(QPalette::WindowText, m_danger ? c.danger : c.textSecondary);
   palette.setColor(QPalette::Disabled, QPalette::WindowText, c.textDisabled);
   setPalette(palette);
 }

@@ -39,6 +39,10 @@ namespace deskflow::gui {
 class MainShell;
 }
 
+namespace deskflow::gui::settings {
+class SettingsPages;
+}
+
 namespace deskflow::gui::layout {
 class LayoutMemoryService;
 }
@@ -175,6 +179,10 @@ private:
   void updateShellComputers();
   void shellEntryActivated(const QString &id);
   void autoShowLogOnError(const QString &line);
+  //! A page of the settings changed a setting: what the window shows follows, and sharing is to be restarted when the
+  //! core reads the setting
+  void settingApplied(const QString &key);
+  void updateWindowTitle();
 
   bool canRunCore() const;
 
@@ -220,6 +228,7 @@ private:
 
   // The new look: null while the application has the look of the system
   deskflow::gui::MainShell *m_shell = nullptr;
+  deskflow::gui::settings::SettingsPages *m_settingsPages = nullptr;
   bool m_shellRefreshPending = false;
   QStringList m_connectedClients;
   // the log was shown by an error (and is not what the user chose): it is not remembered, and it is done once for a run

@@ -96,13 +96,33 @@ void SettingRow::setTitle(const QString &title)
 
 QString SettingRow::description() const
 {
-  return m_hint->text();
+  return m_description;
 }
 
 void SettingRow::setDescription(const QString &description)
 {
-  m_hint->setText(description);
-  m_hint->setVisible(!description.isEmpty());
+  m_description = description;
+  showHint();
+}
+
+QString SettingRow::error() const
+{
+  return m_error;
+}
+
+void SettingRow::setError(const QString &error)
+{
+  m_error = error;
+  showHint();
+}
+
+void SettingRow::showHint()
+{
+  // an error takes the place of the guidance, and is what a screen reader gets as the description
+  const auto text = m_error.isEmpty() ? m_description : m_error;
+  m_hint->setText(text);
+  m_hint->setVisible(!text.isEmpty());
+  m_hint->setDanger(!m_error.isEmpty());
   updateNames();
 }
 
@@ -178,7 +198,7 @@ void SettingRow::updateNames()
     }
   }
   if (first && (first->accessibleDescription().isEmpty() || first->property("settingRowDescription").toBool())) {
-    first->setAccessibleDescription(description());
+    first->setAccessibleDescription(m_error.isEmpty() ? description() : m_error);
     first->setProperty("settingRowDescription", true);
   }
   if (auto *primary = primaryControl())

@@ -13,6 +13,7 @@
 #include <QAbstractButton>
 #include <QAccessible>
 #include <QAccessibleWidget>
+#include <QLabel>
 
 namespace {
 
@@ -24,6 +25,23 @@ class RoleAccessible : public QAccessibleWidget
 public:
   RoleAccessible(QWidget *widget, QAccessible::Role role) : QAccessibleWidget(widget, role)
   {
+  }
+};
+
+// The title of a page: a heading that is named by its text
+class TitleAccessible : public QAccessibleWidget
+{
+public:
+  explicit TitleAccessible(QLabel *label) : QAccessibleWidget(label, QAccessible::Heading)
+  {
+  }
+
+  QString text(QAccessible::Text text) const override
+  {
+    auto result = QAccessibleWidget::text(text);
+    if (text == QAccessible::Name && result.isEmpty())
+      result = static_cast<QLabel *>(widget())->text();
+    return result;
   }
 };
 
@@ -239,6 +257,10 @@ QAccessibleInterface *factory(const QString &className, QObject *object)
   }
   if (className == QLatin1String("SectionHeader"))
     return new RoleAccessible(widget, QAccessible::Heading);
+  if (className == QLatin1String("PageTitle"))
+    return new TitleAccessible(static_cast<QLabel *>(widget));
+  if (className == QLatin1String("deskflow::gui::settings::RestartBanner"))
+    return new RoleAccessible(widget, QAccessible::AlertMessage);
   if (className == QLatin1String("StatusChip"))
     return new RoleAccessible(widget, QAccessible::StaticText);
   return nullptr;

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <QHash>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -29,6 +30,10 @@ class StatusModel;
 
 namespace style {
 class BackdropWidget;
+}
+
+namespace settings {
+class RestartBanner;
 }
 
 //! The widgets of the main window that the new shell takes over (it moves them, it does not make them again)
@@ -133,7 +138,24 @@ public:
   //! The page of the stack that an entry of the sidebar shows (a page that is not the home page: later work)
   void addPage(const QString &id, const QString &iconName, const QString &text, QWidget *page);
 
+  /*!
+   * A page of the settings: an entry in the group "Settings" of the sidebar and a page in the stack. This is where the
+   * settings go: the pages of the settings are added here (SettingsPages), in the order of the sidebar. A later page
+   * (the configuration of the client with its group of the tunnel) is one more call, and needs nothing else of the
+   * shell. The first one takes the place of the entry "Preferences", which opened a dialog.
+   */
+  void addSettingsPage(const QString &id, const QString &iconName, const QString &text, QWidget *page);
+  //! The text of the entry of a page (the language changed)
+  void setPageText(const QString &id, const QString &text);
+  //! Shows the page and marks its entry in the sidebar: "home" or the id of a page that was added
+  void showPage(const QString &id);
+  QString currentPageId() const;
+
+  //! The line above every page that asks for the sharing to be restarted
+  settings::RestartBanner *restartBanner() const;
+
 private:
+  void registerPage(const QString &id, QWidget *page);
   void updateModeTexts();
   void applyStatus();
   void updateComputersPlaceholder();
@@ -152,6 +174,8 @@ private:
   SegmentedControl *m_modeControl = nullptr;
   QLabel *m_title = nullptr;
   QStackedWidget *m_pages = nullptr;
+  QHash<QString, int> m_pageIndex;
+  settings::RestartBanner *m_restartBanner = nullptr;
   QStackedWidget *m_modePages = nullptr;
   SettingCard *m_computersCard = nullptr;
   SettingCard *m_noModeCard = nullptr;

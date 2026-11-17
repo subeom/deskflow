@@ -140,6 +140,16 @@ add_library(${target} STATIC
   style/StatusColors.cpp
   style/StatusColors.h
   style/phosphor.qrc
+  settings/RestartBanner.cpp
+  settings/RestartBanner.h
+  settings/SettingEffects.cpp
+  settings/SettingEffects.h
+  settings/SettingsBinder.cpp
+  settings/SettingsBinder.h
+  settings/SettingsPage.cpp
+  settings/SettingsPage.h
+  settings/SettingsPages.cpp
+  settings/SettingsPages.h
   validators/AliasValidator.cpp
   validators/AliasValidator.h
   validators/ComputerDuplicationsValidator.cpp
@@ -186,6 +196,8 @@ add_library(${target} STATIC
   widgets/SearchWidget.cpp
   widgets/NavRail.cpp
   widgets/NavRail.h
+  widgets/PageTitle.cpp
+  widgets/PageTitle.h
   widgets/SegmentedControl.cpp
   widgets/SegmentedControl.h
   widgets/SidebarShell.cpp

@@ -8,6 +8,7 @@
 
 #include "ClientConnectionSection.h"
 #include "StatusModel.h"
+#include "gui/settings/RestartBanner.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/BackdropWidget.h"
 #include "gui/style/FontScale.h"
@@ -15,6 +16,7 @@
 #include "gui/style/LookFollower.h"
 #include "gui/style/PanelWidget.h"
 #include "gui/widgets/NavRail.h"
+#include "gui/widgets/PageTitle.h"
 #include "gui/widgets/SectionHeader.h"
 #include "gui/widgets/SegmentedControl.h"
 #include "gui/widgets/SettingCard.h"
@@ -131,6 +133,18 @@ MainShell::MainShell(const MainShellParts &parts, QObject *parent) : QObject(par
     contentLayout->addWidget(holder);
   }
 
+  // the line that asks for a restart of the sharing, above every page
+  {
+    auto *holder = new QWidget(content);
+    holder->setObjectName(QStringLiteral("restartHolder"));
+    auto *holderLayout = new QVBoxLayout(holder);
+    holderLayout->setContentsMargins(room.left(), room.top(), room.right(), 6);
+    m_restartBanner = new settings::RestartBanner(holder);
+    holderLayout->addWidget(m_restartBanner);
+    new HolderFollower(m_restartBanner, holder);
+    contentLayout->addWidget(holder);
+  }
+
   m_pages = new QStackedWidget(content);
   m_pages->setObjectName(QStringLiteral("shellPages"));
   contentLayout->addWidget(m_pages, 1);
@@ -148,9 +162,8 @@ MainShell::MainShell(const MainShellParts &parts, QObject *parent) : QObject(par
   headerLayout->setSpacing(6);
   auto *titleRow = new QHBoxLayout;
   titleRow->setSpacing(metrics::spaceLg);
-  m_title = new QLabel(header);
+  m_title = new PageTitle(header);
   m_title->setObjectName(QStringLiteral("shellTitle"));
-  m_title->setTextFormat(Qt::PlainText);
   m_modeControl = new SegmentedControl(header);
   m_modeControl->setObjectName(QStringLiteral("modeControl"));
   m_modeControl->addSegment({});
@@ -261,15 +274,6 @@ MainShell::MainShell(const MainShellParts &parts, QObject *parent) : QObject(par
   connect(rail, &NavRail::pageSelected, this, [this](const QString &id) {
     if (id == QLatin1String(kHomeId))
       m_pages->setCurrentIndex(0);
-  });
-
-  new LookFollower(m_title, [this] {
-    auto font = scaleFont(QApplication::font(m_title), qreal(metrics::fontTitle) / metrics::fontBody);
-    font.setWeight(QFont::DemiBold);
-    m_title->setFont(font);
-    auto palette = m_title->palette();
-    palette.setColor(QPalette::WindowText, currentTokens().colors.text);
-    m_title->setPalette(palette);
   });
 
   parts.central->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -502,11 +506,55 @@ void MainShell::addPage(const QString &id, const QString &iconName, const QStrin
 {
   auto *rail = m_sidebar->rail();
   rail->addPage(id, iconName, text);
+  registerPage(id, page);
+}
+
+void MainShell::addSettingsPage(const QString &id, const QString &iconName, const QString &text, QWidget *page)
+{
+  auto *rail = m_sidebar->rail();
+  // the pages of the settings are in the group of the settings, above what ends it; they take the place of the entry
+  // that opened the dialog of the settings
+  rail->addPageBefore(QLatin1String(kPreferencesId), id, iconName, text);
+  rail->setItemVisible(QLatin1String(kPreferencesId), false);
+  registerPage(id, page);
+}
+
+void MainShell::registerPage(const QString &id, QWidget *page)
+{
   const int index = m_pages->addWidget(page);
-  connect(rail, &NavRail::pageSelected, this, [this, id, index](const QString &selected) {
+  m_pageIndex.insert(id, index);
+  connect(m_sidebar->rail(), &NavRail::pageSelected, this, [this, id, index](const QString &selected) {
     if (selected == id)
       m_pages->setCurrentIndex(index);
   });
+}
+
+void MainShell::setPageText(const QString &id, const QString &text)
+{
+  m_sidebar->rail()->setItemText(id, text);
+}
+
+void MainShell::showPage(const QString &id)
+{
+  int index = -1;
+  if (id == QLatin1String(kHomeId))
+    index = 0;
+  else
+    index = m_pageIndex.value(id, -1);
+  if (index < 0)
+    return;
+  m_pages->setCurrentIndex(index);
+  m_sidebar->rail()->setCurrentPage(id);
+}
+
+QString MainShell::currentPageId() const
+{
+  return m_sidebar->rail()->currentPage();
+}
+
+settings::RestartBanner *MainShell::restartBanner() const
+{
+  return m_restartBanner;
 }
 
 } // namespace deskflow::gui

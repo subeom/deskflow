@@ -20,6 +20,12 @@ public:
   explicit InlineHint(QWidget *parent = nullptr);
   explicit InlineHint(const QString &text, QWidget *parent = nullptr);
 
+  //! The line says what is wrong (a value that was not applied): it has the colour of an error
+  void setDanger(bool danger);
+  bool isDanger() const;
+
 private:
   void applyLook();
+
+  bool m_danger = false;
 };

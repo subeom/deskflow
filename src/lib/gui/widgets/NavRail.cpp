@@ -399,6 +399,21 @@ NavItem *NavRail::addPage(const QString &id, const QString &iconName, const QStr
   return item;
 }
 
+NavItem *
+NavRail::addPageBefore(const QString &beforeId, const QString &id, const QString &iconName, const QString &text)
+{
+  auto *item = add(NavItem::Kind::Page, id, iconName, text, Region::Top);
+  // the entry is at the end now: it goes to the place of the one that it comes before
+  for (int i = 0; i < m_entries.size() - 1; ++i) {
+    if (m_entries[i].item && m_entries[i].item->id() == beforeId) {
+      m_entries.move(m_entries.size() - 1, i);
+      relayout();
+      break;
+    }
+  }
+  return item;
+}
+
 NavItem *NavRail::addAction(const QString &id, const QString &iconName, const QString &text, Region region)
 {
   return add(NavItem::Kind::Action, id, iconName, text, region);
