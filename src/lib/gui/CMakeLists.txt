@@ -107,6 +107,8 @@ add_library(${target} STATIC
   style/Icons.h
   style/PanelWidget.cpp
   style/PanelWidget.h
+  style/StatusColors.cpp
+  style/StatusColors.h
   style/phosphor.qrc
   validators/AliasValidator.cpp
   validators/AliasValidator.h

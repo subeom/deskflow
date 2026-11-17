@@ -30,6 +30,8 @@ private:
   std::vector<std::unique_ptr<IStringValidator>> m_Validators;
 
   void setError(const QString &message) const;
+  // for the style of the application: the line edit holds a value that is not valid
+  void markInvalid(bool invalid) const;
 };
 
 } // namespace validators

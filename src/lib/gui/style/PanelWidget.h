@@ -27,6 +27,15 @@ QPixmap shadowPatch(int radius, int blur, const QColor &color, qreal dpr);
 void paintShadow(QPainter *painter, const QRect &rect, int radius, int offsetY, const QColor &color, qreal dpr);
 
 /*!
+ * Paints the panel itself: the shadow around the body, the body in the colour of a surface with the opacity of the
+ * density, its edge. \p area is what the painter may paint in (the widget), \p body the panel as it is seen in it, \p
+ * dpr the device pixel ratio that the picture is made for.
+ */
+void paintPanelBody(
+    QPainter *painter, const QRect &area, const QRect &body, const Tokens &tokens, bool elevated, bool dense, qreal dpr
+);
+
+/*!
  * \brief A floating, rounded panel of the new look: the colour of a surface with some transparency (more opaque for a
  * panel that carries much text), a 1 px light edge, a soft shadow, and the padding of its contents.
  *

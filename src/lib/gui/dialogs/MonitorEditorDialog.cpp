@@ -7,6 +7,7 @@
 #include "MonitorEditorDialog.h"
 
 #include "gui/config/MonitorEditing.h"
+#include "gui/style/StatusColors.h"
 #include "gui/widgets/MonitorEditorWidget.h"
 
 #include <QComboBox>
@@ -29,12 +30,10 @@
 
 using namespace deskflow::server;
 using namespace deskflow::server::editor;
+using deskflow::gui::style::applyStatusColor;
+using deskflow::gui::style::Status;
 
 namespace {
-
-constexpr auto kGreen = "color: #1e8e3e;";
-constexpr auto kAmber = "color: #b26a00;";
-constexpr auto kRed = "color: #d93025;";
 
 void useOneLine(QLabel *label)
 {
@@ -301,7 +300,7 @@ void MonitorEditorDialog::updateReportedMode()
       tr("✔ These are the monitors that %1 reports. They are used as they are; draw your own to use others.")
           .arg(m_name)
   );
-  m_status->setStyleSheet(QString::fromLatin1(kGreen));
+  applyStatusColor(m_status, Status::Success);
   m_buttons->button(QDialogButtonBox::Ok)->setEnabled(true);
 }
 
@@ -426,14 +425,14 @@ void MonitorEditorDialog::refresh()
     m_numbersZoom = made.zoom;
 
   QString text;
-  const char *style = kGreen;
+  auto status = Status::Success;
   const auto reported = m_reported;
   if (!problems.empty()) {
     text = QStringLiteral("✖ ") + describeProblem(problems.front());
-    style = kRed;
+    status = Status::Danger;
   } else if (made.fit == Fit::Invalid) {
     text = QStringLiteral("✖ ") + QString::fromStdString(made.error);
-    style = kRed;
+    status = Status::Danger;
   } else if (made.fit == Fit::Matches) {
     text = tr("✔ Matches what %1 reports: %2 × %3.").arg(m_name).arg(reported->width()).arg(reported->height());
     if (m_stretch)
@@ -447,15 +446,15 @@ void MonitorEditorDialog::refresh()
                .arg(made.drawingW)
                .arg(made.drawingH)
                .arg(QString::number(made.differsPercent, 'f', 1));
-    style = kAmber;
+    status = Status::Warning;
   } else {
     text = tr("Not verified yet: %1 has not told the server its screen size. The layout is saved, and checked when it "
               "connects.")
                .arg(m_name);
-    style = kAmber;
+    status = Status::Warning;
   }
   m_status->setText(text);
-  m_status->setStyleSheet(QString::fromLatin1(style));
+  applyStatusColor(m_status, status);
 
   syncControls();
   const auto selected = m_widget->selected();
@@ -487,7 +486,7 @@ void MonitorEditorDialog::applyNumbers()
   const auto parsed = MonitorLayout::parse(m_numbers->toPlainText().trimmed().toStdString());
   if (!parsed) {
     m_numbersStatus->setText(QString::fromStdString(parsed.error));
-    m_numbersStatus->setStyleSheet(QString::fromLatin1(kRed));
+    applyStatusColor(m_numbersStatus, Status::Danger);
     return;
   }
   const auto &rects = parsed.layout->monitors();
@@ -512,7 +511,7 @@ void MonitorEditorDialog::importNumbers()
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
     m_numbersStatus->setText(tr("%1 could not be read.").arg(path));
-    m_numbersStatus->setStyleSheet(QString::fromLatin1(kRed));
+    applyStatusColor(m_numbersStatus, Status::Danger);
     return;
   }
   const auto text = QString::fromUtf8(file.readAll());

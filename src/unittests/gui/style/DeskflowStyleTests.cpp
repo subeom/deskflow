@@ -201,6 +201,29 @@ void DeskflowStyleTests::pushButton_withKeyboardFocus_hasTheRingInsideItsEdge()
   QVERIFY2(!near(plain.pixelColor(70, 1), c.accent), qPrintable(describe(plain.pixelColor(70, 1))));
 }
 
+void DeskflowStyleTests::pushButton_atAFractionalScale_hasABorderOfWholeDevicePixels()
+{
+  const auto &c = m_style->tokens().colors;
+  // 125 %: a logical pixel is 1.25 device pixels; the border must still be one row of device pixels, not a blend
+  QImage image(QSize(150, 40), QImage::Format_ARGB32_Premultiplied);
+  image.setDevicePixelRatio(1.25);
+  image.fill(QApplication::palette().color(QPalette::Window));
+  {
+    QPainter painter(&image);
+    QStyleOptionButton option;
+    option.rect = QRect(0, 0, 120, 32);
+    option.palette = QApplication::palette();
+    option.state = QStyle::State_Enabled;
+    m_style->drawPrimitive(QStyle::PE_PanelButtonCommand, &option, &painter, nullptr);
+  }
+  const auto column = 75;
+  QVERIFY2(near(image.pixelColor(column, 0), c.controlBorder), qPrintable(describe(image.pixelColor(column, 0))));
+  QVERIFY2(near(image.pixelColor(column, 1), c.surface), qPrintable(describe(image.pixelColor(column, 1))));
+  // and the same at the bottom edge: 32 logical px are 40 device px
+  QVERIFY2(near(image.pixelColor(column, 39), c.controlBorder), qPrintable(describe(image.pixelColor(column, 39))));
+  QVERIFY2(near(image.pixelColor(column, 38), c.surface), qPrintable(describe(image.pixelColor(column, 38))));
+}
+
 void DeskflowStyleTests::lineEdit_isRounded_andInvalidIsDangerColoured()
 {
   const auto &c = m_style->tokens().colors;

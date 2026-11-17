@@ -26,6 +26,7 @@ private Q_SLOTS:
   void pushButton_secondary_hasTheRadiusOfInputsAndTheBorderOfControls();
   void pushButton_disabled_hasNoAccent();
   void pushButton_withKeyboardFocus_hasTheRingInsideItsEdge();
+  void pushButton_atAFractionalScale_hasABorderOfWholeDevicePixels();
 
   void lineEdit_isRounded_andInvalidIsDangerColoured();
   void lineEdit_withFocus_hasTheAccentBorder();

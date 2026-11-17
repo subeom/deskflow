@@ -7,6 +7,8 @@
 
 #include "ValidationError.h"
 
+#include "gui/style/StatusColors.h"
+
 #include <QLabel>
 #include <QPalette>
 
@@ -20,9 +22,11 @@ ValidationError::ValidationError(QObject *parent, QLabel *label) : QObject(paren
   m_label->clear();
   m_label->setContentsMargins(5, 3, 5, 3);
 
+  // crimson with white text; in the look of the application the colour of danger with the text that reads on it
+  const auto fill = deskflow::gui::style::errorFill();
   auto palette = m_label->palette();
-  palette.setColor(QPalette::WindowText, Qt::white);
-  palette.setColor(QPalette::Window, QStringLiteral("crimson"));
+  palette.setColor(QPalette::WindowText, fill.text);
+  palette.setColor(QPalette::Window, fill.background);
   m_label->setPalette(palette);
 }
 

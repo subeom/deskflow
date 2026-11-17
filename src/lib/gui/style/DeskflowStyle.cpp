@@ -45,16 +45,26 @@ qreal radiusFor(const QRect &rect, int wanted)
   return qMin<qreal>(wanted, rect.height() / 2.0);
 }
 
-// A rounded rectangle whose border of the given width lies inside the rect (a border of 1 px on a whole pixel is crisp)
+// A rounded rectangle whose border of the given width lies inside the rect. The edges are put on whole device pixels (a
+// screen of 125 % has 1.25 device pixels in a logical one) and the border is a whole number of them, so that a line is
+// as crisp at 125 %, 150 % and 175 % as at 100 % and 200 %
 void drawRounded(
     QPainter *painter, const QRect &rect, qreal radius, const QBrush &fill, const QColor &border, qreal width
 )
 {
+  const auto dpr = painter->device()->devicePixelRatioF();
+  const auto snap = [dpr](qreal logical) { return std::round(logical * dpr) / dpr; };
+
   painter->save();
   painter->setRenderHint(QPainter::Antialiasing);
-  const auto inset = border.isValid() ? width / 2 : 0;
-  const auto shape = QRectF(rect).adjusted(inset, inset, -inset, -inset);
-  painter->setPen(border.isValid() ? QPen(border, width) : QPen(Qt::NoPen));
+  const QRectF edges(
+      QPointF(snap(rect.left()), snap(rect.top())),
+      QPointF(snap(rect.left() + rect.width()), snap(rect.top() + rect.height()))
+  );
+  const auto penWidth = border.isValid() ? std::max(1.0, std::round(width * dpr)) / dpr : 0.0;
+  const auto inset = penWidth / 2;
+  const auto shape = edges.adjusted(inset, inset, -inset, -inset);
+  painter->setPen(border.isValid() ? QPen(border, penWidth) : QPen(Qt::NoPen));
   painter->setBrush(fill);
   const auto r = qMax<qreal>(0, radius - inset);
   painter->drawRoundedRect(shape, r, r);

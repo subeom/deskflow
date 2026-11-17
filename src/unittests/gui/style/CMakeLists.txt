@@ -34,6 +34,14 @@ create_test(
 )
 
 create_test(
+  NAME StatusColorsTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE StatusColorsTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
   NAME IconsTests
   DEPENDS gui
   LIBS server ${gui_server_libs}

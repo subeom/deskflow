@@ -8,12 +8,23 @@
 #include "LineEditValidator.h"
 #include "ValidationError.h"
 
+#include "gui/style/Appearance.h"
+#include "gui/style/DeskflowStyle.h"
+
 #include <QApplication>
 #include <QLineEdit>
 #include <QStyle>
 #include <QValidator>
 
 namespace validators {
+
+void LineEditValidator::markInvalid(bool invalid) const
+{
+  if (m_pLineEdit->property(deskflow::gui::style::DeskflowStyle::kInvalidProperty).toBool() == invalid)
+    return;
+  m_pLineEdit->setProperty(deskflow::gui::style::DeskflowStyle::kInvalidProperty, invalid);
+  m_pLineEdit->update();
+}
 
 LineEditValidator::LineEditValidator(QLineEdit *lineEdit, ValidationError *error)
     : m_pError(error),
@@ -49,6 +60,11 @@ QValidator::State LineEditValidator::validate(QString &input, int &) const
 
   if (isEmpty) {
     m_pLineEdit->setStyleSheet({});
+    markInvalid(false);
+  } else if (deskflow::gui::style::isDeskflowStyleInstalled()) {
+    // the style of the application draws the border of an input that is not valid
+    m_pLineEdit->setStyleSheet({});
+    markInvalid(true);
   } else { // The values here are for fusion style
     int radius = 3;
     int padVer = 2;

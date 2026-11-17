@@ -13,6 +13,7 @@
 
 #include <QApplication>
 #include <QImage>
+#include <QPainter>
 #include <QPixmapCache>
 
 #include <algorithm>
@@ -303,6 +304,28 @@ void BackdropPanelTests::panel_withoutTheStyleLayer_isOpaqueInTheColoursOfTheOs(
   // the panel is the colour of a surface of the OS, the backdrop is the colour of its windows, and nothing is blended
   QVERIFY(near(image.pixelColor(190, 135), QApplication::palette().color(QPalette::Base), 1));
   QVERIFY(near(image.pixelColor(5, 5), QApplication::palette().color(QPalette::Window), 1));
+}
+
+void BackdropPanelTests::panel_atAFractionalScale_hasAnEdgeOfWholeDevicePixels()
+{
+  install(lookOf(false));
+  const auto &tokens = currentTokens();
+  // 125 %: the panel is painted into a picture with 1.25 device pixels in a logical pixel, over the backdrop
+  QImage image(QSize(800, 525), QImage::Format_ARGB32_Premultiplied);
+  image.setDevicePixelRatio(1.25);
+  {
+    QPainter painter(&image);
+    painter.drawPixmap(0, 0, backdropPixmap({640, 420}, 1.25, tokens));
+    painter.translate(40, 40);
+    paintPanelBody(&painter, QRect(0, 0, 300, 200), QRect(10, 6, 280, 178), tokens, true, true, 1.25);
+  }
+  // the top edge of the body is at 46 * 1.25 = 57.5 device pixels: it is put on the row 58, and the row above is the
+  // backdrop, not a blend of it and the panel
+  const int x = qRound(190 * 1.25);
+  const auto above = image.pixelColor(x, 57);
+  const auto edge = image.pixelColor(x, 58);
+  QVERIFY2(above.lightness() < 246, qPrintable(describe(above)));
+  QVERIFY2(edge.lightness() > 252, qPrintable(describe(edge)));
 }
 
 void BackdropPanelTests::panel_contentsMarginsAreTheShadowAndThePadding()

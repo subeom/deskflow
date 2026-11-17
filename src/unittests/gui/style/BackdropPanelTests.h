@@ -26,5 +26,6 @@ private Q_SLOTS:
   void panel_whenTransparencyIsReduced_isOpaqueAndHasNoShadow();
   void panel_followsTheLookWhenItChanges();
   void panel_withoutTheStyleLayer_isOpaqueInTheColoursOfTheOs();
+  void panel_atAFractionalScale_hasAnEdgeOfWholeDevicePixels();
   void panel_contentsMarginsAreTheShadowAndThePadding();
 };

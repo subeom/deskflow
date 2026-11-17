@@ -242,42 +242,60 @@ void PanelWidget::changeEvent(QEvent *event)
   }
 }
 
-void PanelWidget::paintEvent(QPaintEvent *)
+void paintPanelBody(
+    QPainter *painter, const QRect &area, const QRect &body, const Tokens &tokens, bool elevated, bool dense, qreal dpr
+)
 {
-  const auto &c = m_tokens.colors;
-  const auto body = panelRect();
+  const auto &c = tokens.colors;
   const qreal radius = qMin<qreal>(metrics::radiusCard, body.height() / 2.0);
 
-  QPainter painter(this);
-  painter.setRenderHint(QPainter::Antialiasing);
+  painter->save();
+  painter->setRenderHint(QPainter::Antialiasing);
+  // the edges of the panel are put on whole device pixels (a screen of 125 % has 1.25 of them in a logical pixel)
+  const auto snap = [dpr](qreal logical) { return std::round(logical * dpr) / dpr; };
+  const QRectF snapped(
+      QPointF(snap(body.left()), snap(body.top())),
+      QPointF(snap(body.left() + body.width()), snap(body.top() + body.height()))
+  );
 
-  if (m_elevated && !m_tokens.flatBackdrop) {
+  if (elevated && !tokens.flatBackdrop) {
     // the shadow is only around the panel: below a translucent panel it would darken the panel
     QPainterPath outside;
-    outside.addRect(rect());
-    outside.addRoundedRect(body, radius, radius);
-    painter.setClipPath(outside);
-    paintShadow(&painter, body, metrics::radiusCard, metrics::shadowOffsetY, c.shadow, devicePixelRatioF());
-    painter.setClipping(false);
+    outside.addRect(area);
+    outside.addRoundedRect(snapped, radius, radius);
+    painter->setClipPath(outside);
+    paintShadow(painter, body, metrics::radiusCard, metrics::shadowOffsetY, c.shadow, dpr);
+    painter->setClipping(false);
   }
 
   QColor fill = c.surface;
-  fill.setAlphaF(m_density == Density::Dense ? m_tokens.panelDenseOpacity : m_tokens.panelOpacity);
-  painter.setPen(Qt::NoPen);
-  painter.setBrush(fill);
-  painter.drawRoundedRect(body, radius, radius);
+  fill.setAlphaF(dense ? tokens.panelDenseOpacity : tokens.panelOpacity);
+  painter->setPen(Qt::NoPen);
+  painter->setBrush(fill);
+  painter->drawRoundedRect(snapped, radius, radius);
 
-  // the edge of the panel, 1 px, and a second line of light along its upper edge
-  const auto edge = QRectF(body).adjusted(0.5, 0.5, -0.5, -0.5);
-  painter.setBrush(Qt::NoBrush);
-  painter.setPen(QPen(c.panelEdge, 1));
-  painter.drawRoundedRect(edge, radius - 0.5, radius - 0.5);
-  if (!m_tokens.flatBackdrop) {
-    painter.save();
-    painter.setClipRect(QRect(body.left(), body.top(), body.width(), static_cast<int>(radius)));
-    painter.drawRoundedRect(edge.adjusted(1, 1, -1, -1), radius - 1.5, radius - 1.5);
-    painter.restore();
+  // the edge of the panel, one device pixel at least, and a second line of light along its upper edge
+  const auto line = std::max(1.0, std::round(dpr)) / dpr;
+  const auto edge = snapped.adjusted(line / 2, line / 2, -line / 2, -line / 2);
+  painter->setBrush(Qt::NoBrush);
+  painter->setPen(QPen(c.panelEdge, line));
+  painter->drawRoundedRect(edge, radius - line / 2, radius - line / 2);
+  if (!tokens.flatBackdrop) {
+    painter->save();
+    painter->setClipRect(QRectF(snapped.left(), snapped.top(), snapped.width(), radius));
+    painter->drawRoundedRect(edge.adjusted(line, line, -line, -line), radius - 1.5 * line, radius - 1.5 * line);
+    painter->restore();
   }
+  painter->restore();
+}
+
+void PanelWidget::paintEvent(QPaintEvent *)
+{
+  QPainter painter(this);
+  paintPanelBody(
+      &painter, rect(), panelRect(), m_tokens, m_elevated, m_density == Density::Dense,
+      painter.device()->devicePixelRatioF()
+  );
 }
 
 } // namespace deskflow::gui::style
