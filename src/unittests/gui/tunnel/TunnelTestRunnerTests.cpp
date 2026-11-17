@@ -145,6 +145,30 @@ void TunnelTestRunnerTests::aTunnelThatRunsForTheClient_isUsedAndLeftRunning()
   QCOMPARE(rig.tunnel.processes.size(), size_t(1));
 }
 
+void TunnelTestRunnerTests::aTunnelThatIsStartingForTheClient_isWaitedForAndNotLetGoByTheTest()
+{
+  Rig rig(m_dir);
+  // the client asked for the tunnel and it is on its way
+  rig.tunnel.controller->acquire();
+  QCOMPARE(rig.tunnel.controller->status().state, TunnelState::Starting);
+  QSignalSpy finished(rig.runner.get(), &TunnelTestRunner::finished);
+
+  rig.runner->start();
+  QCOMPARE(rig.state(TestStage::Process), StageState::Running);
+  // it is waited for, and not started a second time
+  QCOMPARE(rig.tunnel.processes.size(), size_t(1));
+
+  rig.bringTheTunnelUp();
+  QCOMPARE(rig.state(TestStage::Process), StageState::Ok);
+  QCOMPARE(rig.detail(TestStage::Process), QStringLiteral("running for the client"));
+  rig.holds.front()(HoldOutcome::Held);
+  QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 3000);
+
+  // the tunnel is the client's: the test does not let it go
+  QTest::qWait(250);
+  QCOMPARE(rig.tunnel.controller->status().state, TunnelState::Listening);
+}
+
 void TunnelTestRunnerTests::everyPrerequisiteIsReported_andNothingIsStartedWhenOneIsMissing()
 {
   Rig rig(m_dir);
