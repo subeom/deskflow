@@ -9,6 +9,8 @@
 #include "server/MonitorGeometry.h"
 
 #include <vector>
+#include <string>
+#include <cstdint>
 
 namespace deskflow::platform {
 
@@ -28,5 +30,25 @@ computer is made of. A display that mirrors another has the same rectangle (it i
 when there is no display to ask, which is the case of a process that has no window server.
 */
 std::vector<deskflow::server::MonitorRect> osxActiveDisplays();
+
+//! An active display with what the system says it is (read only; used to remember layouts by display situation)
+struct OsxDisplayDetail
+{
+  //! The rectangle, the scale and whether it is the main display: what \c osxActiveDisplayInfo() says
+  deskflow::monitors::MonitorInfo info;
+  //! The maker, the model and the serial number of the monitor, 0 when the system does not say
+  uint32_t vendor = 0;
+  uint32_t model = 0;
+  uint32_t serial = 0;
+  //! The UUID that the system keeps for the display; empty when it does not have one
+  std::string uuid;
+  bool builtIn = false;
+};
+
+//! The active displays of this Mac in the order of \c osxActiveDisplayInfo(), with what identifies each
+/*!
+Nothing is changed: the displays are only asked about. Empty when there is no display to ask.
+*/
+std::vector<OsxDisplayDetail> osxActiveDisplayDetails();
 
 } // namespace deskflow::platform

@@ -54,6 +54,8 @@ add_library(${target} STATIC
   core/ReportedScreen.cpp
   core/ReportedScreen.h
   core/NetworkMonitor.h
+  layout/DisplayProvider.cpp
+  layout/DisplayProvider.h
   layout/DisplaySignature.cpp
   layout/DisplaySignature.h
   layout/Layout.cpp
@@ -62,10 +64,16 @@ add_library(${target} STATIC
   layout/LayoutMatcher.h
   layout/LayoutMemory.cpp
   layout/LayoutMemory.h
+  layout/LayoutMemoryService.cpp
+  layout/LayoutMemoryService.h
   layout/LayoutProfileStore.cpp
   layout/LayoutProfileStore.h
   layout/Reattach.cpp
   layout/Reattach.h
+  layout/ServerConfigLayout.cpp
+  layout/ServerConfigLayout.h
+  layout/ServerConfigLayoutHost.cpp
+  layout/ServerConfigLayoutHost.h
   dialogs/AboutDialog.cpp
   dialogs/AboutDialog.h
   dialogs/AboutDialog.ui

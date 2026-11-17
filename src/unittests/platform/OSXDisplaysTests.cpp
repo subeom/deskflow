@@ -105,4 +105,36 @@ void OSXDisplaysTests::monitorsCanBeReported()
   QVERIFY(!prepared.monitors.empty());
 }
 
+// what identifies the displays is only asked: the rectangles are the ones of the info, in the same order, exactly one display
+// is the main one, a built in display says so, and a display that has an id has one that is the same when asked twice
+void OSXDisplaysTests::detailsAreOfTheSameDisplaysAsTheInfo()
+{
+  const auto info = deskflow::platform::osxActiveDisplayInfo();
+  const auto details = deskflow::platform::osxActiveDisplayDetails();
+  if (info.empty() || details.empty())
+    QSKIP("no display to ask");
+
+  QCOMPARE(details.size(), info.size());
+  int mains = 0;
+  for (size_t i = 0; i < details.size(); ++i) {
+    QVERIFY(details[i].info.rect == info[i].rect);
+    QCOMPARE(details[i].info.primary, info[i].primary);
+    mains += details[i].info.primary ? 1 : 0;
+    // a UUID is text of the form that the system writes, when it says one
+    if (!details[i].uuid.empty())
+      QVERIFY2(details[i].uuid.size() == 36, details[i].uuid.c_str());
+  }
+  QCOMPARE(mains, 1);
+
+  const auto again = deskflow::platform::osxActiveDisplayDetails();
+  QCOMPARE(again.size(), details.size());
+  for (size_t i = 0; i < details.size(); ++i) {
+    QCOMPARE(again[i].uuid, details[i].uuid);
+    QCOMPARE(again[i].vendor, details[i].vendor);
+    QCOMPARE(again[i].model, details[i].model);
+    QCOMPARE(again[i].serial, details[i].serial);
+    QCOMPARE(again[i].builtIn, details[i].builtIn);
+  }
+}
+
 QTEST_MAIN(OSXDisplaysTests)

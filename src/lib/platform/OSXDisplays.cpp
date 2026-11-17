@@ -6,6 +6,7 @@
 #include "platform/OSXDisplays.h"
 
 #include <CoreGraphics/CoreGraphics.h>
+#include <ApplicationServices/ApplicationServices.h>
 
 #include <cmath>
 
@@ -67,6 +68,53 @@ std::vector<deskflow::server::MonitorRect> osxActiveDisplays()
   for (const auto &display : osxActiveDisplayInfo())
     monitors.push_back(display.rect);
   return monitors;
+}
+
+std::vector<OsxDisplayDetail> osxActiveDisplayDetails()
+{
+  CGDisplayCount count = 0;
+  if (CGGetActiveDisplayList(0, nullptr, &count) != kCGErrorSuccess || count == 0)
+    return {};
+
+  std::vector<CGDirectDisplayID> displays(count);
+  if (CGGetActiveDisplayList(count, displays.data(), &count) != kCGErrorSuccess)
+    return {};
+  displays.resize(count);
+
+  const auto info = osxActiveDisplayInfo();
+  std::vector<OsxDisplayDetail> details;
+  for (size_t i = 0; i < displays.size(); ++i) {
+    const auto display = displays[i];
+    OsxDisplayDetail detail;
+    // the same list in the same order as the one that the rectangles are made from; if the displays changed between the
+    // two calls the lists are not the same length, and then there is nothing to say yet
+    if (info.size() != displays.size())
+      return {};
+    detail.info = info[i];
+    detail.vendor = CGDisplayVendorNumber(display);
+    detail.model = CGDisplayModelNumber(display);
+    detail.serial = CGDisplaySerialNumber(display);
+    // the system says "unknown" for a number that it does not know: the vendor 'unkn', the model 0xFFFFFFFF
+    constexpr uint32_t kUnknownVendor = 0x756e6b6e;
+    constexpr uint32_t kUnknownModel = 0xFFFFFFFF;
+    if (detail.vendor == kUnknownVendor || detail.vendor == kUnknownModel)
+      detail.vendor = 0;
+    if (detail.model == kUnknownModel)
+      detail.model = 0;
+    detail.builtIn = CGDisplayIsBuiltin(display) != 0;
+
+    if (const CFUUIDRef uuid = CGDisplayCreateUUIDFromDisplayID(display)) {
+      if (const CFStringRef text = CFUUIDCreateString(kCFAllocatorDefault, uuid)) {
+        char buffer[64] = {};
+        if (CFStringGetCString(text, buffer, sizeof(buffer), kCFStringEncodingUTF8))
+          detail.uuid = buffer;
+        CFRelease(text);
+      }
+      CFRelease(uuid);
+    }
+    details.push_back(detail);
+  }
+  return details;
 }
 
 } // namespace deskflow::platform

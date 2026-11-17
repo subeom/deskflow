@@ -121,6 +121,10 @@ public:
     inline static const auto Heartbeat = QStringLiteral("server/heartbeat");
     inline static const auto Protocol = QStringLiteral("server/protocol");
     inline static const auto RelativeMouseMoves = QStringLiteral("server/relativeMouseMoves");
+    // experimental: the arrangement of the other computers is remembered for each set of displays of this computer and
+    // put back when the displays change. Only has an effect together with the two experiments above, in server mode, with
+    // the configuration of the GUI (not an external file)
+    inline static const auto RememberArrangements = QStringLiteral("server/rememberArrangements");
     inline static const auto SwitchDelay = QStringLiteral("server/switchDelay");
     inline static const auto SwitchDoubleTap = QStringLiteral("server/switchDoubleTap");
     // experimental: the links of the server are derived from the arrangement of the computers, and the server maps the
@@ -374,6 +378,7 @@ private:
     , Server::Heartbeat
     , Server::Protocol
     , Server::RelativeMouseMoves
+    , Server::RememberArrangements
     , Server::SwitchDelay
     , Server::SwitchDoubleTap
     , Server::UseArrangement
@@ -407,6 +412,7 @@ private:
     , Server::ExperimentalMultiMonitor
     , Server::ExternalConfig
     , Server::RelativeMouseMoves
+    , Server::RememberArrangements
     , Server::UseArrangement
     , Server::XdpClipboardRetried
   };

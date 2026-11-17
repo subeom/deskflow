@@ -597,9 +597,8 @@ void ServerConfig::overrideServerMonitors(const std::optional<std::vector<Monito
   monitorsOverride() = monitors;
 }
 
-std::vector<arrangement::Computer> ServerConfig::arrangementComputers() const
+std::vector<arrangement::Computer> ServerConfig::arrangementComputers(const std::vector<MonitorRect> &display) const
 {
-  const auto display = serverMonitors();
   std::vector<arrangement::Computer> result;
   for (const auto &computer : computers()) {
     if (computer.isNull())
@@ -619,11 +618,16 @@ std::vector<arrangement::Computer> ServerConfig::arrangementComputers() const
 
 arrangement::Arrangement ServerConfig::arrangement() const
 {
+  return arrangementWith(serverMonitors());
+}
+
+arrangement::Arrangement ServerConfig::arrangementWith(const std::vector<MonitorRect> &display) const
+{
   if (!hasArrangement())
-    return classicGridAsArrangement().arrangement;
+    return classicGridAsArrangement(display).arrangement;
 
   arrangement::Arrangement result;
-  result.computers = arrangementComputers();
+  result.computers = arrangementComputers(display);
   std::vector<size_t> unplaced;
   size_t index = 0;
   arrangement::Rect bounds;
@@ -659,7 +663,12 @@ arrangement::Arrangement ServerConfig::arrangement() const
 
 arrangement::GridConversion ServerConfig::classicGridAsArrangement() const
 {
-  const auto entries = arrangementComputers();
+  return classicGridAsArrangement(serverMonitors());
+}
+
+arrangement::GridConversion ServerConfig::classicGridAsArrangement(const std::vector<MonitorRect> &display) const
+{
+  const auto entries = arrangementComputers(display);
   std::vector<arrangement::GridCell> cells;
   size_t entry = 0;
   std::string server;
