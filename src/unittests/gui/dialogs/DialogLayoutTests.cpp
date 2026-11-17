@@ -16,6 +16,7 @@
 #include "gui/dialogs/MonitorEditorDialog.h"
 #include "gui/dialogs/ServerAddressesDialog.h"
 #include "gui/dialogs/ServerConfigDialog.h"
+#include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
 #include "gui/widgets/MonitorEditorWidget.h"
@@ -53,6 +54,19 @@ namespace {
 
 // Set to a directory to get a picture of every scenario there (to look at a failure; the checks stay numeric)
 constexpr auto kGrabDirVariable = "DESKFLOW_LAYOUT_TEST_GRAB_DIR";
+
+// The style of the program is not one that the factory of Qt knows by name
+const auto kDeskflowStyle = QStringLiteral("Deskflow");
+
+QStyle *applyStyle(const QString &name)
+{
+  if (name == kDeskflowStyle) {
+    auto *style = new deskflow::gui::style::DeskflowStyle;
+    QApplication::setStyle(style);
+    return style;
+  }
+  return QApplication::setStyle(name);
+}
 
 QString describe(const QWidget *widget)
 {
@@ -257,8 +271,8 @@ void addScenarios()
   QTest::addColumn<qreal>("fontScale");
   QTest::addColumn<int>("sizeMode");
 
-  // the styles every Qt build has, plus the platform's own when it is not one of them
-  QStringList styles{QStringLiteral("Fusion"), QStringLiteral("Windows")};
+  // the styles every Qt build has, plus the platform's own when it is not one of them, and the style of the program
+  QStringList styles{QStringLiteral("Fusion"), QStringLiteral("Windows"), kDeskflowStyle};
   for (const auto &key : QStyleFactory::keys()) {
     if (!styles.contains(key, Qt::CaseInsensitive))
       styles.append(key);
@@ -302,7 +316,7 @@ void DialogLayoutTests::computerSettingsDialog_isLaidOutWithoutSqueezing()
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   Computer computer(QStringLiteral("layout-test"));
   ComputerSettingsDialog dialog(nullptr, &computer);
   showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
@@ -334,7 +348,7 @@ void DialogLayoutTests::computerSettingsDialog_monitorLayout_isLaidOutWithoutSqu
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
   Computer computer(QStringLiteral("layout-test"));
   ComputerSettingsDialog dialog(nullptr, &computer);
@@ -367,7 +381,7 @@ void DialogLayoutTests::clientConfigDialog_isLaidOutWithoutSqueezing()
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   ClientConfigDialog dialog;
   showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
   QVERIFY(dialog.isVisible());
@@ -392,7 +406,7 @@ void DialogLayoutTests::serverConfigDialog_advancedTab_isLaidOutWithoutSqueezing
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   Settings::setValue(Settings::Server::EnableClipboard, true);
   ServerConfig config;
   ServerConfigDialog dialog(nullptr, config);
@@ -430,7 +444,7 @@ void DialogLayoutTests::monitorEditorDialog_isLaidOutWithoutSqueezing()
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   using deskflow::server::editor::Layout;
   using deskflow::server::editor::Monitor;
   Monitor main;
@@ -486,7 +500,7 @@ void DialogLayoutTests::serverConfigDialog_computersTab_withTheArrangement_isLai
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   // three computers, the first of them on top of the server, so that an issue is said
   Settings::setValue(Settings::Core::ComputerName, QStringLiteral("srv"));
   auto &proxy = Settings::proxy();
@@ -565,7 +579,7 @@ void DialogLayoutTests::serverConfigDialog_computersTab_withReportedMonitors_isL
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   Settings::setValue(Settings::Core::ComputerName, QStringLiteral("srv"));
   auto &proxy = Settings::proxy();
   proxy.beginGroup(QStringLiteral("internalConfig"));
@@ -676,7 +690,7 @@ void DialogLayoutTests::monitorEditorDialog_showingTheReportedMonitors_isLaidOut
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   using deskflow::server::editor::Layout;
   using deskflow::server::editor::Monitor;
   Monitor main;
@@ -723,7 +737,7 @@ void DialogLayoutTests::connectionTestDialog_isLaidOutWithoutSqueezing()
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   probetest::FakeNetwork network;
   network.scripts[QStringLiteral("10.0.0.5")] = probetest::Script{};
   network.scripts[QStringLiteral("10.0.0.6")] = probetest::open(5);
@@ -774,7 +788,7 @@ void DialogLayoutTests::serverAddressesDialog_isLaidOutWithoutSqueezing()
   QFETCH(qreal, fontScale);
   QFETCH(int, sizeMode);
 
-  QVERIFY(QApplication::setStyle(style) != nullptr);
+  QVERIFY(applyStyle(style) != nullptr);
   const QList<AddressInfo> addresses{
       {QStringLiteral("10.0.21.36"), QStringLiteral("en7"), AddressKind::Lan},
       {QStringLiteral("10.18.0.77"), QStringLiteral("en0"), AddressKind::Lan},
