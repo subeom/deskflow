@@ -60,6 +60,8 @@ add_library(${target} STATIC
   layout/Layout.h
   layout/LayoutMatcher.cpp
   layout/LayoutMatcher.h
+  layout/LayoutMemory.cpp
+  layout/LayoutMemory.h
   layout/LayoutProfileStore.cpp
   layout/LayoutProfileStore.h
   layout/Reattach.cpp
