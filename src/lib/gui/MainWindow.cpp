@@ -32,8 +32,14 @@
 #include "gui/ipc/DaemonIpcClient.h"
 #include "gui/layout/DisplayProvider.h"
 #include "gui/layout/LayoutMemoryService.h"
+#include "gui/shell/MainShell.h"
+#include "gui/shell/StatusModel.h"
+#include "gui/style/Appearance.h"
+#include "gui/style/Icons.h"
 #include "gui/widgets/LayoutNoticeBar.h"
 #include "gui/widgets/LogDock.h"
+#include "gui/widgets/NavRail.h"
+#include "gui/widgets/SidebarShell.h"
 #include "net/FingerprintDatabase.h"
 #include "widgets/StatusBar.h"
 
@@ -165,6 +171,8 @@ MainWindow::MainWindow()
   applyConfig();
   setupLayoutMemory();
   m_statusBar->setSecurityIcon(TlsUtility::isEnabled());
+  if (deskflow::gui::style::isDeskflowStyleInstalled())
+    setupShell();
   restoreWindow();
 
 #ifdef Q_OS_MACOS
@@ -194,7 +202,12 @@ void MainWindow::restoreWindow()
   auto windowGeometry = Settings::value(Settings::Gui::WindowGeometry).toRect();
   const auto totalGeometry = QGuiApplication::primaryScreen()->availableGeometry();
   if (!windowGeometry.isValid()) {
-    adjustSize();
+    if (m_shell) {
+      // a window that can be resized has a size to start with: wide enough for the sidebar with its labels
+      resize(qMax(sizeHint().width(), 1000), qMax(sizeHint().height(), 620));
+    } else {
+      adjustSize();
+    }
     windowGeometry = geometry();
   } else {
     setGeometry(windowGeometry);
@@ -206,7 +219,8 @@ void MainWindow::restoreWindow()
     move(screenGeometry.center() - rect().center());
   }
 
-  if (!Settings::value(Settings::Gui::LogExpanded).toBool())
+  // the window of the new look is resized by the user at any time; the old one keeps its size while the log is folded
+  if (!m_shell && !Settings::value(Settings::Gui::LogExpanded).toBool())
     setFixedSize(size());
 }
 
@@ -222,7 +236,11 @@ void MainWindow::setupControls()
     Settings::setValue(Settings::Core::LastVersion, kVersion);
   }
 
-  if (!Settings::value(Settings::Gui::LogExpanded).toBool()) {
+  // the new look has its own setting for the log: it is folded until the user unfolds it (or an error does)
+  const bool logExpanded = deskflow::gui::style::isDeskflowStyleInstalled()
+                               ? Settings::value(Settings::Gui::ShellLogExpanded).toBool()
+                               : Settings::value(Settings::Gui::LogExpanded).toBool();
+  if (!logExpanded) {
     m_logDock->hide();
   }
 
@@ -336,6 +354,14 @@ void MainWindow::toggleLogVisible(bool visible)
     return;
   }
 
+  // the window of the new look can be resized: the log comes and goes inside it, and what the user chose is remembered
+  // (not what an error did)
+  if (m_shell) {
+    if (!m_logShownByError)
+      Settings::setValue(Settings::Gui::ShellLogExpanded, visible);
+    return;
+  }
+
   setFixedSize(16777215, 16777215);
   Settings::setValue(Settings::Gui::LogExpanded, visible);
   if (visible) {
@@ -393,6 +419,7 @@ void MainWindow::settingsChanged(const QString &key)
 void MainWindow::serverConfigSaving()
 {
   m_serverConfig.commit();
+  updateShellComputers();
 }
 
 void MainWindow::setupLayoutMemory()
@@ -464,6 +491,11 @@ void MainWindow::coreProcessError(CoreProcess::Error error)
                          .arg(mode, Settings::serverConfigFile()));
     }
     QMessageBox::warning(this, kAppName, message);
+    if (m_shell)
+      m_shell->status()->setError(
+          tr("Cannot start"),
+          tr("The Core executable %1 could not be started. See the message for what to check.").arg(kCoreBinName)
+      );
   }
 }
 
@@ -623,6 +655,15 @@ void MainWindow::updateModeControls()
 
   if (isServer || isClient)
     updateModeControlLabels();
+
+  if (m_shell) {
+    m_shell->setMode(
+        isServer   ? deskflow::gui::MainShell::Mode::Server
+        : isClient ? deskflow::gui::MainShell::Mode::Client
+                   : deskflow::gui::MainShell::Mode::None
+    );
+    updateShellComputers();
+  }
 }
 
 void MainWindow::updateModeControlLabels()
@@ -651,6 +692,14 @@ void MainWindow::updateModeControlLabels()
   m_actionStartCore->setIcon(startIcon);
   m_actionStopCore->setText(stopText);
   m_actionStopCore->setIcon(stopIcon);
+
+  // the button of the state is the primary button of the new look: its icons are the ones of the look, in the colour of
+  // what is on the accent
+  if (m_shell) {
+    using deskflow::gui::style::IconColor;
+    startIcon = deskflow::gui::style::icon(isServer ? "play" : "plugs-connected", IconColor::OnAccent);
+    stopIcon = deskflow::gui::style::icon(isServer ? "stop" : "plug", IconColor::OnAccent);
+  }
 
   if (isStarted) {
     ui->btnToggleCore->setText(stopText);
@@ -847,6 +896,8 @@ void MainWindow::setTrayIcon()
 void MainWindow::handleLogLine(const QString &line)
 {
   m_logDock->appendLine(line);
+  if (m_shell)
+    autoShowLogOnError(line);
 
   // what a computer that connected says its screen is, for the arrangement of the computers
   m_serverConfig.takeReportedScreenFromLog(line);
@@ -1031,6 +1082,16 @@ void MainWindow::updateStatus()
     ui->btnEditName->setVisible(process == Stopped);
   }
   m_statusBar->setStatus(connection, process, isServer);
+  if (m_shell) {
+    // a core that is not running has no computers connected, and a core that starts has a new run to show an error in
+    if (process == Stopped)
+      m_connectedClients.clear();
+    if (process == Starting)
+      m_logShownByErrorThisRun = false;
+    m_shell->status()->setClients(m_connectedClients);
+    m_shell->status()->setCore(connection, process, isServer);
+    updateShellComputers();
+  }
 }
 
 void MainWindow::coreProcessStateChanged(ProcessState state)
@@ -1138,6 +1199,8 @@ void MainWindow::changeEvent(QEvent *e)
     updateStatus();
     serverClientsChanged({});
     updateText();
+    if (m_shell)
+      updateShellTexts();
   }
 }
 
@@ -1332,6 +1395,12 @@ bool MainWindow::generateCertificate()
 
 void MainWindow::serverClientsChanged(const QStringList &clients)
 {
+  if (m_shell) {
+    const bool active = m_coreProcess.mode() == CoreMode::Server && m_coreProcess.isStarted();
+    m_connectedClients = active ? clients : QStringList();
+    m_shell->status()->setClients(m_connectedClients);
+    updateShellComputers();
+  }
   if (m_coreProcess.mode() != CoreMode::Server || !m_coreProcess.isStarted())
     return;
   m_statusBar->setServerClients(clients);
@@ -1477,4 +1546,154 @@ bool MainWindow::canRunCore() const
   const bool isServer = mode == Settings::CoreMode::Server;
   const bool isClient = mode == Settings::CoreMode::Client;
   return ((isServer || isClient) && (isClient && !ui->cbHostname->currentText().isEmpty()) || isServer);
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// The main window of the new look
+//////////////////////////////////////////////////////////////////////////////
+
+void MainWindow::setupShell()
+{
+  using deskflow::gui::MainShell;
+  using deskflow::gui::MainShellParts;
+
+  MainShellParts parts;
+  parts.central = ui->topLevelWidget;
+  parts.oldGroup = ui->groupBox;
+  parts.nameRow = ui->widget;
+  parts.ipLabel = ui->lblIpAddresses;
+  parts.modeServer = ui->rbModeServer;
+  parts.modeClient = ui->rbModeClient;
+  parts.noMode = ui->lblNoMode;
+  parts.configureServer = ui->btnConfigureServer;
+  parts.exportServer = ui->btnSaveServerConfig;
+  parts.configureClient = ui->btnConfigureClient;
+  parts.testConnection = ui->btnTestConnection;
+  parts.toggleCore = ui->btnToggleCore;
+  parts.restartCore = ui->btnRestartCore;
+  parts.hostLabel = ui->m_pLabelServerName;
+  parts.hostname = ui->cbHostname;
+  parts.noticeBar = m_layoutNoticeBar;
+  m_shell = new MainShell(parts, this);
+
+  // what the user pressed in the sidebar
+  connect(m_shell->rail(), &NavRail::activated, this, &MainWindow::shellEntryActivated);
+  // the sidebar that is folded is remembered; the one that a narrow window folded is not
+  m_shell->sidebar()->setCollapsed(Settings::value(Settings::Gui::SidebarCollapsed).toBool());
+  connect(m_shell->sidebar(), &SidebarShell::collapsedChanged, this, [](bool collapsed) {
+    Settings::setValue(Settings::Gui::SidebarCollapsed, collapsed);
+  });
+  connect(m_logDock->toggleViewAction(), &QAction::toggled, m_shell, &deskflow::gui::MainShell::setLogShown);
+  m_shell->setLogShown(!m_logDock->isHidden());
+
+  // the View menu folds and unfolds the sidebar as its button does. Ctrl+B is the shortcut of the sidebar in the
+  // editors of code and is free here; the Mac has its own for a sidebar (Control+Command+S)
+  m_actionToggleSidebar = new QAction(this);
+  m_actionToggleSidebar->setShortcut(
+      deskflow::platform::isMac() ? QKeySequence(Qt::CTRL | Qt::META | Qt::Key_S) : QKeySequence(Qt::CTRL | Qt::Key_B)
+  );
+  m_actionToggleSidebar->setMenuRole(QAction::NoRole);
+  connect(m_actionToggleSidebar, &QAction::triggered, this, [this] { m_shell->rail()->toggleButton()->click(); });
+  connect(m_shell->rail(), &NavRail::expandedChanged, this, [this] {
+    m_actionToggleSidebar->setText(m_shell->rail()->toggleButton()->accessibleName());
+  });
+  m_menuView->addAction(m_actionToggleSidebar);
+
+  // the status bar is what says the state (the sentence, the encryption, the buttons): it is kept as the source,
+  // hidden, and the shell shows it
+  m_statusBar->setHeadless(true);
+  connect(m_statusBar, &StatusBar::changed, this, &MainWindow::scheduleShellRefresh);
+
+  setMinimumWidth(deskflow::gui::MainShell::kMinimumWindowWidth);
+  updateModeControls();
+  updateModeControlLabels();
+  updateShellTexts();
+  updateStatus();
+}
+
+void MainWindow::updateShellTexts()
+{
+  deskflow::gui::MainShell::Texts texts;
+  texts.preferences = m_actionSettings->text();
+  texts.log = m_logDock->toggleViewAction()->text();
+  texts.about = m_actionAbout->text();
+  texts.fingerprint = m_statusBar->fingerprintToolTip();
+  texts.updateAvailable = m_statusBar->updateButtonText();
+  m_shell->setTexts(texts);
+  m_actionToggleSidebar->setText(m_shell->rail()->toggleButton()->accessibleName());
+  updateShellComputers();
+  refreshShell();
+}
+
+void MainWindow::scheduleShellRefresh()
+{
+  if (!m_shell || m_shellRefreshPending)
+    return;
+  m_shellRefreshPending = true;
+  QMetaObject::invokeMethod(this, &MainWindow::refreshShell, Qt::QueuedConnection);
+}
+
+void MainWindow::refreshShell()
+{
+  m_shellRefreshPending = false;
+  if (!m_shell)
+    return;
+  m_shell->status()->setDetail(m_statusBar->statusText());
+  m_shell->status()->setSecurity(
+      m_statusBar->securityIconVisible(), m_statusBar->isEncrypted(), m_statusBar->securityText()
+  );
+  m_shell->setFingerprintVisible(m_statusBar->fingerprintVisible());
+  m_shell->setUpdateVersion(m_statusBar->updateVersion());
+  m_shell->setEncryptionEnabled(TlsUtility::isEnabled());
+}
+
+void MainWindow::updateShellComputers()
+{
+  if (!m_shell)
+    return;
+  const auto &reported = m_serverConfig.reportedMonitorsByComputer();
+  const auto thisComputer = Settings::value(Settings::Core::ComputerName).toString();
+
+  QList<deskflow::gui::MainShell::ComputerEntry> entries;
+  for (const auto &computer : std::as_const(m_serverConfig).computers()) {
+    if (computer.isNull() || computer.isServer() || computer.name() == thisComputer)
+      continue;
+    deskflow::gui::MainShell::ComputerEntry entry;
+    entry.name = computer.name();
+    entry.connected = m_connectedClients.contains(computer.name());
+    if (const auto found = reported.constFind(computer.name()); found != reported.constEnd() && !found->isEmpty()) {
+      const auto count = found->monitors.size();
+      entry.detail = (count == 1 ? tr("1 monitor") : tr("%1 monitors").arg(count)) + QStringLiteral(" · ") +
+                     tr("Reported by the computer");
+    }
+    entries.append(entry);
+  }
+  m_shell->setComputers(entries);
+}
+
+void MainWindow::shellEntryActivated(const QString &id)
+{
+  if (id == QLatin1String("preferences"))
+    openSettings();
+  else if (id == QLatin1String("log"))
+    m_logDock->toggleViewAction()->toggle();
+  else if (id == QLatin1String("about"))
+    openAboutDialog();
+  else if (id == QLatin1String("fingerprint"))
+    showMyFingerprint();
+  else if (id == QLatin1String("update"))
+    openGetNewVersionUrl();
+}
+
+void MainWindow::autoShowLogOnError(const QString &line)
+{
+  static const QRegularExpression errorLine(QStringLiteral(R"(^\[[^\]]*\]\s+(ERROR|CRITICAL|FATAL):)"));
+  if (m_logShownByErrorThisRun || !m_logDock->isHidden() || !isVisible() || isMinimized())
+    return;
+  if (!errorLine.match(line).hasMatch())
+    return;
+  m_logShownByErrorThisRun = true;
+  m_logShownByError = true;
+  m_logDock->show();
+  m_logShownByError = false;
 }

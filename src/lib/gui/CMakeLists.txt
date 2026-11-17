@@ -130,6 +130,7 @@ add_library(${target} STATIC
   style/DesignTokens.cpp
   style/DesignTokens.h
   style/Icons.cpp
+  style/FontScale.h
   style/Icons.h
   style/LookFollower.cpp
   style/LookFollower.h
@@ -183,6 +184,18 @@ add_library(${target} STATIC
   widgets/RemoveComputerWidget.h
   widgets/SearchWidget.h
   widgets/SearchWidget.cpp
+  widgets/NavRail.cpp
+  widgets/NavRail.h
+  widgets/SegmentedControl.cpp
+  widgets/SegmentedControl.h
+  widgets/SidebarShell.cpp
+  widgets/SidebarShell.h
+  shell/ClientConnectionSection.cpp
+  shell/ClientConnectionSection.h
+  shell/MainShell.cpp
+  shell/MainShell.h
+  shell/StatusModel.cpp
+  shell/StatusModel.h
   widgets/SectionHeader.cpp
   widgets/SectionHeader.h
   widgets/SettingCard.cpp

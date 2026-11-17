@@ -35,6 +35,10 @@ class LayoutNoticeBar;
 class LogDock;
 class StatusBar;
 
+namespace deskflow::gui {
+class MainShell;
+}
+
 namespace deskflow::gui::layout {
 class LayoutMemoryService;
 }
@@ -47,8 +51,13 @@ namespace deskflow::gui::ipc {
 class DaemonIpcClient;
 }
 
+struct MainWindowTestAccess;
+
 class MainWindow : public QMainWindow
 {
+  //! The tests of the main window reach what the window keeps (the core is never started by them)
+  friend struct ::MainWindowTestAccess;
+
   using ConnectionState = deskflow::core::ConnectionState;
   using CoreMode = Settings::CoreMode;
   using CoreProcess = deskflow::gui::CoreProcess;
@@ -156,6 +165,17 @@ private:
   void setHelpFilePath();
   void showHelpViewer() const;
 
+  //! The main window of the new look (Appearance: deskflow): the sidebar and the page. It takes over the controls of
+  //! this window and is told what to show; the old window is what there is without it.
+  void setupShell();
+  void updateShellTexts();
+  //! The shell shows what the status bar says: it is asked once for a run of changes
+  void scheduleShellRefresh();
+  void refreshShell();
+  void updateShellComputers();
+  void shellEntryActivated(const QString &id);
+  void autoShowLogOnError(const QString &line);
+
   bool canRunCore() const;
 
   /**
@@ -198,6 +218,14 @@ private:
   LogDock *m_logDock;
   StatusBar *m_statusBar = nullptr;
 
+  // The new look: null while the application has the look of the system
+  deskflow::gui::MainShell *m_shell = nullptr;
+  bool m_shellRefreshPending = false;
+  QStringList m_connectedClients;
+  // the log was shown by an error (and is not what the user chose): it is not remembered, and it is done once for a run
+  bool m_logShownByError = false;
+  bool m_logShownByErrorThisRun = false;
+
   // Window Menu
   QMenu *m_menuFile = nullptr;
   QMenu *m_menuEdit = nullptr;
@@ -215,6 +243,8 @@ private:
   QAction *m_actionRestartCore = nullptr;
   QAction *m_actionStopCore = nullptr;
   QAction *m_actionShowHelp = nullptr;
+  //! Only in the window of the new look (View menu): folds and unfolds the sidebar, as its button does
+  QAction *m_actionToggleSidebar = nullptr;
 
   // Network monitoring
   NetworkMonitor *m_networkMonitor = nullptr;

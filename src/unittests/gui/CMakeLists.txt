@@ -12,6 +12,7 @@ add_subdirectory(config)
 add_subdirectory(core)
 add_subdirectory(dialogs)
 add_subdirectory(layout)
+add_subdirectory(shell)
 add_subdirectory(style)
 add_subdirectory(widgets)
 

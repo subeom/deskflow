@@ -121,6 +121,7 @@ void StatusBar::setStatus(ConnectionState connectionState, ProcessState processS
       }
     }
   }
+  Q_EMIT changed();
 }
 // clang-format on
 void StatusBar::setServerClients(const QStringList &clients)
@@ -128,6 +129,7 @@ void StatusBar::setServerClients(const QStringList &clients)
   if (clients.isEmpty()) {
     m_lblStatus->setText(tr("%1 is waiting for clients").arg(kAppName));
     m_lblStatus->setToolTip("");
+    Q_EMIT changed();
     return;
   }
   const auto clientCount = static_cast<int>(clients.size());
@@ -142,11 +144,13 @@ void StatusBar::setServerClients(const QStringList &clients)
 
   const auto toolTipString = clientCount == 1 ? "" : tr("Clients:\n %1").arg(clients.join(newLine));
   m_lblStatus->setToolTip(toolTipString);
+  Q_EMIT changed();
 }
 
 void StatusBar::setSecurityIconVisible(bool visible)
 {
   m_lblSecurityIcon->setVisible(visible);
+  Q_EMIT changed();
 }
 
 void StatusBar::setConnectionInterval(int newInterval)
@@ -156,18 +160,64 @@ void StatusBar::setConnectionInterval(int newInterval)
 
 bool StatusBar::securityIconVisible() const
 {
-  return m_lblSecurityIcon->isVisible();
+  // a bar that the new main window keeps hidden still has the state of its icon
+  return m_headless ? !m_lblSecurityIcon->isHidden() : m_lblSecurityIcon->isVisible();
+}
+
+void StatusBar::setHeadless(bool headless)
+{
+  m_headless = headless;
+  setVisible(!headless);
 }
 
 void StatusBar::setBtnFingerprintVisible(bool visible)
 {
   m_btnFingerprint->setVisible(visible);
+  Q_EMIT changed();
 }
 
 void StatusBar::updateFound(const QString &version)
 {
   m_btnUpdate->setVisible(true);
   m_btnUpdate->setToolTip(tr("A new version v%1 is available").arg(version));
+  m_updateVersion = version;
+  Q_EMIT changed();
+}
+
+QString StatusBar::statusText() const
+{
+  return m_lblStatus->text();
+}
+
+QString StatusBar::securityText() const
+{
+  return m_lblSecurityIcon->toolTip();
+}
+
+bool StatusBar::isEncrypted() const
+{
+  return m_encrypted;
+}
+
+bool StatusBar::fingerprintVisible() const
+{
+  // the button is not shown while the bar is not, so what was asked of it is read from its own flag
+  return !m_btnFingerprint->isHidden();
+}
+
+QString StatusBar::updateVersion() const
+{
+  return m_updateVersion;
+}
+
+QString StatusBar::fingerprintToolTip() const
+{
+  return m_btnFingerprint->toolTip();
+}
+
+QString StatusBar::updateButtonText() const
+{
+  return m_btnUpdate->text();
 }
 
 void StatusBar::changeEvent(QEvent *e)
@@ -194,6 +244,7 @@ void StatusBar::updateTimerLabel()
     m_connectionInterval--;
   }
   m_lblStatus->setText(text);
+  Q_EMIT changed();
 }
 
 void StatusBar::setSecurityIcon(bool encrypted)
@@ -209,4 +260,5 @@ void StatusBar::setSecurityLevel(const QString &securityLevel)
   m_securityLevel = securityLevel;
   const auto txt = m_encrypted ? tr("%1 Encryption Enabled").arg(m_securityLevel) : tr("Encryption Disabled");
   m_lblSecurityIcon->setToolTip(txt);
+  Q_EMIT changed();
 }

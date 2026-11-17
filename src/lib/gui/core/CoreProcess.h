@@ -17,6 +17,8 @@
 #include <QProcess>
 #include <QTimer>
 
+struct MainWindowTestAccess;
+
 namespace deskflow::gui {
 
 namespace ipc {
@@ -26,6 +28,8 @@ class DaemonIpcClient;
 
 class CoreProcess : public QObject
 {
+  //! The test of the main window sets the state that the core would report (it never starts the core)
+  friend struct ::MainWindowTestAccess;
   using ConnectionState = deskflow::core::ConnectionState;
   using ProcessMode = Settings::ProcessMode;
   using ProcessState = deskflow::core::ProcessState;

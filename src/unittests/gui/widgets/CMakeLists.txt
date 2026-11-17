@@ -26,6 +26,14 @@ create_test(
 )
 
 create_test(
+  NAME ShellWidgetsTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE ShellWidgetsTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
   NAME SettingAccessibilityTests
   DEPENDS gui
   LIBS server ${gui_server_libs}

@@ -8,6 +8,7 @@
 
 #include "Appearance.h"
 #include "LookFollower.h"
+#include "gui/widgets/NavRail.h"
 
 #include <QAbstractButton>
 #include <QAccessible>
@@ -81,12 +82,151 @@ private:
   }
 };
 
+// An entry of the sidebar: a list item (a page is selectable and the page that is shown is selected), a line of text
+// for a status that cannot be pressed
+class NavItemAccessible : public QAccessibleWidget
+{
+public:
+  explicit NavItemAccessible(NavItem *item)
+      : QAccessibleWidget(item, item->kind() == NavItem::Kind::Status ? QAccessible::StaticText : QAccessible::ListItem)
+  {
+  }
+
+  QAccessible::State state() const override
+  {
+    auto state = QAccessibleWidget::state();
+    if (item()->kind() == NavItem::Kind::Page) {
+      state.selectable = true;
+      state.selected = item()->isCurrent();
+    } else if (item()->kind() == NavItem::Kind::Action && item()->isCheckable()) {
+      state.checkable = true;
+      state.checked = item()->isChecked();
+    }
+    return state;
+  }
+
+  QString text(QAccessible::Text text) const override
+  {
+    auto result = QAccessibleWidget::text(text);
+    if (text == QAccessible::Name && result.isEmpty())
+      result = withoutMnemonic(item()->text());
+    return result;
+  }
+
+  QStringList actionNames() const override
+  {
+    if (item()->kind() == NavItem::Kind::Status)
+      return {};
+    return {QAccessibleActionInterface::pressAction(), QAccessibleActionInterface::setFocusAction()};
+  }
+
+  void doAction(const QString &name) override
+  {
+    if (name == QAccessibleActionInterface::pressAction()) {
+      if (item()->isEnabled() && item()->kind() != NavItem::Kind::Status)
+        item()->click();
+      return;
+    }
+    QAccessibleWidget::doAction(name);
+  }
+
+private:
+  NavItem *item() const
+  {
+    return static_cast<NavItem *>(widget());
+  }
+};
+
+// The button that folds the sidebar: it says whether the sidebar is folded or unfolded
+class NavToggleAccessible : public QAccessibleWidget
+{
+public:
+  explicit NavToggleAccessible(NavToggleButton *button) : QAccessibleWidget(button, QAccessible::Button)
+  {
+  }
+
+  QAccessible::State state() const override
+  {
+    auto state = QAccessibleWidget::state();
+    const bool expanded = static_cast<NavToggleButton *>(widget())->isExpandedState();
+    state.expandable = true;
+    state.expanded = expanded;
+    state.collapsed = !expanded;
+    return state;
+  }
+
+  QStringList actionNames() const override
+  {
+    return {QAccessibleActionInterface::pressAction(), QAccessibleActionInterface::setFocusAction()};
+  }
+
+  void doAction(const QString &name) override
+  {
+    if (name == QAccessibleActionInterface::pressAction()) {
+      static_cast<QAbstractButton *>(widget())->click();
+      return;
+    }
+    QAccessibleWidget::doAction(name);
+  }
+};
+
+// One choice of a segmented control: a radio button that is chosen or not
+class SegmentAccessible : public QAccessibleWidget
+{
+public:
+  explicit SegmentAccessible(QAbstractButton *button) : QAccessibleWidget(button, QAccessible::RadioButton)
+  {
+  }
+
+  QAccessible::State state() const override
+  {
+    auto state = QAccessibleWidget::state();
+    state.checkable = true;
+    state.checked = static_cast<QAbstractButton *>(widget())->isChecked();
+    return state;
+  }
+
+  QString text(QAccessible::Text text) const override
+  {
+    auto result = QAccessibleWidget::text(text);
+    if (text == QAccessible::Name && result.isEmpty())
+      result = withoutMnemonic(static_cast<QAbstractButton *>(widget())->text());
+    return result;
+  }
+
+  QStringList actionNames() const override
+  {
+    return {QAccessibleActionInterface::pressAction(), QAccessibleActionInterface::setFocusAction()};
+  }
+
+  void doAction(const QString &name) override
+  {
+    if (name == QAccessibleActionInterface::pressAction()) {
+      auto *button = static_cast<QAbstractButton *>(widget());
+      if (button->isEnabled())
+        button->click();
+      return;
+    }
+    QAccessibleWidget::doAction(name);
+  }
+};
+
 QAccessibleInterface *factory(const QString &className, QObject *object)
 {
   auto *widget = qobject_cast<QWidget *>(object);
   if (!widget)
     return nullptr;
 
+  if (className == QLatin1String("NavRail"))
+    return new RoleAccessible(widget, QAccessible::List);
+  if (className == QLatin1String("NavItem"))
+    return new NavItemAccessible(static_cast<NavItem *>(widget));
+  if (className == QLatin1String("NavToggleButton"))
+    return new NavToggleAccessible(static_cast<NavToggleButton *>(widget));
+  if (className == QLatin1String("SegmentedControl"))
+    return new RoleAccessible(widget, QAccessible::Grouping);
+  if (className == QLatin1String("SegmentedControlSegment"))
+    return new SegmentAccessible(static_cast<QAbstractButton *>(widget));
   if (className == QLatin1String("ToggleSwitch")) {
     // without the style layer it is the check box that it always was, for a screen reader as well
     if (!deskflow::gui::style::isDeskflowStyleInstalled())
