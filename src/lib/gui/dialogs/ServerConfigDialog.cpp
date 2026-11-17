@@ -17,7 +17,9 @@
 #include "dialogs/ComputerSettingsDialog.h"
 #include "dialogs/HotkeyDialog.h"
 #include "dialogs/MonitorEditorDialog.h"
+#include "dialogs/ServerConfigAdvanced.h"
 #include "gui/config/MonitorEditing.h"
+#include "gui/style/Appearance.h"
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
 #include "gui/widgets/SettingsDialogButtonBox.h"
@@ -102,6 +104,10 @@ ServerConfigDialog::ServerConfigDialog(QWidget *parent, ServerConfig &config)
   if (!deskflow::platform::isWindows())
     ui->cbWin32KeepForeground->setVisible(false);
   initConnections();
+
+  // The new look lays the Advanced tab out as cards; the look of the system keeps its group boxes
+  if (deskflow::gui::style::isDeskflowStyleInstalled())
+    deskflow::gui::applyAdvancedCards(ui->tabAdvanced);
 
   // A computer that says its screen or its monitors again while this is open: what the canvas draws follows it
   m_reportListener = std::make_shared<std::function<void(const QString &)>>([this](const QString &computer) {

@@ -101,6 +101,8 @@ add_library(${target} STATIC
   dialogs/MonitorEditorDialog.h
   dialogs/ServerAddressesDialog.cpp
   dialogs/ServerAddressesDialog.h
+  dialogs/ServerConfigAdvanced.cpp
+  dialogs/ServerConfigAdvanced.h
   dialogs/ServerConfigDialog.cpp
   dialogs/ServerConfigDialog.h
   dialogs/ServerConfigDialog.ui
