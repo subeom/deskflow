@@ -90,7 +90,7 @@ on every OS, in this order, with a separator between groups and none beside anot
 The rules of the platforms:
 
 * A row that does not apply is **dimmed** on macOS and on the desktops of Linux, and **left out** on Windows (the convention
-  of its notification area) — this concerns *Minimize to tray* while the window is not on the screen, and *Start* while no mode
+  of its notification area). This concerns *Minimize to tray* while the window is not on the screen, and *Start* while no mode
   is chosen. A *Start* that the settings cannot start is dimmed everywhere.
 * All the rows of a group have an icon, or none has one.
 * The texts of the commands and their shortcuts are those of the actions of the window (translated as they always were); a
@@ -132,15 +132,21 @@ A feature with a line of status of its own gives a key that is its own and a tex
 under the header, in the order in which the keys were first given; it is not there while the text is empty. Nothing else of
 the menu changes for it (`TrayMenuModel::setExternalRow`, tested).
 
-**Cloudflare Tunnel** (`feat/cloudflare-tunnel`) adds a disabled `QAction` (`m_actionTunnelStatus`) to the tray menu before
-*Start*, filled by `TunnelStatusWidget::statusTextChanged`. When that branch is merged, with the look Deskflow
-`m_actionTunnelStatus` is not put in the menu (the controller owns the rows) and the signal goes to the hook:
+**Cloudflare Tunnel** (`feat/cloudflare-tunnel`, `MainWindow::setupTunnel` and `tunnelUsedChanged`) adds a disabled `QAction`
+(`m_actionTunnelStatus`) to the tray menu before *Start* (`trayMenu->insertAction(m_actionStartCore, ...)`); its text follows
+`TunnelStatusWidget::statusTextChanged` and it is visible while the tunnel is used. When that branch is merged, with the
+look Deskflow the action is not put in the menu (the controller owns the rows, and `m_actionStartCore` is not in it) and
+both signals go to the hook:
 
 ```cpp
+// setupTunnel(): instead of insertAction when m_trayController is set
 connect(m_tunnelStatus, &TunnelStatusWidget::statusTextChanged, this, [this](const QString &text) {
   if (m_trayController)
-    m_trayController->setExternalRow(QStringLiteral("tunnel"), text);
+    m_trayController->setExternalRow(QStringLiteral("tunnel"), m_tunnelStatus->isTunnelUsed() ? text : QString());
 });
+// tunnelUsedChanged(bool used):
+if (m_trayController)
+  m_trayController->setExternalRow(QStringLiteral("tunnel"), used ? m_tunnelStatus->statusText() : QString());
 ```
 
 With the look System the branch's code is as it is (the action is added before *Start*). No tunnel code or text is in the tray.
