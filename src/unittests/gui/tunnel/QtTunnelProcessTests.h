@@ -14,6 +14,7 @@ private Q_SLOTS:
   void theTokenIsInTheEnvironmentOnly_andNoOtherTunnelVariableIsPassed();
   void theOutputComesAsLines();
   void aProgramThatIsNotThere_reportsItAndNeverStarts();
+  void aStartThatFailsInsideStart_isReportedBeforeStartReturns();
   void aProcessThatStopsOnItsOwn_reportsItsExitCode();
   void terminate_endsTheProcess();
   void kill_endsTheProcess();

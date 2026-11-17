@@ -113,9 +113,37 @@ void QtTunnelProcessTests::aProgramThatIsNotThere_reportsItAndNeverStarts()
   QSignalSpy startFailed(&process, &ITunnelProcess::startFailed);
   process.start(spec);
 
-  QVERIFY(startFailed.wait(5000));
+  // Windows reports a start that failed inside start(), Unix a moment later: the signal may be here already, and wait()
+  // only waits for one more
+  QVERIFY(startFailed.count() > 0 || startFailed.wait(5000));
+  // once (a later duplicate would be seen in the time that the event loop is given)
+  QTest::qWait(100);
+  QCOMPARE(startFailed.count(), 1);
+  QVERIFY(!startFailed.first().at(0).toString().isEmpty());
   QCOMPARE(started.count(), 0);
   QVERIFY(!process.isRunning());
+  QCOMPARE(process.processId(), qint64(0));
+}
+
+// Without a program QProcess reports the failure inside start() on every system (a start that fails in CreateProcess
+// does the same on Windows). Whoever uses the process has to be ready for a failure that is told before start()
+// returns.
+void QtTunnelProcessTests::aStartThatFailsInsideStart_isReportedBeforeStartReturns()
+{
+  LaunchSpec spec = fakeSpec(QStringLiteral("ok"), 0);
+  spec.program.clear();
+
+  QtTunnelProcess process;
+  QSignalSpy started(&process, &ITunnelProcess::started);
+  QSignalSpy startFailed(&process, &ITunnelProcess::startFailed);
+  process.start(spec);
+
+  QCOMPARE(startFailed.count(), 1);
+  QVERIFY(!startFailed.first().at(0).toString().isEmpty());
+  QCOMPARE(started.count(), 0);
+  QVERIFY(!process.isRunning());
+  QTest::qWait(100);
+  QCOMPARE(startFailed.count(), 1);
 }
 
 void QtTunnelProcessTests::aProcessThatStopsOnItsOwn_reportsItsExitCode()
