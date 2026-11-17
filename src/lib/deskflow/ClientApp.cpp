@@ -15,6 +15,7 @@
 #include "common/ExitCodes.h"
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
+#include "common/TunnelAddress.h"
 #include "deskflow/Computer.h"
 #include "deskflow/DisplayException.h"
 #include "deskflow/ipc/CoreIpc.h"
@@ -50,8 +51,9 @@ ClientApp::ClientApp(IEventQueue *events, const QString &processName) : App(even
 
 void ClientApp::parseArgs()
 {
-  // save server addresses (comma-separated list supported)
-  if (const auto addressList = Settings::textValue(Settings::Client::RemoteHost); !addressList.isEmpty()) {
+  // save server addresses (comma-separated list supported); with a Cloudflare Tunnel in use it is the local address of
+  // the tunnel instead, otherwise exactly the saved address
+  if (const auto addressList = deskflow::tunnel::effectiveRemoteHost(); !addressList.isEmpty()) {
     const int port = Settings::value(Settings::Core::Port).toInt();
     const QStringList addresses = addressList.split(',', Qt::SkipEmptyParts);
 
