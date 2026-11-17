@@ -13,8 +13,10 @@
 #import <UserNotifications/UNNotificationContent.h>
 #import <UserNotifications/UNNotificationTrigger.h>
 #import <UserNotifications/UNUserNotificationCenter.h>
+#import <objc/message.h>
 #import <objc/runtime.h>
 
+#import <QMenu>
 #import <QtGlobal>
 
 #pragma clang diagnostic push
@@ -169,4 +171,21 @@ void installQuitHandler(std::function<bool()> shouldQuit)
                                                                 Q_UNUSED(note)
                                                                 s_isSystemShuttingDown = YES;
                                                               }];
+}
+
+void showOSXMenuImages(QMenu *menu)
+{
+  if (menu == nullptr)
+    return;
+  NSMenu *nsMenu = menu->toNSMenu();
+  if (nsMenu == nil)
+    return;
+
+  // NSMenuItem.preferredImageVisibility is new in macOS 27: it is asked for by name, so that a build with an older SDK
+  // compiles, and so that the OS that does not have it is left alone. 1 is NSMenuItemImageVisibilityVisible.
+  const SEL setter = NSSelectorFromString(@"setPreferredImageVisibility:");
+  for (NSMenuItem *item in nsMenu.itemArray) {
+    if ([item respondsToSelector:setter])
+      reinterpret_cast<void (*)(id, SEL, NSInteger)>(objc_msgSend)(item, setter, 1);
+  }
 }
