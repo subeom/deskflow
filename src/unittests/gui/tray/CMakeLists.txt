@@ -22,3 +22,21 @@ create_test(
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
 target_include_directories(TrayPolicyTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+
+create_test(
+  NAME TrayStateTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TrayStateTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(TrayStateTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+
+create_test(
+  NAME TrayMenuModelTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TrayMenuModelTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(TrayMenuModelTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
