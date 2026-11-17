@@ -111,3 +111,27 @@ create_test(
   SOURCE TunnelStatusWidgetTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+# The test of the whole way through the tunnel: the controller with a supervisor of fakes, and the connection of the test
+# made by the test itself (the one test that uses sockets does so on ports that the system hands out)
+create_test(
+  NAME TunnelTestRunnerTests
+  DEPENDS gui
+  SOURCE TunnelTestRunnerTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+# The dialog of the test (a dialog, so the gui library with the libraries of the server like the other dialog tests)
+create_test(
+  NAME TunnelTestDialogTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TunnelTestDialogTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+# The manual check of the secure store of the system (the keychain, the Credential Manager). Off: no test may call them.
+option(DESKFLOW_BUILD_SECRET_SMOKE "Build secret-store-smoke, the manual check of the secure store of the system" OFF)
+if(DESKFLOW_BUILD_SECRET_SMOKE)
+  add_subdirectory(smoke)
+endif()

@@ -85,6 +85,10 @@ QString tunnelStatusLine(const TunnelStatus &status, ServerLink link);
 //! The sentence for a failure, in the language of the application; empty for None
 QString failureText(TunnelFailure failure, int exitCode = 0);
 
+//! A short name for a failure that is the same in every language (for a line that is pasted to somebody else, and for
+//! tests)
+QString failureKey(TunnelFailure failure);
+
 //! Restarting cannot help: the user has to change something first
 bool needsUserAction(TunnelFailure failure);
 

@@ -25,4 +25,9 @@ private Q_SLOTS:
   void sessionStore_isOneForTheWholeProgram();
   void systemStore_isTheMemoryOneWhenTheVariableSaysMemory();
   void systemStore_isPersistentOnWindowsAndMacOnly();
+
+  void theResetOfTheSettings_removesTheStoredToken();
+  void theResetOfTheSettings_isNotAnErrorWhenNothingIsStored();
+  void theResetOfTheSettings_saysWhenTheStoreFails();
+  void theResetOfTheSettings_usesTheSystemStoreByDefault();
 };

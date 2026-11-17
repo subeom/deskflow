@@ -41,6 +41,10 @@ QString windowsErrorText(DWORD error)
 class ReadCredential
 {
 public:
+  explicit ReadCredential(const std::wstring &target) : m_target(target)
+  {
+  }
+
   ~ReadCredential()
   {
     if (m_credential != nullptr) {
@@ -55,7 +59,7 @@ public:
   // 0 on success, otherwise the Windows error (ERROR_NOT_FOUND when nothing is stored)
   DWORD read()
   {
-    if (!CredReadW(kTargetName.c_str(), CRED_TYPE_GENERIC, 0, &m_credential)) {
+    if (!CredReadW(m_target.c_str(), CRED_TYPE_GENERIC, 0, &m_credential)) {
       m_credential = nullptr;
       return GetLastError();
     }
@@ -68,10 +72,16 @@ public:
   }
 
 private:
+  std::wstring m_target;
   PCREDENTIALW m_credential = nullptr;
 };
 
 } // namespace
+
+WindowsCredentialStore::WindowsCredentialStore(QString targetName)
+    : m_target(targetName.isEmpty() ? kTargetName : targetName.toStdWString())
+{
+}
 
 QString WindowsCredentialStore::name() const
 {
@@ -96,7 +106,7 @@ StoreResult WindowsCredentialStore::save(const ServiceToken &token)
   }
 
   std::wstring userName = token.clientId.toStdWString();
-  std::wstring target = kTargetName;
+  std::wstring target = m_target;
 
   CREDENTIALW credential = {};
   credential.Type = CRED_TYPE_GENERIC;
@@ -116,7 +126,7 @@ StoreResult WindowsCredentialStore::save(const ServiceToken &token)
 std::optional<QString> WindowsCredentialStore::storedClientId(StoreResult *result) const
 {
   // CredReadW returns the secret with the rest: it is only the name that is used, and the secret is wiped when freed
-  ReadCredential credential;
+  ReadCredential credential(m_target);
   const DWORD error = credential.read();
   if (error != 0) {
     if (result != nullptr) {
@@ -133,7 +143,7 @@ std::optional<QString> WindowsCredentialStore::storedClientId(StoreResult *resul
 
 std::optional<ServiceToken> WindowsCredentialStore::load(StoreResult *result) const
 {
-  ReadCredential credential;
+  ReadCredential credential(m_target);
   const DWORD error = credential.read();
   if (error != 0) {
     if (result != nullptr) {
@@ -155,7 +165,7 @@ std::optional<ServiceToken> WindowsCredentialStore::load(StoreResult *result) co
 
 StoreResult WindowsCredentialStore::remove()
 {
-  if (CredDeleteW(kTargetName.c_str(), CRED_TYPE_GENERIC, 0)) {
+  if (CredDeleteW(m_target.c_str(), CRED_TYPE_GENERIC, 0)) {
     return StoreResult::success();
   }
 

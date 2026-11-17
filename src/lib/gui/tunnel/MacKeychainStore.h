@@ -27,12 +27,19 @@ namespace deskflow::tunnel {
 class MacKeychainStore : public ISecretStore
 {
 public:
+  //! \p service is the service of the keychain item; empty: the one of the program. Another one is for the manual test
+  //! of the store only (it must not touch the Service Token of the user).
+  explicit MacKeychainStore(QString service = {});
+
   QString name() const override;
   bool isPersistent() const override;
   StoreResult save(const ServiceToken &token) override;
   std::optional<QString> storedClientId(StoreResult *result = nullptr) const override;
   std::optional<ServiceToken> load(StoreResult *result = nullptr) const override;
   StoreResult remove() override;
+
+private:
+  QString m_service;
 };
 
 } // namespace deskflow::tunnel

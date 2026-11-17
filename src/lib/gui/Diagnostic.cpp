@@ -7,6 +7,8 @@
 #include "Diagnostic.h"
 
 #include "common/Settings.h"
+#include "gui/tunnel/ISecretStore.h"
+#include "gui/tunnel/SecretStoreFactory.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -30,9 +32,28 @@ void restart()
   QCoreApplication::exit();
 }
 
+bool removeStoredCredentials(std::shared_ptr<deskflow::tunnel::ISecretStore> store)
+{
+  if (!store) {
+    store = deskflow::tunnel::createSystemSecretStore();
+  }
+
+  const auto result = store->remove();
+  if (!result.ok && !result.notFound) {
+    qWarning().noquote() << "the Service Token of the Cloudflare Tunnel could not be removed from" << store->name()
+                         << "-" << result.detail;
+    return false;
+  }
+  qDebug("removed the Service Token of the Cloudflare Tunnel from the secure store");
+  return true;
+}
+
 void clearSettings(bool enableRestart)
 {
   qDebug("clearing settings");
+  // Cloudflare Tunnel: the Service Token is in the secure store, not in the settings
+  removeStoredCredentials();
+
   Settings::proxy().clear();
   Settings::clearState();
 

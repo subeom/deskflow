@@ -97,10 +97,10 @@ Owned<CFMutableDictionaryRef> newDictionary()
 }
 
 // the items of this program: a generic password of the service, of any account
-Owned<CFMutableDictionaryRef> serviceQuery()
+Owned<CFMutableDictionaryRef> serviceQuery(const QString &serviceText)
 {
   auto query = newDictionary();
-  const auto service = cfString(serviceName());
+  const auto service = cfString(serviceText);
   CFDictionarySetValue(query.get(), kSecClass, kSecClassGenericPassword);
   CFDictionarySetValue(query.get(), kSecAttrService, service.get());
   return query;
@@ -160,6 +160,10 @@ private:
 
 } // namespace
 
+MacKeychainStore::MacKeychainStore(QString service) : m_service(service.isEmpty() ? serviceName() : std::move(service))
+{
+}
+
 QString MacKeychainStore::name() const
 {
   return KeychainTexts::tr("macOS Keychain");
@@ -190,14 +194,14 @@ StoreResult MacKeychainStore::save(const ServiceToken &token)
     return StoreResult::failure(KeychainTexts::tr("The token could not be prepared for the keychain."));
   }
 
-  auto add = serviceQuery();
+  auto add = serviceQuery(m_service);
   CFDictionarySetValue(add.get(), kSecAttrAccount, account.get());
   CFDictionarySetValue(add.get(), kSecAttrLabel, label.get());
   CFDictionarySetValue(add.get(), kSecValueData, data.get());
   OSStatus status = SecItemAdd(add.get(), nullptr);
 
   if (status == errSecDuplicateItem) {
-    auto find = serviceQuery();
+    auto find = serviceQuery(m_service);
     CFDictionarySetValue(find.get(), kSecAttrAccount, account.get());
     auto change = newDictionary();
     CFDictionarySetValue(change.get(), kSecValueData, data.get());
@@ -210,7 +214,7 @@ StoreResult MacKeychainStore::save(const ServiceToken &token)
 std::optional<QString> MacKeychainStore::storedClientId(StoreResult *result) const
 {
   // attributes only: no data is requested, so the Secret is not read and no access prompt can come of it
-  auto query = serviceQuery();
+  auto query = serviceQuery(m_service);
   CFDictionarySetValue(query.get(), kSecReturnAttributes, kCFBooleanTrue);
   CFDictionarySetValue(query.get(), kSecMatchLimit, kSecMatchLimitOne);
 
@@ -231,7 +235,7 @@ std::optional<QString> MacKeychainStore::storedClientId(StoreResult *result) con
 
 std::optional<ServiceToken> MacKeychainStore::load(StoreResult *result) const
 {
-  auto query = serviceQuery();
+  auto query = serviceQuery(m_service);
   CFDictionarySetValue(query.get(), kSecReturnAttributes, kCFBooleanTrue);
   CFDictionarySetValue(query.get(), kSecReturnData, kCFBooleanTrue);
   CFDictionarySetValue(query.get(), kSecMatchLimit, kSecMatchLimitOne);
@@ -265,7 +269,7 @@ StoreResult MacKeychainStore::remove()
 {
   // an item per call: a delete of a query that matches more than one takes only the first on this system
   for (int round = 0; round < 10; ++round) {
-    const auto query = serviceQuery();
+    const auto query = serviceQuery(m_service);
     const OSStatus status = SecItemDelete(query.get());
     if (status == errSecItemNotFound) {
       return StoreResult::success();

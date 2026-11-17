@@ -88,6 +88,39 @@ QString failureText(TunnelFailure failure, int exitCode)
   return {};
 }
 
+QString failureKey(TunnelFailure failure)
+{
+  switch (failure) {
+  case TunnelFailure::None:
+    return QStringLiteral("none");
+  case TunnelFailure::TlsRequired:
+    return QStringLiteral("tls-required");
+  case TunnelFailure::InvalidHostname:
+    return QStringLiteral("invalid-hostname");
+  case TunnelFailure::CloudflaredMissing:
+    return QStringLiteral("cloudflared-missing");
+  case TunnelFailure::CredentialsMissing:
+    return QStringLiteral("credentials-missing");
+  case TunnelFailure::PortBusy:
+    return QStringLiteral("port-busy");
+  case TunnelFailure::LoginRequired:
+    return QStringLiteral("login-required");
+  case TunnelFailure::HostUnresolvable:
+    return QStringLiteral("host-unresolvable");
+  case TunnelFailure::EdgeUnreachable:
+    return QStringLiteral("edge-unreachable");
+  case TunnelFailure::HandshakeRejected:
+    return QStringLiteral("handshake-rejected");
+  case TunnelFailure::ConnectFailed:
+    return QStringLiteral("connect-failed");
+  case TunnelFailure::StartTimedOut:
+    return QStringLiteral("start-timed-out");
+  case TunnelFailure::ProcessExited:
+    return QStringLiteral("process-exited");
+  }
+  return QStringLiteral("unknown");
+}
+
 bool needsUserAction(TunnelFailure failure)
 {
   switch (failure) {

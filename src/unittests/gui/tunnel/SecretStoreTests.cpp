@@ -6,10 +6,12 @@
 
 #include "SecretStoreTests.h"
 
+#include "gui/Diagnostic.h"
 #include "gui/tunnel/InMemorySecretStore.h"
 #include "gui/tunnel/SecretStoreFactory.h"
 
 using namespace deskflow::tunnel;
+namespace diagnostic = deskflow::gui::diagnostic;
 
 namespace {
 
@@ -174,6 +176,46 @@ void SecretStoreTests::systemStore_isPersistentOnWindowsAndMacOnly()
   if (!before.isNull()) {
     qputenv(kSecretStoreVariable, before);
   }
+}
+
+void SecretStoreTests::theResetOfTheSettings_removesTheStoredToken()
+{
+  const auto store = std::make_shared<InMemorySecretStore>();
+  QVERIFY(store->save(ServiceToken(kId, kSecret)).ok);
+
+  QVERIFY(diagnostic::removeStoredCredentials(store));
+  StoreResult result;
+  QVERIFY(!store->storedClientId(&result).has_value());
+  QVERIFY(result.notFound);
+  QVERIFY(!store->load().has_value());
+  QCOMPARE(store->state()->removeCount, 1);
+}
+
+void SecretStoreTests::theResetOfTheSettings_isNotAnErrorWhenNothingIsStored()
+{
+  const auto store = std::make_shared<InMemorySecretStore>();
+  QVERIFY(diagnostic::removeStoredCredentials(store));
+}
+
+void SecretStoreTests::theResetOfTheSettings_saysWhenTheStoreFails()
+{
+  const auto store = std::make_shared<InMemorySecretStore>();
+  QVERIFY(store->save(ServiceToken(kId, kSecret)).ok);
+  store->state()->failWith = QStringLiteral("the keychain is locked");
+
+  QVERIFY(!diagnostic::removeStoredCredentials(store));
+}
+
+void SecretStoreTests::theResetOfTheSettings_usesTheSystemStoreByDefault()
+{
+  // never the keychain or the Credential Manager of this computer: the store in memory
+  qputenv(kSecretStoreVariable, "memory");
+  QVERIFY(!createSystemSecretStore()->isPersistent());
+
+  const auto shared = sessionSecretStore();
+  QVERIFY(shared->save(ServiceToken(kId, kSecret)).ok);
+  QVERIFY(diagnostic::removeStoredCredentials());
+  QVERIFY(!shared->load().has_value());
 }
 
 QTEST_MAIN(SecretStoreTests)

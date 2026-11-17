@@ -30,6 +30,9 @@ public:
   std::optional<QString> storedClientId(StoreResult *result = nullptr) const override;
   std::optional<ServiceToken> load(StoreResult *result = nullptr) const override;
   StoreResult remove() override;
+
+private:
+  std::wstring m_target;
 };
 
 } // namespace deskflow::tunnel

@@ -11,7 +11,6 @@
 using namespace deskflow::tunnel;
 
 Q_DECLARE_METATYPE(deskflow::tunnel::LogEventKind)
-Q_DECLARE_METATYPE(deskflow::tunnel::TunnelFailure)
 
 void CloudflaredLogParserTests::line_isRecognisedInTheConsoleAndTheJsonFormat_data()
 {

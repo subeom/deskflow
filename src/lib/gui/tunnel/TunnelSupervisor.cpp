@@ -444,6 +444,10 @@ void TunnelSupervisor::onOutputLine(const QString &line)
   if (!event.message.isEmpty()) {
     Q_EMIT logLine(event.message);
   }
+  if (event.kind == LogEventKind::OriginFailed) {
+    ++m_originFailures;
+    m_lastOriginFailure = event.problem;
+  }
   execute(m_machine.logEvent(event, advanceClock()));
   publish();
 }

@@ -21,6 +21,7 @@
 #include "dialogs/ServerAddressesDialog.h"
 #include "dialogs/ServerConfigDialog.h"
 #include "dialogs/SettingsDialog.h"
+#include "dialogs/TunnelTestDialog.h"
 
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
@@ -523,6 +524,10 @@ void MainWindow::clearSettings()
 
   m_coreProcess.stop();
   m_coreProcess.clearSettings();
+  // Cloudflare Tunnel: cloudflared ends before the settings and the Service Token are removed
+  if (m_tunnelController != nullptr) {
+    m_tunnelController->shutdown();
+  }
 
   m_saveOnExit = false;
   diagnostic::clearSettings(true);
@@ -1301,6 +1306,16 @@ void MainWindow::showConfigureClient()
 
 void MainWindow::showConnectionTest()
 {
+  // Cloudflare Tunnel: the test goes the way that the client goes, through the tunnel
+  if (m_tunnelController != nullptr && m_tunnelController->isRequired()) {
+    deskflow::tunnel::TunnelTestRunner::Dependencies dependencies;
+    dependencies.controller = m_tunnelController;
+    TunnelTestDialog dialog(this, dependencies);
+    dialog.runTest();
+    dialog.exec();
+    return;
+  }
+
   // what is typed in the field, which may not be what the core was started with
   ConnectionTestDialog dialog(this, ui->cbHostname->currentText(), Settings::value(Settings::Core::Port).toInt());
   dialog.runTest();

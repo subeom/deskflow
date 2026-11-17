@@ -453,6 +453,28 @@ void TunnelSupervisorTests::aProblemOfTheConnection_isShownUntilTheServerConnect
   QCOMPARE(rig.state(), TunnelState::Listening);
 }
 
+void TunnelSupervisorTests::everyRefusedConnection_isCountedWithItsReason()
+{
+  Rig rig;
+  QVERIFY(rig.bringUp());
+  QCOMPARE(rig.supervisor->originFailureCount(), quint64(0));
+  QCOMPARE(rig.supervisor->lastOriginFailure(), TunnelFailure::None);
+
+  rig.process()->write(QStringLiteral("ERR failed to connect to origin error=\"websocket: bad handshake\""));
+  QCOMPARE(rig.supervisor->originFailureCount(), quint64(1));
+  QCOMPARE(rig.supervisor->lastOriginFailure(), TunnelFailure::HandshakeRejected);
+
+  // the same reason again is another connection that failed, and a line that is no failure is not counted
+  rig.process()->write(QStringLiteral("ERR failed to connect to origin error=\"websocket: bad handshake\""));
+  rig.process()->write(QStringLiteral("INF a line that says nothing"));
+  QCOMPARE(rig.supervisor->originFailureCount(), quint64(2));
+
+  // the status forgets the problem when the server connects, the count does not go back
+  rig.supervisor->notifyServerConnected();
+  QCOMPARE(rig.supervisor->status().failure, TunnelFailure::None);
+  QCOMPARE(rig.supervisor->originFailureCount(), quint64(2));
+}
+
 void TunnelSupervisorTests::stop_endsTheProcessAndGoesIdle()
 {
   Rig rig;

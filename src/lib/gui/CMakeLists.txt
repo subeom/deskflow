@@ -107,6 +107,8 @@ add_library(${target} STATIC
   dialogs/SettingsDialog.cpp
   dialogs/SettingsDialog.h
   dialogs/SettingsDialog.ui
+  dialogs/TunnelTestDialog.cpp
+  dialogs/TunnelTestDialog.h
   ipc/IpcClient.cpp
   ipc/IpcClient.h
   ipc/DaemonIpcClient.cpp
@@ -200,6 +202,8 @@ target_sources(${target} PRIVATE
   tunnel/TunnelStateMachine.h
   tunnel/TunnelSupervisor.cpp
   tunnel/TunnelSupervisor.h
+  tunnel/TunnelTestRunner.cpp
+  tunnel/TunnelTestRunner.h
   tunnel/TunnelTypes.cpp
   tunnel/TunnelTypes.h
   tunnel/WindowsCredentialStore.cpp

@@ -31,6 +31,7 @@ private Q_SLOTS:
   void aProcessThatKeepsStoppingAtOnce_failsAndForgetsTheToken();
   void aProcessThatCannotBeStarted_isReported();
   void aProblemOfTheConnection_isShownUntilTheServerConnects();
+  void everyRefusedConnection_isCountedWithItsReason();
 
   void stop_endsTheProcessAndGoesIdle();
   void stop_inBackoff_needsNoKill();

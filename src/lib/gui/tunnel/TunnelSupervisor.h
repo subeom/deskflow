@@ -124,6 +124,17 @@ public:
   {
     return m_request;
   }
+  //! How many connections through the tunnel cloudflared said it could not open, since the supervisor was made. A test
+  //! of the connection compares the count before and after, so that an old problem is not taken for a new one.
+  quint64 originFailureCount() const
+  {
+    return m_originFailures;
+  }
+  //! Why the last of them failed
+  TunnelFailure lastOriginFailure() const
+  {
+    return m_lastOriginFailure;
+  }
 
 Q_SIGNALS:
   void statusChanged(const deskflow::tunnel::TunnelStatus &status);
@@ -172,6 +183,8 @@ private:
   qint64 m_terminateSentAt = -1;
   bool m_killSent = false;
   quint64 m_generation = 0;
+  quint64 m_originFailures = 0;
+  TunnelFailure m_lastOriginFailure = TunnelFailure::None;
   TunnelStatus m_published;
   bool m_publishedOnce = false;
 };
