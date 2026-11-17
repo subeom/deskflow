@@ -57,6 +57,7 @@ void LayoutMemory::start(Millis now)
   m_undo.reset();
   m_notice.reset();
   m_restartAt.reset();
+  m_known.reset();
   m_on = false;
   if (!m_host.enabled())
     return;
@@ -94,6 +95,7 @@ void LayoutMemory::stop()
   m_undo.reset();
   m_notice.reset();
   m_restartAt.reset();
+  m_known.reset();
 }
 
 void LayoutMemory::expect(Millis now)
@@ -171,13 +173,42 @@ void LayoutMemory::evaluate(Millis now)
   m_pending.reset();
 
   const auto known = m_store.active();
-  if (known && *known == current) {
+  if (!known) {
+    // nothing says what the arrangement belongs to (the first time, or the feature was off): it is the user's, and it is
+    // what is remembered for the displays that there are. A layout that is remembered for them is not put over it.
+    adopt(current);
+    return;
+  }
+  if (*known == current) {
+    if (!m_known)
+      m_known = m_host.currentLayout();
     m_host.debug(QStringLiteral("layout memory: displays event, signature unchanged (%1)").arg(current.id()));
     return;
   }
   if (current.truncated())
     m_host.warn(QStringLiteral("layout memory: more than %1 displays, only the first ones are used").arg(DisplaySignature::kMaxDisplays));
   applyFor(current, known, now);
+}
+
+void LayoutMemory::adopt(const DisplaySignature &current)
+{
+  const auto layout = m_host.currentLayout();
+  m_store.setActive(current);
+  if (layout.isEmpty()) {
+    m_known.reset();
+    saveStore();
+    m_host.info(QStringLiteral("layout memory: no arrangement to remember for new=%1").arg(current.id()));
+    return;
+  }
+  const auto result = m_store.upsert(current, layout, m_host.wallClockMs());
+  m_known = layout;
+  saveStore();
+  if (result.created || result.changed) {
+    const auto *profile = m_store.find(result.id);
+    m_host.info(QStringLiteral("layout memory: remembered the arrangement for %1 as \"%2\" (%3)")
+                    .arg(current.id(), profile ? profile->name : QString(),
+                         result.created ? QStringLiteral("created") : QStringLiteral("updated")));
+  }
 }
 
 void LayoutMemory::applyFor(const DisplaySignature &current, const std::optional<DisplaySignature> &before, Millis now)
@@ -197,6 +228,7 @@ void LayoutMemory::applyFor(const DisplaySignature &current, const std::optional
   // with no arrangement there is nothing to bring back: the situation is noted, and that is all
   if (beforeLayout.isEmpty()) {
     m_store.setActive(current);
+    m_known.reset();
     saveStore();
     m_host.info(QStringLiteral("layout memory: no arrangement to remember for new=%1").arg(current.id()));
     return;
@@ -255,6 +287,8 @@ void LayoutMemory::applyFor(const DisplaySignature &current, const std::optional
   }
 
   m_store.setActive(current);
+  // what the arrangement is now, whether or not it is what was asked for: a Save of something else is not a change of it
+  m_known = m_host.currentLayout();
   saveStore();
 
   auto restart = Restart::No;
@@ -326,6 +360,7 @@ bool LayoutMemory::undo(Millis now)
   // a profile that this change made is not kept: it is what the user did not want
   if (!undo.createdProfileId.isEmpty())
     m_store.remove(undo.createdProfileId);
+  m_known = m_host.currentLayout();
   saveStore();
 
   const auto restart = restartIfNeeded(now);
@@ -358,6 +393,11 @@ void LayoutMemory::configSaved(Millis)
   m_undo.reset();
   m_notice.reset();
 
+  // a Save of something else (the heartbeat, a hotkey) leaves the arrangement as it is: it says nothing about which
+  // displays the arrangement is for, and does not make it the layout of the displays that there are now
+  if (m_known && layout.sameAs(*m_known))
+    return;
+
   auto signature = m_store.active();
   if (!signature) {
     const auto sample = DisplaySignature::fromDisplays(m_host.displays());
@@ -369,6 +409,7 @@ void LayoutMemory::configSaved(Millis)
   const auto result = m_store.upsert(*signature, layout, m_host.wallClockMs());
   if (result.id.isEmpty())
     return;
+  m_known = layout;
   if (result.created || result.changed) {
     const auto *profile = m_store.find(result.id);
     m_host.info(QStringLiteral("layout memory: remembered the arrangement for %1 as \"%2\" (%3)")

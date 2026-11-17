@@ -44,6 +44,7 @@ private Q_SLOTS:
   void load_duplicateSignatures_keepTheNewest();
   void load_moreThanTheMaximum_keepsTheNewest();
   void load_aFileThatIsTooBig_isDamaged();
+  void load_anIdThatIsHuge_doesNotOverflowTheNextId();
   void save_replacesTheFileAtomically();
   void save_failsWhenTheFolderCannotBeWritten();
 

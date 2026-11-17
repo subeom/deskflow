@@ -180,6 +180,66 @@ void LayoutMemoryTests::start_afterTheDisplaysChangedWhileClosed_putsTheLayoutBa
   QVERIFY(rig.host.notices[0].exact);
 }
 
+void LayoutMemoryTests::start_withoutAKnownSituation_adoptsTheArrangement_andNeverRestores()
+{
+  Rig rig(path());
+  // a layout of the T is remembered, but nothing says what the arrangement belongs to (the feature was off for a while):
+  // the arrangement that there is, is the one that the user has now, and it is what is remembered
+  rig.store.upsert(situationT(), layoutForTwoMonitors(), 100);
+  QVERIFY(rig.store.save());
+  rig.host.layout = layoutForT();
+  rig.memory.start(0);
+
+  QCOMPARE(rig.host.applyCalls, 0);
+  QCOMPARE(rig.host.restartCalls, 0);
+  QVERIFY(rig.host.layout.sameAs(layoutForT()));
+  QVERIFY(rig.host.notices.empty());
+  QVERIFY(rig.store.findExact(situationT())->layout.sameAs(layoutForT()));
+  QVERIFY(rig.store.active().has_value());
+  QCOMPARE(rig.store.active()->key(), situationT().key());
+}
+
+void LayoutMemoryTests::configSaved_afterAFailedApply_remembersNothing_untilTheUserChangesTheArrangement()
+{
+  Rig rig(path());
+  rig.seed();
+  rig.memory.start(0);
+  rig.host.applyFails = true;
+  rig.host.shownDisplays = laptopOnly();
+  rig.event(0);
+  rig.run(kQuietMs);
+  QCOMPARE(rig.host.notices.back().kind, Notice::Kind::Failed);
+  rig.host.applyFails = false;
+  const auto remembered = rig.store.findExact(situationLaptop())->layout;
+
+  // a Save of something else: the arrangement is the one of the T, not what is remembered for the laptop alone
+  rig.memory.configSaved(kQuietMs + 10);
+  QVERIFY(rig.store.findExact(situationLaptop())->layout.sameAs(remembered));
+
+  // the user changes the arrangement: that is remembered for the displays that there are
+  rig.host.layout.computers[1].x -= 50;
+  const auto edited = rig.host.layout;
+  rig.memory.configSaved(kQuietMs + 20);
+  QVERIFY(rig.store.findExact(situationLaptop())->layout.sameAs(edited));
+}
+
+void LayoutMemoryTests::configSaved_afterUndo_remembersNothingOfAnUnchangedArrangement()
+{
+  Rig rig(path());
+  rig.seed();
+  rig.memory.start(0);
+  rig.host.shownDisplays = laptopOnly();
+  rig.event(0);
+  rig.run(kQuietMs);
+  rig.run(60000);
+  QVERIFY(rig.memory.undo(60000));
+  QVERIFY(rig.host.layout.sameAs(layoutForT()));
+
+  // a Save of something else does not make the arrangement of the T the layout of the laptop alone
+  rig.memory.configSaved(61000);
+  QVERIFY(rig.store.findExact(situationLaptop())->layout.sameAs(layoutForLaptop()));
+}
+
 void LayoutMemoryTests::aBurstOfEvents_isOneLook()
 {
   Rig rig(path());

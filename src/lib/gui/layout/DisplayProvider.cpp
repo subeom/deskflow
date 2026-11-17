@@ -36,7 +36,7 @@ public:
   std::vector<DisplayInfo> displays() const override
   {
     std::vector<DisplayInfo> displays;
-    for (const auto &detail : deskflow::platform::osxActiveDisplayDetails()) {
+    for (const auto &detail : deskflow::platform::osxOnlineDisplayDetails()) {
       DisplayInfo d;
       d.uuid = QString::fromStdString(detail.uuid);
       d.vendor = detail.vendor;

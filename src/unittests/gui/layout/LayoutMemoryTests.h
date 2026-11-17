@@ -18,6 +18,9 @@ private Q_SLOTS:
   void start_theFirstTime_remembersTheArrangement();
   void start_withTheSameDisplays_doesNothing();
   void start_afterTheDisplaysChangedWhileClosed_putsTheLayoutBack();
+  void start_withoutAKnownSituation_adoptsTheArrangement_andNeverRestores();
+  void configSaved_afterAFailedApply_remembersNothing_untilTheUserChangesTheArrangement();
+  void configSaved_afterUndo_remembersNothingOfAnUnchangedArrangement();
   void aBurstOfEvents_isOneLook();
   void anEndlessBurst_isLookedAtAfterTheMaximumWait();
   void anEventThatChangesNothing_isIgnored();

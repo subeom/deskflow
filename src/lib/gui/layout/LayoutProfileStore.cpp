@@ -52,7 +52,8 @@ int64_t numberOfId(const QString &id)
     return 0;
   bool ok = false;
   const auto number = id.mid(1).toLongLong(&ok);
-  return ok && number > 0 ? number : 0;
+  // a number that is not one that this program made is no number: the next one is made from it by adding one
+  return ok && number > 0 && number <= static_cast<int64_t>(kMaxTime) ? number : 0;
 }
 
 // whether \p a is removed before \p b when there are too many: what the user did not name first, then the one that was

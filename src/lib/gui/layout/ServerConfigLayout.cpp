@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <tuple>
 
 namespace deskflow::gui::layout {
 
@@ -38,6 +39,19 @@ std::optional<Issue> firstError(const Arrangement &arrangement)
       return issue;
   }
   return std::nullopt;
+}
+
+// the same rectangles, whatever the order and however often a rectangle is in the list (a mirror)
+bool sameRectangles(std::vector<deskflow::server::MonitorRect> a, std::vector<deskflow::server::MonitorRect> b)
+{
+  const auto less = [](const deskflow::server::MonitorRect &l, const deskflow::server::MonitorRect &r) {
+    return std::tie(l.x, l.y, l.w, l.h) < std::tie(r.x, r.y, r.w, r.h);
+  };
+  for (auto *list : {&a, &b}) {
+    std::ranges::sort(*list, less);
+    list->erase(std::unique(list->begin(), list->end()), list->end());
+  }
+  return a == b;
 }
 
 } // namespace
@@ -136,6 +150,11 @@ ReattachOutcome reattachLayout(const ServerConfig &config, const DisplaySignatur
 {
   ReattachOutcome outcome;
   if (!config.hasArrangement() || !from.isValid() || !to.isValid())
+    return outcome;
+  // The computers are put against the displays that the arrangement is made with: when the configuration takes the
+  // displays of the server from somewhere that is not the displays of the signature (a platform that tells one rectangle
+  // for the whole screen), they would be put against a screen that is not there.
+  if (!sameRectangles(ServerConfig::serverMonitors(), to.monitors()))
     return outcome;
 
   const auto before = config.arrangementWith(from.monitors());

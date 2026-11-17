@@ -133,7 +133,14 @@ void LayoutMemoryService::settingsChanged()
     m_poll.stop();
     m_deadline.stop();
     m_running = false;
-    if (m_notice && m_notice->kind != Notice::Kind::StoreProblem) {
+    // nothing is tracked while it is off, so what the arrangement belonged to is not known when it is on again: the
+    // arrangement that there is then is taken as the user's for the displays that there are
+    if (m_loaded && !m_store.isInert() && m_store.active()) {
+      m_store.setActive(std::nullopt);
+      if (!m_store.save())
+        m_host.warn(QStringLiteral("layout memory: the remembered layouts could not be saved (%1)").arg(m_store.lastError()));
+    }
+    if (m_notice) {
       m_notice.reset();
       Q_EMIT noticeChanged();
     }

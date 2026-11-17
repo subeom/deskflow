@@ -421,6 +421,8 @@ void LayoutHostTests::reattach_putsTheComputersAgainstTheServerOfTheNewDisplays(
   const ServerConfig config;
   const auto from = sig(tShape());
   const auto to = sig(laptopOnly());
+  // the displays that the operating system tells now are the new ones
+  ServerConfig::overrideServerMonitors(to.monitors());
   const auto outcome = reattachLayout(config, from, to);
   QVERIFY(outcome.layout.has_value());
   QCOMPARE(outcome.reattached.size(), 2);
@@ -828,6 +830,64 @@ void LayoutHostTests::service_aNewerStore_isNotUsed()
   QFile file(path);
   QVERIFY(file.open(QIODevice::ReadOnly));
   QCOMPARE(file.readAll(), content);
+
+  // switched off, the notice about the file goes too
+  Settings::setValue(Settings::Server::RememberArrangements, false);
+  fixture.service->settingsChanged();
+  QVERIFY(!fixture.service->notice().has_value());
+}
+
+void LayoutHostTests::service_switchedOff_forgetsTheSituation_andOnAgainAdoptsTheArrangement()
+{
+  arrange();
+  const auto path = m_dir.filePath(QStringLiteral("layout-profiles.json"));
+  Fixture fixture(path);
+  fixture.config->commit();
+  Settings::setValue(Settings::Server::RememberArrangements, true);
+  fixture.service->settingsChanged();
+  QCOMPARE(fixture.service->store().profiles().size(), size_t(1));
+
+  Settings::setValue(Settings::Server::RememberArrangements, false);
+  fixture.service->settingsChanged();
+  // what the arrangement belonged to is not known any more: nothing is tracked while the feature is off
+  LayoutProfileStore afterOff(path);
+  afterOff.load();
+  QVERIFY(!afterOff.active().has_value());
+  QCOMPARE(afterOff.profiles().size(), size_t(1));
+
+  // the displays change while it is off, and the user puts the computers where they want them for the laptop alone
+  fixture.setDisplays(laptopOnly());
+  auto edited = captureLayout(*fixture.config);
+  for (auto &c : edited.computers) {
+    if (c.name == "PC2")
+      c.y = 123;
+  }
+  QVERIFY(applyLayout(*fixture.config, edited).applied);
+  const auto now = captureLayout(*fixture.config);
+  fixture.world.runningText = text(*fixture.config);
+
+  Settings::setValue(Settings::Server::RememberArrangements, true);
+  fixture.service->settingsChanged();
+  // nothing is put back over what the user has: it is what is remembered for these displays
+  QVERIFY(captureLayout(*fixture.config).sameAs(now));
+  QCOMPARE(fixture.world.restarts, 0);
+  QVERIFY(fixture.world.notices.isEmpty());
+  const auto *profile = fixture.service->store().findExact(sig(laptopOnly()));
+  QVERIFY(profile != nullptr);
+  QVERIFY(profile->layout.sameAs(now));
+}
+
+void LayoutHostTests::reattach_isSkippedWhenTheConfigSeesOtherDisplaysThanTheSignature()
+{
+  arrange();
+  const ServerConfig config;
+  // the configuration takes the displays of the server from the platform, and a platform that tells only one rectangle
+  // is not the displays that the signature has: the computers are not put against a screen that is not there
+  ServerConfig::overrideServerMonitors(std::vector<deskflow::server::MonitorRect>{{0, 0, 5000, 3000}});
+  QVERIFY(!reattachLayout(config, sig(tShape()), sig(laptopOnly())).layout.has_value());
+  // when it sees the displays of the signature, the computers are put against them
+  ServerConfig::overrideServerMonitors(sig(laptopOnly()).monitors());
+  QVERIFY(reattachLayout(config, sig(tShape()), sig(laptopOnly())).layout.has_value());
 }
 
 void LayoutHostTests::displaysFromScreens_areOfTheScreens()

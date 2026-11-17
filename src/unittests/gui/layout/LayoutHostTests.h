@@ -47,6 +47,8 @@ private Q_SLOTS:
   void service_instance_isTheLiveOne();
   void service_theStoreIsNextToTheSettings();
   void service_aNewerStore_isNotUsed();
+  void service_switchedOff_forgetsTheSituation_andOnAgainAdoptsTheArrangement();
+  void reattach_isSkippedWhenTheConfigSeesOtherDisplaysThanTheSignature();
 
   void displaysFromScreens_areOfTheScreens();
 

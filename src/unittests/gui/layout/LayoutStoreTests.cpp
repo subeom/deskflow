@@ -573,6 +573,36 @@ void LayoutStoreTests::load_aFileThatIsTooBig_isDamaged()
   QVERIFY(QFile::exists(path() + QStringLiteral(".damaged")));
 }
 
+void LayoutStoreTests::load_anIdThatIsHuge_doesNotOverflowTheNextId()
+{
+  makeThree(path());
+  auto json = readJson(path());
+  auto profiles = json.value(QStringLiteral("profiles")).toArray();
+  auto first = profiles.at(0).toObject();
+  first.insert(QStringLiteral("id"), QStringLiteral("p9223372036854775806"));
+  profiles.replace(0, first);
+  json.insert(QStringLiteral("profiles"), profiles);
+  json.insert(QStringLiteral("nextId"), 1);
+  writeJson(path(), json);
+
+  LayoutProfileStore store(path());
+  QCOMPARE(store.load().status, LayoutProfileStore::Status::Ok);
+  // the ids that are made after it are ids that the file accepts again, and none is made twice
+  QStringList ids;
+  for (const auto &profile : store.profiles())
+    ids << profile.id;
+  for (int i = 0; i < 3; ++i) {
+    const auto id = store.upsert(signatureNumber(50 + i), tLayout(), 9000 + i).id;
+    QVERIFY2(!id.isEmpty() && !id.contains(QLatin1Char('-')), qPrintable(id));
+    QVERIFY(!ids.contains(id));
+    ids << id;
+  }
+  QVERIFY(store.save());
+  LayoutProfileStore again(path());
+  QCOMPARE(again.load().status, LayoutProfileStore::Status::Ok);
+  QCOMPARE(again.profiles().size(), store.profiles().size());
+}
+
 void LayoutStoreTests::save_replacesTheFileAtomically()
 {
   makeThree(path());

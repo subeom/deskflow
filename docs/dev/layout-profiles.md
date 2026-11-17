@@ -94,7 +94,15 @@ reports or by the monitor editor, and a change of the server's displays must not
 A layout is made or updated **when the user saves the arrangement** while a situation is active (the situation is the one the
 arrangement was last known to belong to, so an edit made in a dialog that was open while a monitor was unplugged is
 remembered for the situation that it was made in). The first edit in a situation that was only *similar* makes a profile of
-its own and leaves the similar one as it was.
+its own and leaves the similar one as it was. **A Save that leaves the arrangement as it is teaches nothing**: the program
+keeps the arrangement as it last knew it (after its own change, after Undo, after the user's save), and a Save of something
+else (the heartbeat, a hotkey) does not make the arrangement of the old displays the layout of the new ones, as it would
+after a restore that failed or was undone.
+
+**When nothing says what the arrangement belongs to** (the first time, or the feature was off for a while) the arrangement
+that there is, is taken as the user's for the displays that there are: it is remembered for them, and a layout that is
+remembered for them is not put over it. Switching the feature off forgets the situation for that reason (nothing is tracked
+while it is off).
 
 ## The store
 
@@ -161,8 +169,10 @@ other are one group that moves as it is; a group that touched the server before 
 situation) and touches it no more is moved so that its computer with the longest contact is against the **same side of the
 box of the new displays at the same fraction of that side**, sliding along it in steps of 20 units to avoid an overlap; the
 result is checked with the derived links (the group touches the server, nothing overlaps) or the group stays where it was and is
-reported. A group that still touches is never moved, nor one that never touched the server. What it made is then remembered
-for the new displays.
+reported. A group that still touches is never moved, nor one that never touched the server. It is used only when the
+configuration takes the displays of the server from the platform as the signature has them (the rectangles are the same): a
+platform that tells one rectangle for the whole screen is not the displays of the signature, and the computers are not put
+against a screen that is not there. What it made is then remembered for the new displays.
 
 ## The user interface (minimal)
 
@@ -190,14 +200,16 @@ hashes. "Signature unchanged" is a DEBUG line (shown with the debug log of the G
 
 ## Platforms
 
-- **macOS (what is wired and run here):** the displays from Quartz (`osxActiveDisplayDetails()`: the UUID, the maker, the
-  model, the serial number and the built in flag, only asked; the rectangles and scales are those of `osxActiveDisplayInfo()`).
+- **macOS (what is wired and run here):** the displays from Quartz (`osxOnlineDisplayDetails()`: the UUID, the maker, the
+  model, the serial number and the built in flag, only asked). The **online** displays are listed, not only the active ones: a
+  display that is asleep is not active, and the situation must not change when the screens go to sleep. A mirror is online
+  with the rectangle of the display it mirrors and counts once.
 - **Windows and Linux (compiled, not run):** the same logic with `QtDisplayProvider` (`QScreen` geometry, the scale, and the
   maker, model and serial number that Qt knows; the built in display is guessed from the name `eDP`, `LVDS`, `DSI`). On these
   platforms the server's own displays in `ServerConfig::serverMonitors()` are one rectangle (the size of the screen), so the
-  fallback works with that approximation and the signature is finer than what the arrangement uses. Windows monitor
-  identification through `MSWindowsMonitors` (the device path, the EDID based id) is **not** wired. Nothing is claimed about
-  them beyond that it compiles in the shared files.
+  signature is finer than what the arrangement uses and **the fallback re-attach is not used** (the rectangles differ); a
+  remembered layout is still put back. Windows monitor identification through `MSWindowsMonitors` (the device path, the EDID
+  based id) is **not** wired. Nothing is claimed about them beyond that it compiles in the shared files.
 
 ## Where it is
 
@@ -209,7 +221,7 @@ hashes. "Signature unchanged" is a DEBUG line (shown with the debug log of the G
 | `LayoutMemory.{h,cpp}` | the state machine, `ILayoutHost` |
 | `ServerConfigLayout.{h,cpp}`, `ServerConfigLayoutHost.{h,cpp}` | capture and apply on a `ServerConfig`, the gate, the comparison with the running configuration |
 | `LayoutMemoryService.{h,cpp}`, `DisplayProvider.{h,cpp}` | the Qt side: timers, screens, the notice; the display readers |
-| `src/lib/platform/OSXDisplays.{h,cpp}` | `osxActiveDisplayDetails()` (the only platform code) |
+| `src/lib/platform/OSXDisplays.{h,cpp}` | `osxOnlineDisplayDetails()` (the only platform code) |
 | `src/lib/gui/widgets/ArrangementPanel`, `LayoutNoticeBar`, `dialogs/LayoutProfilesDialog`, `ServerConfigDialog`, `MainWindow` | the interface and the wiring |
 | `src/lib/common/Settings.h` | `server/rememberArrangements` |
 | `src/lib/gui/config/ServerConfig` | `arrangementWith(displays)` (the arrangement under other displays); nothing else changed |

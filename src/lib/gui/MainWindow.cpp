@@ -174,6 +174,12 @@ MainWindow::MainWindow()
 }
 MainWindow::~MainWindow()
 {
+  // the remembering of layouts works on the server configuration of this window: it goes first
+  if (m_layoutMemory != nullptr) {
+    delete m_layoutMemory;
+    m_layoutMemory = nullptr;
+  }
+
   // Stop network monitoring
   if (m_networkMonitor) {
     m_networkMonitor->stopMonitoring();

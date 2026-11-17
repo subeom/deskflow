@@ -224,6 +224,7 @@ private:
   void expect(Millis now);
   void lookNow(Millis now);
   void evaluate(Millis now);
+  void adopt(const DisplaySignature &current);
   void applyFor(const DisplaySignature &now, const std::optional<DisplaySignature> &before, Millis time);
   Restart restartIfNeeded(Millis now);
   void saveStore();
@@ -239,6 +240,9 @@ private:
   std::optional<Notice> m_notice;
   std::optional<Millis> m_restartAt;
   std::optional<Millis> m_lastRestart;
+  //! The arrangement as this object last knew it to be: after a change that it made and after the user saved it. A save
+  //! that finds it unchanged teaches nothing: what the arrangement belongs to is not what the user did
+  std::optional<Layout> m_known;
   bool m_saveWarned = false;
 };
 

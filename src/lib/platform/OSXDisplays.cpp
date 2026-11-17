@@ -70,27 +70,34 @@ std::vector<deskflow::server::MonitorRect> osxActiveDisplays()
   return monitors;
 }
 
-std::vector<OsxDisplayDetail> osxActiveDisplayDetails()
+std::vector<OsxDisplayDetail> osxOnlineDisplayDetails()
 {
   CGDisplayCount count = 0;
-  if (CGGetActiveDisplayList(0, nullptr, &count) != kCGErrorSuccess || count == 0)
+  if (CGGetOnlineDisplayList(0, nullptr, &count) != kCGErrorSuccess || count == 0)
     return {};
 
   std::vector<CGDirectDisplayID> displays(count);
-  if (CGGetActiveDisplayList(count, displays.data(), &count) != kCGErrorSuccess)
+  if (CGGetOnlineDisplayList(count, displays.data(), &count) != kCGErrorSuccess)
     return {};
   displays.resize(count);
 
-  const auto info = osxActiveDisplayInfo();
   std::vector<OsxDisplayDetail> details;
-  for (size_t i = 0; i < displays.size(); ++i) {
-    const auto display = displays[i];
+  for (const auto display : displays) {
     OsxDisplayDetail detail;
-    // the same list in the same order as the one that the rectangles are made from; if the displays changed between the
-    // two calls the lists are not the same length, and then there is nothing to say yet
-    if (info.size() != displays.size())
-      return {};
-    detail.info = info[i];
+    // truncated the way the shape of the computer is, as the rectangles of the active displays are
+    const auto bounds = CGDisplayBounds(display);
+    detail.info = {
+        {
+            static_cast<int32_t>(bounds.origin.x),
+            static_cast<int32_t>(bounds.origin.y),
+            static_cast<int32_t>(bounds.size.width),
+            static_cast<int32_t>(bounds.size.height),
+        },
+        displayScalePercent(display),
+        CGDisplayIsMain(display) != 0,
+        // Quartz says points: the scale of a Retina display is how sharp it is, not how big
+        true,
+    };
     detail.vendor = CGDisplayVendorNumber(display);
     detail.model = CGDisplayModelNumber(display);
     detail.serial = CGDisplaySerialNumber(display);

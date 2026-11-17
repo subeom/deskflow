@@ -31,10 +31,10 @@ when there is no display to ask, which is the case of a process that has no wind
 */
 std::vector<deskflow::server::MonitorRect> osxActiveDisplays();
 
-//! An active display with what the system says it is (read only; used to remember layouts by display situation)
+//! A display of this Mac with what the system says it is (read only; used to remember layouts by display situation)
 struct OsxDisplayDetail
 {
-  //! The rectangle, the scale and whether it is the main display: what \c osxActiveDisplayInfo() says
+  //! The rectangle, the scale and whether it is the main display, as \c osxActiveDisplayInfo() says them
   deskflow::monitors::MonitorInfo info;
   //! The maker, the model and the serial number of the monitor, 0 when the system does not say
   uint32_t vendor = 0;
@@ -45,10 +45,12 @@ struct OsxDisplayDetail
   bool builtIn = false;
 };
 
-//! The active displays of this Mac in the order of \c osxActiveDisplayInfo(), with what identifies each
+//! The displays of this Mac that are online, with what identifies each
 /*!
+Not only the active ones: a display that is asleep is online but not active, and the situation of the displays must not
+change when the screens go to sleep. A display that mirrors another is online with the rectangle of the one it mirrors.
 Nothing is changed: the displays are only asked about. Empty when there is no display to ask.
 */
-std::vector<OsxDisplayDetail> osxActiveDisplayDetails();
+std::vector<OsxDisplayDetail> osxOnlineDisplayDetails();
 
 } // namespace deskflow::platform
