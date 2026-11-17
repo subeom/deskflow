@@ -9,10 +9,13 @@ if (WIN32)
     SOURCE MSWindowsClipboardTests.cpp
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
   )
+  # A key state of Windows is a KeyState and has a KeyMap, and its computer is a PlatformComputer: those, and the threads
+  # that they use, are in the libraries of the program. The platform library links the app library on Unix only (see
+  # src/lib/platform/CMakeLists.txt), so here the test names what the tests of the server name.
   create_test(
     NAME MSWindowsKeyStateTests
     DEPENDS platform
-    LIBS base arch
+    LIBS base arch io mt net app version
     SOURCE MSWindowsKeyStateTests.cpp
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
   )
