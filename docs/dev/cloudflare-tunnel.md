@@ -252,6 +252,16 @@ real cloudflared, the real keychain or the Credential Manager, a real core, the 
 Code that only builds on one system (`WindowsCredentialStore`, `WindowsKillOnCloseJob`, the Windows part of the process
 inspector and of `QtTunnelProcess`) is compiled by the build of that system and checked by hand (below).
 
+Before a Windows build it can be compile-checked on another system, which is how a header that did not declare the constructor
+of `WindowsCredentialStore` was found to be wrong: compile every file that the branch changes for a Windows target with the
+real Win32 headers of mingw-w64 (for example `zig c++ -target x86_64-windows-gnu -std=c++20 -c`, also `aarch64-windows-gnu`)
+and the Qt headers of the build system, with `Q_OS_WIN` defined by the target. That checks declarations, signatures, includes and
+the Win32 types; it does not link, does not use the MSVC compiler or its STL, and is not a substitute for the Windows build.
+Every Win32 function that the Windows-only code calls (`Cred*Read/Write/Delete/Free`, `CreateJobObjectW`,
+`SetInformationJobObject`, `AssignProcessToJobObject`, `OpenProcess`, `TerminateProcess`, `GetProcessTimes`,
+`GetExitCodeProcess`, `QueryFullProcessImageNameW`, `CloseHandle`) is in `kernel32` or in `advapi32`, which the gui library links
+(`target_link_libraries(gui PUBLIC advapi32)`).
+
 ## Manual checks
 
 ### The secure store of the system (opt-in)

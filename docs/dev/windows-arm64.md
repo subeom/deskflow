@@ -162,6 +162,11 @@ Use `-SkipTests` on a PC where Deskflow is installed: never run the full CTest t
 `build\windows-arm64-Release`. They share nothing, unless you pass `-VcpkgInstalledDir` (then the packages of both
 triplets sit side by side in that folder).
 
+**An x64 build on an ARM64 PC.** The vcpkg program there is native ARM64, so its host triplet defaults to `arm64-windows` and
+vcpkg stops with "Unable to find a valid toolchain for requested target architecture arm64" under Visual Studio 2022. The script
+passes `-DVCPKG_HOST_TRIPLET=x64-windows` to every x64 configure (the same as setting `VCPKG_DEFAULT_HOST_TRIPLET=x64-windows`
+by hand). On an x64 PC that is the host triplet vcpkg chooses anyway; the ARM64 build is not affected.
+
 Verify that it is native and what version it is:
 
 ```powershell
