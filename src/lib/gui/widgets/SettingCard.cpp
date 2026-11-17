@@ -62,6 +62,13 @@ void SettingCard::addRow(SettingRow *row)
   refreshDividers();
 }
 
+void SettingCard::addNote(QWidget *note)
+{
+  // under the header and over the rows, lined up with the text of the rows
+  note->setContentsMargins(metrics::spaceXl, 0, metrics::spaceXl, metrics::spaceSm);
+  m_layout->insertWidget(m_header ? 1 : 0, note);
+}
+
 QList<SettingRow *> SettingCard::rows() const
 {
   return m_rows;

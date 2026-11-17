@@ -10,14 +10,18 @@
 #include "SettingsPage.h"
 #include "common/I18N.h"
 #include "common/LogLevel.h"
+#include "common/NetworkProtocol.h"
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
 #include "gui/TlsUtility.h"
 #include "gui/core/NetworkMonitor.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/LookFollower.h"
+#include "gui/widgets/InlineHint.h"
+#include "gui/widgets/SectionHeader.h"
 #include "gui/widgets/SettingCard.h"
 #include "gui/widgets/SettingRow.h"
+#include "gui/widgets/StatusChip.h"
 #include "gui/widgets/ToggleSwitch.h"
 
 #include <QComboBox>
@@ -30,6 +34,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QTextDocument>
 
 using namespace deskflow::gui::style;
 
@@ -56,6 +61,47 @@ Text sdPlain(const char *source)
 Text tx(const char *source)
 {
   return [source] { return QCoreApplication::translate("SettingsPages", source); };
+}
+
+// The texts that the configuration of the server has (its context): the same use as for the dialog of the preferences
+Text sv(const char *source)
+{
+  return [source] { return QCoreApplication::translate("ServerConfigDialog", source); };
+}
+
+// A label of the dialog has a mnemonic and often a colon: a title of a row has neither
+QString plainLabel(QString text)
+{
+  text = withoutMnemonic(text);
+  while (text.endsWith(QLatin1Char(':')) || text.endsWith(QLatin1Char(' ')))
+    text.chop(1);
+  return text;
+}
+
+Text svPlain(const char *source)
+{
+  return [source] { return plainLabel(QCoreApplication::translate("ServerConfigDialog", source)); };
+}
+
+// "Experimental: multi-monitor aware cursor mapping" under a card called "Experimental" is "Multi-monitor aware cursor
+// mapping"
+QString withoutPrefix(const QString &title, const QString &prefix)
+{
+  const auto lead = prefix + QStringLiteral(": ");
+  if (prefix.isEmpty() || !title.startsWith(lead))
+    return title;
+  auto rest = title.mid(lead.size());
+  if (!rest.isEmpty())
+    rest[0] = rest[0].toUpper();
+  return rest;
+}
+
+// The help of a control that is written in rich text, as a line of text
+QString plainText(const QString &html)
+{
+  QTextDocument document;
+  document.setHtml(html);
+  return document.toPlainText().simplified();
 }
 
 struct Choice
@@ -151,6 +197,25 @@ bool isClientMode()
   return Settings::value(Settings::Core::CoreMode) == Settings::CoreMode::Client;
 }
 
+// Settings that only a server uses: where this computer is a client the card says so and cannot be changed (the server
+// dialog of today is not there for a client either)
+void markServerOnly(SettingsPage *page, SettingsBinder *binder, SettingCard *card)
+{
+  auto *note = new InlineHint;
+  note->setObjectName(QStringLiteral("noteServerOnly"));
+  page->follow([note] {
+    note->setText(
+        QCoreApplication::translate("SettingsPages", "These settings are used when this computer is the server.")
+    );
+  });
+  card->addNote(note);
+  binder->onRefresh([note, card] {
+    const bool client = isClientMode();
+    note->setVisible(client);
+    card->setEnabled(!client);
+  });
+}
+
 } // namespace
 
 QString SettingsPages::generalId()
@@ -166,6 +231,8 @@ SettingsPages::SettingsPages(QObject *parent) : QObject(parent), m_binder(new Se
   m_entries = {
       {QStringLiteral("settings.security"), QStringLiteral("shield-check"), tx("Security & clipboard"),
        buildSecurity()},
+      {QStringLiteral("settings.display"), QStringLiteral("monitor"), tx("Display & monitors"), buildDisplay()},
+      {QStringLiteral("settings.keyboard"), QStringLiteral("keyboard"), tx("Keyboard & mouse"), buildKeyboard()},
       {QStringLiteral("settings.network"), QStringLiteral("network"), sdPlain("&Network"), buildNetwork()},
       {generalId(), QStringLiteral("gear"), sdPlain("&General"), buildGeneral()},
       {QStringLiteral("settings.advanced"), QStringLiteral("sliders-horizontal"), sdPlain("&Advanced"),
@@ -344,6 +411,46 @@ SettingsPage *SettingsPages::buildSecurity()
   connect(fingerprint, &QPushButton::clicked, this, &SettingsPages::fingerprintRequested);
   // the card hides itself when none of its rows is shown: the button is what is hidden while there is no encryption
   m_binder->onRefresh([=] { fingerprint->setVisible(tls->isChecked()); });
+
+  // the clipboard that the server shares: on or off, only text, and how large
+  auto *clipboard = page->addCard(tx("Clipboard"));
+  clipboard->setObjectName(QStringLiteral("cardClipboard"));
+  auto *clipboardOn =
+      addSwitch(page, m_binder, clipboard, Settings::Server::EnableClipboard, sv("Enable clipboard sharing"));
+  clipboardOn->setObjectName(QStringLiteral("cbEnableClipboard"));
+  auto *textOnly = addSwitch(
+      page, m_binder, clipboard, Settings::Server::ClipboardTextOnly, sv("Share text only (max 10 KB)"),
+      sv("Only plain text of up to 10 KB is shared. Images, formatted (HTML) text and longer text are not shared, and "
+         "text is never cut short. The size limit above does not apply.")
+  );
+  textOnly->setObjectName(QStringLiteral("cbClipboardTextOnly"));
+  auto *limitRow = page->addRow(clipboard, svPlain("Limit to:"));
+  auto *limit = new QSpinBox;
+  limit->setObjectName(QStringLiteral("sbClipboardSizeLimit"));
+  limit->setRange(0, 10000);
+  limit->setSuffix(QStringLiteral(" MB"));
+  limitRow->addControl(limit);
+  m_binder->bindNumber(Settings::Server::ClipboardSize, limit);
+  // text only is a way of sharing clipboards, and it replaces the size limit
+  m_binder->onRefresh([=] {
+    const bool writable = Settings::isWritable();
+    textOnly->setEnabled(writable && clipboardOn->isChecked());
+    limit->setEnabled(writable && clipboardOn->isChecked() && !textOnly->isChecked());
+  });
+  // what the dialog of the server does when the clipboard is switched: a size that is nothing is the usual one, and the
+  // permission that the portal of a desktop gave is asked for again
+  connect(m_binder, &SettingsBinder::applied, this, [limit](const QString &key) {
+    if (key != Settings::Server::EnableClipboard)
+      return;
+    Settings::setValue(Settings::Server::XdpRestoreToken, QString());
+    Settings::setValue(Settings::Server::XdpClipboardRetried, false);
+    if (Settings::value(Settings::Server::EnableClipboard).toBool() &&
+        Settings::value(Settings::Server::ClipboardSize).toUInt() == 0) {
+      const auto usual = Settings::defaultValue(Settings::Server::ClipboardSize).toUInt();
+      limit->setValue(usual ? static_cast<int>(usual) : 1);
+    }
+  });
+  markServerOnly(page, m_binder, clipboard);
   return page;
 }
 
@@ -386,6 +493,155 @@ SettingsPage *SettingsPages::buildNetwork()
 
   addNumber(page, m_binder, connection, Settings::Core::Port, sd("Port"), 1, 65535)
       ->setObjectName(QStringLiteral("sbPort"));
+
+  // the clients are asked now and then whether they are there: how often, and how they speak
+  auto *keepAlive = page->addCard(tx("Server"));
+  keepAlive->setObjectName(QStringLiteral("cardServerNetwork"));
+  auto *heartbeatRow = page->addRow(keepAlive, svPlain("&Check clients every"), [] {
+    return plainText(
+        QCoreApplication::translate(
+            "ServerConfigDialog",
+            "<html><head/><body><p>Enables the network heartbeat to ping clients every <span style=\" "
+            "font-style:italic;\">n</span> seconds. This may help to diagnose network problems by retrying the "
+            "connection if the client becomes unresponsive.</p></body></html>"
+        )
+    );
+  });
+  auto *heartbeatNumber = new QSpinBox;
+  heartbeatNumber->setObjectName(QStringLiteral("sbHeartbeat"));
+  heartbeatNumber->setRange(1000, 30000);
+  heartbeatNumber->setSingleStep(1000);
+  heartbeatNumber->setSuffix(QStringLiteral(" ms"));
+  auto *heartbeat = new ToggleSwitch;
+  heartbeat->setObjectName(QStringLiteral("cbHeartbeat"));
+  heartbeatRow->addControl(heartbeatNumber);
+  heartbeatRow->addControl(heartbeat);
+  m_binder->bindSwitch(Settings::Server::EnableHeartbeat, heartbeat);
+  m_binder->bindNumber(Settings::Server::Heartbeat, heartbeatNumber);
+  m_binder->onRefresh([=] { heartbeatNumber->setEnabled(Settings::isWritable() && heartbeat->isChecked()); });
+
+  auto *protocolRow = page->addRow(keepAlive, svPlain("Network protocol"), [] {
+    return plainText(
+        QCoreApplication::translate(
+            "ServerConfigDialog",
+            "<html><head/><body><p>Enables compatibility with programs that use either the Synergy or Barrier "
+            "protocols:</p><ul style=\"margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; "
+            "-qt-list-indent: 1;\"><li style=\" margin-top:12px; margin-bottom:0px; margin-left:0px; "
+            "margin-right:0px; -qt-block-indent:0; text-indent:0px;\">Synergy 3 uses the Synergy protocol.</li><li "
+            "style=\" margin-top:0px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; "
+            "text-indent:0px;\">Barrier, Input-Leap and Synergy 1 uses the Barrier protocol.</li></ul><p>A Deskflow "
+            "client will automatically use either the Synergy or Barrier protocol depending on the server "
+            "protocol.</p></body></html>"
+        )
+    );
+  });
+  auto *protocol = new QComboBox;
+  protocol->setObjectName(QStringLiteral("comboProtocol"));
+  protocol->setMinimumWidth(180);
+  protocol->addItem(QStringLiteral("Synergy"), networkProtocolToOption(NetworkProtocol::Synergy));
+  protocol->addItem(QStringLiteral("Barrier"), networkProtocolToOption(NetworkProtocol::Barrier));
+  protocolRow->addControl(protocol);
+  m_binder->bind(
+      Settings::Server::Protocol, protocol, protocol, &QComboBox::activated,
+      [protocol] { return protocol->currentData(); },
+      [protocol](const QVariant &stored) {
+        // the stored word is read the way the server reads it
+        protocol->setCurrentIndex(networkProtocolFromString(stored.toString()) == NetworkProtocol::Synergy ? 0 : 1);
+      }
+  );
+  markServerOnly(page, m_binder, keepAlive);
+  return page;
+}
+
+SettingsPage *SettingsPages::buildDisplay()
+{
+  auto *page = new SettingsPage(QStringLiteral("settings.display"), tx("Display & monitors"));
+
+  // how a pointer that stays at the edge of a screen goes to the next one
+  auto *switching = page->addCard(svPlain("&Switching"));
+  auto addSwitching = [&](const QString &enableKey, const QString &delayKey, Text title, const char *name) {
+    auto *row = page->addRow(switching, std::move(title));
+    auto *enable = new ToggleSwitch;
+    enable->setObjectName(QStringLiteral("cb%1").arg(QLatin1String(name)));
+    auto *delay = new QSpinBox;
+    delay->setObjectName(QStringLiteral("sb%1").arg(QLatin1String(name)));
+    delay->setRange(10, 10000);
+    delay->setSingleStep(10);
+    delay->setSuffix(QStringLiteral(" ms"));
+    row->addControl(delay);
+    row->addControl(enable);
+    m_binder->bindSwitch(enableKey, enable);
+    m_binder->bindNumber(delayKey, delay);
+    m_binder->onRefresh([=] { delay->setEnabled(Settings::isWritable() && enable->isChecked()); });
+  };
+  addSwitching(
+      Settings::Server::EnableSwitchDelay, Settings::Server::SwitchDelay, svPlain("Switch &after waiting"),
+      "SwitchDelay"
+  );
+  addSwitching(
+      Settings::Server::EnableSwitchDoubleTap, Settings::Server::SwitchDoubleTap,
+      svPlain("Switch on double &tap within"), "SwitchDoubleTap"
+  );
+
+  // the experiment says so with a chip as well as with its title
+  auto *experimental = page->addCard(sv("Experimental"));
+  experimental->setObjectName(QStringLiteral("cardExperimental"));
+  auto *betaChip = new StatusChip(QString(), StatusChip::Kind::Warning);
+  experimental->header()->setTrailingWidget(betaChip);
+  page->follow([betaChip] { betaChip->setText(QCoreApplication::translate("ServerConfigAdvanced", "Beta")); });
+  auto *row = page->addRow(
+      experimental,
+      [] {
+        return withoutPrefix(
+            plainLabel(
+                QCoreApplication::translate("ServerConfigDialog", "Experimental: multi-monitor aware cursor mapping")
+            ),
+            plainLabel(QCoreApplication::translate("ServerConfigDialog", "Experimental"))
+        );
+      },
+      sv("For computers whose monitors do not make up a rectangle: the pointer is put on a monitor and not in a hole, "
+         "and leaves through any edge. It works for the computers that have a monitor layout (in their computer "
+         "settings) that is of the screen size they report; nothing changes for the others. This is an experiment: off "
+         "= Deskflow behaves exactly as before.")
+  );
+  auto *multiMonitor = new ToggleSwitch;
+  multiMonitor->setObjectName(QStringLiteral("cbExperimentalMultiMonitor"));
+  row->addControl(multiMonitor);
+  m_binder->bindSwitch(Settings::Server::ExperimentalMultiMonitor, multiMonitor);
+  markServerOnly(page, m_binder, switching);
+  markServerOnly(page, m_binder, experimental);
+  return page;
+}
+
+SettingsPage *SettingsPages::buildKeyboard()
+{
+  auto *page = new SettingsPage(QStringLiteral("settings.keyboard"), tx("Keyboard & mouse"));
+
+  auto *lock = page->addCard(tx("Lock to computer"));
+  addSwitch(
+      page, m_binder, lock, Settings::Server::DisableLockToComputer, sv("Disable lock to computer (scroll lock key)")
+  )
+      ->setObjectName(QStringLiteral("cbDisableLockToComputer"));
+  addSwitch(
+      page, m_binder, lock, Settings::Server::DefaultLockToComputerState, sv("Enable lock to computer at startup")
+  )
+      ->setObjectName(QStringLiteral("cbDefaultLockToComputerState"));
+
+  auto *pointer = page->addCard(tx("Pointer"));
+  auto *relative = addSwitch(
+      page, m_binder, pointer, Settings::Server::RelativeMouseMoves, svPlain("Use &relative mouse movements")
+  );
+  relative->setObjectName(QStringLiteral("cbRelativeMouseMoves"));
+  // only Windows has a foreground window that a server can take
+  if (deskflow::platform::isWindows()) {
+    addSwitch(
+        page, m_binder, pointer, Settings::Server::Win32KeepForeground,
+        svPlain("Don't take &foreground window (Windows only)")
+    )
+        ->setObjectName(QStringLiteral("cbWin32KeepForeground"));
+  }
+  markServerOnly(page, m_binder, lock);
+  markServerOnly(page, m_binder, pointer);
   return page;
 }
 
@@ -515,6 +771,57 @@ SettingsPage *SettingsPages::buildAdvanced()
   });
   addSwitch(page, m_binder, logging, Settings::Log::GuiDebug, sd("Enable GUI debug messages"))
       ->setObjectName(QStringLiteral("cbGuiDebug"));
+
+  // the file that the server reads its configuration from, in place of the computers of the grid
+  auto *configFile = page->addCard(tx("Server configuration file"));
+  configFile->setObjectName(QStringLiteral("cardConfigFile"));
+  auto *external =
+      addSwitch(page, m_binder, configFile, Settings::Server::ExternalConfig, sv("Use a server config file"), [] {
+        return QCoreApplication::translate(
+                   "ServerConfigDialog",
+                   "Use a server config file to create complex computer layouts that are not possible with the simple "
+                   "grid-based computer layout editor.\n\nEnabling this setting will disable the server config GUI."
+        )
+            .simplified();
+      });
+  external->setObjectName(QStringLiteral("cbExternalConfig"));
+  auto configPath =
+      addPath(page, m_binder, configFile, Settings::Server::ExternalConfigFile, svPlain("Config file path"));
+  configPath.edit->setObjectName(QStringLiteral("lineConfigFile"));
+  configPath.browse->setObjectName(QStringLiteral("btnBrowseConfigFile"));
+  m_binder->setValidator(Settings::Server::ExternalConfigFile, [](const QVariant &value) {
+    const auto path = value.toString().trimmed();
+    if (path.isEmpty() || QFileInfo::exists(path))
+      return QString();
+    return QCoreApplication::translate("SettingsPages", "This file does not exist.");
+  });
+  connect(
+      m_binder, &SettingsBinder::validated, configPath.row,
+      [row = configPath.row](const QString &key, const QString &message) {
+        if (key == Settings::Server::ExternalConfigFile)
+          row->setError(message);
+      }
+  );
+  connect(configPath.browse, &QPushButton::clicked, page, [edit = configPath.edit, page] {
+    //: %1 is replaced with the application names
+    //: (*.conf) and (*.*) should not be translated
+    const auto filter =
+        QCoreApplication::translate("ServerConfigDialog", "%1 Configurations (*.conf);;All files (*.*)");
+    const auto fileName = QFileDialog::getOpenFileName(
+        page, QCoreApplication::translate("ServerConfigDialog", "Browse for a config file"), QString(),
+        filter.arg(kAppName)
+    );
+    if (fileName.isEmpty())
+      return;
+    edit->setText(fileName);
+    Q_EMIT edit->editingFinished();
+  });
+  m_binder->onRefresh([=] {
+    const bool on = Settings::isWritable() && external->isChecked();
+    configPath.edit->setEnabled(on);
+    configPath.browse->setEnabled(on);
+  });
+  markServerOnly(page, m_binder, configFile);
 
   // the way back to the settings that a new copy of the program has
   auto *reset = page->addCard(tx("Reset"));

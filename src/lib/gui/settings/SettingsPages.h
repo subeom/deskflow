@@ -68,6 +68,8 @@ Q_SIGNALS:
 private:
   SettingsPage *buildGeneral();
   SettingsPage *buildSecurity();
+  SettingsPage *buildDisplay();
+  SettingsPage *buildKeyboard();
   SettingsPage *buildNetwork();
   SettingsPage *buildAdvanced();
   void fillAddresses(QComboBox *combo);

@@ -34,6 +34,8 @@ public:
 
   //! The card owns the row; rows are in the order that they were added
   void addRow(SettingRow *row);
+  //! A widget that is not a row (a note that says who the settings are for): under the header, over the rows
+  void addNote(QWidget *note);
   QList<SettingRow *> rows() const;
   //! Takes every row away and deletes it (a list that is made again, the computers)
   void clearRows();

@@ -642,11 +642,12 @@ void MainShellTests::deskflowLook_theSettingsArePagesOfTheSidebar_andPreferences
       order << item->id();
   }
   QCOMPARE(
-      order, (QStringList{
-                 QStringLiteral("home"), QStringLiteral("settings.security"), QStringLiteral("settings.network"),
-                 QStringLiteral("settings.general"), QStringLiteral("settings.advanced"), QStringLiteral("log"),
-                 QStringLiteral("about")
-             })
+      order,
+      (QStringList{
+          QStringLiteral("home"), QStringLiteral("settings.security"), QStringLiteral("settings.display"),
+          QStringLiteral("settings.keyboard"), QStringLiteral("settings.network"), QStringLiteral("settings.general"),
+          QStringLiteral("settings.advanced"), QStringLiteral("log"), QStringLiteral("about")
+      })
   );
   QVERIFY(rail->item(QStringLiteral("preferences"))->isHidden());
 

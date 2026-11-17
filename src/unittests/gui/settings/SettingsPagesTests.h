@@ -23,6 +23,8 @@ private Q_SLOTS:
   void pages_areInTheOrderOfTheSidebar_withTitlesAndCards();
   void pages_changeIsWrittenAtOnce_andNothingIsWrittenForNoChange();
   void pages_writeWhatTheDialogWritesForTheSameChanges();
+  void pages_writeWhatTheServerDialogWritesForTheSameChanges();
+  void pages_theServerSettingsFollowTheirRules();
   void pages_takeASettingThatChangedElsewhere();
   void pages_aValueThatIsNotGoodIsNotWritten_andSaysWhy();
   void pages_whatDependsOnAnotherControlFollowsIt();

@@ -5,9 +5,11 @@
 
 #include "SettingsPagesTests.h"
 
+#include "common/NetworkProtocol.h"
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
 #include "gui/config/ServerConfig.h"
+#include "gui/dialogs/ServerConfigDialog.h"
 #include "gui/dialogs/SettingsDialog.h"
 #include "gui/settings/RestartBanner.h"
 #include "gui/settings/SettingEffects.h"
@@ -18,6 +20,7 @@
 #include "gui/widgets/PageTitle.h"
 #include "gui/widgets/SettingCard.h"
 #include "gui/widgets/SettingRow.h"
+#include "gui/widgets/SettingsDialogButtonBox.h"
 #include "gui/widgets/ToggleSwitch.h"
 
 #include <QAccessible>
@@ -26,6 +29,8 @@
 #include <QComboBox>
 #include <QFile>
 #include <QGroupBox>
+#include <QLabel>
+#include <QLayout>
 #include <QLineEdit>
 #include <QMetaEnum>
 #include <QPushButton>
@@ -131,6 +136,12 @@ void forgetAll()
 {
   for (const auto &entry : dialogKeys())
     Settings::setValue(entry.key);
+  for (const auto &key : keysWith(Effect::RestartSharing)) {
+    if (key.startsWith(QStringLiteral("server/")))
+      Settings::setValue(key);
+  }
+  Settings::setValue(Settings::Server::XdpRestoreToken);
+  Settings::setValue(Settings::Server::XdpClipboardRetried);
   Settings::setValue(Settings::Gui::Appearance);
   Settings::setValue(Settings::Core::CoreMode);
 }
@@ -203,14 +214,17 @@ void SettingsPagesTests::pages_areInTheOrderOfTheSidebar_withTitlesAndCards()
     );
   }
   QCOMPARE(
-      ids, (QStringList{
-               QStringLiteral("settings.security"), QStringLiteral("settings.network"),
-               QStringLiteral("settings.general"), QStringLiteral("settings.advanced")
-           })
+      ids,
+      (QStringList{
+          QStringLiteral("settings.security"), QStringLiteral("settings.display"), QStringLiteral("settings.keyboard"),
+          QStringLiteral("settings.network"), QStringLiteral("settings.general"), QStringLiteral("settings.advanced")
+      })
   );
   QCOMPARE(SettingsPages::generalId(), QStringLiteral("settings.general"));
   QCOMPARE(pages.page(QStringLiteral("settings.network"))->title(), QStringLiteral("Network"));
   QCOMPARE(pages.page(QStringLiteral("settings.security"))->title(), QStringLiteral("Security & clipboard"));
+  QCOMPARE(pages.page(QStringLiteral("settings.display"))->title(), QStringLiteral("Display & monitors"));
+  QCOMPARE(pages.page(QStringLiteral("settings.keyboard"))->title(), QStringLiteral("Keyboard & mouse"));
   QVERIFY(!pages.page(QStringLiteral("settings.nothing")));
 }
 
@@ -365,6 +379,235 @@ void SettingsPagesTests::pages_writeWhatTheDialogWritesForTheSameChanges()
   }
   QVERIFY(compared >= 18);
   QCOMPARE(Settings::value(Settings::Core::Port).toInt(), 24831);
+}
+
+void SettingsPagesTests::pages_writeWhatTheServerDialogWritesForTheSameChanges()
+{
+  using S = Settings;
+  const auto configFile = m_dir.filePath(QStringLiteral("server.conf"));
+  QFile(configFile).open(QIODevice::WriteOnly);
+  const bool windows = deskflow::platform::isWindows();
+  // every one of them the other way from what it is by default
+  const bool clipboard = !S::defaultValue(S::Server::EnableClipboard).toBool();
+  const bool textOnly = !S::defaultValue(S::Server::ClipboardTextOnly).toBool();
+  const bool heartbeat = !S::defaultValue(S::Server::EnableHeartbeat).toBool();
+  const bool delay = !S::defaultValue(S::Server::EnableSwitchDelay).toBool();
+  const bool doubleTap = !S::defaultValue(S::Server::EnableSwitchDoubleTap).toBool();
+  const bool disableLock = !S::defaultValue(S::Server::DisableLockToComputer).toBool();
+  const bool lockAtStart = !S::defaultValue(S::Server::DefaultLockToComputerState).toBool();
+  const bool relative = !S::defaultValue(S::Server::RelativeMouseMoves).toBool();
+  const bool foreground = !S::defaultValue(S::Server::Win32KeepForeground).toBool();
+  const bool multiMonitor = !S::defaultValue(S::Server::ExperimentalMultiMonitor).toBool();
+  const auto protocol = networkProtocolToOption(NetworkProtocol::Synergy);
+
+  // the permission of the portal of a desktop that was given for a clipboard, and is to be asked for again
+  auto start = [] {
+    forgetAll();
+    Settings::setValue(Settings::Server::XdpRestoreToken, QStringLiteral("token"));
+    Settings::setValue(Settings::Server::XdpClipboardRetried, true);
+  };
+
+  // through the pages
+  QStringList keys;
+  start();
+  {
+    SettingsPages pages;
+    keys = pages.binder()->keys();
+    setSwitch(must<ToggleSwitch>(pages, "cbEnableClipboard"), clipboard);
+    must<QSpinBox>(pages, "sbClipboardSizeLimit")->setValue(7);
+    setSwitch(must<ToggleSwitch>(pages, "cbClipboardTextOnly"), textOnly);
+    setSwitch(must<ToggleSwitch>(pages, "cbHeartbeat"), heartbeat);
+    must<QSpinBox>(pages, "sbHeartbeat")->setValue(7000);
+    choose(must<QComboBox>(pages, "comboProtocol"), protocol);
+    setSwitch(must<ToggleSwitch>(pages, "cbSwitchDelay"), delay);
+    must<QSpinBox>(pages, "sbSwitchDelay")->setValue(330);
+    setSwitch(must<ToggleSwitch>(pages, "cbSwitchDoubleTap"), doubleTap);
+    must<QSpinBox>(pages, "sbSwitchDoubleTap")->setValue(440);
+    setSwitch(must<ToggleSwitch>(pages, "cbDisableLockToComputer"), disableLock);
+    setSwitch(must<ToggleSwitch>(pages, "cbDefaultLockToComputerState"), lockAtStart);
+    setSwitch(must<ToggleSwitch>(pages, "cbRelativeMouseMoves"), relative);
+    if (windows)
+      setSwitch(must<ToggleSwitch>(pages, "cbWin32KeepForeground"), foreground);
+    setSwitch(must<ToggleSwitch>(pages, "cbExperimentalMultiMonitor"), multiMonitor);
+    type(must<QLineEdit>(pages, "lineConfigFile"), configFile);
+    setSwitch(must<ToggleSwitch>(pages, "cbExternalConfig"), true);
+  }
+  QMap<QString, QString> viaPages;
+  for (const auto &key : keys)
+    viaPages[key] = Settings::value(key).toString();
+  const auto tokenViaPages = Settings::value(Settings::Server::XdpRestoreToken).toString();
+  const auto retriedViaPages = Settings::value(Settings::Server::XdpClipboardRetried).toString();
+
+  // through the dialog of the server, with the same values
+  start();
+  {
+    ServerConfig config;
+    ServerConfigDialog dialog(nullptr, config);
+    auto button = [&](const char *name) { return dialog.findChild<QAbstractButton *>(QString::fromLatin1(name)); };
+    auto spin = [&](const char *name) { return dialog.findChild<QSpinBox *>(QString::fromLatin1(name)); };
+    button("cbEnableClipboard")->setChecked(clipboard);
+    spin("sbClipboardSizeLimit")->setValue(7);
+    button("cbClipboardTextOnly")->setChecked(textOnly);
+    button("cbHeartbeat")->setChecked(heartbeat);
+    spin("sbHeartbeat")->setValue(7000);
+    button("rbProtocolSynergy")->setChecked(true);
+    button("cbSwitchDelay")->setChecked(delay);
+    spin("sbSwitchDelay")->setValue(330);
+    button("cbSwitchDoubleTap")->setChecked(doubleTap);
+    spin("sbSwitchDoubleTap")->setValue(440);
+    button("cbDisableLockToComputer")->setChecked(disableLock);
+    button("cbDefaultLockToComputerState")->setChecked(lockAtStart);
+    button("cbRelativeMouseMoves")->setChecked(relative);
+    if (windows)
+      button("cbWin32KeepForeground")->setChecked(foreground);
+    button("cbExperimentalMultiMonitor")->setChecked(multiMonitor);
+    dialog.findChild<QLineEdit *>(QStringLiteral("lineConfigFile"))->setText(configFile);
+    dialog.findChild<QGroupBox *>(QStringLiteral("groupExternalConfig"))->setChecked(true);
+    Q_EMIT dialog.findChild<SettingsDialogButtonBox *>()->accepted();
+  }
+
+  // what the two ways of saving left is the same for every setting that the pages have, and for the permission
+  int compared = 0;
+  for (const auto &key : keys) {
+    if (!key.startsWith(QStringLiteral("server/")))
+      continue;
+    QVERIFY2(
+        Settings::value(key).toString() == viaPages.value(key),
+        qPrintable(
+            key + QStringLiteral(": ") + viaPages.value(key) + QStringLiteral(" / ") + Settings::value(key).toString()
+        )
+    );
+    ++compared;
+  }
+  QVERIFY(compared >= 15);
+  QCOMPARE(Settings::value(Settings::Server::XdpRestoreToken).toString(), tokenViaPages);
+  QCOMPARE(Settings::value(Settings::Server::XdpClipboardRetried).toString(), retriedViaPages);
+  QVERIFY(tokenViaPages.isEmpty());
+  QCOMPARE(Settings::value(Settings::Server::ClipboardSize).toInt(), 7);
+  QCOMPARE(Settings::value(Settings::Server::Protocol).toString(), protocol);
+  QCOMPARE(Settings::value(Settings::Server::ExternalConfigFile).toString(), configFile);
+}
+
+namespace {
+SettingRow *rowOf(QWidget *control)
+{
+  for (QWidget *parent = control->parentWidget(); parent; parent = parent->parentWidget()) {
+    if (auto *row = qobject_cast<SettingRow *>(parent))
+      return row;
+  }
+  return nullptr;
+}
+} // namespace
+
+void SettingsPagesTests::pages_theServerSettingsFollowTheirRules()
+{
+  using S = Settings;
+  S::setValue(S::Server::EnableClipboard, false);
+  S::setValue(S::Server::ClipboardSize, 0);
+  S::setValue(S::Server::XdpRestoreToken, QStringLiteral("token"));
+  S::setValue(S::Server::XdpClipboardRetried, true);
+  SettingsPages pages;
+  auto *clipboard = must<ToggleSwitch>(pages, "cbEnableClipboard");
+  auto *textOnly = must<ToggleSwitch>(pages, "cbClipboardTextOnly");
+  auto *limit = must<QSpinBox>(pages, "sbClipboardSizeLimit");
+
+  // the clipboard is off: nothing of it can be set
+  QVERIFY(!clipboard->isChecked());
+  QVERIFY(!textOnly->isEnabled());
+  QVERIFY(!limit->isEnabled());
+
+  // a change of something else leaves the permission of the portal alone
+  must<ToggleSwitch>(pages, "cbHeartbeat")->setChecked(true);
+  QCOMPARE(S::value(S::Server::XdpRestoreToken).toString(), QStringLiteral("token"));
+
+  // the clipboard on: the size that was nothing is the usual one, the permission is asked for again
+  clipboard->setChecked(true);
+  QVERIFY(textOnly->isEnabled());
+  QVERIFY(limit->isEnabled());
+  QCOMPARE(S::value(S::Server::ClipboardSize).toInt(), S::defaultValue(S::Server::ClipboardSize).toInt());
+  QCOMPARE(limit->value(), S::defaultValue(S::Server::ClipboardSize).toInt());
+  QVERIFY(S::value(S::Server::XdpRestoreToken).toString().isEmpty());
+  QVERIFY(!S::value(S::Server::XdpClipboardRetried).toBool());
+
+  // text only takes the place of the size limit
+  textOnly->setChecked(true);
+  QVERIFY(!limit->isEnabled());
+  textOnly->setChecked(false);
+  QVERIFY(limit->isEnabled());
+
+  // the waits are numbers of their switches
+  for (const auto &[toggle, number] :
+       {std::pair{"cbSwitchDelay", "sbSwitchDelay"}, std::pair{"cbSwitchDoubleTap", "sbSwitchDoubleTap"},
+        std::pair{"cbHeartbeat", "sbHeartbeat"}}) {
+    auto *on = must<ToggleSwitch>(pages, toggle);
+    on->setChecked(true);
+    QVERIFY2(must<QSpinBox>(pages, number)->isEnabled(), number);
+    on->setChecked(false);
+    QVERIFY2(!must<QSpinBox>(pages, number)->isEnabled(), number);
+  }
+
+  // the protocol is read the way the server reads it
+  auto *protocol = must<QComboBox>(pages, "comboProtocol");
+  choose(protocol, networkProtocolToOption(NetworkProtocol::Synergy));
+  QCOMPARE(S::networkProtocol(), NetworkProtocol::Synergy);
+  S::setValue(S::Server::Protocol, networkProtocolToOption(NetworkProtocol::Barrier));
+  QCOMPARE(protocol->currentText(), QStringLiteral("Barrier"));
+
+  // the file of a configuration has to be there, and its switch makes it a thing to set
+  auto *external = must<ToggleSwitch>(pages, "cbExternalConfig");
+  auto *path = must<QLineEdit>(pages, "lineConfigFile");
+  external->setChecked(false);
+  QVERIFY(!path->isEnabled());
+  QVERIFY(!must<QPushButton>(pages, "btnBrowseConfigFile")->isEnabled());
+  external->setChecked(true);
+  QVERIFY(path->isEnabled());
+  const auto before = S::value(S::Server::ExternalConfigFile).toString();
+  type(path, m_dir.filePath(QStringLiteral("there-is-no-such-file.conf")));
+  QCOMPARE(S::value(S::Server::ExternalConfigFile).toString(), before);
+  QVERIFY(!rowOf(path)->error().isEmpty());
+  const auto existing = m_dir.filePath(QStringLiteral("there.conf"));
+  QFile(existing).open(QIODevice::WriteOnly);
+  type(path, existing);
+  QCOMPARE(S::value(S::Server::ExternalConfigFile).toString(), existing);
+  QVERIFY(rowOf(path)->error().isEmpty());
+
+  // the foreground window is a thing of Windows only
+  QCOMPARE(find<QWidget>(pages, "cbWin32KeepForeground") != nullptr, deskflow::platform::isWindows());
+
+  // where this computer is a client, the settings of a server are shown and cannot be changed, and the card says why
+  auto cardOf = [](QWidget *control) {
+    for (QWidget *parent = control->parentWidget(); parent; parent = parent->parentWidget()) {
+      if (auto *card = qobject_cast<SettingCard *>(parent))
+        return card;
+    }
+    return static_cast<SettingCard *>(nullptr);
+  };
+  for (const char *name :
+       {"cbEnableClipboard", "sbHeartbeat", "cbSwitchDelay", "cbExperimentalMultiMonitor", "cbDisableLockToComputer",
+        "cbRelativeMouseMoves", "cbExternalConfig"}) {
+    auto *card = cardOf(must<QWidget>(pages, name));
+    QVERIFY2(card, name);
+    auto *note = card->findChild<QLabel *>(QStringLiteral("noteServerOnly"));
+    QVERIFY2(note, name);
+    // the note is the first thing under the header
+    QCOMPARE(card->layout()->itemAt(1)->widget(), note);
+    S::setValue(S::Core::CoreMode, S::CoreMode::Server);
+    QVERIFY2(card->isEnabled() && note->isHidden(), name);
+    S::setValue(S::Core::CoreMode, S::CoreMode::Client);
+    QVERIFY2(!card->isEnabled() && !note->isHidden(), name);
+    S::setValue(S::Core::CoreMode, S::CoreMode::Server);
+  }
+  // a card of a setting that a client uses too is not marked
+  QVERIFY(!cardOf(must<QWidget>(pages, "sbPort"))->findChild<QLabel *>(QStringLiteral("noteServerOnly")));
+
+  // the names that a person who reads the page with a screen reader hears
+  auto nameOf = [&](const char *name) {
+    return QAccessible::queryAccessibleInterface(must<QWidget>(pages, name))->text(QAccessible::Name);
+  };
+  QCOMPARE(nameOf("cbExperimentalMultiMonitor"), QStringLiteral("Multi-monitor aware cursor mapping"));
+  QCOMPARE(nameOf("sbHeartbeat"), QStringLiteral("Check clients every"));
+  QCOMPARE(nameOf("cbDisableLockToComputer"), QStringLiteral("Disable lock to computer (scroll lock key)"));
+  QCOMPARE(nameOf("sbClipboardSizeLimit"), QStringLiteral("Limit to"));
 }
 
 void SettingsPagesTests::pages_takeASettingThatChangedElsewhere()
