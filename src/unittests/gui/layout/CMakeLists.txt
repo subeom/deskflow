@@ -10,6 +10,14 @@ create_test(
 )
 
 create_test(
+  NAME LayoutStoreTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE LayoutStoreTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
   NAME LayoutMatcherTests
   DEPENDS gui
   LIBS server ${gui_server_libs}

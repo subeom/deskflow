@@ -56,8 +56,12 @@ add_library(${target} STATIC
   core/NetworkMonitor.h
   layout/DisplaySignature.cpp
   layout/DisplaySignature.h
+  layout/Layout.cpp
+  layout/Layout.h
   layout/LayoutMatcher.cpp
   layout/LayoutMatcher.h
+  layout/LayoutProfileStore.cpp
+  layout/LayoutProfileStore.h
   dialogs/AboutDialog.cpp
   dialogs/AboutDialog.h
   dialogs/AboutDialog.ui
