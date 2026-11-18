@@ -150,6 +150,10 @@ add_library(${target} STATIC
   style/PixelSnap.h
   style/StatusColors.cpp
   style/StatusColors.h
+  style/TextSize.cpp
+  style/TextSize.h
+  style/TextSizeModel.cpp
+  style/TextSizeModel.h
   style/phosphor.qrc
   settings/RestartBanner.cpp
   settings/RestartBanner.h

@@ -92,6 +92,9 @@ public:
     // has a header of its own with the buttons of the window in it). The environment variable
     // DESKFLOW_WINDOW_FRAME=native does the same for one run
     inline static const auto NativeWindowFrame = QStringLiteral("gui/nativeWindowFrame");
+    // the new look: the size of text as a percent of the size that the system gives it, one of 90, 100 (default), 115,
+    // 130 and 150. Anything else is 100
+    inline static const auto TextSize = QStringLiteral("gui/textSize");
     inline static const auto SymbolicTrayIcon = QStringLiteral("gui/symbolicTrayIcon");
     inline static const auto WindowGeometry = QStringLiteral("gui/windowGeometry");
     // the position and the size of the window of the new look: it has its own, so that the small window of the system
@@ -372,6 +375,7 @@ private:
     , Gui::SidebarCollapsed
     , Gui::ShellLogExpanded
     , Gui::NativeWindowFrame
+    , Gui::TextSize
     , Gui::SymbolicTrayIcon
     , Gui::ShownFirstConnectedMessage
     , Gui::ShownServerFirstStartMessage

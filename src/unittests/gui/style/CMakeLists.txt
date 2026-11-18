@@ -73,3 +73,21 @@ create_test(
   SOURCE MenuStyleTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME TextSizeModelTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TextSizeModelTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(TextSizeModelTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+
+create_test(
+  NAME TextSizeTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TextSizeTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(TextSizeTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")

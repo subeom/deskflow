@@ -7,6 +7,7 @@
 #include "LookFollower.h"
 
 #include "Appearance.h"
+#include "TextSize.h"
 
 #include <QEvent>
 #include <QRegularExpression>
@@ -28,6 +29,14 @@ void LookFollower::watch()
 {
   QObject::disconnect(m_connection);
   m_connection = onLookChanged(this, [this] { m_apply(); });
+  QObject::disconnect(m_textConnection);
+  // a size of text that changes is a font to set again, and the sizes that follow it: the widget is asked to be laid
+  // out
+  m_textConnection = onTextSizeChanged(this, [this] {
+    m_apply();
+    m_widget->updateGeometry();
+    m_widget->update();
+  });
 }
 
 bool LookFollower::eventFilter(QObject *watched, QEvent *event)

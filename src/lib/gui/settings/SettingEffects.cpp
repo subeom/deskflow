@@ -31,6 +31,8 @@ const QHash<QString, Effect> &table()
     live(S::Gui::AutoUpdateCheck);
     // the look is chosen when the application starts
     live(S::Gui::Appearance);
+    // the size of text follows at once (TextSize listens to the setting)
+    live(S::Gui::TextSize);
     // the GUI logger listens for it
     live(S::Log::GuiDebug);
     // the running core is told (CoreProcess::applyLogLevel)

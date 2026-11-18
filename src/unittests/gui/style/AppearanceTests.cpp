@@ -9,6 +9,7 @@
 #include "common/Settings.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/DeskflowStyle.h"
+#include "gui/style/TextSize.h"
 
 #include <QApplication>
 #include <QStyle>
@@ -51,6 +52,8 @@ void AppearanceTests::init()
 
 void AppearanceTests::cleanup()
 {
+  // the new look has its size of text, which the next test does not want
+  TextSize::uninstall();
   qunsetenv(kAppearanceEnvironment);
   qunsetenv("XDG_CURRENT_DESKTOP");
   Settings::setValue(Settings::Gui::Appearance);

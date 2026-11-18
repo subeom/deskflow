@@ -8,6 +8,7 @@
 
 #include "AppearanceHints.h"
 #include "DeskflowStyle.h"
+#include "TextSize.h"
 
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
@@ -51,8 +52,13 @@ void applyAppearance()
 {
   if (configuredMode() == Mode::Deskflow) {
     QApplication::setStyle(new DeskflowStyle);
+    // the size of text of the new look: the system's, not smaller than the OS has in its own settings, as the person
+    // chose
+    TextSize::install();
     return;
   }
+  // the look of the system keeps the font that the OS gave
+  TextSize::uninstall();
 
   // System: the look that the application has always had. Fusion where the native style is not what is wanted, and
   // the native style (and the palette of the OS) on macOS and in KDE

@@ -17,8 +17,9 @@ namespace deskflow::gui::style {
 
 /*!
  * \brief Calls a function when the look of the application changes: the colour scheme, the high contrast and the
- * reduced transparency or motion (onLookChanged), when the palette of the widget or of the application changes, and
- * when the widget gets another style (the signal of the look comes from the style, so it is connected again).
+ * reduced transparency or motion (onLookChanged), when the palette of the widget or of the application changes, when
+ * the size of text changes (onTextSizeChanged), and when the widget gets another style (the signal of the look comes
+ * from the style, so it is connected again).
  *
  * The function runs once when this is made. It lives as long as the widget, which owns it.
  */
@@ -38,6 +39,7 @@ private:
   QWidget *m_widget;
   std::function<void()> m_apply;
   QMetaObject::Connection m_connection;
+  QMetaObject::Connection m_textConnection;
 };
 
 //! The text of a label with its mnemonic taken out: "&Misc" is "Misc", "A && B" is "A & B", and "기타(&M)" is "기타"

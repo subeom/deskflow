@@ -353,6 +353,9 @@ QVariant Settings::defaultValue(const QString &key)
   if (key == Gui::Appearance)
     return QStringLiteral("system");
 
+  if (key == Gui::TextSize)
+    return 100;
+
   if (key == Server::ExternalConfigFile)
     return QStringLiteral("%1/%2-server.conf").arg(Settings::settingsPath(), kAppId);
 
