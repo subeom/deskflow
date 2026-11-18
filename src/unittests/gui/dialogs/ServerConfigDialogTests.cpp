@@ -7,14 +7,16 @@
 
 #include "common/Settings.h"
 #include "dialogs/MonitorEditorDialog.h"
+#include "gui/ComputerSetupModel.h"
 #include "gui/config/Computer.h"
+#include "gui/config/ComputerList.h"
 #include "gui/config/ServerConfig.h"
 #include "gui/dialogs/ComputerSettingsDialog.h"
 #include "gui/dialogs/ServerConfigDialog.h"
+#include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
 #include "gui/widgets/ComputerSetupView.h"
-#include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/SettingsDialogButtonBox.h"
 
 #include <QApplication>
@@ -25,14 +27,19 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QProxyStyle>
 #include <QPushButton>
 #include <QRect>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QSpinBox>
+#include <QStyleFactory>
+#include <QStyleOption>
 #include <QTemporaryFile>
 #include <QTest>
 #include <QTimer>
 
+#include <algorithm>
 #include <optional>
 #include <tuple>
 #include <vector>
@@ -53,6 +60,63 @@ QCheckBox *experimentalBox(const ServerConfigDialog &dialog)
 {
   return dialog.findChild<QCheckBox *>(QStringLiteral("cbExperimentalMultiMonitor"));
 }
+
+// Looks at the object that every style option names as the one the style keeps its state on. Only its address is
+// compared with the widgets that are alive: an object that is gone must not be asked for anything.
+class OptionObjectAuditor : public QProxyStyle
+{
+public:
+  explicit OptionObjectAuditor(QStyle *base) : QProxyStyle(base)
+  {
+  }
+
+  int drawn() const
+  {
+    return m_drawn;
+  }
+
+  QStringList gone() const
+  {
+    return m_gone;
+  }
+
+  void drawPrimitive(
+      PrimitiveElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget
+  ) const override
+  {
+    audit(QStringLiteral("primitive %1").arg(static_cast<int>(element)), option);
+    QProxyStyle::drawPrimitive(element, option, painter, widget);
+  }
+
+  void drawControl(
+      ControlElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget
+  ) const override
+  {
+    audit(QStringLiteral("control %1").arg(static_cast<int>(element)), option);
+    QProxyStyle::drawControl(element, option, painter, widget);
+  }
+
+private:
+  void audit(const QString &what, const QStyleOption *option) const
+  {
+    ++m_drawn;
+    const QObject *object = option->styleObject;
+    if (object == nullptr)
+      return;
+    const auto widgets = QApplication::allWidgets();
+    const auto alive = std::any_of(widgets.cbegin(), widgets.cend(), [object](const QWidget *widget) {
+      return static_cast<const QObject *>(widget) == object;
+    });
+    if (!alive) {
+      const auto message = QStringLiteral("%1 was drawn with a style object that is gone").arg(what);
+      if (!m_gone.contains(message))
+        m_gone << message;
+    }
+  }
+
+  mutable int m_drawn = 0;
+  mutable QStringList m_gone;
+};
 
 // the computers of the classic grid: three, with the server in the middle, and the displays of the user's MacBook
 void writeThreeComputers()
@@ -1049,6 +1113,32 @@ void ServerConfigDialogTests::systemLook_theToolbarOfTheArrangementIsWhatItWas()
   QVERIFY(x("btnArrangementAdd") < x("btnArrangementMonitors"));
   QVERIFY(buttonNamed(dialog, "btnArrangementAdd")->icon().isNull());
   QVERIFY(!panelOf(dialog)->findChild<QWidget *>(QStringLiteral("arrangementToolsDivider")));
+}
+
+// The grid builds the option of its cells from a widget of its own that it deletes at once, and the option kept that
+// widget as its style object. The windowsvista and windows11 styles ask the style object for a property whenever they
+// draw (to see whether they may animate): with the memory reused that reads what is not an object, which is how the
+// layout test of the server dialog is understood to have died on Windows 11 (the crash is not confirmed there).
+void ServerConfigDialogTests::computerGrid_neverHandsAStyleAnObjectThatIsGone()
+{
+  const auto original = QApplication::style()->name();
+  const auto restoreStyle = qScopeGuard([&original] { QApplication::setStyle(original); });
+  auto *auditor = new OptionObjectAuditor(QStyleFactory::create(QStringLiteral("Fusion")));
+  QApplication::setStyle(auditor);
+
+  ComputerList computers;
+  for (int i = 0; i < 15; ++i)
+    computers.append(Computer(i == 7 ? QStringLiteral("srv") : QString()));
+  ComputerSetupModel model(computers, 5, 3);
+  ComputerSetupView view(nullptr);
+  view.setModel(&model);
+  view.resize(600, 400);
+  view.show();
+  QCoreApplication::processEvents();
+  QVERIFY(!view.grab().isNull());
+
+  QVERIFY2(auditor->drawn() > 0, "the grid was not drawn");
+  QVERIFY2(auditor->gone().isEmpty(), qPrintable(auditor->gone().join(u'\n')));
 }
 
 QTEST_MAIN(ServerConfigDialogTests)

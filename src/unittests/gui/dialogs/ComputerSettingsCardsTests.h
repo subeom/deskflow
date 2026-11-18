@@ -23,6 +23,7 @@ private Q_SLOTS:
   void deskflowLook_savesWhatTheFormSaved();
   void deskflowLook_showsTheErrorOfTheNameAndOfTheAliasInTheirRows();
   void deskflowLook_namesTheControlsByTheirRows();
+  void deskflowLook_isAsSmallAsTheFormWas_andTheCardsScrollInIt_data();
   void deskflowLook_isAsSmallAsTheFormWas_andTheCardsScrollInIt();
 
 private:

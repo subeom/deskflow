@@ -49,6 +49,9 @@ private Q_SLOTS:
   void newLook_theToolbarOfTheArrangementIsGroupedAndStillHasEveryHook();
   void systemLook_theToolbarOfTheArrangementIsWhatItWas();
 
+  // the grid of the classic arrangement builds the option of its cells from a widget that it deletes
+  void computerGrid_neverHandsAStyleAnObjectThatIsGone();
+
 private:
   QTemporaryDir m_settingsDir;
 };

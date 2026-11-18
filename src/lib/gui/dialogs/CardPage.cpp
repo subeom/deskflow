@@ -102,9 +102,11 @@ QScrollArea *assemblePage(
   box->insertWidget(0, backdrop, 1);
 
   // what the dialog asked for is the least that the cards are given: they scroll in it, and are never cut at the side
+  // (the bar is there when the dialog is as short as it gets, and it takes its width from the cards)
   const int fixedHeight =
       footer->minimumSizeHint().height() + (headerHolder ? headerHolder->minimumSizeHint().height() : 0);
-  const int cardsWidth = content->minimumSizeHint().width() + 2 * scroll->frameWidth();
+  const int cardsWidth =
+      content->minimumSizeHint().width() + 2 * scroll->frameWidth() + scroll->verticalScrollBar()->sizeHint().width();
   scroll->setMinimumHeight(qMax(scroll->minimumSizeHint().height(), oldMinimum.height() - fixedHeight));
   scroll->setMinimumWidth(qMax(cardsWidth, oldMinimum.width()));
   return scroll;

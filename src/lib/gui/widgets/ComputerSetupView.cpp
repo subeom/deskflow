@@ -152,6 +152,9 @@ void ComputerSetupView::initViewItemOption(QStyleOptionViewItem *option) const
   option->initFrom(w);
   w->deleteLater();
   delete w;
+  // initFrom named the widget that was just deleted as the object that styles keep their state on (the windowsvista and
+  // windows11 styles ask it for a property whenever they draw): the cells have no such object
+  option->styleObject = nullptr;
 
   option->decorationSize = QSize(96, 96);
   option->showDecorationSelected = true;

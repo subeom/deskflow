@@ -20,12 +20,14 @@
 #include <QAccessible>
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPixmapCache>
 #include <QPointer>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QtTest/qtestaccessible.h>
@@ -81,6 +83,18 @@ void showWithWidth(QWidget &widget, int width)
   widget.adjustSize();
   widget.show();
 }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+// whether an announcement has been told to the accessibility update handler of QTestAccessibility since it was cleared
+// (QTestAccessibility::containsEventOfType is newer than Qt 6.9)
+bool announced()
+{
+  const auto events = QTestAccessibility::events();
+  return std::any_of(events.cbegin(), events.cend(), [](const QAccessibleEvent *event) {
+    return event->type() == QAccessible::Announcement;
+  });
+}
+#endif
 
 } // namespace
 
@@ -450,6 +464,21 @@ void SettingWidgetsTests::row_mnemonicOfTheTitleFocusesTheControl()
   QVERIFY(titleOf(other)->buddy() == nullptr);
 }
 
+// Qt before 6.11 finds the label of a control, the relation that a screen reader asks for, among the siblings of the
+// control only: the title has to be in the widget that has the controls
+void SettingWidgetsTests::row_titleIsASiblingOfItsControls()
+{
+  install();
+  SettingRow row(QStringLiteral("Shift"), QStringLiteral("What the key does"));
+  auto *combo = new QComboBox;
+  row.addControl(combo);
+  auto *title = titleOf(row);
+  QCOMPARE(title->buddy(), combo);
+  QCOMPARE(title->parentWidget(), combo->parentWidget());
+  QCOMPARE(title->parentWidget(), &row);
+  QCOMPARE(row.findChild<InlineHint *>()->parentWidget(), &row);
+}
+
 void SettingWidgetsTests::card_hasNoHairlineAboveItsFirstRowThatIsShown()
 {
   install();
@@ -608,20 +637,19 @@ void SettingWidgetsTests::hero_announcesAHeadlineThatChanges()
 {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
   install();
+  // The hero announces while assistive technology listens, which is what QAccessible::isActive says. Before Qt 6.10
+  // QAccessible::setActive only tells the observers and never makes it true: a platform plugin does that when a screen
+  // reader asks, and the offscreen platform has none that asks. Nothing is announced there, so there is nothing to see.
   QAccessible::setActive(true);
+  const auto deactivate = qScopeGuard([] { QAccessible::setActive(false); });
+  if (!QAccessible::isActive())
+    QSKIP("QAccessible::setActive does not turn accessibility on before Qt 6.10 (hero_staysSilentWhileNothingListens)");
   QTestAccessibility::initialize();
+  const auto cleanup = qScopeGuard([] { QTestAccessibility::cleanup(); });
   StatusHero hero;
   hero.setHeadline(QStringLiteral("Waiting for clients"));
   hero.show();
   QTestAccessibility::clearEvents();
-
-  // QTestAccessibility::containsEventOfType is newer than Qt 6.9
-  const auto announced = [] {
-    const auto events = QTestAccessibility::events();
-    return std::any_of(events.cbegin(), events.cend(), [](const QAccessibleEvent *event) {
-      return event->type() == QAccessible::Announcement;
-    });
-  };
 
   // the first headline is not announced, a change is
   hero.setHeadline(QStringLiteral("Connected to 1 computer"));
@@ -629,7 +657,28 @@ void SettingWidgetsTests::hero_announcesAHeadlineThatChanges()
   QTestAccessibility::clearEvents();
   hero.setHeadline(QStringLiteral("Connected to 1 computer"));
   QVERIFY(!announced());
-  QTestAccessibility::cleanup();
+#else
+  QSKIP("Announcements need Qt 6.8");
+#endif
+}
+
+void SettingWidgetsTests::hero_staysSilentWhileNothingListens()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+  install();
+  QAccessible::setActive(false);
+  QVERIFY(!QAccessible::isActive());
+  QTestAccessibility::initialize();
+  const auto cleanup = qScopeGuard([] { QTestAccessibility::cleanup(); });
+  StatusHero hero;
+  hero.setHeadline(QStringLiteral("Waiting for clients"));
+  hero.show();
+  QTestAccessibility::clearEvents();
+
+  // the headline still changes, and the name that a screen reader reads when it comes is kept up to date
+  hero.setHeadline(QStringLiteral("Connected to 1 computer"));
+  QVERIFY(!announced());
+  QCOMPARE(hero.accessibleName(), QStringLiteral("Connected to 1 computer"));
 #else
   QSKIP("Announcements need Qt 6.8");
 #endif
