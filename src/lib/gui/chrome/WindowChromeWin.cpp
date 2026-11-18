@@ -13,12 +13,19 @@
 
 #include <QAbstractNativeEventFilter>
 #include <QCoreApplication>
+#include <QDebug>
 #include <QMainWindow>
+#include <QMargins>
 #include <QOperatingSystemVersion>
+#include <QVariant>
+#include <QWindow>
 
-#include <shellapi.h>
+// the headers of Windows depend on the order: windows.h comes first (the sorting of includes must not change it)
+// clang-format off
 #include <windows.h>
 #include <windowsx.h>
+#include <shellapi.h>
+// clang-format on
 
 namespace deskflow::gui::chrome {
 
@@ -294,6 +301,22 @@ bool installWindowsFrame(QMainWindow *window, WindowHeader *header, QObject *own
   }
   // the system calculates the client area again, now through the filter
   SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+  // Qt takes a window that has the styles of a frame for one that has the frame, and makes the window bigger than the
+  // size that is asked for by the margins of it. The frame is not there (the client area is the whole window), so the
+  // margins that Qt assumes are taken back: the size that is asked for is the size of the client area. The property is
+  // the one that Qt has for a program that draws its own frame; the line of the log says what Qt assumed
+  if (auto *handle = window->windowHandle()) {
+    const auto frame = handle->frameMargins();
+    qInfo().noquote() << "window frame: Qt assumed margins" << frame.left() << frame.top() << frame.right()
+                      << frame.bottom();
+    if (!frame.isNull()) {
+      handle->setProperty(
+          "_q_windowsCustomMargins",
+          QVariant::fromValue(QMargins(-frame.left(), -frame.top(), -frame.right(), -frame.bottom()))
+      );
+    }
+  }
   return true;
 }
 
