@@ -48,7 +48,7 @@ QList<MenuMigration> menuMigrations(bool mac)
       {MenuAction::About, QStringLiteral("Help"), {}, 2, {Place::HeaderMenu, Place::Sidebar}},
       {MenuAction::Quit,
        sharing,
-       QStringLiteral("Ctrl+Q (the key of the platform for Quit; none on Windows)"),
+       QStringLiteral("the key of the platform for Quit (Ctrl+Q on Windows)"),
        3,
        {Place::HeaderMenu, Place::TrayMenu}},
   };
