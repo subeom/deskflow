@@ -254,13 +254,18 @@ void Settings::upgradeSettings()
 
 void Settings::cleanSettings()
 {
+  // in portable mode there is no state file: the state keys are written to the settings file (see setValue) and are
+  // not to be taken away with the keys that no version of the program has
+  const bool portable = isPortableMode();
   const QStringList keys = m_settings->allKeys();
   for (const QString &key : keys) {
     if (m_oldServerConfigKeys.contains(key) || key.startsWith("screen_"))
       m_settings->remove(key);
     if (key.startsWith(QStringLiteral("internalConfig")))
       continue;
-    if (const auto group = key.mid(0, key.indexOf('/')); !m_validKeys.contains(key) && m_validGroup.contains(group))
+    const bool keptState = portable && m_stateKeys.contains(key);
+    if (const auto group = key.mid(0, key.indexOf('/'));
+        !keptState && !m_validKeys.contains(key) && m_validGroup.contains(group))
       m_settings->remove(key);
     if (!m_settings->value(key).isValid())
       m_settings->remove(key);

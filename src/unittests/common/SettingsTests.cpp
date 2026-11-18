@@ -6,7 +6,11 @@
 
 #include "SettingsTests.h"
 
+#include <QDir>
 #include <QFile>
+#include <QRect>
+#include <QScopeGuard>
+#include <QSettings>
 #include <QSignalSpy>
 
 void SettingsTests::initTestCase()
@@ -195,6 +199,79 @@ void SettingsTests::checkClearState()
   Settings::clearState();
 
   QVERIFY(!Settings::value(Settings::Gui::WindowGeometry).toRect().isValid());
+}
+
+void SettingsTests::portableMode_keepsTheStateKeysWhenTheSettingsAreReadAgain()
+{
+  // portable mode is "the file settings/Deskflow.conf is next to the program": the test makes it and takes it away
+  const auto portable = Settings::portableSettingsFile();
+  if (QFile::exists(portable))
+    QSKIP("a portable settings file is next to the test program, it is not ours to move");
+  QVERIFY(QDir().mkpath(QFileInfo(portable).absolutePath()));
+  QFile marker(portable);
+  QVERIFY(marker.open(QIODevice::WriteOnly));
+  marker.close();
+  const auto cleanup = qScopeGuard([&] {
+    QFile::remove(portable);
+    QDir().rmdir(QFileInfo(portable).absolutePath());
+  });
+  QVERIFY(Settings::isPortableMode());
+
+  // in portable mode the state keys are written to the settings file (there is no state file of their own)
+  const QStringList stateKeys = {
+      Settings::Gui::WindowGeometry,     Settings::Gui::ShellWindowGeometry,    Settings::Client::XdpClipboardRetried,
+      Settings::Client::XdpRestoreToken, Settings::Server::XdpClipboardRetried, Settings::Server::XdpRestoreToken,
+  };
+  const auto reread = QStringLiteral("%1/Deskflow-portable.conf").arg(m_settingsPathTemp);
+  QFile::remove(reread);
+  {
+    QSettings written(reread, QSettings::IniFormat);
+    written.setValue(Settings::Gui::ShellWindowGeometry, QRect(208, 175, 1423, 827));
+    written.setValue(Settings::Gui::WindowGeometry, QRect(10, 20, 640, 480));
+    written.setValue(Settings::Client::XdpClipboardRetried, true);
+    written.setValue(Settings::Client::XdpRestoreToken, QStringLiteral("token-a"));
+    written.setValue(Settings::Server::XdpClipboardRetried, true);
+    written.setValue(Settings::Server::XdpRestoreToken, QStringLiteral("token-b"));
+    // a key that no version of the program has is still taken away
+    written.setValue(QStringLiteral("gui/noSuchKey"), QStringLiteral("x"));
+    written.sync();
+  }
+
+  // the settings are read again, as at the start of the program
+  Settings::setSettingsFile(reread);
+  QCOMPARE(Settings::value(Settings::Gui::ShellWindowGeometry).toRect(), QRect(208, 175, 1423, 827));
+  QCOMPARE(Settings::value(Settings::Gui::WindowGeometry).toRect(), QRect(10, 20, 640, 480));
+  QCOMPARE(Settings::value(Settings::Client::XdpRestoreToken).toString(), QStringLiteral("token-a"));
+  QCOMPARE(Settings::value(Settings::Server::XdpRestoreToken).toString(), QStringLiteral("token-b"));
+  QVERIFY(Settings::value(Settings::Client::XdpClipboardRetried).toBool());
+  QVERIFY(Settings::value(Settings::Server::XdpClipboardRetried).toBool());
+  QSettings after(reread, QSettings::IniFormat);
+  for (const auto &key : stateKeys)
+    QVERIFY2(after.contains(key), qPrintable(key));
+  QVERIFY(!after.contains(QStringLiteral("gui/noSuchKey")));
+
+  // a size written the way the program writes it comes back after another start
+  Settings::setValue(Settings::Gui::ShellWindowGeometry, QRect(1, 2, 1100, 700));
+  Settings::setSettingsFile(m_settingsFile);
+  Settings::setSettingsFile(reread);
+  QCOMPARE(Settings::value(Settings::Gui::ShellWindowGeometry).toRect(), QRect(1, 2, 1100, 700));
+
+  // without portable mode the state keys live in the state file, and one that is found in the settings file is old
+  // litter that is taken away, as it always was
+  QFile::remove(portable);
+  QVERIFY(!Settings::isPortableMode());
+  {
+    QSettings litter(reread, QSettings::IniFormat);
+    litter.setValue(Settings::Gui::ShellWindowGeometry, QRect(3, 4, 900, 600));
+    litter.sync();
+  }
+  Settings::setSettingsFile(m_settingsFile);
+  Settings::setSettingsFile(reread);
+  QSettings leftOver(reread, QSettings::IniFormat);
+  QVERIFY(!leftOver.contains(Settings::Gui::ShellWindowGeometry));
+
+  Settings::setSettingsFile(m_settingsFile);
+  QFile::remove(reread);
 }
 
 QTEST_MAIN(SettingsTests)

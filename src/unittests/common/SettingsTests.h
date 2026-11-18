@@ -30,6 +30,7 @@ private Q_SLOTS:
   void checkCleanComputerName();
   void checkCleanComputerName_LongName();
   void checkClearState();
+  void portableMode_keepsTheStateKeysWhenTheSettingsAreReadAgain();
 
 private:
   inline static const QString m_settingsPathTemp = QStringLiteral("tmp/test");
