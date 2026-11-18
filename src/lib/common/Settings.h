@@ -88,6 +88,10 @@ public:
     // the new main window: the log is shown (true) or folded away (false, default); LogExpanded stays the one of the
     // old window
     inline static const auto ShellLogExpanded = QStringLiteral("gui/shellLogExpanded");
+    // the new look: true gives the main window the title bar and the menu bar of the system (false, default: the window
+    // has a header of its own with the buttons of the window in it). The environment variable
+    // DESKFLOW_WINDOW_FRAME=native does the same for one run
+    inline static const auto NativeWindowFrame = QStringLiteral("gui/nativeWindowFrame");
     inline static const auto SymbolicTrayIcon = QStringLiteral("gui/symbolicTrayIcon");
     inline static const auto WindowGeometry = QStringLiteral("gui/windowGeometry");
     // the position and the size of the window of the new look: it has its own, so that the small window of the system
@@ -367,6 +371,7 @@ private:
     , Gui::LogExpanded
     , Gui::SidebarCollapsed
     , Gui::ShellLogExpanded
+    , Gui::NativeWindowFrame
     , Gui::SymbolicTrayIcon
     , Gui::ShownFirstConnectedMessage
     , Gui::ShownServerFirstStartMessage
@@ -405,6 +410,7 @@ private:
     , Gui::AutoStartCore
     , Gui::SidebarCollapsed
     , Gui::ShellLogExpanded
+    , Gui::NativeWindowFrame
     , Gui::ShownFirstConnectedMessage
     , Gui::ShownServerFirstStartMessage
     , Gui::ShowVersionInTitle

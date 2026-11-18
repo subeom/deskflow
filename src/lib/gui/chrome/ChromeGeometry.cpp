@@ -1,0 +1,95 @@
+/*
+ * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2026 Deskflow Developers
+ * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
+ */
+
+#include "ChromeGeometry.h"
+
+#include <algorithm>
+
+namespace deskflow::gui::chrome {
+
+QRect closeRect(const ChromeMetrics &metrics)
+{
+  if (metrics.buttonWidth <= 0)
+    return {};
+  return QRect(metrics.windowSize.width() - metrics.buttonWidth, 0, metrics.buttonWidth, metrics.headerHeight);
+}
+
+QRect maximizeRect(const ChromeMetrics &metrics)
+{
+  if (metrics.buttonWidth <= 0)
+    return {};
+  return QRect(metrics.windowSize.width() - 2 * metrics.buttonWidth, 0, metrics.buttonWidth, metrics.headerHeight);
+}
+
+QRect minimizeRect(const ChromeMetrics &metrics)
+{
+  if (metrics.buttonWidth <= 0)
+    return {};
+  return QRect(metrics.windowSize.width() - 3 * metrics.buttonWidth, 0, metrics.buttonWidth, metrics.headerHeight);
+}
+
+Region hitTest(const ChromeMetrics &metrics, const QPoint &point, const QList<QRect> &interactive)
+{
+  const QRect window(QPoint(0, 0), metrics.windowSize);
+  if (!window.contains(point))
+    return Region::Client;
+
+  const auto close = closeRect(metrics);
+  const auto maximize = maximizeRect(metrics);
+  const auto minimize = minimizeRect(metrics);
+  const bool overAButton = close.contains(point) || maximize.contains(point) || minimize.contains(point);
+
+  // the edges come first: a window is resized by them
+  const int border = metrics.maximized ? 0 : qMax(0, metrics.resizeBorder);
+  if (border > 0) {
+    const bool left = point.x() < border;
+    const bool right = point.x() >= window.width() - border;
+    const bool top = point.y() < border;
+    const bool bottom = point.y() >= window.height() - border;
+    // the strip of the top edge does not take the top rows of a button, so that its whole height is the button
+    const bool topOfAButton = top && !left && !right && overAButton;
+    if (!topOfAButton) {
+      if (top && left)
+        return Region::TopLeft;
+      if (top && right)
+        return Region::TopRight;
+      if (bottom && left)
+        return Region::BottomLeft;
+      if (bottom && right)
+        return Region::BottomRight;
+      if (left)
+        return Region::Left;
+      if (right)
+        return Region::Right;
+      if (top)
+        return Region::Top;
+      if (bottom)
+        return Region::Bottom;
+    }
+  }
+
+  if (point.y() < metrics.headerHeight) {
+    if (close.contains(point))
+      return Region::Close;
+    if (maximize.contains(point))
+      return Region::Maximize;
+    if (minimize.contains(point))
+      return Region::Minimize;
+    const bool onAControl =
+        std::any_of(interactive.cbegin(), interactive.cend(), [&](const QRect &rect) { return rect.contains(point); });
+    return onAControl ? Region::Client : Region::Caption;
+  }
+  return Region::Client;
+}
+
+QMargins maximizedInsets(int frameThickness)
+{
+  if (frameThickness <= 0)
+    return {};
+  return QMargins(frameThickness, frameThickness, frameThickness, frameThickness);
+}
+
+} // namespace deskflow::gui::chrome

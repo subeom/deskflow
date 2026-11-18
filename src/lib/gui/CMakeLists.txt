@@ -221,6 +221,12 @@ add_library(${target} STATIC
   shell/MainShell.h
   shell/StatusModel.cpp
   shell/StatusModel.h
+  chrome/ChromeGeometry.cpp
+  chrome/ChromeGeometry.h
+  chrome/ChromePolicy.cpp
+  chrome/ChromePolicy.h
+  chrome/MenuMigration.cpp
+  chrome/MenuMigration.h
   tray/TrayController.cpp
   tray/TrayController.h
   tray/TrayHeaderWidget.cpp
