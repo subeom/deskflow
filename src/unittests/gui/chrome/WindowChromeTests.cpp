@@ -19,9 +19,11 @@
 
 #include <QAccessible>
 #include <QApplication>
+#include <QDir>
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
+#include <QPainter>
 #include <QPixmapCache>
 #include <QSet>
 #include <QSignalSpy>
@@ -83,11 +85,15 @@ using namespace deskflow::gui::style;
 
 constexpr auto kFrameVariable = "DESKFLOW_WINDOW_FRAME";
 
+// the pictures of the report are made in both schemes
+bool g_darkLook = false;
+
 void installDeskflowStyle()
 {
   auto *style = new DeskflowStyle;
   QApplication::setStyle(style);
   Look look;
+  look.scheme = g_darkLook ? Scheme::Dark : Scheme::Light;
   look.reduceTransparency = true;
   look.reduceMotion = true;
   style->useLook(look);
@@ -165,6 +171,7 @@ void WindowChromeTests::initTestCase()
 
 void WindowChromeTests::cleanup()
 {
+  g_darkLook = false;
   qunsetenv(kFrameVariable);
   QApplication::setStyle(QStringLiteral("Fusion"));
   QApplication::setPalette(QPalette());
@@ -175,7 +182,7 @@ void WindowChromeTests::cleanup()
         Settings::Gui::WindowGeometry, Settings::Gui::ShellWindowGeometry, Settings::Core::CoreMode,
         Settings::Security::TlsEnabled, Settings::Gui::ShownServerFirstStartMessage,
         Settings::Gui::ShownFirstConnectedMessage, Settings::Gui::AutoStartCore, Settings::Gui::NativeWindowFrame,
-        Settings::Gui::CloseToTray, Settings::Gui::CloseReminder})
+        Settings::Gui::CloseToTray, Settings::Gui::CloseReminder, Settings::Core::ComputerName})
     Settings::setValue(key);
 }
 
@@ -603,6 +610,51 @@ void WindowChromeTests::theButtonsOfTheHeader_areNamedForTheScreenReader_andAreB
   for (auto *button : buttons)
     names.insert(nameOf(button));
   QCOMPARE(names.count(), buttons.count());
+}
+
+void WindowChromeTests::pictures_ofTheHeaderAsWindowsDrawsIt_whenAsked()
+{
+  const auto directory = qEnvironmentVariable("DESKFLOW_CHROME_SHOTS");
+  if (directory.isEmpty())
+    QSKIP("DESKFLOW_CHROME_SHOTS is not set");
+
+  // the window of a Mac has the header of its own kind; the one of Windows is drawn on its own and put over the top
+  // of the window, which has the same width and the same height of header
+  for (const bool dark : {false, true}) {
+    g_darkLook = dark;
+    Settings::setValue(Settings::Core::ComputerName, QStringLiteral("Studio-Mac"));
+    auto window = makeClientSideWindow();
+    window->resize(1000, 640);
+    showWindow(*window);
+    const auto base = window->grab();
+
+    WindowHeader::Options options;
+    WindowHeader header(options, window.get());
+    header.setTitle(window->windowTitle());
+    header.setGeometry(0, 0, window->width(), WindowHeader::kHeight);
+    header.show();
+    QCoreApplication::processEvents();
+
+    const auto compose = [&](const QString &name, HeaderButton *hovered, bool maximized) {
+      header.setMaximized(maximized);
+      if (hovered)
+        QTest::mouseMove(hovered, hovered->rect().center());
+      else
+        QTest::mouseMove(window.get(), QPoint(500, 300));
+      QCoreApplication::processEvents();
+      auto picture = base;
+      QPainter painter(&picture);
+      painter.drawPixmap(0, 0, header.grab());
+      painter.end();
+      QVERIFY(picture.save(
+          QDir(directory).filePath(QStringLiteral("header-windows-%1-%2.png").arg(dark ? "dark" : "light", name))
+      ));
+    };
+    compose(QStringLiteral("rest"), nullptr, false);
+    compose(QStringLiteral("hover-close"), header.captionButton(Region::Close), false);
+    compose(QStringLiteral("hover-maximize"), header.captionButton(Region::Maximize), false);
+    compose(QStringLiteral("maximized"), nullptr, true);
+  }
 }
 
 QTEST_MAIN(WindowChromeTests)

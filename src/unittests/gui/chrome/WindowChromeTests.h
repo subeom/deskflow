@@ -39,6 +39,8 @@ private Q_SLOTS:
   void headerAndShell_keepTheMinimumWidth_withWideFonts_data();
   void headerAndShell_keepTheMinimumWidth_withWideFonts();
   void theButtonsOfTheHeader_areNamedForTheScreenReader_andAreButtons();
+  //! Pictures of the header for the report: only when DESKFLOW_CHROME_SHOTS names a directory for them
+  void pictures_ofTheHeaderAsWindowsDrawsIt_whenAsked();
 
 private:
   QTemporaryDir m_dir;
