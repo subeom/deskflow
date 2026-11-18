@@ -85,6 +85,31 @@ Region hitTest(const ChromeMetrics &metrics, const QPoint &point, const QList<QR
   return Region::Client;
 }
 
+Qt::Edges edgesOf(Region region)
+{
+  switch (region) {
+  case Region::Left:
+    return Qt::LeftEdge;
+  case Region::Right:
+    return Qt::RightEdge;
+  case Region::Top:
+    return Qt::TopEdge;
+  case Region::Bottom:
+    return Qt::BottomEdge;
+  case Region::TopLeft:
+    return Qt::TopEdge | Qt::LeftEdge;
+  case Region::TopRight:
+    return Qt::TopEdge | Qt::RightEdge;
+  case Region::BottomLeft:
+    return Qt::BottomEdge | Qt::LeftEdge;
+  case Region::BottomRight:
+    return Qt::BottomEdge | Qt::RightEdge;
+  default:
+    break;
+  }
+  return {};
+}
+
 QMargins maximizedInsets(int frameThickness)
 {
   if (frameThickness <= 0)

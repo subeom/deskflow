@@ -27,3 +27,14 @@ create_test(
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
 target_include_directories(MenuMigrationTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+
+create_test(
+  NAME WindowChromeTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE WindowChromeTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(WindowChromeTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+# the icons of the program (the header asks for them by their names)
+target_sources(WindowChromeTests PRIVATE "${CMAKE_SOURCE_DIR}/src/apps/res/deskflow.qrc")

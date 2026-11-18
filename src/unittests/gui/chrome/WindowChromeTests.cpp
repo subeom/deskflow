@@ -1,0 +1,608 @@
+/*
+ * SPDX-FileCopyrightText: (C) 2026 Deskflow Developers
+ * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
+ */
+
+#include "WindowChromeTests.h"
+
+#include "common/Settings.h"
+#include "gui/MainWindow.h"
+#include "gui/chrome/MenuMigration.h"
+#include "gui/chrome/WindowHeader.h"
+#include "gui/core/CoreProcess.h"
+#include "gui/shell/MainShell.h"
+#include "gui/style/Appearance.h"
+#include "gui/style/DeskflowStyle.h"
+#include "gui/widgets/NavRail.h"
+#include "gui/widgets/SegmentedControl.h"
+#include "gui/widgets/StatusHero.h"
+
+#include <QAccessible>
+#include <QApplication>
+#include <QLabel>
+#include <QMenu>
+#include <QMenuBar>
+#include <QPixmapCache>
+#include <QSet>
+#include <QSignalSpy>
+
+#include <memory>
+
+// What the main window keeps to itself: the tests reach it through this one class (the window names it as its friend)
+struct MainWindowTestAccess
+{
+  static deskflow::gui::MainShell *shell(MainWindow &w)
+  {
+    return w.m_shell;
+  }
+  static deskflow::gui::chrome::WindowHeader *header(MainWindow &w)
+  {
+    return w.m_header;
+  }
+  static deskflow::gui::chrome::FrameDecision frame(MainWindow &w)
+  {
+    return w.m_frame;
+  }
+  static QAction *actionFor(MainWindow &w, deskflow::gui::chrome::MenuAction action)
+  {
+    return w.actionFor(action);
+  }
+  static void hideMenuBar(MainWindow &w)
+  {
+    w.hideMenuBar();
+  }
+  static QList<QMenu *> oldMenus(MainWindow &w)
+  {
+    return {w.m_menuFile, w.m_menuEdit, w.m_menuView, w.m_menuHelp};
+  }
+  static QAction *toggleSidebarAction(MainWindow &w)
+  {
+    return w.m_actionToggleSidebar;
+  }
+  static void showAndActivate(MainWindow &w)
+  {
+    w.showAndActivate();
+  }
+  //! The window has been hidden to the tray: the tray offers it again (on a Mac it is the program that is hidden)
+  static bool offeredBackByTheTray(MainWindow &w)
+  {
+    return w.m_actionRestore->isVisible();
+  }
+  static void setTrayAvailable(MainWindow &w, bool available)
+  {
+    w.m_trayAvailable = [available] { return available; };
+  }
+};
+
+namespace {
+
+using Access = MainWindowTestAccess;
+using namespace deskflow::gui;
+using namespace deskflow::gui::chrome;
+using namespace deskflow::gui::style;
+
+constexpr auto kFrameVariable = "DESKFLOW_WINDOW_FRAME";
+
+void installDeskflowStyle()
+{
+  auto *style = new DeskflowStyle;
+  QApplication::setStyle(style);
+  Look look;
+  look.reduceTransparency = true;
+  look.reduceMotion = true;
+  style->useLook(look);
+}
+
+// A window as the application makes it: the settings are those of the test, and the core is not started
+std::unique_ptr<MainWindow> makeWindow(bool deskflowLook, Settings::CoreMode mode = Settings::CoreMode::Server)
+{
+  if (deskflowLook)
+    installDeskflowStyle();
+  else
+    QApplication::setStyle(QStringLiteral("Fusion"));
+  Settings::setValue(Settings::Security::TlsEnabled, false);
+  // the messages of the first start and of the first connection are dialogs that wait for the user
+  Settings::setValue(Settings::Gui::ShownServerFirstStartMessage, true);
+  Settings::setValue(Settings::Gui::ShownFirstConnectedMessage, true);
+  Settings::setValue(Settings::Core::CoreMode, mode);
+  return std::make_unique<MainWindow>();
+}
+
+// The window with the header: the frame of the new look is asked for, as a person does
+std::unique_ptr<MainWindow> makeClientSideWindow(Settings::CoreMode mode = Settings::CoreMode::Server)
+{
+  qputenv(kFrameVariable, "client");
+  return makeWindow(true, mode);
+}
+
+void showWindow(MainWindow &window)
+{
+  window.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&window));
+  QCoreApplication::processEvents();
+}
+
+QString nameOf(QObject *object)
+{
+  auto *interface = QAccessible::queryAccessibleInterface(object);
+  return interface ? interface->text(QAccessible::Name) : QString();
+}
+
+// The key of every action that has one, as text (an action with no key has none)
+QSet<QString> keysOf(const QList<QAction *> &actions)
+{
+  QSet<QString> keys;
+  for (const auto *action : actions) {
+    for (const auto &key : action->shortcuts()) {
+      if (!key.isEmpty())
+        keys.insert(key.toString(QKeySequence::PortableText));
+    }
+  }
+  return keys;
+}
+
+QList<QAction *> withoutSeparators(const QList<QAction *> &actions)
+{
+  QList<QAction *> found;
+  for (auto *action : actions) {
+    if (!action->isSeparator())
+      found << action;
+  }
+  return found;
+}
+
+} // namespace
+
+void WindowChromeTests::initTestCase()
+{
+  QVERIFY(m_dir.isValid());
+  // the window listens on a local socket that is named in the temporary directory: it is the one of this test
+  qputenv("TMPDIR", m_dir.path().toUtf8());
+  Settings::setSettingsFile(m_dir.filePath(QStringLiteral("Deskflow.conf")));
+  Settings::setStateFile(m_dir.filePath(QStringLiteral("Deskflow.state")));
+  QAccessible::setActive(true);
+}
+
+void WindowChromeTests::cleanup()
+{
+  qunsetenv(kFrameVariable);
+  QApplication::setStyle(QStringLiteral("Fusion"));
+  QApplication::setPalette(QPalette());
+  QApplication::setFont(QFont());
+  QPixmapCache::clear();
+  for (const auto &key :
+       {Settings::Gui::SidebarCollapsed, Settings::Gui::ShellLogExpanded, Settings::Gui::LogExpanded,
+        Settings::Gui::WindowGeometry, Settings::Gui::ShellWindowGeometry, Settings::Core::CoreMode,
+        Settings::Security::TlsEnabled, Settings::Gui::ShownServerFirstStartMessage,
+        Settings::Gui::ShownFirstConnectedMessage, Settings::Gui::AutoStartCore, Settings::Gui::NativeWindowFrame,
+        Settings::Gui::CloseToTray, Settings::Gui::CloseReminder})
+    Settings::setValue(key);
+}
+
+void WindowChromeTests::systemLook_hasNoHeader_andKeepsItsMenuBar()
+{
+  // even where the person asks for the new frame: the look of the system is the window as it was
+  qputenv(kFrameVariable, "client");
+  auto window = makeWindow(false);
+  QVERIFY(!Access::header(*window));
+  QVERIFY(!Access::shell(*window));
+  showWindow(*window);
+  QVERIFY(window->menuBar() != nullptr);
+  QVERIFY(!window->menuBar()->isHidden());
+  QCOMPARE(window->windowFlags() & Qt::FramelessWindowHint, Qt::WindowFlags());
+  QVERIFY(window->findChildren<WindowHeader *>().isEmpty());
+}
+
+void WindowChromeTests::offscreen_keepsTheFrameOfTheSystem_unlessAskedOtherwise()
+{
+  auto window = makeWindow(true);
+  QVERIFY(Access::shell(*window));
+  QVERIFY(!Access::header(*window));
+  QVERIFY(!Access::frame(*window).clientSide());
+  QVERIFY(window->findChildren<WindowHeader *>().isEmpty());
+}
+
+void WindowChromeTests::clientSideFrame_putsTheHeaderAboveTheShell_andTheTitleFollowsTheWindow()
+{
+  auto window = makeClientSideWindow();
+  auto *header = Access::header(*window);
+  QVERIFY(header);
+  QVERIFY(Access::frame(*window).clientSide());
+  showWindow(*window);
+
+  // the header is the top of the window, over the width of it, and the sidebar and the page are below it
+  const auto top = header->mapTo(window.get(), QPoint(0, 0));
+  QCOMPARE(header->height(), WindowHeader::kHeight);
+  QCOMPARE(header->width(), window->width());
+  auto *shell = Access::shell(*window);
+  QVERIFY2(
+      shell->rail()->mapTo(window.get(), QPoint(0, 0)).y() >= top.y() + header->height(),
+      "the sidebar starts under the header"
+  );
+  QVERIFY(shell->pageTitle()->mapTo(window.get(), QPoint(0, 0)).y() >= top.y() + header->height());
+
+  // the name of the program is the title of the window, whatever it becomes (a Mac shows it in its own title bar, and
+  // the header says it only to the screen reader)
+  const auto shown = [&](const QString &title) { return header->options().title ? title : QString(); };
+  QCOMPARE(header->title(), shown(window->windowTitle()));
+  QCOMPARE(header->accessibleName(), window->windowTitle());
+  window->setWindowTitle(QStringLiteral("another title"));
+  QCOMPARE(header->title(), shown(QStringLiteral("another title")));
+  QCOMPARE(header->accessibleName(), QStringLiteral("another title"));
+}
+
+void WindowChromeTests::optOut_keepsTheFrameOfTheSystem_data()
+{
+  QTest::addColumn<QString>("environment");
+  QTest::addColumn<bool>("setting");
+
+  QTest::newRow("the variable says native") << QStringLiteral("native") << false;
+  QTest::newRow("the setting says native") << QString() << true;
+  // the person who has the variable for the new frame and the setting for the old one has the old one
+  QTest::newRow("the setting is stronger than a wish for the new frame") << QStringLiteral("client") << true;
+}
+
+void WindowChromeTests::optOut_keepsTheFrameOfTheSystem()
+{
+  QFETCH(QString, environment);
+  QFETCH(bool, setting);
+
+  if (!environment.isEmpty())
+    qputenv(kFrameVariable, environment.toUtf8());
+  Settings::setValue(Settings::Gui::NativeWindowFrame, setting);
+  auto window = makeWindow(true);
+  QVERIFY(Access::shell(*window));
+  QVERIFY(!Access::header(*window));
+  QVERIFY(!Access::frame(*window).clientSide());
+  showWindow(*window);
+  QCOMPARE(window->windowFlags() & Qt::FramelessWindowHint, Qt::WindowFlags());
+  // the menu bar of the system is what the window has then
+  QVERIFY(!window->menuBar()->isHidden());
+}
+
+void WindowChromeTests::header_hasTheButtonsOfTheWindowWithTheirNames_andSaysWhatWasAskedFor()
+{
+  installDeskflowStyle();
+  WindowHeader header({}, nullptr);
+  header.setFixedWidth(600);
+  header.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&header));
+
+  auto *minimize = header.captionButton(Region::Minimize);
+  auto *maximize = header.captionButton(Region::Maximize);
+  auto *close = header.captionButton(Region::Close);
+  QVERIFY(minimize && maximize && close);
+  QVERIFY(header.moreButton());
+  QVERIFY(!header.captionButton(Region::Caption));
+  QCOMPARE(minimize->accessibleName(), QStringLiteral("Minimize"));
+  QCOMPARE(maximize->accessibleName(), QStringLiteral("Maximize"));
+  QCOMPARE(close->accessibleName(), QStringLiteral("Close"));
+  QCOMPARE(header.moreButton()->accessibleName(), QStringLiteral("More"));
+
+  // the buttons of the window are at the right edge, the close button last, each of the width of one of Windows 11
+  QCOMPARE(close->geometry().right() + 1, header.width());
+  QCOMPARE(close->width(), WindowHeader::kCaptionButtonWidth);
+  QCOMPARE(maximize->geometry().right() + 1, close->geometry().left());
+  QCOMPARE(minimize->geometry().right() + 1, maximize->geometry().left());
+
+  QSignalSpy minimized(&header, &WindowHeader::minimizeRequested);
+  QSignalSpy toggled(&header, &WindowHeader::maximizeToggleRequested);
+  QSignalSpy closed(&header, &WindowHeader::closeRequested);
+  minimize->click();
+  maximize->click();
+  close->click();
+  QCOMPARE(minimized.count(), 1);
+  QCOMPARE(toggled.count(), 1);
+  QCOMPARE(closed.count(), 1);
+
+  // a maximized window offers to restore it, and says so
+  header.setMaximized(true);
+  QCOMPARE(maximize->glyph(), HeaderButton::Glyph::Restore);
+  QCOMPARE(maximize->accessibleName(), QStringLiteral("Restore"));
+  header.setMaximized(false);
+  QCOMPARE(maximize->glyph(), HeaderButton::Glyph::Maximize);
+  QCOMPARE(maximize->accessibleName(), QStringLiteral("Maximize"));
+}
+
+void WindowChromeTests::header_ofAMac_hasNoButtonsOfItsOwn_andLeavesRoomForTheOnesOfTheSystem()
+{
+  installDeskflowStyle();
+  WindowHeader::Options options;
+  options.captionButtons = false;
+  options.leftInset = WindowHeader::kTrafficLightsInset;
+  options.title = false;
+  WindowHeader header(options, nullptr);
+  header.setFixedWidth(600);
+  header.setTitle(QStringLiteral("Deskflow"));
+  header.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&header));
+
+  QVERIFY(!header.captionButton(Region::Close));
+  QVERIFY(!header.captionButton(Region::Minimize));
+  QVERIFY(!header.captionButton(Region::Maximize));
+  // the system draws its buttons over the left end: nothing of the header is there, and the title is the one of the
+  // title bar of the system
+  QVERIFY(header.title().isEmpty());
+  QVERIFY(header.moreButton()->geometry().left() >= WindowHeader::kTrafficLightsInset);
+  // the menu button is at the right edge
+  QVERIFY(header.moreButton()->geometry().right() + 1 <= header.width());
+}
+
+void WindowChromeTests::header_saysWhereItTakesTheMouse_andWhereTheWindowIsDragged()
+{
+  installDeskflowStyle();
+  WindowHeader header({}, nullptr);
+  header.setFixedWidth(600);
+  header.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&header));
+
+  // what takes the mouse for itself is the menu button; the rest of the header is the caption
+  const auto interactive = header.interactiveRects();
+  QCOMPARE(interactive.count(), 1);
+  QCOMPARE(interactive.first(), header.moreButton()->geometry());
+
+  QSignalSpy dragged(&header, &WindowHeader::dragRequested);
+  QSignalSpy doubleClicked(&header, &WindowHeader::captionDoubleClicked);
+  QSignalSpy systemMenu(&header, &WindowHeader::systemMenuRequested);
+  QTest::mousePress(&header, Qt::LeftButton, {}, QPoint(20, header.height() / 2));
+  QTest::mouseRelease(&header, Qt::LeftButton, {}, QPoint(20, header.height() / 2));
+  QCOMPARE(dragged.count(), 1);
+  QTest::mouseDClick(&header, Qt::LeftButton, {}, QPoint(20, header.height() / 2));
+  QCOMPARE(doubleClicked.count(), 1);
+  QContextMenuEvent menu(QContextMenuEvent::Mouse, QPoint(20, 10), header.mapToGlobal(QPoint(20, 10)));
+  QCoreApplication::sendEvent(&header, &menu);
+  QCOMPARE(systemMenu.count(), 1);
+
+  // a press on the menu button does not drag
+  dragged.clear();
+  QTest::mouseClick(header.moreButton(), Qt::LeftButton);
+  QCOMPARE(dragged.count(), 0);
+}
+
+void WindowChromeTests::header_followsTheLanguage()
+{
+  installDeskflowStyle();
+  WindowHeader header({}, nullptr);
+  header.moreButton()->setAccessibleName(QStringLiteral("stale"));
+  header.captionButton(Region::Close)->setToolTip(QStringLiteral("stale"));
+  header.retranslate();
+  QCOMPARE(header.moreButton()->accessibleName(), QStringLiteral("More"));
+  QCOMPARE(header.captionButton(Region::Close)->toolTip(), QStringLiteral("Close"));
+}
+
+void WindowChromeTests::headerMenu_isTheTableOfTheOldMenus_inItsOrder_withALineBetweenGroups()
+{
+  auto window = makeClientSideWindow();
+  auto *header = Access::header(*window);
+  QVERIFY(header && header->menu());
+  QCOMPARE(header->menu()->objectName(), QStringLiteral("headerMenu"));
+
+  const bool mac =
+#ifdef Q_OS_MACOS
+      true;
+#else
+      false;
+#endif
+  QList<QAction *> expected;
+  int group = -1;
+  for (const auto &entry : menuMigrations(mac)) {
+    auto *action = Access::actionFor(*window, entry.action);
+    QVERIFY(action);
+    if (group >= 0 && entry.group != group)
+      expected << nullptr;
+    group = entry.group;
+    expected << action;
+  }
+
+  const auto actions = header->menu()->actions();
+  QCOMPARE(actions.count(), expected.count());
+  for (int i = 0; i < actions.count(); ++i) {
+    if (!expected[i])
+      QVERIFY2(actions[i]->isSeparator(), qPrintable(QStringLiteral("a line at %1").arg(i)));
+    else
+      QCOMPARE(actions[i], expected[i]);
+  }
+  // no line at the ends and no two together
+  QVERIFY(!actions.first()->isSeparator());
+  QVERIFY(!actions.last()->isSeparator());
+}
+
+void WindowChromeTests::headerMenu_hasAnActionOfTheWindowForEveryEntryOfTheTable()
+{
+  auto window = makeClientSideWindow();
+  const bool mac =
+#ifdef Q_OS_MACOS
+      true;
+#else
+      false;
+#endif
+  const auto entries = menuMigrations(mac);
+  QCOMPARE(entries.count(), 12);
+  QSet<QAction *> found;
+  for (const auto &entry : entries) {
+    auto *action = Access::actionFor(*window, entry.action);
+    QVERIFY2(action, "every entry of the table is an action of the window");
+    QVERIFY2(!found.contains(action), "two entries are not the same action");
+    found.insert(action);
+    QVERIFY(entry.places.contains(Place::HeaderMenu));
+    // a row of a menu says what it does: it has a text (the window sets it as it is shown)
+    QVERIFY2(!action->text().isEmpty(), qPrintable(QStringLiteral("action %1 has no text").arg(int(entry.action))));
+  }
+}
+
+void WindowChromeTests::everyKeyOfTheOldMenus_isKeptByTheWindowWithoutAMenuBar()
+{
+  // the keys of the window of the system, with its menus
+  QSet<QString> oldKeys;
+  QList<QAction *> oldActions;
+  {
+    auto window = makeWindow(false);
+    for (auto *menu : Access::oldMenus(*window))
+      oldActions << withoutSeparators(menu->actions());
+    oldKeys = keysOf(oldActions);
+    QVERIFY2(oldKeys.contains(QStringLiteral("Ctrl+S")), "the window of the system has a key for starting");
+    QVERIFY(oldKeys.contains(QStringLiteral("Ctrl+T")));
+    QVERIFY(oldKeys.contains(QStringLiteral("F1")));
+    QCOMPARE(withoutSeparators(oldActions).count(), 8);
+  }
+
+  auto window = makeClientSideWindow();
+  Access::hideMenuBar(*window);
+  QVERIFY(window->menuBar()->isHidden());
+  // a key of an action works when the action belongs to the window: the keys of the menus that are not shown too
+  const auto kept = keysOf(window->actions());
+  for (const auto &key : oldKeys)
+    QVERIFY2(kept.contains(key), qPrintable(QStringLiteral("the key %1 is kept").arg(key)));
+  // and that of the sidebar, which the old window has in its View menu as well
+  QVERIFY(window->actions().contains(Access::toggleSidebarAction(*window)));
+  for (auto *action : window->actions()) {
+    if (action->shortcut().isEmpty())
+      continue;
+    QVERIFY2(
+        action->shortcutContext() != Qt::WidgetShortcut,
+        qPrintable(QStringLiteral("%1 works anywhere in the window").arg(action->text()))
+    );
+  }
+}
+
+void WindowChromeTests::theKeyOfTheSidebar_worksWhenTheMenuBarIsHidden()
+{
+  auto window = makeClientSideWindow();
+  Access::hideMenuBar(*window);
+  showWindow(*window);
+  window->activateWindow();
+  QVERIFY(QTest::qWaitForWindowActive(window.get()));
+
+  auto *rail = Access::shell(*window)->rail();
+  const bool wasExpanded = rail->isExpanded();
+  auto *action = Access::toggleSidebarAction(*window);
+  QSignalSpy triggered(action, &QAction::triggered);
+  QTest::keySequence(window.get(), action->shortcut());
+  QCOMPARE(triggered.count(), 1);
+  QTRY_VERIFY(rail->isExpanded() != wasExpanded);
+}
+
+void WindowChromeTests::closeOfTheHeader_goesToTheTrayOrEndsTheProgram_asTheSettingsSay()
+{
+  // with a tray, the window is hidden and the program goes on
+  {
+    Settings::setValue(Settings::Gui::CloseToTray, true);
+    Settings::setValue(Settings::Gui::CloseReminder, false);
+    auto window = makeClientSideWindow();
+    Access::setTrayAvailable(*window, true);
+    Access::showAndActivate(*window);
+    QVERIFY(QTest::qWaitForWindowExposed(window.get()));
+    QVERIFY(Access::header(*window));
+    QVERIFY(!Access::offeredBackByTheTray(*window));
+    Q_EMIT Access::header(*window)->closeRequested();
+    QVERIFY(Access::offeredBackByTheTray(*window));
+    QVERIFY(!window->isMinimized());
+  }
+  // with no tray, a window that is hidden could not be found: it is minimized
+  {
+    Settings::setValue(Settings::Gui::CloseToTray, true);
+    Settings::setValue(Settings::Gui::CloseReminder, false);
+    auto window = makeClientSideWindow();
+    Access::setTrayAvailable(*window, false);
+    showWindow(*window);
+    Q_EMIT Access::header(*window)->closeRequested();
+    QVERIFY(window->isMinimized());
+  }
+  // with the setting to end the program, the window is closed
+  {
+    Settings::setValue(Settings::Gui::CloseToTray, false);
+    auto window = makeClientSideWindow();
+    showWindow(*window);
+    Q_EMIT Access::header(*window)->closeRequested();
+    QVERIFY(!window->isVisible());
+  }
+}
+
+void WindowChromeTests::headerAndShell_keepTheMinimumWidth_withWideFonts_data()
+{
+  QTest::addColumn<QString>("family");
+  QTest::addColumn<qreal>("fontScale");
+  QTest::addColumn<bool>("client");
+
+  for (const QString &family : {QString(), QStringLiteral("Verdana")}) {
+    for (const qreal scale : {1.0, 1.3, 1.5}) {
+      for (const bool client : {false, true}) {
+        QTest::addRow(
+            "%s x%.2f %s", family.isEmpty() ? "default" : qPrintable(family), scale, client ? "client" : "server"
+        ) << family
+          << scale << client;
+      }
+    }
+  }
+}
+
+void WindowChromeTests::headerAndShell_keepTheMinimumWidth_withWideFonts()
+{
+  QFETCH(QString, family);
+  QFETCH(qreal, fontScale);
+  QFETCH(bool, client);
+
+  auto window = makeClientSideWindow(client ? Settings::CoreMode::Client : Settings::CoreMode::Server);
+  auto *header = Access::header(*window);
+  QVERIFY(header);
+  auto font = window->font();
+  if (!family.isEmpty())
+    font.setFamily(family);
+  if (font.pointSizeF() > 0)
+    font.setPointSizeF(font.pointSizeF() * fontScale);
+  else
+    font.setPixelSize(qRound(font.pixelSize() * fontScale));
+  window->setFont(font);
+  showWindow(*window);
+
+  // the header does not make the window ask for more than it promised
+  window->resize(MainShell::kMinimumWindowWidth, 760);
+  QTRY_COMPARE(window->width(), MainShell::kMinimumWindowWidth);
+  QVERIFY2(
+      window->minimumSizeHint().width() <= MainShell::kMinimumWindowWidth,
+      qPrintable(QStringLiteral("the window asks for %1").arg(window->minimumSizeHint().width()))
+  );
+  for (const int width : {MainShell::kMinimumWindowWidth, 800, 1000}) {
+    window->resize(width, 760);
+    QTRY_COMPARE(window->width(), width);
+    QCoreApplication::processEvents();
+    QVERIFY(header->width() == width);
+    // the buttons of the header are all inside of it, and the menu button does not touch the buttons of the window
+    for (auto *button : header->findChildren<HeaderButton *>()) {
+      QVERIFY2(header->rect().contains(button->geometry()), qPrintable(button->objectName()));
+      QVERIFY(button->isVisible());
+    }
+    if (auto *minimize = header->captionButton(Region::Minimize))
+      QVERIFY(header->moreButton()->geometry().right() < minimize->geometry().left());
+    QVERIFY(header->height() == WindowHeader::kHeight);
+  }
+}
+
+void WindowChromeTests::theButtonsOfTheHeader_areNamedForTheScreenReader_andAreButtons()
+{
+  auto window = makeClientSideWindow();
+  auto *header = Access::header(*window);
+  QVERIFY(header);
+  showWindow(*window);
+
+  const auto buttons = header->findChildren<HeaderButton *>();
+  QVERIFY(!buttons.isEmpty());
+  for (auto *button : buttons) {
+    auto *interface = QAccessible::queryAccessibleInterface(button);
+    QVERIFY2(interface, qPrintable(button->objectName()));
+    QCOMPARE(interface->role(), QAccessible::Button);
+    QVERIFY2(
+        !interface->text(QAccessible::Name).isEmpty(), qPrintable(button->objectName() + QStringLiteral(" has no name"))
+    );
+    QVERIFY(interface->state().focusable);
+    // the buttons that a person uses with the keyboard can be reached with it
+    QVERIFY(button->focusPolicy() != Qt::NoFocus);
+  }
+  // each name is its own: no two buttons are said the same
+  QSet<QString> names;
+  for (auto *button : buttons)
+    names.insert(nameOf(button));
+  QCOMPARE(names.count(), buttons.count());
+}
+
+QTEST_MAIN(WindowChromeTests)

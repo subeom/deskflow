@@ -175,4 +175,19 @@ void ChromeGeometryTests::maximizedInsets_areTheThicknessOfTheFrameOnEverySide()
   QCOMPARE(maximizedInsets(-3), QMargins());
 }
 
+void ChromeGeometryTests::edgesOf_saysWhichEdgesARegionResizes()
+{
+  QCOMPARE(edgesOf(Region::Left), Qt::Edges(Qt::LeftEdge));
+  QCOMPARE(edgesOf(Region::Right), Qt::Edges(Qt::RightEdge));
+  QCOMPARE(edgesOf(Region::Top), Qt::Edges(Qt::TopEdge));
+  QCOMPARE(edgesOf(Region::Bottom), Qt::Edges(Qt::BottomEdge));
+  QCOMPARE(edgesOf(Region::TopLeft), Qt::Edges(Qt::TopEdge | Qt::LeftEdge));
+  QCOMPARE(edgesOf(Region::TopRight), Qt::Edges(Qt::TopEdge | Qt::RightEdge));
+  QCOMPARE(edgesOf(Region::BottomLeft), Qt::Edges(Qt::BottomEdge | Qt::LeftEdge));
+  QCOMPARE(edgesOf(Region::BottomRight), Qt::Edges(Qt::BottomEdge | Qt::RightEdge));
+  // nothing else resizes
+  for (const auto region : {Region::Client, Region::Caption, Region::Minimize, Region::Maximize, Region::Close})
+    QCOMPARE(edgesOf(region), Qt::Edges());
+}
+
 QTEST_MAIN(ChromeGeometryTests)

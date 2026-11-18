@@ -11,6 +11,7 @@
 #include <QPoint>
 #include <QRect>
 #include <QSize>
+#include <Qt>
 
 namespace deskflow::gui::chrome {
 
@@ -61,6 +62,10 @@ QRect minimizeRect(const ChromeMetrics &metrics);
  * for themselves (the menu button), and the rest of the header is the caption.
  */
 Region hitTest(const ChromeMetrics &metrics, const QPoint &point, const QList<QRect> &interactive = {});
+
+//! The edges of the window that a region resizes (none for the other regions): what startSystemResize is asked for
+//! where the system has no frame to do it
+Qt::Edges edgesOf(Region region);
 
 /*!
  * \brief The part of a window that is maximized and is not on the monitor: Windows makes the window bigger than the

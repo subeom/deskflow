@@ -227,6 +227,12 @@ add_library(${target} STATIC
   chrome/ChromePolicy.h
   chrome/MenuMigration.cpp
   chrome/MenuMigration.h
+  chrome/WindowChrome.cpp
+  chrome/WindowChrome.h
+  chrome/WindowChromeWin.cpp
+  chrome/WindowChromeWin.h
+  chrome/WindowHeader.cpp
+  chrome/WindowHeader.h
   tray/TrayController.cpp
   tray/TrayController.h
   tray/TrayHeaderWidget.cpp

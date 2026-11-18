@@ -154,6 +154,10 @@ public:
   //! The line above every page that asks for the sharing to be restarted
   settings::RestartBanner *restartBanner() const;
 
+  //! The header of the window (the frame of the new look, see WindowChrome): it is the first thing in the window, above
+  //! the sidebar and the page, on the same backdrop
+  void setHeader(QWidget *header);
+
 private:
   void registerPage(const QString &id, QWidget *page);
   void updateModeTexts();

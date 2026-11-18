@@ -28,6 +28,9 @@
 #include "common/VersionInfo.h"
 #include "gui/Messages.h"
 #include "gui/TlsUtility.h"
+#include "gui/chrome/MenuMigration.h"
+#include "gui/chrome/WindowChrome.h"
+#include "gui/chrome/WindowHeader.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/ipc/DaemonIpcClient.h"
 #include "gui/layout/DisplayProvider.h"
@@ -181,8 +184,10 @@ MainWindow::MainWindow()
   applyConfig();
   setupLayoutMemory();
   m_statusBar->setSecurityIcon(TlsUtility::isEnabled());
-  if (deskflow::gui::style::isDeskflowStyleInstalled())
+  if (deskflow::gui::style::isDeskflowStyleInstalled()) {
     setupShell();
+    applyWindowChrome();
+  }
   restoreWindow();
 
 #ifdef Q_OS_MACOS
@@ -1423,6 +1428,8 @@ void MainWindow::changeEvent(QEvent *e)
     updateText();
     if (m_shell)
       updateShellTexts();
+    if (m_header)
+      m_header->retranslate();
   }
 }
 
@@ -1858,6 +1865,118 @@ void MainWindow::setupShell()
   updateModeControlLabels();
   updateShellTexts();
   updateStatus();
+}
+
+void MainWindow::applyWindowChrome()
+{
+  using namespace deskflow::gui::chrome;
+  if (!m_shell)
+    return;
+  m_frame = decideFrame(ChromeEnvironment::current());
+  qInfo().noquote() << "window frame:" << (m_frame.clientSide() ? "client side" : "native") << "("
+                    << reasonName(m_frame.reason) << ")";
+  if (!m_frame.clientSide())
+    return;
+
+  // a Mac has the buttons of the window in its title bar, and the title there; the others have them in the header
+  const bool mac = deskflow::platform::isMac();
+  WindowHeader::Options options;
+  options.captionButtons = !mac;
+  options.leftInset = mac ? WindowHeader::kTrafficLightsInset : 0;
+  options.title = !mac;
+  auto *header = new WindowHeader(options, this);
+  auto *chrome = new WindowChrome(this, header, this);
+  if (!chrome->apply()) {
+    qWarning() << "the frame of the new look could not be made: the window keeps the frame of the system";
+    delete chrome;
+    delete header;
+    m_frame = FrameDecision{FrameKind::Native, FrameReason::PlatformPluginUnsupported};
+    return;
+  }
+  m_header = header;
+  m_chrome = chrome;
+  m_shell->setHeader(header);
+  header->setTitle(windowTitle());
+  connect(this, &QWidget::windowTitleChanged, header, &WindowHeader::setTitle);
+  connect(header, &WindowHeader::closeRequested, this, &MainWindow::closeFromHeader);
+  buildHeaderMenu();
+  // the menu bar of a Mac is the one of the system, at the top of the screen
+  if (!mac)
+    hideMenuBar();
+}
+
+QAction *MainWindow::actionFor(deskflow::gui::chrome::MenuAction action) const
+{
+  using deskflow::gui::chrome::MenuAction;
+  switch (action) {
+  case MenuAction::Start:
+    return m_sharingStart;
+  case MenuAction::Restart:
+    return m_sharingRestart;
+  case MenuAction::Stop:
+    return m_sharingStop;
+  case MenuAction::TestConnection:
+    return m_sharingTestConnection;
+  case MenuAction::ViewFingerprint:
+    return m_sharingFingerprint;
+  case MenuAction::MinimizeToTray:
+    return m_sharingMinimize;
+  case MenuAction::Quit:
+    return m_actionQuit;
+  case MenuAction::Preferences:
+    return m_actionSettings;
+  case MenuAction::ToggleLog:
+    return m_logDock->toggleViewAction();
+  case MenuAction::ToggleSidebar:
+    return m_actionToggleSidebar;
+  case MenuAction::About:
+    return m_actionAbout;
+  case MenuAction::ViewHelp:
+    return m_actionShowHelp;
+  }
+  return nullptr;
+}
+
+void MainWindow::buildHeaderMenu()
+{
+  using namespace deskflow::gui::chrome;
+  auto *menu = new QMenu(this);
+  menu->setObjectName(QStringLiteral("headerMenu"));
+  // the rows are the actions of the window, in the order of the table of what the old menus did: their texts, their
+  // state and their keys follow the window, and the table is what the tests check
+  int group = -1;
+  for (const auto &entry : menuMigrations(deskflow::platform::isMac())) {
+    auto *action = actionFor(entry.action);
+    if (!action)
+      continue;
+    if (group >= 0 && entry.group != group)
+      menu->addSeparator();
+    group = entry.group;
+    menu->addAction(action);
+  }
+  m_header->setMenu(menu);
+}
+
+void MainWindow::hideMenuBar()
+{
+  // a key that belongs to an action of a menu that is not shown would not work: the actions are the window's as well
+  QList<QMenu *> menus{m_menuFile, m_menuEdit, m_menuView, m_menuHelp};
+  if (m_header && m_header->menu())
+    menus << m_header->menu();
+  for (auto *menu : std::as_const(menus)) {
+    for (auto *action : menu->actions()) {
+      if (!action->isSeparator())
+        addAction(action);
+    }
+  }
+  menuBar()->hide();
+}
+
+void MainWindow::closeFromHeader()
+{
+  // the close of the system goes to the tray, or ends the program, as the settings say
+  if (!maybeHideToTray())
+    close();
 }
 
 void MainWindow::settingApplied(const QString &key)

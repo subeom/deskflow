@@ -19,6 +19,7 @@
 
 #include "VersionChecker.h"
 #include "config/ServerConfig.h"
+#include "gui/chrome/ChromePolicy.h"
 #include "gui/core/AddressClassifier.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/core/NetworkMonitor.h"
@@ -48,6 +49,12 @@ class SettingsPages;
 namespace deskflow::gui::layout {
 class LayoutMemoryService;
 }
+
+namespace deskflow::gui::chrome {
+class WindowChrome;
+class WindowHeader;
+enum class MenuAction;
+} // namespace deskflow::gui::chrome
 
 namespace deskflow::gui::tray {
 class TrayController;
@@ -189,6 +196,16 @@ private:
   //! The main window of the new look (Appearance: deskflow): the sidebar and the page. It takes over the controls of
   //! this window and is told what to show; the old window is what there is without it.
   void setupShell();
+  //! The frame of the new look (a header in the place of the title bar and the menu bar of the system, see
+  //! WindowChrome), when the platform and the person allow it; otherwise the window keeps the frame of the system
+  void applyWindowChrome();
+  void buildHeaderMenu();
+  //! The action of the window that does what an action of the old menus did
+  QAction *actionFor(deskflow::gui::chrome::MenuAction action) const;
+  //! The menu bar is not shown; what had a key in its menus keeps the key
+  void hideMenuBar();
+  //! What the close button of the header does: what the close of the system does
+  void closeFromHeader();
   void updateShellTexts();
   //! The shell shows what the status bar says: it is asked once for a run of changes
   void scheduleShellRefresh();
@@ -250,6 +267,11 @@ private:
 
   // The new look: null while the application has the look of the system
   deskflow::gui::MainShell *m_shell = nullptr;
+  // the frame of the new look: the header and what makes the window have no title bar (null with the frame of the
+  // system)
+  deskflow::gui::chrome::FrameDecision m_frame;
+  deskflow::gui::chrome::WindowHeader *m_header = nullptr;
+  deskflow::gui::chrome::WindowChrome *m_chrome = nullptr;
   deskflow::gui::settings::SettingsPages *m_settingsPages = nullptr;
   bool m_shellRefreshPending = false;
   QStringList m_connectedClients;

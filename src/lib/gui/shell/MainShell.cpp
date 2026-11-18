@@ -564,4 +564,10 @@ settings::RestartBanner *MainShell::restartBanner() const
   return m_restartBanner;
 }
 
+void MainShell::setHeader(QWidget *header)
+{
+  if (auto *layout = qobject_cast<QVBoxLayout *>(m_backdrop->layout()))
+    layout->insertWidget(0, header);
+}
+
 } // namespace deskflow::gui
