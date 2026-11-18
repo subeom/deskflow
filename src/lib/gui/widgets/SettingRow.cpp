@@ -32,14 +32,29 @@ constexpr int kTextGap = 2;
 // the room between the text and the controls
 constexpr int kColumnGap = 16;
 
+// The lines of text, centred in the height that they are given as a widget is that is aligned in a layout. A layout of
+// Qt that is aligned would give lines that wrap less height than they need at their width.
+class CenteredColumn : public QVBoxLayout
+{
+public:
+  using QVBoxLayout::QVBoxLayout;
+
+  void setGeometry(const QRect &rect) override
+  {
+    const int needed = hasHeightForWidth() ? heightForWidth(rect.width()) : sizeHint().height();
+    const int height = qMin(rect.height(), needed);
+    QVBoxLayout::setGeometry(QRect(rect.x(), rect.y() + (rect.height() - height) / 2, rect.width(), height));
+  }
+};
+
 } // namespace
 
 SettingRow::SettingRow(const QString &title, const QString &description, QWidget *parent)
     : QWidget(parent),
       m_title(new QLabel(this)),
       m_hint(new InlineHint(this)),
-      m_texts(new QWidget(this)),
       m_layout(new QHBoxLayout(this)),
+      m_textLayout(new CenteredColumn),
       m_controlLayout(new QHBoxLayout)
 {
   installAccessibleInterfaces();
@@ -53,19 +68,20 @@ SettingRow::SettingRow(const QString &title, const QString &description, QWidget
   m_title->setTextInteractionFlags(Qt::NoTextInteraction);
   m_title->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
-  auto *texts = new QVBoxLayout(m_texts);
-  texts->setContentsMargins(0, 0, 0, 0);
-  texts->setSpacing(kTextGap);
-  texts->addWidget(m_title);
-  texts->addWidget(m_hint);
-  m_texts->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+  // The title and the hint are the children of the row, as the controls are, and not of a widget of their own: Qt
+  // before 6.11 finds the label of a control (the relation that a screen reader asks for, which names a combo box on
+  // Unix) among the siblings of the control only.
+  m_textLayout->setContentsMargins(0, 0, 0, 0);
+  m_textLayout->setSpacing(kTextGap);
+  m_textLayout->addWidget(m_title);
+  m_textLayout->addWidget(m_hint);
 
   m_controlLayout->setContentsMargins(0, 0, 0, 0);
   m_controlLayout->setSpacing(kControlGap);
 
   m_layout->setContentsMargins(metrics::spaceXl, kVerticalPadding, metrics::spaceXl, kVerticalPadding);
   m_layout->setSpacing(kColumnGap);
-  m_layout->addWidget(m_texts, 1, Qt::AlignVCenter);
+  m_layout->addLayout(m_textLayout, 1);
   m_layout->addLayout(m_controlLayout);
 
   setTitle(title);
@@ -164,7 +180,10 @@ void SettingRow::setExpandingControls(bool expanding)
 {
   m_layout->setStretch(0, expanding ? 0 : 1);
   m_layout->setStretch(1, expanding ? 1 : 0);
-  m_texts->setSizePolicy(expanding ? QSizePolicy::Preferred : QSizePolicy::Expanding, QSizePolicy::Minimum);
+  // the text takes the room that is left over only when the controls do not
+  const auto policy = expanding ? QSizePolicy::Preferred : QSizePolicy::Expanding;
+  m_title->setSizePolicy(policy, QSizePolicy::Minimum);
+  m_hint->setSizePolicy(policy, QSizePolicy::Minimum);
   for (auto *control : std::as_const(m_controls))
     m_controlLayout->setStretchFactor(control, expanding ? 1 : 0);
 }
@@ -184,7 +203,16 @@ void SettingRow::setDivider(bool divider)
 
 QRect SettingRow::textRect() const
 {
-  return m_texts->geometry();
+  // the column that the text has in the row, once the layout has given it one
+  const auto column = m_textLayout->geometry();
+  if (column.isValid())
+    return column;
+  QRect rect;
+  for (const QWidget *line : {static_cast<const QWidget *>(m_title), static_cast<const QWidget *>(m_hint)}) {
+    if (!line->isHidden())
+      rect = rect.united(line->geometry());
+  }
+  return rect;
 }
 
 void SettingRow::updateNames()
@@ -254,7 +282,7 @@ bool SettingRow::eventFilter(QObject *watched, QEvent *event)
 bool SettingRow::clickOnText(const QPoint &pos) const
 {
   auto *toggle = qobject_cast<ToggleSwitch *>(primaryControl());
-  return toggle && toggle->isEnabled() && m_texts->geometry().contains(pos);
+  return toggle && toggle->isEnabled() && textRect().contains(pos);
 }
 
 void SettingRow::mousePressEvent(QMouseEvent *event)

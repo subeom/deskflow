@@ -34,6 +34,7 @@ private Q_SLOTS:
   void row_isAtLeast44PixelsHigh_andGrowsForAHintThatWraps();
   void row_withExpandingControls_givesThemTheRoom();
   void row_mnemonicOfTheTitleFocusesTheControl();
+  void row_titleIsASiblingOfItsControls();
 
   void card_hasNoHairlineAboveItsFirstRowThatIsShown();
   void card_isHiddenWhenNoneOfItsRowsIsShown();
@@ -44,6 +45,7 @@ private Q_SLOTS:
   void hero_showsTheStateTheDetailAndTheChips();
   void hero_badgeHasTheColourOfItsKind();
   void hero_announcesAHeadlineThatChanges();
+  void hero_staysSilentWhileNothingListens();
   void hero_putsItsActionsAtTheEndAndUnderTheTextWhenItIsNarrow();
   void hero_putsItsActionsUnderTheTextWhenTheyAndTheTextDoNotBothFit();
   void hero_holdsAnAccessoryUnderTheChips_evenWhenChipsComeAfterIt();

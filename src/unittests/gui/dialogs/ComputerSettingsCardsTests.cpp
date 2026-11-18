@@ -29,6 +29,7 @@
 #include <QPixmapCache>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalSpy>
@@ -86,6 +87,17 @@ QString labelOf(QWidget *widget)
 {
   const auto relations = QAccessible::queryAccessibleInterface(widget)->relations(QAccessible::Label);
   return relations.isEmpty() ? QString() : relations.first().first->text(QAccessible::Name);
+}
+
+// The label of a control as Qt before 6.11 finds it, which is among the siblings of the control only (from 6.11 on any
+// label that has the control as its buddy is one). The relation above is what Qt of the version that runs makes of it.
+QString siblingLabelOf(QWidget *widget)
+{
+  for (auto *label : widget->parentWidget()->findChildren<QLabel *>(Qt::FindDirectChildrenOnly)) {
+    if (label->buddy() == widget)
+      return QAccessible::queryAccessibleInterface(label)->text(QAccessible::Name);
+  }
+  return {};
 }
 
 // every control of the form that is set or read when the dialog is saved
@@ -344,11 +356,14 @@ void ComputerSettingsCardsTests::deskflowLook_namesTheControlsByTheirRows()
   QCOMPARE(nameOf(child<QWidget>(dialog, "lineNameEdit")), QStringLiteral("Name"));
   QCOMPARE(nameOf(child<QWidget>(dialog, "chkShareClipboard")), QStringLiteral("Share clipboard with this computer"));
   // a combo box is named by its value (Qt): the row is its label, and says so through the relation of a label
+  QCOMPARE(siblingLabelOf(child<QWidget>(dialog, "comboShift")), QStringLiteral("Shift"));
   QCOMPARE(labelOf(child<QWidget>(dialog, "comboShift")), QStringLiteral("Shift"));
+  QCOMPARE(siblingLabelOf(child<QWidget>(dialog, "comboAltGr")), QStringLiteral("Alt Gr"));
   QCOMPARE(labelOf(child<QWidget>(dialog, "comboAltGr")), QStringLiteral("Alt Gr"));
   QCOMPARE(nameOf(child<QWidget>(dialog, "chkDeadTopLeft")), QStringLiteral("Top Left"));
   QCOMPARE(nameOf(child<QWidget>(dialog, "sbSwitchCornerSize")), QStringLiteral("Corner size"));
   QCOMPARE(nameOf(child<QWidget>(dialog, "chkFixCapsLock")), QStringLiteral("CAPS LOCK key"));
+  QCOMPARE(siblingLabelOf(child<QWidget>(dialog, "comboF18Key")), QStringLiteral("F18 key"));
   QCOMPARE(labelOf(child<QWidget>(dialog, "comboF18Key")), QStringLiteral("F18 key"));
   QCOMPARE(child<QWidget>(dialog, "comboF18Key")->accessibleName(), QStringLiteral("F18 key"));
   QCOMPARE(nameOf(child<QWidget>(dialog, "sbDisplayScale")), QStringLiteral("Display scale"));
@@ -385,33 +400,60 @@ void ComputerSettingsCardsTests::deskflowLook_namesTheControlsByTheirRows()
   }
 }
 
+void ComputerSettingsCardsTests::deskflowLook_isAsSmallAsTheFormWas_andTheCardsScrollInIt_data()
+{
+  QTest::addColumn<QString>("family");
+  QTest::addColumn<qreal>("fontScale");
+
+  QTest::newRow("system font") << QString() << 1.0;
+  QTest::newRow("system font x1.3") << QString() << 1.3;
+  // The style gives its controls room in pixels, and a form of the system styles follows the text: the smaller the
+  // text, the more the form of Fusion is smaller than the one of the style of the program (Windows, with Segoe UI, is
+  // such a place). The cards are compared with the form in the same style, not with the one of another style.
+  QTest::newRow("small font") << QString() << 0.45;
+  // the widest of the fonts of Windows
+  QTest::newRow("Verdana") << QStringLiteral("Verdana") << 1.0;
+}
+
 void ComputerSettingsCardsTests::deskflowLook_isAsSmallAsTheFormWas_andTheCardsScrollInIt()
 {
-  QApplication::setStyle(QStringLiteral("Fusion"));
-  QSize form;
-  {
-    Computer computer(QStringLiteral("test-pc"));
-    ComputerSettingsDialog dialog(nullptr, &computer);
-    dialog.show();
-    QVERIFY(QTest::qWaitForWindowExposed(&dialog));
-    form = dialog.minimumSizeHint();
-  }
+  QFETCH(QString, family);
+  QFETCH(qreal, fontScale);
 
+  const auto original = QApplication::font();
+  const auto restoreFont = qScopeGuard([&original] { QApplication::setFont(original); });
+  auto font = original;
+  if (!family.isEmpty())
+    font.setFamily(family);
+  font.setPointSizeF(original.pointSizeF() * fontScale);
+  QApplication::setFont(font);
+
+  QApplication::setStyle(QStringLiteral("Fusion"));
+  Computer formComputer(QStringLiteral("test-pc"));
+  ComputerSettingsDialog formDialog(nullptr, &formComputer);
+  formDialog.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&formDialog));
+  // the groups were laid out before the style of the cards was there, and stay the groups: this is what the form asks
+  // for in the style of the cards
   installDeskflowStyle();
+  QCoreApplication::processEvents();
+  const auto form = formDialog.minimumSizeHint();
+  formDialog.hide();
+
   Computer computer(QStringLiteral("test-pc"));
   ComputerSettingsDialog dialog(nullptr, &computer);
   dialog.show();
   QVERIFY(QTest::qWaitForWindowExposed(&dialog));
   const auto cards = dialog.minimumSizeHint();
   qInfo() << "minimum size: form" << form << "cards" << cards << "default" << dialog.sizeHint();
-  // the cards ask for what the groups did (the style has a little more room of its own, and the cards scroll in it)
+  // the cards ask for what the groups did (the cards scroll in it, and take a little room of their own)
   const auto describeSizes =
       QStringLiteral("%1 x %2 / %3 x %4").arg(cards.width()).arg(cards.height()).arg(form.width()).arg(form.height());
   QVERIFY2(
-      cards.height() <= form.height() * 12 / 10 && cards.height() >= form.height() * 9 / 10, qPrintable(describeSizes)
+      cards.height() <= form.height() * 11 / 10 && cards.height() >= form.height() * 9 / 10, qPrintable(describeSizes)
   );
   QVERIFY2(
-      cards.width() <= form.width() * 12 / 10 && cards.width() >= form.width() * 9 / 10, qPrintable(describeSizes)
+      cards.width() <= form.width() * 11 / 10 && cards.width() >= form.width() * 9 / 10, qPrintable(describeSizes)
   );
 
   dialog.resize(cards);

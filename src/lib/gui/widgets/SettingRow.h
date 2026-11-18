@@ -82,8 +82,8 @@ private:
   QString m_rawTitle;
   QLabel *m_title = nullptr;
   InlineHint *m_hint = nullptr;
-  QWidget *m_texts = nullptr;
   QHBoxLayout *m_layout = nullptr;
+  QVBoxLayout *m_textLayout = nullptr;
   QHBoxLayout *m_controlLayout = nullptr;
   QList<QWidget *> m_controls;
   bool m_divider = false;
