@@ -14,6 +14,7 @@ private Q_SLOTS:
   void initTestCase();
   void cleanup();
 
+  void switchRole_isASwitchFromQt611_andACheckBoxBefore();
   void toggleSwitch_isASwitchWithItsStateAndItsActions();
   void toggleSwitch_withATextIsNamedByIt();
   void toggleSwitch_whenDisabled_saysSoAndIgnoresTheAction();

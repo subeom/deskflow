@@ -9,6 +9,7 @@
 #include "common/Settings.h"
 #include "gui/config/ServerConfig.h"
 #include "gui/dialogs/ServerConfigDialog.h"
+#include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/BackdropWidget.h"
 #include "gui/style/DeskflowStyle.h"
@@ -209,7 +210,7 @@ void ServerConfigAdvancedTabTests::deskflowMode_namesTheRowsByTheirControls()
   QCOMPARE(heartbeat->accessibleName(), QStringLiteral("Check clients every"));
   auto *spin = child<QSpinBox>(dialog, QStringLiteral("sbHeartbeat"));
   QCOMPARE(spin->accessibleName(), QStringLiteral("Check clients every"));
-  QCOMPARE(QAccessible::queryAccessibleInterface(heartbeat)->role(), QAccessible::Switch);
+  QCOMPARE(QAccessible::queryAccessibleInterface(heartbeat)->role(), switchRole());
 
   // the radios keep their own names, and the row says what they choose between
   auto *protocol = child<QWidget>(dialog, QStringLiteral("rbProtocolSynergy"));

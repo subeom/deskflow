@@ -16,6 +16,7 @@
 #include "gui/settings/SettingsBinder.h"
 #include "gui/settings/SettingsPage.h"
 #include "gui/settings/SettingsPages.h"
+#include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/PageTitle.h"
@@ -799,12 +800,15 @@ void SettingsPagesTests::pages_theTreeOfAScreenReaderHasHeadingsGroupsAndNamedCo
   const auto text = all.join(QLatin1Char('\n'));
   // a switch is a switch with the name of its row, a number and a choice are named by it too (a choice by its value,
   // and its row is its label)
-  QVERIFY2(text.contains(QStringLiteral("Switch \"Enable TLS Encryption\"")), qPrintable(text));
-  QVERIFY2(text.contains(QStringLiteral("Switch \"Enable clipboard sharing\"")), qPrintable(text));
+  const auto switchName = QString::fromLatin1(QMetaEnum::fromType<QAccessible::Role>().valueToKey(switchRole()));
+  QVERIFY2(text.contains(QStringLiteral("%1 \"Enable TLS Encryption\"").arg(switchName)), qPrintable(text));
+  QVERIFY2(text.contains(QStringLiteral("%1 \"Enable clipboard sharing\"").arg(switchName)), qPrintable(text));
   QVERIFY2(text.contains(QRegularExpression(QStringLiteral("SpinBox \"Port\""))), qPrintable(text));
   QVERIFY2(text.contains(QRegularExpression(QStringLiteral("ComboBox \"[^\"]+\""))), qPrintable(text));
   // no control without a name
-  QVERIFY2(!text.contains(QRegularExpression(QStringLiteral("(Switch|SpinBox|Button) \"\""))), qPrintable(text));
+  QVERIFY2(
+      !text.contains(QRegularExpression(QStringLiteral("(%1|SpinBox|Button) \"\"").arg(switchName))), qPrintable(text)
+  );
 
   if (const auto path = qEnvironmentVariable("DESKFLOW_A11Y_DUMP"); !path.isEmpty()) {
     QFile file(path);

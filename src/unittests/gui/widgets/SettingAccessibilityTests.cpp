@@ -5,6 +5,7 @@
 
 #include "SettingAccessibilityTests.h"
 
+#include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/SectionHeader.h"
@@ -99,7 +100,7 @@ void SettingAccessibilityTests::toggleSwitch_isASwitchWithItsStateAndItsActions(
   toggle.setAccessibleDescription(QStringLiteral("Notices a computer that does not answer"));
   auto *interface = interfaceOf(&toggle);
 
-  QCOMPARE(interface->role(), QAccessible::Switch);
+  QCOMPARE(interface->role(), switchRole());
   QCOMPARE(interface->text(QAccessible::Name), QStringLiteral("Heartbeat"));
   QCOMPARE(interface->text(QAccessible::Description), QStringLiteral("Notices a computer that does not answer"));
   QVERIFY(interface->state().checkable);
@@ -137,6 +138,15 @@ void SettingAccessibilityTests::toggleSwitch_whenDisabled_saysSoAndIgnoresTheAct
   QVERIFY(!toggle.isChecked());
 }
 
+void SettingAccessibilityTests::switchRole_isASwitchFromQt611_andACheckBoxBefore()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 11, 0)
+  QCOMPARE(switchRole(), QAccessible::Switch);
+#else
+  QCOMPARE(switchRole(), QAccessible::CheckBox);
+#endif
+}
+
 void SettingAccessibilityTests::toggleSwitch_withoutTheStyleLayer_isACheckBoxForAScreenReader()
 {
   QApplication::setStyle(QStringLiteral("Fusion"));
@@ -164,7 +174,7 @@ void SettingAccessibilityTests::row_isAGroupNamedByItsTitle_andNamesItsControls(
   // the controls have no text of their own: the row names them, and describes the first
   QCOMPARE(interfaceOf(spin)->text(QAccessible::Name), QStringLiteral("Switch after"));
   QCOMPARE(interfaceOf(toggle)->text(QAccessible::Name), QStringLiteral("Switch after"));
-  QCOMPARE(interfaceOf(toggle)->role(), QAccessible::Switch);
+  QCOMPARE(interfaceOf(toggle)->role(), switchRole());
   QCOMPARE(interfaceOf(spin)->text(QAccessible::Description), QStringLiteral("Waits before it switches"));
 
   // a title that is set later is the name that is told
@@ -249,12 +259,13 @@ void SettingAccessibilityTests::card_tree_hasTheRolesAndNamesOfWhatIsOnTheScreen
   QVERIFY2(dump.contains(QStringLiteral("StaticText \"Warning: Beta\"")), qPrintable(dump));
   QVERIFY2(dump.contains(QStringLiteral("Grouping \"Multiple monitors\"")), qPrintable(dump));
   QVERIFY2(
-      dump.contains(QStringLiteral(
-          "Switch \"Multiple monitors\" (Lets each monitor of a computer be a screen) [unchecked,focusable]"
-      )),
+      dump.contains(
+          QStringLiteral("%1 \"Multiple monitors\" (Lets each monitor of a computer be a screen) [unchecked,focusable]")
+              .arg(roleName(switchRole()))
+      ),
       qPrintable(dump)
   );
-  QVERIFY2(dump.contains(QStringLiteral("Switch \"Heartbeat\"")), qPrintable(dump));
+  QVERIFY2(dump.contains(QStringLiteral("%1 \"Heartbeat\"").arg(roleName(switchRole()))), qPrintable(dump));
 
   // the walk is written for whoever wants to read it (the report of the step), when the environment says where
   if (const auto path = qEnvironmentVariable("DESKFLOW_A11Y_DUMP"); !path.isEmpty()) {

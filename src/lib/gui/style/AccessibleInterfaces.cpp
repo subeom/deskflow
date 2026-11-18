@@ -47,11 +47,11 @@ public:
   }
 };
 
-// A switch: a button that is on or off
+// A switch: a button that is on or off (a check box for a screen reader before Qt 6.11, see switchRole)
 class SwitchAccessible : public QAccessibleWidget
 {
 public:
-  explicit SwitchAccessible(QAbstractButton *button) : QAccessibleWidget(button, QAccessible::Switch)
+  explicit SwitchAccessible(QAbstractButton *button) : QAccessibleWidget(button, switchRole())
   {
   }
 

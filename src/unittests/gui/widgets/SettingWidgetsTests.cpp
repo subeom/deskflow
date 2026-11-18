@@ -30,6 +30,8 @@
 #include <QSpinBox>
 #include <QtTest/qtestaccessible.h>
 
+#include <algorithm>
+
 using namespace deskflow::gui::style;
 
 namespace {
@@ -613,12 +615,20 @@ void SettingWidgetsTests::hero_announcesAHeadlineThatChanges()
   hero.show();
   QTestAccessibility::clearEvents();
 
+  // QTestAccessibility::containsEventOfType is newer than Qt 6.9
+  const auto announced = [] {
+    const auto events = QTestAccessibility::events();
+    return std::any_of(events.cbegin(), events.cend(), [](const QAccessibleEvent *event) {
+      return event->type() == QAccessible::Announcement;
+    });
+  };
+
   // the first headline is not announced, a change is
   hero.setHeadline(QStringLiteral("Connected to 1 computer"));
-  QVERIFY(QTestAccessibility::containsEventOfType(QAccessible::Announcement));
+  QVERIFY(announced());
   QTestAccessibility::clearEvents();
   hero.setHeadline(QStringLiteral("Connected to 1 computer"));
-  QVERIFY(!QTestAccessibility::containsEventOfType(QAccessible::Announcement));
+  QVERIFY(!announced());
   QTestAccessibility::cleanup();
 #else
   QSKIP("Announcements need Qt 6.8");
