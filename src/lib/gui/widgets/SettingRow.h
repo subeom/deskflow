@@ -57,6 +57,11 @@ public:
   //! The controls take the room that is left and the text only what it needs: for a path or a long text field
   void setExpandingControls(bool expanding);
 
+  //! When the text and the controls do not fit side by side, the controls go under the text at the full width of the
+  //! row, and the row asks for the wider of the two and not for their sum: for a row that has a field and a button
+  void setStackWhenNarrow(bool stack);
+  bool stackWhenNarrow() const;
+
   //! A hairline on the upper edge; a card sets it for every row but its first one
   bool hasDivider() const;
   void setDivider(bool divider);

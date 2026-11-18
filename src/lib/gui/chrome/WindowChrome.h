@@ -8,6 +8,7 @@
 
 #include <QObject>
 #include <QPoint>
+#include <QSize>
 
 class QMainWindow;
 
@@ -54,6 +55,8 @@ protected:
 private:
   void toggleMaximized();
   void startMove();
+  //! Says in the log what the state of the window was and is, and its size
+  void logStateChange(Qt::WindowStates oldState);
 
   QMainWindow *m_window;
   WindowHeader *m_header;
@@ -62,6 +65,8 @@ private:
   //! A move that the compositor could not do: the window follows the mouse (where the press was, and where the window
   //! was)
   bool m_manualMove = false;
+  //! The size that the window had when it was last maximized (what it comes back to)
+  QSize m_sizeBeforeMaximize;
   QPoint m_pressedAt;
   QPoint m_windowAt;
 };

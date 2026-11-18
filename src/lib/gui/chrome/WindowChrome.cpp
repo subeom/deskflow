@@ -15,10 +15,12 @@
 
 #include <QApplication>
 #include <QCursor>
+#include <QDebug>
 #include <QGuiApplication>
 #include <QMainWindow>
 #include <QMouseEvent>
 #include <QWindow>
+#include <QWindowStateChangeEvent>
 
 namespace deskflow::gui::chrome {
 
@@ -116,10 +118,39 @@ void WindowChrome::startMove()
 #endif
 }
 
+void WindowChrome::logStateChange(Qt::WindowStates oldState)
+{
+  const auto name = [](Qt::WindowStates state) {
+    if (state.testFlag(Qt::WindowFullScreen))
+      return "full screen";
+    if (state.testFlag(Qt::WindowMaximized))
+      return "maximized";
+    if (state.testFlag(Qt::WindowMinimized))
+      return "minimized";
+    return "normal";
+  };
+  const auto now = m_window->windowState();
+  // the size before the window was maximized is what it is given back when it is restored: the line of the log says
+  // what the window had before and after, so that a window that comes back larger than it was is found by reading the
+  // log
+  if (!oldState.testFlag(Qt::WindowMaximized) && !oldState.testFlag(Qt::WindowMinimized) &&
+      now.testFlag(Qt::WindowMaximized))
+    m_sizeBeforeMaximize = m_window->normalGeometry().size();
+  const auto size = m_window->size();
+  const auto kept = m_sizeBeforeMaximize;
+  qInfo().noquote(
+  ) << "window state:"
+    << name(oldState) << "->" << name(now) << QStringLiteral("size %1x%2").arg(size.width()).arg(size.height())
+    << (kept.isValid() ? QStringLiteral("(size before it was maximized %1x%2)").arg(kept.width()).arg(kept.height())
+                       : QString());
+}
+
 bool WindowChrome::eventFilter(QObject *watched, QEvent *event)
 {
-  if (watched == m_window && event->type() == QEvent::WindowStateChange)
+  if (watched == m_window && event->type() == QEvent::WindowStateChange) {
     m_header->setMaximized(m_window->isMaximized());
+    logStateChange(static_cast<QWindowStateChangeEvent *>(event)->oldState());
+  }
 
 #ifndef Q_OS_WIN
   const auto type = event->type();

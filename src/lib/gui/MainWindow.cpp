@@ -28,6 +28,7 @@
 #include "common/VersionInfo.h"
 #include "gui/Messages.h"
 #include "gui/TlsUtility.h"
+#include "gui/chrome/ChromeGeometry.h"
 #include "gui/chrome/MenuMigration.h"
 #include "gui/chrome/WindowChrome.h"
 #include "gui/chrome/WindowHeader.h"
@@ -219,22 +220,52 @@ const QString &MainWindow::windowGeometryKey() const
   return m_shell ? Settings::Gui::ShellWindowGeometry : Settings::Gui::WindowGeometry;
 }
 
+QSize MainWindow::firstShellSize(const QSize &wanted, const QRect &workArea) const
+{
+  // the window of the system has its frame around the size that is asked for
+  const QSize frame = m_frame.clientSide() ? QSize() : QSize(16, 40);
+  return deskflow::gui::chrome::firstWindowSize(
+      wanted, minimumSize().expandedTo(minimumSizeHint()), workArea.size(), frame
+  );
+}
+
 void MainWindow::restoreWindow()
 {
   auto windowGeometry = Settings::value(windowGeometryKey()).toRect();
-  const auto totalGeometry = QGuiApplication::primaryScreen()->availableGeometry();
+  const auto totalGeometry = s_workArea ? s_workArea() : QGuiApplication::primaryScreen()->availableGeometry();
   if (!windowGeometry.isValid()) {
     if (m_shell) {
-      // a window that can be resized has a size to start with: wide enough for the sidebar with its labels
-      resize(qMax(sizeHint().width(), 1000), qMax(sizeHint().height(), 620));
+      // a window that can be resized has a size to start with: wide enough for the sidebar with its labels, and not
+      // larger than the work area of the screen (a small screen at a large scale has less than 700 px)
+      resize(firstShellSize(QSize(qMax(sizeHint().width(), 1000), qMax(minimumSizeHint().height(), 620)), totalGeometry)
+      );
     } else {
       adjustSize();
     }
     windowGeometry = geometry();
   } else {
     setGeometry(windowGeometry);
+    // the size that was kept is of a screen that may not be this one: the new look keeps the window inside of the work
+    // area
+    if (m_shell) {
+      const auto fitted = firstShellSize(windowGeometry.size(), totalGeometry);
+      if (fitted != windowGeometry.size()) {
+        resize(fitted);
+        windowGeometry = geometry();
+      }
+    }
   }
   m_expandedSize = geometry().size();
+  if (m_shell) {
+    // the log says what the window was given and why, so that a window that is larger than the screen can be explained
+    qInfo().noquote() << QStringLiteral("window size: opened %1x%2 (least %3x%4) in a work area of %5x%6")
+                             .arg(width())
+                             .arg(height())
+                             .arg(minimumSizeHint().width())
+                             .arg(minimumSizeHint().height())
+                             .arg(totalGeometry.width())
+                             .arg(totalGeometry.height());
+  }
 
   if (!totalGeometry.contains(windowGeometry)) {
     QRect screenGeometry = QGuiApplication::primaryScreen()->geometry();

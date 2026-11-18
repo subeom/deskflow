@@ -43,6 +43,7 @@
 #include <QPixmapCache>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QStackedLayout>
@@ -57,6 +58,14 @@ struct MainWindowTestAccess
 {
   using ConnectionState = deskflow::core::ConnectionState;
   using ProcessState = deskflow::core::ProcessState;
+
+  //! The work area of the screen that a window opens on: the screen of a test is 800x600, a desktop is larger
+  static void setWorkArea(const QRect &area)
+  {
+    s_workAreaOf = area;
+    MainWindow::s_workArea = [] { return s_workAreaOf; };
+  }
+  inline static QRect s_workAreaOf;
 
   static deskflow::gui::MainShell *shell(MainWindow &w)
   {
@@ -242,6 +251,25 @@ QString placed(const QWidget &window, const QWidget *widget)
       .arg(window.height());
 }
 
+// The font of a test: of the family that is asked for, and the size of the platform (basePixels 0) or of a body of
+// basePixels, times the scale of larger text. The spacing of the letters is that in percent (100 is as the font has
+// it): the fonts of Windows are wider than the ones that a test platform has, and a wider spacing is a font that is
+// wider
+QFont scaledFont(QFont font, const QString &family, int basePixels, qreal scale, int spacing = 100)
+{
+  if (!family.isEmpty())
+    font.setFamily(family);
+  if (spacing != 100)
+    font.setLetterSpacing(QFont::PercentageSpacing, spacing);
+  if (basePixels > 0)
+    font.setPixelSize(qRound(basePixels * scale));
+  else if (font.pointSizeF() > 0)
+    font.setPointSizeF(font.pointSizeF() * scale);
+  else
+    font.setPixelSize(qRound(font.pixelSize() * scale));
+  return font;
+}
+
 // The visible widgets that ask for the most width, for the message of a check that the window is not asked for more
 QString widestMinimum(const QWidget &window)
 {
@@ -273,6 +301,8 @@ void MainShellTests::initTestCase()
   Settings::setSettingsFile(m_dir.filePath(QStringLiteral("Deskflow.conf")));
   Settings::setStateFile(m_dir.filePath(QStringLiteral("Deskflow.state")));
   QAccessible::setActive(true);
+  // the screen of a test is 800x600; the windows open as they do on a desktop unless a test says otherwise
+  Access::setWorkArea(QRect(0, 0, 1920, 1040));
 }
 
 void MainShellTests::cleanup()
@@ -829,15 +859,27 @@ void MainShellTests::deskflowLook_fitsAtEveryWidth_withLargerTextAndLongKoreanSt
 {
   QTest::addColumn<int>("width");
   QTest::addColumn<qreal>("fontScale");
+  QTest::addColumn<int>("basePixels");
+  QTest::addColumn<int>("spacing");
   QTest::addColumn<bool>("korean");
   QTest::addColumn<bool>("client");
 
-  for (const int width : {720, 760, 900, 1000, 1280}) {
-    for (const qreal scale : {1.0, 1.3}) {
-      for (const bool korean : {false, true}) {
-        for (const bool client : {false, true}) {
-          QTest::addRow("%d px, font x%.1f, %s, %s", width, scale, korean ? "ko" : "en", client ? "client" : "server")
-              << width << scale << korean << client;
+  // the font of the test platform, and the body that Windows 11 has (14 px, which is the least that the new look gives
+  // the text on Windows) with the steps of larger text, also with letters 30 % apart (as wide as the fonts of the PC of
+  // the checks of Windows were)
+  for (const int basePixels : {0, 14}) {
+    for (const int spacing : basePixels ? QList<int>{100, 130} : QList<int>{100}) {
+      for (const int width : {720, 760, 900, 1000, 1280}) {
+        for (const qreal scale : basePixels ? QList<qreal>{1.0, 1.3, 1.5} : QList<qreal>{1.0, 1.3}) {
+          for (const bool korean : {false, true}) {
+            for (const bool client : {false, true}) {
+              QTest::addRow(
+                  "%s%s%d px, font x%.1f, %s, %s", basePixels ? "14 px body, " : "", spacing != 100 ? "wide, " : "",
+                  width, scale, korean ? "ko" : "en", client ? "client" : "server"
+              ) << width
+                << scale << basePixels << spacing << korean << client;
+            }
+          }
         }
       }
     }
@@ -848,6 +890,8 @@ void MainShellTests::deskflowLook_fitsAtEveryWidth_withLargerTextAndLongKoreanSt
 {
   QFETCH(int, width);
   QFETCH(qreal, fontScale);
+  QFETCH(int, basePixels);
+  QFETCH(int, spacing);
   QFETCH(bool, korean);
   QFETCH(bool, client);
 
@@ -855,12 +899,7 @@ void MainShellTests::deskflowLook_fitsAtEveryWidth_withLargerTextAndLongKoreanSt
   auto window = makeWindow(true, client ? Settings::CoreMode::Client : Settings::CoreMode::Server);
   auto *shell = Access::shell(*window);
 
-  auto font = window->font();
-  if (font.pointSizeF() > 0)
-    font.setPointSizeF(font.pointSizeF() * fontScale);
-  else
-    font.setPixelSize(qRound(font.pixelSize() * fontScale));
-  window->setFont(font);
+  window->setFont(scaledFont(window->font(), QString(), basePixels, fontScale, spacing));
 
   if (korean) {
     // the strings of the translation (ko) that the window gives the shell, and the longest of the radio buttons
@@ -912,17 +951,26 @@ void MainShellTests::deskflowLook_keepsItsMinimumWidth_withWideFonts_data()
 {
   QTest::addColumn<QString>("family");
   QTest::addColumn<qreal>("fontScale");
+  QTest::addColumn<int>("basePixels");
+  QTest::addColumn<int>("spacing");
   QTest::addColumn<bool>("client");
 
   // The fonts of Windows are wider than the ones that the tests had: the layout must not need more than the width that
-  // the window promises (720) whatever the font, so it is tried with a font that is wide, and with larger text
-  for (const QString &family : {QString(), QStringLiteral("Verdana")}) {
-    for (const qreal scale : {1.0, 1.15, 1.3, 1.5}) {
-      for (const bool client : {false, true}) {
-        QTest::addRow(
-            "%s x%.2f %s", family.isEmpty() ? "default" : qPrintable(family), scale, client ? "client" : "server"
-        ) << family
-          << scale << client;
+  // the window promises (720) whatever the font, so it is tried with a font that is wide, and with larger text. The
+  // font of the test platform is small (9 px offscreen): the body of Windows 11, 14 px, is tried as well, and with
+  // letters 30 % apart, which is as wide as the fonts of the PC of the checks of Windows were
+  for (const int basePixels : {0, 14}) {
+    for (const int spacing : basePixels ? QList<int>{100, 130} : QList<int>{100}) {
+      for (const QString &family : {QString(), QStringLiteral("Verdana")}) {
+        for (const qreal scale : {1.0, 1.15, 1.3, 1.5}) {
+          for (const bool client : {false, true}) {
+            QTest::addRow(
+                "%s%s%s x%.2f %s", basePixels ? "14 px " : "", spacing != 100 ? "wide " : "",
+                family.isEmpty() ? "default" : qPrintable(family), scale, client ? "client" : "server"
+            ) << family
+              << scale << basePixels << spacing << client;
+          }
+        }
       }
     }
   }
@@ -932,19 +980,14 @@ void MainShellTests::deskflowLook_keepsItsMinimumWidth_withWideFonts()
 {
   QFETCH(QString, family);
   QFETCH(qreal, fontScale);
+  QFETCH(int, basePixels);
+  QFETCH(int, spacing);
   QFETCH(bool, client);
 
   writeComputers();
   auto window = makeWindow(true, client ? Settings::CoreMode::Client : Settings::CoreMode::Server);
   auto *shell = Access::shell(*window);
-  auto font = window->font();
-  if (!family.isEmpty())
-    font.setFamily(family);
-  if (font.pointSizeF() > 0)
-    font.setPointSizeF(font.pointSizeF() * fontScale);
-  else
-    font.setPixelSize(qRound(font.pixelSize() * fontScale));
-  window->setFont(font);
+  window->setFont(scaledFont(window->font(), family, basePixels, fontScale, spacing));
   showWindow(*window);
 
   // the promise of the window: it can be 720 wide, and the layout asks for no more
@@ -1090,6 +1133,88 @@ void MainShellTests::deskflowLook_startsAtItsOwnSize_whateverTheSystemLookSaved(
   window.reset();
   auto again = makeWindow(true);
   QCOMPARE(again->size(), QSize(900, 700));
+}
+
+void MainShellTests::deskflowLook_canBeLowEnoughForASmallScreen()
+{
+  // the rail of the sidebar gives its entries less height when the window is not high: the window can be as low as the
+  // screens of laptops have the room for (1366x768 at 125 % has 576 px of work area, with a taskbar)
+  auto window = makeWindow(true);
+  showWindow(*window);
+  const auto least = window->minimumSizeHint().height();
+  QVERIFY2(least <= 540, qPrintable(QStringLiteral("the window asks for a height of %1").arg(least)));
+  // and it is not made so low that the entries of the rail are on top of each other
+  const auto *rail = Access::shell(*window)->rail();
+  window->resize(window->width(), least);
+  QTRY_COMPARE(window->height(), least);
+  QCoreApplication::processEvents();
+  QVERIFY(rail->currentItemHeight() >= NavRail::compactItemHeight());
+  QList<QRect> placed;
+  for (const auto *item : rail->items()) {
+    if (item->isHidden())
+      continue;
+    const auto box = item->geometry().adjusted(NavItem::kRing, NavItem::kRing, -NavItem::kRing, -NavItem::kRing);
+    QVERIFY2(
+        box.height() >= NavRail::compactItemHeight() || item->kind() == NavItem::Kind::Status,
+        qPrintable(item->objectName())
+    );
+    for (const auto &other : placed)
+      QVERIFY2(!other.intersects(box), qPrintable(item->objectName() + QStringLiteral(" is on another entry")));
+    placed.append(box);
+    QVERIFY2(rail->rect().contains(box), qPrintable(item->objectName() + QStringLiteral(" is out of the rail")));
+  }
+  // with the room that it was drawn for, the entries have the height that they were drawn for
+  window->resize(window->width(), 900);
+  QTRY_COMPARE(window->height(), 900);
+  QCOMPARE(rail->currentItemHeight(), NavItem::itemHeight());
+}
+
+void MainShellTests::deskflowLook_opensInsideTheWorkAreaOfAScreen_data()
+{
+  QTest::addColumn<QRect>("workArea");
+  QTest::addColumn<bool>("saved");
+
+  // the work areas of the screens that people have, in logical pixels
+  for (const bool saved : {false, true}) {
+    const char *how = saved ? "a kept size, " : "first, ";
+    QTest::addRow("%s2304x1536 at 100 %%", how) << QRect(0, 0, 2304, 1496) << saved;
+    QTest::addRow("%s1920x1080 at 150 %%", how) << QRect(0, 0, 1280, 680) << saved;
+    QTest::addRow("%s1366x768 at 125 %%", how) << QRect(0, 0, 1092, 576) << saved;
+    QTest::addRow("%s1280x720 at 125 %%", how) << QRect(0, 0, 1024, 530) << saved;
+  }
+}
+
+void MainShellTests::deskflowLook_opensInsideTheWorkAreaOfAScreen()
+{
+  QFETCH(QRect, workArea);
+  QFETCH(bool, saved);
+  Access::setWorkArea(workArea);
+  const auto restore = qScopeGuard([] { Access::setWorkArea(QRect(0, 0, 1920, 1040)); });
+  // a size that was kept on a larger screen than this one is brought inside of this one
+  if (saved)
+    Settings::setValue(Settings::Gui::ShellWindowGeometry, QRect(0, 0, 1600, 1000));
+
+  auto window = makeWindow(true);
+  const auto least = window->minimumSizeHint();
+  QVERIFY2(
+      window->width() <= qMax(workArea.width(), least.width()) &&
+          window->height() <= qMax(workArea.height(), least.height()),
+      qPrintable(QStringLiteral("%1x%2 in %3x%4")
+                     .arg(window->width())
+                     .arg(window->height())
+                     .arg(workArea.width())
+                     .arg(workArea.height()))
+  );
+  QVERIFY(window->width() >= least.width() && window->height() >= least.height());
+  // a screen that has the room gets the window that was asked for (1000 wide, 620 high at the least)
+  if (!saved && workArea.width() >= 1100 && workArea.height() >= 700)
+    QVERIFY2(
+        window->width() >= 1000 && window->height() >= 620,
+        qPrintable(QStringLiteral("%1x%2").arg(window->width()).arg(window->height()))
+    );
+  // the screen of 1366x768 at 125 %: the window is inside of it, with the rail at less than its height
+  if (workArea.height() == 576)
+    QVERIFY(window->height() <= 576 - 16);
 }
 
 QTEST_MAIN(MainShellTests)

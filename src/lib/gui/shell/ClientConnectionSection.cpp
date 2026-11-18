@@ -64,6 +64,9 @@ ClientConnectionSection::ClientConnectionSection(
   m_addressRow->addControl(m_addressBox);
   m_addressRow->addControl(testButton);
   m_addressRow->setExpandingControls(true);
+  // the field and the button do not make the window wider than it promised when the text is larger: they go under the
+  // text of the row when the two do not fit side by side
+  m_addressRow->setStackWhenNarrow(true);
   m_card->addRow(m_addressRow);
   m_hostLabel->hide();
 

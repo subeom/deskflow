@@ -32,6 +32,7 @@ private Q_SLOTS:
   void row_aClickOnItsTextTogglesItsSwitch();
   void row_aClickOnItsTextDoesNothingForOtherControls();
   void row_isAtLeast44PixelsHigh_andGrowsForAHintThatWraps();
+  void row_thatStacks_putsItsControlsUnderTheText_whenTheyDoNotFitBesideIt();
   void row_withExpandingControls_givesThemTheRoom();
   void row_mnemonicOfTheTitleFocusesTheControl();
   void row_titleIsASiblingOfItsControls();

@@ -22,6 +22,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
+#include <QLayout>
 #include <QLineEdit>
 #include <QPixmapCache>
 #include <QPointer>
@@ -433,6 +434,66 @@ void SettingWidgetsTests::row_isAtLeast44PixelsHigh_andGrowsForAHintThatWraps()
   QVERIFY(row.hasHeightForWidth());
   QVERIFY(row.heightForWidth(260) > row.heightForWidth(700));
   QVERIFY(row.heightForWidth(700) > bare.sizeHint().height() - 1);
+}
+
+void SettingWidgetsTests::row_thatStacks_putsItsControlsUnderTheText_whenTheyDoNotFitBesideIt()
+{
+  install();
+  struct Parts
+  {
+    explicit Parts(bool stack)
+        : row(QStringLiteral("Connect to"),
+              QStringLiteral("LAN address first, then the VPN address, separated by commas")),
+          field(new QLineEdit),
+          button(new QPushButton(QStringLiteral("Test connection")))
+    {
+      field->setMinimumWidth(240);
+      row.addControl(field);
+      row.addControl(button);
+      row.setExpandingControls(true);
+      row.setStackWhenNarrow(stack);
+    }
+    SettingRow row;
+    QLineEdit *field;
+    QPushButton *button;
+  };
+  Parts plain(false);
+  Parts stacking(true);
+  QVERIFY(!plain.row.stackWhenNarrow());
+  QVERIFY(stacking.row.stackWhenNarrow());
+
+  // beside each other the text, the field and the button ask for the sum of their widths: stacked, for the wider of the
+  // two
+  const int sum = plain.row.minimumSizeHint().width();
+  const int wider = stacking.row.minimumSizeHint().width();
+  QVERIFY2(wider + 40 <= sum, qPrintable(QStringLiteral("%1 of %2").arg(wider).arg(sum)));
+  QVERIFY(wider >= 240 + stacking.button->minimumSizeHint().width());
+
+  // wide: as a row always was, the field is beside the text, in the height of the row
+  showWithWidth(stacking.row, 1000);
+  stacking.row.layout()->activate();
+  QVERIFY(stacking.field->geometry().left() > titleOf(stacking.row)->geometry().right());
+  QVERIFY(stacking.field->geometry().bottom() < hintOf(stacking.row)->geometry().bottom() + 20);
+  const int wideHeight = stacking.row.height();
+
+  // narrow: the field and the button are under the text, at the full width of the row, and inside of it
+  stacking.row.setFixedWidth(wider);
+  stacking.row.resize(wider, stacking.row.heightForWidth(wider));
+  stacking.row.layout()->activate();
+  QCOMPARE(stacking.row.width(), wider);
+  QVERIFY(stacking.field->geometry().top() >= hintOf(stacking.row)->geometry().bottom());
+  QVERIFY(stacking.button->geometry().top() >= hintOf(stacking.row)->geometry().bottom());
+  QVERIFY(stacking.field->geometry().left() >= 0);
+  QVERIFY(stacking.button->geometry().right() <= stacking.row.width());
+  QVERIFY(stacking.field->geometry().right() < stacking.button->geometry().left());
+  QVERIFY(stacking.row.hasHeightForWidth());
+  QVERIFY(stacking.row.height() > wideHeight);
+  QVERIFY(stacking.row.heightForWidth(wider) > stacking.row.heightForWidth(1000));
+  // nothing of the row is cut off at the bottom
+  QVERIFY(stacking.button->geometry().bottom() < stacking.row.height());
+
+  // a row that does not stack is as it was: it asks for the sum, and is never stacked
+  QVERIFY(plain.row.minimumSizeHint().width() > stacking.row.minimumSizeHint().width());
 }
 
 void SettingWidgetsTests::row_withExpandingControls_givesThemTheRoom()

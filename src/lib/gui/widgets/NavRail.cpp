@@ -31,6 +31,9 @@ constexpr int kSectionHeight = 30;
 constexpr int kSeparatorHeight = 17;
 constexpr int kIconSize = 20;
 constexpr int kStatusHeight = 36;
+// the least height of an entry when the window is not high enough for them at their height (a screen of 1366x768, a
+// window that is small): the rail gives its entries less room before it asks for more than the screen has
+constexpr int kCompactItemHeight = 32;
 
 // the sizes that carry text follow the size of text: the height of a row of the rail, its icons, its group titles
 int sectionHeight()
@@ -648,27 +651,78 @@ void NavRail::moveFocus(int key)
   list[index]->setFocus(Qt::TabFocusReason);
 }
 
+// The height of an entry of the rail when the pages and the actions in it are itemHeight high: a line of status is as
+// much higher than them as it is at the size that was drawn
+int NavRail::entryHeight(const Entry &entry, int itemHeight) const
+{
+  if (entry.item) {
+    if (entry.item->kind() != NavItem::Kind::Status)
+      return itemHeight;
+    return qRound(qreal(statusHeight()) * itemHeight / NavItem::itemHeight());
+  }
+  return entry.separator ? separatorHeight() : sectionHeight();
+}
+
+int NavRail::gapFor(int itemHeight) const
+{
+  return itemHeight >= NavItem::itemHeight() ? kGap : qMax(2, qRound(qreal(kGap) * itemHeight / NavItem::itemHeight()));
+}
+
+// The height that the entries, the button of the sidebar and the paddings need (the room of the shadow is not in it)
+int NavRail::panelHeightFor(int itemHeight) const
+{
+  const int gap = gapFor(itemHeight);
+  int height = kTopPadding + NavItem::itemHeight() + 12 + kBottomPadding;
+  for (const auto &entry : m_entries) {
+    if (entry.item && entry.item->isHidden())
+      continue;
+    height += entryHeight(entry, itemHeight) + gap;
+  }
+  return height;
+}
+
+int NavRail::compactItemHeight()
+{
+  return qMin(NavItem::itemHeight(), px(kCompactItemHeight));
+}
+
+// The entries are as high as they are drawn for, and less high when the panel has not the room: down to the compact
+// height. The rail is then still all there, and the window does not have to be as high as for the entries at full
+// height.
+int NavRail::itemHeightFor(int panelHeight) const
+{
+  for (int height = NavItem::itemHeight(); height > compactItemHeight(); --height) {
+    if (panelHeightFor(height) <= panelHeight)
+      return height;
+  }
+  return compactItemHeight();
+}
+
+int NavRail::currentItemHeight() const
+{
+  return itemHeightFor(panelRect().height());
+}
+
 void NavRail::relayout()
 {
   const auto panel = panelRect();
   const int itemWidth = panel.width() - 2 * kSidePadding + 2 * NavItem::kRing;
   const int x = panel.left() + kSidePadding - NavItem::kRing;
+  const int itemHeight = itemHeightFor(panel.height());
+  const int gap = gapFor(itemHeight);
 
   m_toggle->setGeometry(
       x, panel.top() + kTopPadding - NavItem::kRing, m_toggle->sizeHint().width(), m_toggle->sizeHint().height()
   );
 
   auto place = [&](Entry &entry, int y, bool fromBottom) {
-    const int height = entry.item
-                           ? (entry.item->kind() == NavItem::Kind::Status ? statusHeight() : NavItem::itemHeight())
-                       : entry.separator ? separatorHeight()
-                                         : sectionHeight();
+    const int height = entryHeight(entry, itemHeight);
     const int top = fromBottom ? y - height : y;
     entry.slot = QRect(panel.left() + kSidePadding, top, panel.width() - 2 * kSidePadding, height);
     if (entry.item) {
       entry.item->setGeometry(x, top - NavItem::kRing, itemWidth, height + 2 * NavItem::kRing);
     }
-    return fromBottom ? top - kGap : top + height + kGap;
+    return fromBottom ? top - gap : top + height + gap;
   };
 
   int top = panel.top() + kTopPadding + NavItem::itemHeight() + 12;
@@ -694,24 +748,16 @@ void NavRail::resizeEvent(QResizeEvent *event)
 
 QSize NavRail::sizeHint() const
 {
-  return QSize(widgetWidthFor(expandedPanelWidth()), minimumSizeHint().height());
+  const auto room = shadowMargins();
+  return QSize(
+      widgetWidthFor(expandedPanelWidth()), panelHeightFor(NavItem::itemHeight()) + room.top() + room.bottom()
+  );
 }
 
 QSize NavRail::minimumSizeHint() const
 {
-  int top = kTopPadding + NavItem::itemHeight() + 12;
-  int bottom = kBottomPadding;
-  for (const auto &entry : m_entries) {
-    if (entry.item && entry.item->isHidden())
-      continue;
-    const int height = entry.item
-                           ? (entry.item->kind() == NavItem::Kind::Status ? statusHeight() : NavItem::itemHeight())
-                       : entry.separator ? separatorHeight()
-                                         : sectionHeight();
-    (entry.region == Region::Top ? top : bottom) += height + kGap;
-  }
   const auto room = shadowMargins();
-  return QSize(widgetWidthFor(collapsedPanelWidth()), top + bottom + room.top() + room.bottom());
+  return QSize(widgetWidthFor(collapsedPanelWidth()), panelHeightFor(compactItemHeight()) + room.top() + room.bottom());
 }
 
 void NavRail::setSolid(bool solid)

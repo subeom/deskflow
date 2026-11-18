@@ -156,6 +156,11 @@ public:
   static int expandedPanelWidth();
   //! The width of the widget for a width of the panel: the room of the shadow comes to it
   static int widgetWidthFor(int panelWidth);
+  //! How high a page or an action is when the rail has not the room for them at their height (see NavItem::itemHeight)
+  static int compactItemHeight();
+  //! The height that a page or an action has now: the one that it is drawn for, or less when the rail is not high
+  //! enough
+  int currentItemHeight() const;
 
   //! The rail is painted over an opaque surface (the panel is translucent): what is behind it is not read through it
   void setSolid(bool solid);
@@ -190,6 +195,10 @@ private:
 
   NavItem *add(NavItem::Kind kind, const QString &id, const QString &iconName, const QString &text, Region region);
   void relayout();
+  int entryHeight(const Entry &entry, int itemHeight) const;
+  int gapFor(int itemHeight) const;
+  int panelHeightFor(int itemHeight) const;
+  int itemHeightFor(int panelHeight) const;
   void applyPanelWidth(qreal width);
   void moveFocus(int key);
   void setFocusStop(NavItem *item);

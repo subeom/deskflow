@@ -20,5 +20,7 @@ private Q_SLOTS:
   void hitTest_whereTheMenuButtonIs_isTheClient();
   void hitTest_everyPointOfTheWindow_isSomething_andTheEdgesDoNotCoverTheContent();
   void maximizedInsets_areTheThicknessOfTheFrameOnEverySide();
+  void firstWindowSize_isTheWantedSize_whereTheScreenHasTheRoom_data();
+  void firstWindowSize_isTheWantedSize_whereTheScreenHasTheRoom();
   void edgesOf_saysWhichEdgesARegionResizes();
 };

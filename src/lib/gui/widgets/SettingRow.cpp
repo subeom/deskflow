@@ -48,13 +48,135 @@ public:
   }
 };
 
+// The layout of a row: the text and the controls side by side, as a box has them. A row that may stack puts the
+// controls under the text, at the full width of the row, when the two do not fit side by side (the text is given a
+// width that reads well first). What the row asks for is then the wider of the two, and not their sum: a text field and
+// a button do not make a window wider than it promised when the text is larger.
+class RowLayout : public QHBoxLayout
+{
+public:
+  using QHBoxLayout::QHBoxLayout;
+
+  void setParts(QLayout *text, QLayout *controls)
+  {
+    m_text = text;
+    m_controls = controls;
+  }
+
+  void setStackWhenNarrow(bool stack)
+  {
+    if (m_stack == stack)
+      return;
+    m_stack = stack;
+    invalidate();
+  }
+
+  bool stackWhenNarrow() const
+  {
+    return m_stack;
+  }
+
+  QSize minimumSize() const override
+  {
+    const auto box = QHBoxLayout::minimumSize();
+    if (!m_stack || !m_text || !m_controls)
+      return box;
+    const auto margins = effectiveMargins();
+    return QSize(
+        margins.left() + margins.right() + qMax(m_text->minimumSize().width(), m_controls->minimumSize().width()),
+        box.height()
+    );
+  }
+
+  bool hasHeightForWidth() const override
+  {
+    return (m_stack && m_text && m_controls) || QHBoxLayout::hasHeightForWidth();
+  }
+
+  int heightForWidth(int width) const override
+  {
+    if (!m_stack || !m_text || !m_controls)
+      return QHBoxLayout::heightForWidth(width);
+    const auto margins = effectiveMargins();
+    const int inner = width - margins.left() - margins.right();
+    if (sideBySideAt(inner))
+      return QHBoxLayout::heightForWidth(width);
+    return margins.top() + margins.bottom() + textHeight(inner) + kStackGap + controlsHeight();
+  }
+
+  int minimumHeightForWidth(int width) const override
+  {
+    if (!m_stack || !m_text || !m_controls)
+      return QHBoxLayout::minimumHeightForWidth(width);
+    return heightForWidth(width);
+  }
+
+  void setGeometry(const QRect &rect) override
+  {
+    if (!m_stack || !m_text || !m_controls) {
+      QHBoxLayout::setGeometry(rect);
+      return;
+    }
+    const auto margins = effectiveMargins();
+    const int inner = rect.width() - margins.left() - margins.right();
+    if (sideBySideAt(inner)) {
+      QHBoxLayout::setGeometry(rect);
+      return;
+    }
+    QLayout::setGeometry(rect);
+    const QRect area = rect.marginsRemoved(margins);
+    const int textHeight = qMin(area.height(), this->textHeight(area.width()));
+    m_text->setGeometry(QRect(area.x(), area.y(), area.width(), textHeight));
+    const int top = area.y() + textHeight + kStackGap;
+    m_controls->setGeometry(QRect(area.x(), top, area.width(), qMax(0, qMin(controlsHeight(), area.bottom() + 1 - top)))
+    );
+  }
+
+private:
+  // the room between the text and the controls when they are one above the other
+  static constexpr int kStackGap = 8;
+  // the width that the text has when it is beside the controls, at the least: a column that is narrower than this wraps
+  // the guidance into lines of a few letters
+  static constexpr int kComfortableText = 200;
+
+  QMargins effectiveMargins() const
+  {
+    int left = 0;
+    int top = 0;
+    int right = 0;
+    int bottom = 0;
+    getContentsMargins(&left, &top, &right, &bottom);
+    return QMargins(left, top, right, bottom);
+  }
+
+  bool sideBySideAt(int innerWidth) const
+  {
+    const int text = qMax(m_text->minimumSize().width(), qMin(m_text->sizeHint().width(), px(kComfortableText)));
+    return innerWidth >= text + spacing() + m_controls->minimumSize().width();
+  }
+
+  int textHeight(int width) const
+  {
+    return m_text->hasHeightForWidth() ? m_text->heightForWidth(width) : m_text->sizeHint().height();
+  }
+
+  int controlsHeight() const
+  {
+    return qMax(m_controls->minimumSize().height(), m_controls->sizeHint().height());
+  }
+
+  QLayout *m_text = nullptr;
+  QLayout *m_controls = nullptr;
+  bool m_stack = false;
+};
+
 } // namespace
 
 SettingRow::SettingRow(const QString &title, const QString &description, QWidget *parent)
     : QWidget(parent),
       m_title(new QLabel(this)),
       m_hint(new InlineHint(this)),
-      m_layout(new QHBoxLayout(this)),
+      m_layout(new RowLayout(this)),
       m_textLayout(new CenteredColumn),
       m_controlLayout(new QHBoxLayout)
 {
@@ -84,6 +206,7 @@ SettingRow::SettingRow(const QString &title, const QString &description, QWidget
   m_layout->setSpacing(kColumnGap);
   m_layout->addLayout(m_textLayout, 1);
   m_layout->addLayout(m_controlLayout);
+  static_cast<RowLayout *>(m_layout)->setParts(m_textLayout, m_controlLayout);
 
   setTitle(title);
   setDescription(description);
@@ -187,6 +310,16 @@ void SettingRow::setExpandingControls(bool expanding)
   m_hint->setSizePolicy(policy, QSizePolicy::Minimum);
   for (auto *control : std::as_const(m_controls))
     m_controlLayout->setStretchFactor(control, expanding ? 1 : 0);
+}
+
+void SettingRow::setStackWhenNarrow(bool stack)
+{
+  static_cast<RowLayout *>(m_layout)->setStackWhenNarrow(stack);
+}
+
+bool SettingRow::stackWhenNarrow() const
+{
+  return static_cast<RowLayout *>(m_layout)->stackWhenNarrow();
 }
 
 bool SettingRow::hasDivider() const

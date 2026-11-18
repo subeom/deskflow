@@ -73,4 +73,12 @@ Qt::Edges edgesOf(Region region);
  */
 QMargins maximizedInsets(int frameThickness);
 
+/*!
+ * \brief The size that a window opens with: the size that it is meant to have (\p wanted), but not more than the work
+ * area of the screen has (\p available, in the logical pixels of the screen) less the frame that the system draws
+ * around the window (\p frame) and a margin, and not less than the window can be (\p minimum: a screen that is too
+ * small for it gets the window as small as it can be).
+ */
+QSize firstWindowSize(const QSize &wanted, const QSize &minimum, const QSize &available, const QSize &frame = {});
+
 } // namespace deskflow::gui::chrome

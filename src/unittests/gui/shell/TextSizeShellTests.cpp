@@ -38,6 +38,14 @@
 
 struct MainWindowTestAccess
 {
+  //! The work area of the screen that a window opens on: the screen of a test is 800x600, a desktop is larger
+  static void setWorkArea(const QRect &area)
+  {
+    s_workAreaOf = area;
+    MainWindow::s_workArea = [] { return s_workAreaOf; };
+  }
+  inline static QRect s_workAreaOf;
+
   static deskflow::gui::MainShell *shell(MainWindow &w)
   {
     return w.m_shell;
@@ -161,6 +169,8 @@ void TextSizeShellTests::initTestCase()
   Settings::setSettingsFile(m_dir.filePath(QStringLiteral("Deskflow.conf")));
   Settings::setStateFile(m_dir.filePath(QStringLiteral("Deskflow.state")));
   QAccessible::setActive(true);
+  // the screen of a test is 800x600; the windows open as they do on a desktop
+  Access::setWorkArea(QRect(0, 0, 1920, 1040));
 }
 
 void TextSizeShellTests::cleanup()

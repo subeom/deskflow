@@ -117,4 +117,14 @@ QMargins maximizedInsets(int frameThickness)
   return QMargins(frameThickness, frameThickness, frameThickness, frameThickness);
 }
 
+QSize firstWindowSize(const QSize &wanted, const QSize &minimum, const QSize &available, const QSize &frame)
+{
+  // the room that is left at the edges of the screen, so that the window is not flush with the taskbar
+  constexpr int kMargin = 16;
+  // (a size that is null has -1 for its sides: it is no frame)
+  const int width = qMin(wanted.width(), available.width() - qMax(0, frame.width()) - kMargin);
+  const int height = qMin(wanted.height(), available.height() - qMax(0, frame.height()) - kMargin);
+  return QSize(qMax(width, minimum.width()), qMax(height, minimum.height()));
+}
+
 } // namespace deskflow::gui::chrome

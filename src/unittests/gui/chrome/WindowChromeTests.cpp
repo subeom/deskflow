@@ -25,6 +25,7 @@
 #include <QMenuBar>
 #include <QPainter>
 #include <QPixmapCache>
+#include <QScopeGuard>
 #include <QSet>
 #include <QSignalSpy>
 
@@ -529,15 +530,24 @@ void WindowChromeTests::headerAndShell_keepTheMinimumWidth_withWideFonts_data()
 {
   QTest::addColumn<QString>("family");
   QTest::addColumn<qreal>("fontScale");
+  QTest::addColumn<int>("basePixels");
+  QTest::addColumn<int>("spacing");
   QTest::addColumn<bool>("client");
 
-  for (const QString &family : {QString(), QStringLiteral("Verdana")}) {
-    for (const qreal scale : {1.0, 1.3, 1.5}) {
-      for (const bool client : {false, true}) {
-        QTest::addRow(
-            "%s x%.2f %s", family.isEmpty() ? "default" : qPrintable(family), scale, client ? "client" : "server"
-        ) << family
-          << scale << client;
+  // the font of the test platform, and the body of Windows 11 (14 px: the least that the new look gives the text
+  // there), also with letters 30 % apart, as wide as the fonts of the PC of the checks of Windows were
+  for (const int basePixels : {0, 14}) {
+    for (const int spacing : basePixels ? QList<int>{100, 130} : QList<int>{100}) {
+      for (const QString &family : {QString(), QStringLiteral("Verdana")}) {
+        for (const qreal scale : {1.0, 1.15, 1.3, 1.5}) {
+          for (const bool client : {false, true}) {
+            QTest::addRow(
+                "%s%s%s x%.2f %s", basePixels ? "14 px " : "", spacing != 100 ? "wide " : "",
+                family.isEmpty() ? "default" : qPrintable(family), scale, client ? "client" : "server"
+            ) << family
+              << scale << basePixels << spacing << client;
+          }
+        }
       }
     }
   }
@@ -547,6 +557,8 @@ void WindowChromeTests::headerAndShell_keepTheMinimumWidth_withWideFonts()
 {
   QFETCH(QString, family);
   QFETCH(qreal, fontScale);
+  QFETCH(int, basePixels);
+  QFETCH(int, spacing);
   QFETCH(bool, client);
 
   auto window = makeClientSideWindow(client ? Settings::CoreMode::Client : Settings::CoreMode::Server);
@@ -555,7 +567,11 @@ void WindowChromeTests::headerAndShell_keepTheMinimumWidth_withWideFonts()
   auto font = window->font();
   if (!family.isEmpty())
     font.setFamily(family);
-  if (font.pointSizeF() > 0)
+  if (spacing != 100)
+    font.setLetterSpacing(QFont::PercentageSpacing, spacing);
+  if (basePixels > 0)
+    font.setPixelSize(qRound(basePixels * fontScale));
+  else if (font.pointSizeF() > 0)
     font.setPointSizeF(font.pointSizeF() * fontScale);
   else
     font.setPixelSize(qRound(font.pixelSize() * fontScale));
@@ -585,14 +601,13 @@ void WindowChromeTests::headerAndShell_keepTheMinimumWidth_withWideFonts()
   }
 }
 
-void WindowChromeTests::theButtonsOfTheHeader_areNamedForTheScreenReader_andAreButtons()
+// The buttons of a header, found as a screen reader finds them: named, buttons, and telling the truth about the
+// keyboard. The state of a button says that it can take the focus exactly when it is a stop of the keyboard (its policy
+// of focus): the window of Windows has the three buttons of the window that are not stops (the keys of the system,
+// Alt+Space and Win+Up, do what they do), and the button of the menu that is one
+void checkTheButtons(const WindowHeader &header)
 {
-  auto window = makeClientSideWindow();
-  auto *header = Access::header(*window);
-  QVERIFY(header);
-  showWindow(*window);
-
-  const auto buttons = header->findChildren<HeaderButton *>();
+  const auto buttons = header.findChildren<HeaderButton *>();
   QVERIFY(!buttons.isEmpty());
   for (auto *button : buttons) {
     auto *interface = QAccessible::queryAccessibleInterface(button);
@@ -601,15 +616,108 @@ void WindowChromeTests::theButtonsOfTheHeader_areNamedForTheScreenReader_andAreB
     QVERIFY2(
         !interface->text(QAccessible::Name).isEmpty(), qPrintable(button->objectName() + QStringLiteral(" has no name"))
     );
-    QVERIFY(interface->state().focusable);
-    // the buttons that a person uses with the keyboard can be reached with it
-    QVERIFY(button->focusPolicy() != Qt::NoFocus);
+    QVERIFY2(
+        interface->state().focusable == (button->focusPolicy() != Qt::NoFocus),
+        qPrintable(button->objectName() + QStringLiteral(": the state says what the policy of focus says"))
+    );
+    // every button of the header can be pressed by a screen reader (it is the way to reach a button that is no stop)
+    auto *actions = interface->actionInterface();
+    QVERIFY2(actions, qPrintable(button->objectName()));
+    QVERIFY2(
+        actions->actionNames().contains(QAccessibleActionInterface::pressAction()), qPrintable(button->objectName())
+    );
   }
   // each name is its own: no two buttons are said the same
   QSet<QString> names;
   for (auto *button : buttons)
     names.insert(nameOf(button));
   QCOMPARE(names.count(), buttons.count());
+}
+
+void WindowChromeTests::theButtonsOfTheHeader_areNamedForTheScreenReader_andAreButtons()
+{
+  auto window = makeClientSideWindow();
+  auto *header = Access::header(*window);
+  QVERIFY(header);
+  showWindow(*window);
+  checkTheButtons(*header);
+}
+
+void WindowChromeTests::theHeaderOfWindows_hasTheButtonOfTheMenuAsTheOnlyStopOfTheKeyboard()
+{
+  // the header of Windows is made here whatever the system is: the one of a Mac has no buttons of the window of its own
+  auto window = makeClientSideWindow();
+  showWindow(*window);
+  WindowHeader::Options options;
+  options.captionButtons = true;
+  WindowHeader header(options, window.get());
+  header.setTitle(QStringLiteral("Deskflow"));
+  header.setGeometry(0, 0, window->width(), WindowHeader::kHeight);
+  header.show();
+  QCoreApplication::processEvents();
+  checkTheButtons(header);
+
+  // the menu button is reached with Tab and opens the menu with Space and with Enter
+  auto *more = header.moreButton();
+  QCOMPARE(more->focusPolicy(), Qt::StrongFocus);
+  QVERIFY(QAccessible::queryAccessibleInterface(more)->state().focusable);
+  auto *menu = new QMenu(&header);
+  menu->addAction(QStringLiteral("One"));
+  header.setMenu(menu);
+  for (const int key : {Qt::Key_Space, Qt::Key_Return, Qt::Key_Enter}) {
+    more->setFocus(Qt::TabFocusReason);
+    QVERIFY(more->hasFocus());
+    QVERIFY(!menu->isVisible());
+    QTest::keyClick(more, static_cast<Qt::Key>(key));
+    QTRY_VERIFY2(menu->isVisible(), qPrintable(QStringLiteral("the key %1 opens the menu").arg(key)));
+    menu->close();
+    QTRY_VERIFY(!menu->isVisible());
+  }
+
+  // the buttons of the window are no stops, as those of the window of the system are not, and are still buttons that a
+  // screen reader presses
+  QSignalSpy minimize(&header, &WindowHeader::minimizeRequested);
+  QSignalSpy maximize(&header, &WindowHeader::maximizeToggleRequested);
+  QSignalSpy close(&header, &WindowHeader::closeRequested);
+  const QList<std::pair<Region, QSignalSpy *>> windowButtons = {
+      {Region::Minimize, &minimize}, {Region::Maximize, &maximize}, {Region::Close, &close}
+  };
+  for (const auto &[region, spy] : windowButtons) {
+    auto *button = header.captionButton(region);
+    QVERIFY(button);
+    QCOMPARE(button->focusPolicy(), Qt::NoFocus);
+    QVERIFY(!QAccessible::queryAccessibleInterface(button)->state().focusable);
+    QAccessible::queryAccessibleInterface(button)->actionInterface()->doAction(
+        QAccessibleActionInterface::pressAction()
+    );
+    QTRY_COMPARE(spy->count(), 1);
+  }
+}
+
+void WindowChromeTests::theLog_saysWhatTheWindowHadBeforeItWasMaximized_andAfterItIsRestored()
+{
+  static QStringList lines;
+  lines.clear();
+  const auto previous = qInstallMessageHandler([](QtMsgType, const QMessageLogContext &, const QString &message) {
+    if (message.startsWith(QLatin1String("window state:")))
+      lines << message;
+  });
+  const auto restore = qScopeGuard([previous] { qInstallMessageHandler(previous); });
+
+  auto window = makeClientSideWindow();
+  window->resize(1000, 640);
+  showWindow(*window);
+  window->showMaximized();
+  QTRY_VERIFY(window->isMaximized());
+  window->showNormal();
+  QTRY_VERIFY(!window->isMaximized());
+  QCoreApplication::processEvents();
+
+  const auto text = lines.join(QLatin1Char('\n'));
+  QVERIFY2(text.contains(QStringLiteral("normal -> maximized")), qPrintable(text));
+  QVERIFY2(text.contains(QStringLiteral("maximized -> normal")), qPrintable(text));
+  // what the window had before it was maximized is in the line of the restore, to be read against the size that it has
+  QVERIFY2(text.contains(QStringLiteral("size before it was maximized 1000x640")), qPrintable(text));
 }
 
 void WindowChromeTests::pictures_ofTheHeaderAsWindowsDrawsIt_whenAsked()

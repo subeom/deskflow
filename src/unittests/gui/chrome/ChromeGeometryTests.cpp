@@ -175,6 +175,43 @@ void ChromeGeometryTests::maximizedInsets_areTheThicknessOfTheFrameOnEverySide()
   QCOMPARE(maximizedInsets(-3), QMargins());
 }
 
+void ChromeGeometryTests::firstWindowSize_isTheWantedSize_whereTheScreenHasTheRoom_data()
+{
+  QTest::addColumn<QSize>("wanted");
+  QTest::addColumn<QSize>("minimum");
+  QTest::addColumn<QSize>("available");
+  QTest::addColumn<QSize>("frame");
+  QTest::addColumn<QSize>("expected");
+
+  const QSize wanted(1000, 729);
+  const QSize minimum(720, 520);
+  // the work area of the screens that people have, in logical pixels (the screen, less the taskbar, over the scale)
+  QTest::newRow("2304x1536 at 100 %") << wanted << minimum << QSize(2304, 1496) << QSize() << wanted;
+  QTest::newRow("1920x1080 at 100 %") << wanted << minimum << QSize(1920, 1040) << QSize() << wanted;
+  QTest::newRow("1920x1080 at 125 %") << wanted << minimum << QSize(1536, 816) << QSize() << wanted;
+  QTest::newRow("1920x1080 at 150 %") << wanted << minimum << QSize(1280, 680) << QSize() << QSize(1000, 664);
+  QTest::newRow("1366x768 at 100 %") << wanted << minimum << QSize(1366, 728) << QSize() << QSize(1000, 712);
+  QTest::newRow("1366x768 at 125 %") << wanted << minimum << QSize(1092, 576) << QSize() << QSize(1000, 560);
+  QTest::newRow("1280x720 at 125 %") << wanted << minimum << QSize(1024, 530) << QSize() << QSize(1000, 520);
+  // a window that has the frame of the system around it has less room inside of it
+  QTest::newRow("1366x768 at 125 %, with the frame")
+      << wanted << minimum << QSize(1092, 576) << QSize(16, 39) << QSize(1000, 521);
+  // the window is never smaller than it can be: a screen that is too small for it gets it as it is
+  QTest::newRow("1024x600 at 150 %") << wanted << minimum << QSize(682, 360) << QSize() << minimum;
+  QTest::newRow("a window that is meant to be small")
+      << QSize(800, 480) << minimum << QSize(1920, 1040) << QSize() << QSize(800, 520);
+}
+
+void ChromeGeometryTests::firstWindowSize_isTheWantedSize_whereTheScreenHasTheRoom()
+{
+  QFETCH(QSize, wanted);
+  QFETCH(QSize, minimum);
+  QFETCH(QSize, available);
+  QFETCH(QSize, frame);
+  QFETCH(QSize, expected);
+  QCOMPARE(firstWindowSize(wanted, minimum, available, frame), expected);
+}
+
 void ChromeGeometryTests::edgesOf_saysWhichEdgesARegionResizes()
 {
   QCOMPARE(edgesOf(Region::Left), Qt::Edges(Qt::LeftEdge));

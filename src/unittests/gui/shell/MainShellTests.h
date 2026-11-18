@@ -40,6 +40,9 @@ private Q_SLOTS:
   void deskflowLook_theHintOfTheAddressIsInItsRow_andNotAlsoInTheField();
   void deskflowLook_everyButtonHasAName_andNoGroupIsRepeatedByItsOwnText();
   void deskflowLook_startsAtItsOwnSize_whateverTheSystemLookSaved();
+  void deskflowLook_canBeLowEnoughForASmallScreen();
+  void deskflowLook_opensInsideTheWorkAreaOfAScreen_data();
+  void deskflowLook_opensInsideTheWorkAreaOfAScreen();
 
 private:
   QTemporaryDir m_dir;

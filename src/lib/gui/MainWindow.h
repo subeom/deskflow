@@ -177,6 +177,8 @@ private:
   void showConnectionTest();
   void showServerAddresses();
   void restoreWindow();
+  //! What a window of the new look opens with: the size that is wanted, inside of the work area of the screen
+  QSize firstShellSize(const QSize &wanted, const QRect &workArea) const;
   //! Where the window keeps its position and size: each look has its own
   const QString &windowGeometryKey() const;
   void setupControls();
@@ -256,6 +258,8 @@ private:
   QSystemTrayIcon *m_trayIcon = nullptr;
   //! Whether the OS has a tray to hide the window in (the tests of the tray say what they need)
   std::function<bool()> m_trayAvailable = [] { return QSystemTrayIcon::isSystemTrayAvailable(); };
+  //! The work area of the screen that the window opens on (the tests of the first size say what they need)
+  inline static std::function<QRect()> s_workArea;
   // The tray of the new look: null while the application has the look of the system
   deskflow::gui::tray::TrayController *m_trayController = nullptr;
   bool m_trayStartFailed = false;

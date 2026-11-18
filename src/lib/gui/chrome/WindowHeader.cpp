@@ -16,6 +16,7 @@
 #include <QContextMenuEvent>
 #include <QFocusEvent>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
 #include <QMouseEvent>
@@ -84,6 +85,19 @@ QSize HeaderButton::sizeHint() const
 QSize HeaderButton::minimumSizeHint() const
 {
   return sizeHint();
+}
+
+void HeaderButton::keyPressEvent(QKeyEvent *event)
+{
+  // a button of Qt answers to the space bar; the button of the menu answers to Enter as well, as a button of a toolbar
+  // of the system does (the buttons of the window are no stops of the keyboard, they never get a key)
+  if (m_glyph == Glyph::More && !event->isAutoRepeat() &&
+      (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
+    click();
+    event->accept();
+    return;
+  }
+  QAbstractButton::keyPressEvent(event);
 }
 
 void HeaderButton::focusInEvent(QFocusEvent *event)
