@@ -635,6 +635,33 @@ void SettingWidgetsTests::hero_announcesAHeadlineThatChanges()
 #endif
 }
 
+void SettingWidgetsTests::hero_putsItsActionsUnderTheTextWhenTheyAndTheTextDoNotBothFit()
+{
+  install();
+  StatusHero hero;
+  hero.setHeadline(QStringLiteral("Waiting for clients"));
+  // buttons that are wide (a language whose words are long, or a larger font): the width that is told (kWrapWidth) is
+  // not what says whether they fit beside the text, the width that the parts ask for is
+  auto *wide = new QPushButton(QStringLiteral("A button with a name that is very long indeed, longer than most"));
+  wide->setFixedWidth(560);
+  hero.setActions({wide});
+  showWithWidth(hero, 1400);
+  QVERIFY(!hero.actionsAreBelow());
+
+  const int needed = wide->width() + 160;
+  QVERIFY(needed > StatusHero::kWrapWidth);
+  // wider than kWrapWidth and still too narrow for the text and the buttons beside each other
+  hero.setFixedWidth(needed - 40);
+  QCoreApplication::processEvents();
+  QVERIFY2(hero.actionsAreBelow(), qPrintable(QString::number(hero.width())));
+  // the hero asks for what it needs with the buttons under the text, which is the least that it needs
+  QVERIFY(hero.minimumSizeHint().width() < needed);
+
+  hero.setFixedWidth(1400);
+  QCoreApplication::processEvents();
+  QVERIFY(!hero.actionsAreBelow());
+}
+
 void SettingWidgetsTests::hero_putsItsActionsAtTheEndAndUnderTheTextWhenItIsNarrow()
 {
   install();

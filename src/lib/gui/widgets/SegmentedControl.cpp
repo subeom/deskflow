@@ -21,6 +21,10 @@ using namespace deskflow::gui::style;
 namespace {
 
 constexpr int kSegmentPadding = 20;
+// the room at each side of a text that is cut short
+constexpr int kSegmentLeast = 8;
+// the characters that a text that is cut short still shows
+constexpr int kSegmentLeastCharacters = 6;
 
 } // namespace
 
@@ -40,6 +44,18 @@ QSize SegmentedControlSegment::sizeHint() const
   font.setWeight(QFont::DemiBold);
   return QSize(
       QFontMetrics(font).horizontalAdvance(text()) + 2 * kSegmentPadding,
+      SegmentedControl::kHeight - 2 * SegmentedControl::kPadding
+  );
+}
+
+QSize SegmentedControlSegment::minimumSizeHint() const
+{
+  auto font = this->font();
+  font.setWeight(QFont::DemiBold);
+  const auto shortest = text().left(kSegmentLeastCharacters) +
+                        (text().size() > kSegmentLeastCharacters ? QString(QChar(0x2026)) : QString());
+  return QSize(
+      qMin(QFontMetrics(font).horizontalAdvance(shortest) + 2 * kSegmentLeast, sizeHint().width()),
       SegmentedControl::kHeight - 2 * SegmentedControl::kPadding
   );
 }
@@ -102,7 +118,9 @@ void SegmentedControlSegment::paintEvent(QPaintEvent *)
   font.setWeight(QFont::DemiBold);
   painter.setFont(font);
   painter.setPen(isChecked() ? c.onAccent : c.text);
-  painter.drawText(rect(), Qt::AlignCenter, text());
+  // a control that is narrower than its text shows the beginning of it (the name is told in full to a screen reader)
+  const auto room = qMax(0, width() - 2 * kSegmentLeast);
+  painter.drawText(rect(), Qt::AlignCenter, QFontMetrics(font).elidedText(text(), Qt::ElideRight, room));
 
   if (m_keyboardFocus) {
     const auto ring = deviceLineWidth(metrics::focusRingWidth, dpr);
@@ -120,7 +138,8 @@ void SegmentedControlSegment::paintEvent(QPaintEvent *)
 SegmentedControl::SegmentedControl(QWidget *parent) : QWidget(parent)
 {
   installAccessibleInterfaces();
-  setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+  // as wide as its texts, and narrower when there is not the room (the texts are cut short then)
+  setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
   new LookFollower(this, [this] { update(); });
 }
 
@@ -227,7 +246,10 @@ QSize SegmentedControl::sizeHint() const
 
 QSize SegmentedControl::minimumSizeHint() const
 {
-  return sizeHint();
+  int width = 2 * kPadding;
+  for (const auto *s : m_segments)
+    width += s->minimumSizeHint().width();
+  return QSize(width, kHeight);
 }
 
 void SegmentedControl::resizeEvent(QResizeEvent *event)

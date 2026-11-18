@@ -48,6 +48,8 @@
 #include <QStackedLayout>
 #include <QStackedWidget>
 
+#include <algorithm>
+#include <functional>
 #include <memory>
 
 // What the main window keeps to itself: the tests reach it through this one class (the window names it as its friend)
@@ -102,6 +104,11 @@ struct MainWindowTestAccess
   static QAction *settingsAction(MainWindow &w)
   {
     return w.m_actionSettings;
+  }
+  //! What the window does when the person closes it (a close that the OS sends): true when the program goes on
+  static bool closeAsTheOsDoes(MainWindow &w)
+  {
+    return w.maybeHideToTray();
   }
 };
 
@@ -235,6 +242,27 @@ QString placed(const QWidget &window, const QWidget *widget)
       .arg(window.height());
 }
 
+// The visible widgets that ask for the most width, for the message of a check that the window is not asked for more
+QString widestMinimum(const QWidget &window)
+{
+  QList<QPair<int, QString>> asked;
+  for (const auto *widget : window.findChildren<QWidget *>()) {
+    if (!widget->isVisibleTo(&window))
+      continue;
+    asked.append(
+        {widget->minimumSizeHint().width(),
+         QStringLiteral("%1 (%2)").arg(QString::fromLatin1(widget->metaObject()->className()), widget->objectName())}
+    );
+  }
+  std::sort(asked.begin(), asked.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+  QStringList lines;
+  for (int i = 0; i < qMin<qsizetype>(8, asked.size()); ++i)
+    lines << QStringLiteral("%1 %2").arg(asked[i].first).arg(asked[i].second);
+  return QStringLiteral("the window asks for %1: %2")
+      .arg(window.minimumSizeHint().width())
+      .arg(lines.join(QStringLiteral("; ")));
+}
+
 } // namespace
 
 void MainShellTests::initTestCase()
@@ -255,10 +283,11 @@ void MainShellTests::cleanup()
   QPixmapCache::clear();
   for (const auto &key :
        {Settings::Gui::SidebarCollapsed, Settings::Gui::ShellLogExpanded, Settings::Gui::LogExpanded,
-        Settings::Gui::WindowGeometry, Settings::Core::CoreMode, Settings::Core::ComputerName,
-        Settings::Security::TlsEnabled, Settings::Client::RemoteHost, Settings::Client::RecentRemoteHosts,
-        Settings::Gui::ShownServerFirstStartMessage, Settings::Gui::ShownFirstConnectedMessage,
-        Settings::Gui::AutoStartCore, Settings::Core::Port, Settings::Gui::Autohide, Settings::Gui::ShowVersionInTitle})
+        Settings::Gui::WindowGeometry, Settings::Gui::ShellWindowGeometry, Settings::Core::CoreMode,
+        Settings::Core::ComputerName, Settings::Security::TlsEnabled, Settings::Client::RemoteHost,
+        Settings::Client::RecentRemoteHosts, Settings::Gui::ShownServerFirstStartMessage,
+        Settings::Gui::ShownFirstConnectedMessage, Settings::Gui::AutoStartCore, Settings::Core::Port,
+        Settings::Gui::Autohide, Settings::Gui::ShowVersionInTitle})
     Settings::setValue(key);
   auto &settings = Settings::proxy();
   settings.beginGroup(QStringLiteral("internalConfig"));
@@ -380,7 +409,7 @@ void MainShellTests::deskflowLook_theClientConnectionKeepsItsControlsWorking_and
 
   QCOMPARE(shell->mode(), MainShell::Mode::Client);
   QVERIFY(section->isVisibleTo(shell->widget()));
-  QCOMPARE(section->card()->title(), QStringLiteral("Connection"));
+  QCOMPARE(section->card()->title(), QStringLiteral("Server"));
 
   // the address is the field that it always was, and the Test connection button follows it
   QCOMPARE(section->addressStack()->currentWidget(), hostname);
@@ -877,6 +906,190 @@ void MainShellTests::deskflowLook_fitsAtEveryWidth_withLargerTextAndLongKoreanSt
   );
   // the sidebar is folded to the rail at the narrow widths, and shows its labels from the width that was promised
   QCOMPARE(shell->sidebar()->isRailExpanded(), width >= 900);
+}
+
+void MainShellTests::deskflowLook_keepsItsMinimumWidth_withWideFonts_data()
+{
+  QTest::addColumn<QString>("family");
+  QTest::addColumn<qreal>("fontScale");
+  QTest::addColumn<bool>("client");
+
+  // The fonts of Windows are wider than the ones that the tests had: the layout must not need more than the width that
+  // the window promises (720) whatever the font, so it is tried with a font that is wide, and with larger text
+  for (const QString &family : {QString(), QStringLiteral("Verdana")}) {
+    for (const qreal scale : {1.0, 1.15, 1.3, 1.5}) {
+      for (const bool client : {false, true}) {
+        QTest::addRow(
+            "%s x%.2f %s", family.isEmpty() ? "default" : qPrintable(family), scale, client ? "client" : "server"
+        ) << family
+          << scale << client;
+      }
+    }
+  }
+}
+
+void MainShellTests::deskflowLook_keepsItsMinimumWidth_withWideFonts()
+{
+  QFETCH(QString, family);
+  QFETCH(qreal, fontScale);
+  QFETCH(bool, client);
+
+  writeComputers();
+  auto window = makeWindow(true, client ? Settings::CoreMode::Client : Settings::CoreMode::Server);
+  auto *shell = Access::shell(*window);
+  auto font = window->font();
+  if (!family.isEmpty())
+    font.setFamily(family);
+  if (font.pointSizeF() > 0)
+    font.setPointSizeF(font.pointSizeF() * fontScale);
+  else
+    font.setPixelSize(qRound(font.pixelSize() * fontScale));
+  window->setFont(font);
+  showWindow(*window);
+
+  // the promise of the window: it can be 720 wide, and the layout asks for no more
+  window->resize(MainShell::kMinimumWindowWidth, 760);
+  QTRY_COMPARE(window->width(), MainShell::kMinimumWindowWidth);
+  QVERIFY2(window->minimumSizeHint().width() <= MainShell::kMinimumWindowWidth, qPrintable(widestMinimum(*window)));
+  for (const int width : {MainShell::kMinimumWindowWidth, 760, 800, 850, 900, 1000}) {
+    window->resize(width, 760);
+    QTRY_COMPARE(window->width(), width);
+    QCoreApplication::processEvents();
+    // nothing is squeezed to less than it needs (the state has its buttons beside its text only when both fit), and
+    // nothing leaves the window
+    QVERIFY2(
+        shell->hero()->contentsRect().width() >= shell->hero()->layout()->minimumSize().width(),
+        qPrintable(QStringLiteral("%1: hero %2 of %3")
+                       .arg(width)
+                       .arg(shell->hero()->contentsRect().width())
+                       .arg(shell->hero()->layout()->minimumSize().width()))
+    );
+    QVERIFY2(
+        shell->modeControl()->width() >= shell->modeControl()->minimumSizeHint().width(),
+        qPrintable(QStringLiteral("%1: mode control %2 of %3")
+                       .arg(width)
+                       .arg(shell->modeControl()->width())
+                       .arg(shell->modeControl()->minimumSizeHint().width()))
+    );
+    const auto bounds = window->rect();
+    for (const QWidget *widget :
+         {static_cast<QWidget *>(shell->hero()), static_cast<QWidget *>(shell->modeControl()),
+          static_cast<QWidget *>(shell->rail()), static_cast<QWidget *>(shell->pageTitle())}) {
+      QVERIFY2(bounds.contains(rectIn(*window, widget)), qPrintable(placed(*window, widget)));
+    }
+  }
+}
+
+void MainShellTests::deskflowLook_aClientPageIsCalledConnection_andNeverServer()
+{
+  auto window = makeWindow(true, Settings::CoreMode::Client);
+  auto *shell = Access::shell(*window);
+  showWindow(*window);
+
+  // the person chose to use another computer: the page is about the connection to it, and does not call this computer
+  // (or the other one) a server
+  QCOMPARE(shell->mode(), MainShell::Mode::Client);
+  QCOMPARE(shell->pageTitle()->text(), QStringLiteral("Connection"));
+  QCOMPARE(shell->rail()->item(QStringLiteral("home"))->text(), QStringLiteral("Connection"));
+  // and the card does not repeat the title of the page
+  QVERIFY(shell->clientSection()->card()->title() != shell->pageTitle()->text());
+
+  auto *radio = child<QRadioButton>(*window, QStringLiteral("rbModeServer"));
+  radio->setChecked(true);
+  QCOMPARE(shell->pageTitle()->text(), QStringLiteral("Computers"));
+}
+
+void MainShellTests::deskflowLook_theHintOfTheAddressIsInItsRow_andNotAlsoInTheField()
+{
+  auto window = makeWindow(true, Settings::CoreMode::Client);
+  auto *shell = Access::shell(*window);
+  auto *edit = child<QComboBox>(*window, QStringLiteral("cbHostname"))->lineEdit();
+  showWindow(*window);
+
+  // the row says what to write under its title; the field is empty and has no second copy of the same long sentence
+  const auto hint = shell->clientSection()->addressRow()->description();
+  QVERIFY(!hint.isEmpty());
+  QVERIFY2(edit->placeholderText() != hint, qPrintable(hint));
+  QVERIFY(edit->placeholderText().isEmpty());
+
+  // a change of language gives the hint again, once
+  QEvent languageChange(QEvent::LanguageChange);
+  QCoreApplication::sendEvent(window.get(), &languageChange);
+  QCOMPARE(shell->clientSection()->addressRow()->description(), hint);
+  QVERIFY(edit->placeholderText().isEmpty());
+}
+
+void MainShellTests::deskflowLook_everyButtonHasAName_andNoGroupIsRepeatedByItsOwnText()
+{
+  for (const auto mode : {Settings::CoreMode::Server, Settings::CoreMode::Client}) {
+    writeComputers();
+    auto window = makeWindow(true, mode);
+    showWindow(*window);
+    Access::states(*window, ProcessState::Stopped, ConnectionState::Disconnected);
+    QCoreApplication::processEvents();
+
+    QStringList lines;
+    dumpTree(QAccessible::queryAccessibleInterface(window.get()), 0, lines);
+    const auto dump = lines.join(QLatin1Char('\n'));
+    // the pencil of the name of this computer (a button of an icon alone) is named by its tooltip like the others
+    QVERIFY2(!dump.contains(QStringLiteral("Button \"\"")), qPrintable(dump));
+    QVERIFY2(dump.contains(QStringLiteral("Button \"Edit Computer Name\"")), qPrintable(dump));
+
+    // a group that is named by a text does not have the same text again below it: a screen reader that walks the tree
+    // would say it twice
+    std::function<QStringList(QAccessibleInterface *)> repeated = [&](QAccessibleInterface *node) {
+      QStringList found;
+      if (node->state().invisible)
+        return found;
+      const auto name = node->text(QAccessible::Name);
+      // the texts that are below the node without a container of their own that says something
+      std::function<void(QAccessibleInterface *)> below = [&](QAccessibleInterface *parent) {
+        for (int i = 0; i < parent->childCount(); ++i) {
+          auto *child = parent->child(i);
+          if (!child || child->state().invisible)
+            continue;
+          if (child->role() == QAccessible::StaticText && !name.isEmpty() && child->text(QAccessible::Name) == name &&
+              node->role() != QAccessible::StaticText)
+            found << QStringLiteral("%1 \"%2\" says it again in %3")
+                         .arg(roleName(node->role()), name, roleName(child->role()));
+          else if (child->role() == QAccessible::Client && child->text(QAccessible::Name).isEmpty())
+            below(child);
+        }
+      };
+      below(node);
+      for (int i = 0; i < node->childCount(); ++i) {
+        if (auto *child = node->child(i))
+          found << repeated(child);
+      }
+      return found;
+    };
+    const auto again = repeated(QAccessible::queryAccessibleInterface(window.get()));
+    QVERIFY2(again.isEmpty(), qPrintable(again.join(QLatin1Char('\n')) + QLatin1Char('\n') + dump));
+  }
+}
+
+void MainShellTests::deskflowLook_startsAtItsOwnSize_whateverTheSystemLookSaved()
+{
+  // the window of the system look is small and has a size of its own: it saved that, and the first window of the new
+  // look is not that size
+  Settings::setValue(Settings::Gui::WindowGeometry, QRect(100, 100, 572, 511));
+  auto window = makeWindow(true);
+  QVERIFY2(
+      window->width() >= 1000 && window->height() >= 620,
+      qPrintable(QStringLiteral("%1x%2").arg(window->width()).arg(window->height()))
+  );
+
+  // what the new look saves is its own, and the next window of the new look has it; the system look keeps its own
+  Settings::setValue(Settings::Gui::CloseReminder, false);
+  showWindow(*window);
+  window->resize(900, 700);
+  QTRY_COMPARE(window->size(), QSize(900, 700));
+  QVERIFY(Access::closeAsTheOsDoes(*window));
+  QCOMPARE(Settings::value(Settings::Gui::ShellWindowGeometry).toRect().size(), QSize(900, 700));
+  QCOMPARE(Settings::value(Settings::Gui::WindowGeometry).toRect(), QRect(100, 100, 572, 511));
+  window.reset();
+  auto again = makeWindow(true);
+  QCOMPARE(again->size(), QSize(900, 700));
 }
 
 QTEST_MAIN(MainShellTests)

@@ -20,6 +20,9 @@ class SegmentedControlSegment : public QAbstractButton
 public:
   explicit SegmentedControlSegment(QWidget *parent);
   QSize sizeHint() const override;
+  //! The least that the segment needs: its text is cut short with an ellipsis when the control is narrower than its
+  //! hint
+  QSize minimumSizeHint() const override;
 
 Q_SIGNALS:
   void navigate(int key);

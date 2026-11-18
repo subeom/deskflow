@@ -45,6 +45,7 @@ private Q_SLOTS:
   void hero_badgeHasTheColourOfItsKind();
   void hero_announcesAHeadlineThatChanges();
   void hero_putsItsActionsAtTheEndAndUnderTheTextWhenItIsNarrow();
+  void hero_putsItsActionsUnderTheTextWhenTheyAndTheTextDoNotBothFit();
   void hero_holdsAnAccessoryUnderTheChips_evenWhenChipsComeAfterIt();
   void card_clearRowsDeletesTheRowsAndLeavesTheCardUsable();
   void card_hiddenByItsRowsIsShownAgainWhenTheRowsAreCleared();

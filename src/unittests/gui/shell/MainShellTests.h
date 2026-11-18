@@ -34,6 +34,12 @@ private Q_SLOTS:
   void deskflowLook_theViewMenuFoldsTheSidebar_withAShortcutThatNothingElseHas();
   void deskflowLook_fitsAtEveryWidth_withLargerTextAndLongKoreanStrings_data();
   void deskflowLook_fitsAtEveryWidth_withLargerTextAndLongKoreanStrings();
+  void deskflowLook_keepsItsMinimumWidth_withWideFonts_data();
+  void deskflowLook_keepsItsMinimumWidth_withWideFonts();
+  void deskflowLook_aClientPageIsCalledConnection_andNeverServer();
+  void deskflowLook_theHintOfTheAddressIsInItsRow_andNotAlsoInTheField();
+  void deskflowLook_everyButtonHasAName_andNoGroupIsRepeatedByItsOwnText();
+  void deskflowLook_startsAtItsOwnSize_whateverTheSystemLookSaved();
 
 private:
   QTemporaryDir m_dir;

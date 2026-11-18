@@ -90,6 +90,10 @@ public:
     inline static const auto ShellLogExpanded = QStringLiteral("gui/shellLogExpanded");
     inline static const auto SymbolicTrayIcon = QStringLiteral("gui/symbolicTrayIcon");
     inline static const auto WindowGeometry = QStringLiteral("gui/windowGeometry");
+    // the position and the size of the window of the new look: it has its own, so that the small window of the system
+    // look does not become the size of the first window of the new look, and the new look does not change what the old
+    // one saved
+    inline static const auto ShellWindowGeometry = QStringLiteral("gui/shellWindowGeometry");
     inline static const auto ShownFirstConnectedMessage = QStringLiteral("gui/shownFirstConnectedMessage");
     inline static const auto ShownServerFirstStartMessage = QStringLiteral("gui/shownServerFirstStartMessage");
     inline static const auto ShowVersionInTitle = QStringLiteral("gui/showVersionInTitle");
@@ -445,6 +449,7 @@ private:
   // Settings saved in our State file
   inline static const QStringList m_stateKeys = {
       Gui::WindowGeometry
+    , Gui::ShellWindowGeometry
     , Client::XdpClipboardRetried
     , Client::XdpRestoreToken
     , Server::XdpClipboardRetried

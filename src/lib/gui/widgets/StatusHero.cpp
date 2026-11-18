@@ -14,6 +14,7 @@
 
 #include <QAccessible>
 #include <QApplication>
+#include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -94,6 +95,9 @@ StatusHero::StatusHero(QWidget *parent)
       m_chipLayout(new QHBoxLayout)
 {
   installAccessibleInterfaces();
+  // the state is named by its headline and described by its detail: the two texts are not walked to again below it
+  markRedundantForScreenReader(m_headline);
+  markRedundantForScreenReader(m_detail);
   setPadding(kPadding);
 
   for (auto *label : {m_headline, m_detail}) {
@@ -106,8 +110,13 @@ StatusHero::StatusHero(QWidget *parent)
   m_chipLayout->setSpacing(metrics::spaceSm);
   m_chipLayout->addStretch(1);
 
-  auto *textsBox = new QWidget(this);
-  auto *texts = new QVBoxLayout(textsBox);
+  // a frame and not a plain widget: Qt gives a plain widget its interface for a screen reader before the factory of the
+  // style layer is asked, and this container is the one that leaves out the headline and the detail
+  auto *textsFrame = new QFrame(this);
+  textsFrame->setFrameShape(QFrame::NoFrame);
+  m_textsBox = textsFrame;
+  markFilteredContainerForScreenReader(m_textsBox);
+  auto *texts = new QVBoxLayout(m_textsBox);
   texts->setContentsMargins(0, 0, 0, 0);
   texts->setSpacing(metrics::spaceXs);
   texts->addWidget(m_headline);
@@ -131,7 +140,7 @@ StatusHero::StatusHero(QWidget *parent)
   m_grid->setHorizontalSpacing(kGap);
   m_grid->setVerticalSpacing(metrics::spaceMd);
   m_grid->addWidget(m_orb, 0, 0, 2, 1, Qt::AlignTop);
-  m_grid->addWidget(textsBox, 0, 1);
+  m_grid->addWidget(m_textsBox, 0, 1);
   m_grid->setColumnStretch(1, 1);
   placeActions();
 
@@ -143,6 +152,9 @@ StatusHero::StatusHero(QWidget *parent)
 void StatusHero::addAccessory(QWidget *widget)
 {
   widget->setParent(this);
+  // a line of text goes on to the next line when the hero is narrow: it does not ask for the width of the whole text
+  if (auto *label = qobject_cast<QLabel *>(widget))
+    label->setWordWrap(true);
   m_accessoryLayout->insertWidget(m_accessoryLayout->count() - 1, widget);
 }
 
@@ -171,14 +183,32 @@ void StatusHero::placeActions()
     m_grid->addWidget(m_actionBox, 0, 2, 2, 1, Qt::AlignRight | Qt::AlignVCenter);
 }
 
-void StatusHero::resizeEvent(QResizeEvent *event)
+QSize StatusHero::minimumSizeHint() const
 {
-  PanelWidget::resizeEvent(event);
-  const bool below = width() < kWrapWidth;
+  const auto margins = contentsMargins();
+  const int text = kOrb + kGap + m_textsBox->minimumSizeHint().width();
+  const int actions = m_actionBox->isHidden() ? 0 : m_actionBox->sizeHint().width();
+  return QSize(margins.left() + margins.right() + qMax(text, actions), PanelWidget::minimumSizeHint().height());
+}
+
+void StatusHero::updateActionPlacement()
+{
+  // beside the text when the text at its narrowest and the buttons both fit in the width, and under it when they do
+  // not. What fits depends on the font, so it is asked of the parts: a width that was told would be right for one font
+  // only
+  const int needed = kOrb + kGap + m_textsBox->minimumSizeHint().width() + kGap +
+                     (m_actionBox->isHidden() ? 0 : m_actionBox->sizeHint().width());
+  const bool below = width() < kWrapWidth || contentsRect().width() < needed;
   if (below != m_actionsBelow) {
     m_actionsBelow = below;
     placeActions();
   }
+}
+
+void StatusHero::resizeEvent(QResizeEvent *event)
+{
+  PanelWidget::resizeEvent(event);
+  updateActionPlacement();
 }
 
 StatusChip::Kind StatusHero::kind() const

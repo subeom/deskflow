@@ -23,6 +23,8 @@ SectionHeader::SectionHeader(const QString &title, QWidget *parent)
       m_layout(new QHBoxLayout(this))
 {
   installAccessibleInterfaces();
+  // the heading is named by its title: the text of the title is not walked to again below it
+  markRedundantForScreenReader(m_title);
   m_layout->setContentsMargins(0, 0, 0, 0);
   m_layout->setSpacing(metrics::spaceSm);
   m_title->setTextFormat(Qt::PlainText);

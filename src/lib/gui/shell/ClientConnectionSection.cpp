@@ -45,7 +45,8 @@ ClientConnectionSection::ClientConnectionSection(
   layout->setContentsMargins(0, 0, 0, 0);
   layout->setSpacing(0);
 
-  m_card = new SettingCard(tr("Connection"), this);
+  // the page is called "Connection" (MainShell): this card is about the server that it connects to
+  m_card = new SettingCard(tr("Server"), this);
   m_card->header()->setTrailingWidget(configureButton);
   layout->addWidget(m_card);
 
@@ -119,9 +120,17 @@ void ClientConnectionSection::retranslate()
   // what a screen reader reads for the field is the title of the row (the stack that holds it is not what is typed in)
   m_hostname->setAccessibleName(title);
   m_addressRow->setToolTip(m_hostname->toolTip());
-  // the hint of the field is the help for the field: what to write in it
+  m_card->header()->setTitle(tr("Server"));
+  m_addressRow->setDescription(m_addressHint);
+}
+
+void ClientConnectionSection::setAddressHint(const QString &hint)
+{
+  m_addressHint = hint;
+  // the row has the hint under its title: the field is not given the same sentence as a placeholder
   if (auto *edit = m_hostname->lineEdit())
-    m_addressRow->setDescription(edit->placeholderText());
+    edit->setPlaceholderText(QString());
+  m_addressRow->setDescription(m_addressHint);
 }
 
 } // namespace deskflow::gui

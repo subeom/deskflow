@@ -43,6 +43,9 @@ SettingRow::SettingRow(const QString &title, const QString &description, QWidget
       m_controlLayout(new QHBoxLayout)
 {
   installAccessibleInterfaces();
+  // the row is named by its title and described by its hint: the two texts are not walked to again below it
+  markRedundantForScreenReader(m_title);
+  markRedundantForScreenReader(m_hint);
   setMinimumHeight(kMinimumHeight);
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 

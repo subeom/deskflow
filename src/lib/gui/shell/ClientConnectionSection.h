@@ -53,6 +53,9 @@ public:
 
   //! The texts that the main window translates (they are taken again when the language changes)
   void retranslate();
+  //! What to write in the field of the address: it is said once, under the title of the row, and the field itself is
+  //! empty (the same long sentence in the row and in the field was read twice and looked twice)
+  void setAddressHint(const QString &hint);
 
 private:
   QLabel *m_hostLabel = nullptr;
@@ -61,6 +64,7 @@ private:
   SettingRow *m_addressRow = nullptr;
   QWidget *m_addressBox = nullptr;
   QStackedLayout *m_addressStack = nullptr;
+  QString m_addressHint;
   QWidget *m_statusLines = nullptr;
   QVBoxLayout *m_statusLayout = nullptr;
 };

@@ -376,6 +376,13 @@ void MainShell::retranslate()
   // a button of an icon alone is named by its tooltip, which is in the language of the program
   if (m_parts.exportServer)
     m_parts.exportServer->setAccessibleName(m_parts.exportServer->toolTip());
+  if (m_parts.nameRow) {
+    // the pencil beside the name of this computer
+    for (auto *button : m_parts.nameRow->findChildren<QPushButton *>()) {
+      if (button->text().isEmpty() && !button->toolTip().isEmpty())
+        button->setAccessibleName(button->toolTip());
+    }
+  }
 
   m_computersCard->header()->setTitle(tr("Other computers"));
   m_clientSection->retranslate();
@@ -391,7 +398,7 @@ void MainShell::updateModeTexts()
     title = tr("Computers");
     break;
   case Mode::Client:
-    title = tr("Server");
+    title = tr("Connection");
     break;
   case Mode::None:
     title = tr("Home");

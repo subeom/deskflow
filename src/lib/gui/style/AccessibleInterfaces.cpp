@@ -21,12 +21,75 @@ namespace {
 
 using deskflow::gui::style::withoutMnemonic;
 
+constexpr auto kRedundantProperty = "deskflowRedundantForScreenReader";
+constexpr auto kFilteredProperty = "deskflowFilteredContainerForScreenReader";
+
+// A text that a group says already, or a plain container that has only such texts in it
+bool isRedundant(const QWidget *widget)
+{
+  if (widget->property(kRedundantProperty).toBool())
+    return true;
+  if (widget->metaObject() != &QWidget::staticMetaObject || !widget->accessibleName().isEmpty())
+    return false;
+  bool any = false;
+  for (const auto *child : widget->findChildren<QWidget *>(Qt::FindDirectChildrenOnly)) {
+    if (child->isHidden())
+      continue;
+    if (!isRedundant(child))
+      return false;
+    any = true;
+  }
+  return any;
+}
+
 // A group, a heading, a line of text: the role, and the name and description that the widget has set
 class RoleAccessible : public QAccessibleWidget
 {
 public:
   RoleAccessible(QWidget *widget, QAccessible::Role role) : QAccessibleWidget(widget, role)
   {
+  }
+};
+
+// A group (a row, a card, the state, a heading): its name and its description are the texts that are on the screen in
+// it, so those texts are not walked to again below it
+class GroupAccessible : public QAccessibleWidget
+{
+public:
+  GroupAccessible(QWidget *widget, QAccessible::Role role) : QAccessibleWidget(widget, role)
+  {
+  }
+
+  int childCount() const override
+  {
+    return int(walked().size());
+  }
+
+  QAccessibleInterface *child(int index) const override
+  {
+    const auto children = walked();
+    return index >= 0 && index < children.size() ? children.at(index) : nullptr;
+  }
+
+  int indexOfChild(const QAccessibleInterface *child) const override
+  {
+    return int(walked().indexOf(const_cast<QAccessibleInterface *>(child)));
+  }
+
+private:
+  QList<QAccessibleInterface *> walked() const
+  {
+    QList<QAccessibleInterface *> children;
+    const int count = QAccessibleWidget::childCount();
+    for (int i = 0; i < count; ++i) {
+      auto *child = QAccessibleWidget::child(i);
+      if (!child)
+        continue;
+      if (const auto *widget = qobject_cast<QWidget *>(child->object()); widget && isRedundant(widget))
+        continue;
+      children << child;
+    }
+    return children;
   }
 };
 
@@ -288,6 +351,8 @@ QAccessibleInterface *factory(const QString &className, QObject *object)
   if (!widget)
     return nullptr;
 
+  if (widget->property(kFilteredProperty).toBool())
+    return new GroupAccessible(widget, QAccessible::Client);
   if (className == QLatin1String("NavRail"))
     return new RoleAccessible(widget, QAccessible::List);
   if (className == QLatin1String("NavItem"))
@@ -306,10 +371,10 @@ QAccessibleInterface *factory(const QString &className, QObject *object)
   }
   if (className == QLatin1String("SettingRow") || className == QLatin1String("SettingCard") ||
       className == QLatin1String("StatusHero")) {
-    return new RoleAccessible(widget, QAccessible::Grouping);
+    return new GroupAccessible(widget, QAccessible::Grouping);
   }
   if (className == QLatin1String("SectionHeader"))
-    return new RoleAccessible(widget, QAccessible::Heading);
+    return new GroupAccessible(widget, QAccessible::Heading);
   if (className == QLatin1String("PageTitle"))
     return new TitleAccessible(static_cast<QLabel *>(widget));
   if (className == QLatin1String("deskflow::gui::settings::RestartBanner"))
@@ -333,6 +398,16 @@ QAccessibleInterface *factory(const QString &className, QObject *object)
 }
 
 } // namespace
+
+void markRedundantForScreenReader(QWidget *label)
+{
+  label->setProperty(kRedundantProperty, true);
+}
+
+void markFilteredContainerForScreenReader(QWidget *container)
+{
+  container->setProperty(kFilteredProperty, true);
+}
 
 void installAccessibleInterfaces()
 {

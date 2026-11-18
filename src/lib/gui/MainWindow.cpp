@@ -36,6 +36,7 @@
 #include "gui/settings/SettingEffects.h"
 #include "gui/settings/SettingsPage.h"
 #include "gui/settings/SettingsPages.h"
+#include "gui/shell/ClientConnectionSection.h"
 #include "gui/shell/MainShell.h"
 #include "gui/shell/StatusModel.h"
 #include "gui/style/Appearance.h"
@@ -206,9 +207,15 @@ MainWindow::~MainWindow()
   m_coreProcess.cleanup();
 }
 
+const QString &MainWindow::windowGeometryKey() const
+{
+  // the window of the new look has a position and a size of its own (see Settings::Gui::ShellWindowGeometry)
+  return m_shell ? Settings::Gui::ShellWindowGeometry : Settings::Gui::WindowGeometry;
+}
+
 void MainWindow::restoreWindow()
 {
-  auto windowGeometry = Settings::value(Settings::Gui::WindowGeometry).toRect();
+  auto windowGeometry = Settings::value(windowGeometryKey()).toRect();
   const auto totalGeometry = QGuiApplication::primaryScreen()->availableGeometry();
   if (!windowGeometry.isValid()) {
     if (m_shell) {
@@ -1235,7 +1242,7 @@ bool MainWindow::maybeHideToTray()
   if (action == CloseAction::Minimize) {
     // there is no tray (GNOME without its extension): a window that is hidden could not be found again
     qDebug() << "no system tray, minimizing instead of hiding to tray";
-    Settings::setValue(Settings::Gui::WindowGeometry, geometry());
+    Settings::setValue(windowGeometryKey(), geometry());
     showMinimized();
     return true;
   }
@@ -1244,7 +1251,7 @@ bool MainWindow::maybeHideToTray()
     messages::showCloseReminder(this);
     Settings::setValue(Settings::Gui::CloseReminder, false);
   }
-  Settings::setValue(Settings::Gui::WindowGeometry, geometry());
+  Settings::setValue(windowGeometryKey(), geometry());
   qDebug() << "hiding to tray";
   hide();
   return true;
@@ -1258,7 +1265,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
   }
 
   if (m_saveOnExit) {
-    Settings::setValue(Settings::Gui::WindowGeometry, geometry());
+    Settings::setValue(windowGeometryKey(), geometry());
     Settings::setValue(Settings::Gui::AutoStartCore, m_coreProcess.isStarted());
   }
   qDebug() << "quitting application";
@@ -1878,6 +1885,7 @@ void MainWindow::updateShellTexts()
   texts.fingerprint = m_statusBar->fingerprintToolTip();
   texts.updateAvailable = m_statusBar->updateButtonText();
   m_shell->setTexts(texts);
+  m_shell->clientSection()->setAddressHint(tr("LAN address first, then the VPN address, separated by commas"));
   m_actionToggleSidebar->setText(m_shell->rail()->toggleButton()->accessibleName());
   for (const auto &entry : m_settingsPages->entries())
     m_shell->setPageText(entry.id, entry.title());

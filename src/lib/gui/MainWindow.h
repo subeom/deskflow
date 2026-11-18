@@ -170,6 +170,8 @@ private:
   void showConnectionTest();
   void showServerAddresses();
   void restoreWindow();
+  //! Where the window keeps its position and size: each look has its own
+  const QString &windowGeometryKey() const;
   void setupControls();
   void showFirstConnectedMessage();
   void updateStatus();

@@ -51,7 +51,12 @@ public:
   void setActions(const QList<QWidget *> &actions);
   bool actionsAreBelow() const;
 
+  //! The least that the hero is ever beside the text: from this width on the buttons are beside it when they fit
   static constexpr int kWrapWidth = 600;
+
+  //! What the hero needs when its buttons are under the text, which is the least that it needs at any font: the
+  //! window is not asked for more than this
+  QSize minimumSizeHint() const override;
 
 protected:
   void resizeEvent(QResizeEvent *event) override;
@@ -59,6 +64,7 @@ protected:
 private:
   void applyLook();
   void placeActions();
+  void updateActionPlacement();
 
   StatusOrb *m_orb = nullptr;
   QLabel *m_headline = nullptr;
@@ -66,6 +72,7 @@ private:
   QHBoxLayout *m_chipLayout = nullptr;
   QHBoxLayout *m_accessoryLayout = nullptr;
   QGridLayout *m_grid = nullptr;
+  QWidget *m_textsBox = nullptr;
   QWidget *m_actionBox = nullptr;
   QHBoxLayout *m_actionLayout = nullptr;
   bool m_actionsBelow = false;
