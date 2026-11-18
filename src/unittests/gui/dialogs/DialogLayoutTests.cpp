@@ -19,6 +19,7 @@
 #include "gui/dialogs/ServerAddressesDialog.h"
 #include "gui/dialogs/ServerConfigDialog.h"
 #include "gui/style/DeskflowStyle.h"
+#include "gui/style/TextSize.h"
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
 #include "gui/widgets/LayoutNoticeBar.h"
@@ -62,14 +63,37 @@ constexpr auto kGrabDirVariable = "DESKFLOW_LAYOUT_TEST_GRAB_DIR";
 // The style of the program is not one that the factory of Qt knows by name
 const auto kDeskflowStyle = QStringLiteral("Deskflow");
 
+// A system like Windows, with a font of 12 px (Segoe UI 9 pt): the new look gives it text of 14 px, and the step that
+// the scenario names makes it larger or smaller
+void giveTheNewLookItsTextSize(int percent)
+{
+  using namespace deskflow::gui::style;
+  TextSize::uninstall();
+  static QFont system;
+  system = QApplication::font();
+  system.setPixelSize(12);
+  QApplication::setFont(system);
+  Settings::setValue(Settings::Gui::TextSize, percent);
+  TextSizeEnvironment environment;
+  environment.systemFont = [] { return system; };
+  environment.osTextScale = [] { return 1.0; };
+  environment.platform = TextPlatform::Windows;
+  TextSize::install(environment);
+}
+
+// The name of a style, and for the style of the program the step of the size of text after an @ ("Deskflow@130")
 QStyle *applyStyle(const QString &name)
 {
-  if (name == kDeskflowStyle) {
+  const auto at = name.indexOf(QLatin1Char('@'));
+  const auto base = at < 0 ? name : name.left(at);
+  if (base == kDeskflowStyle) {
     auto *style = new deskflow::gui::style::DeskflowStyle;
     QApplication::setStyle(style);
+    if (at >= 0)
+      giveTheNewLookItsTextSize(name.mid(at + 1).toInt());
     return style;
   }
-  return QApplication::setStyle(name);
+  return QApplication::setStyle(base);
 }
 
 QString describe(const QWidget *widget)
@@ -290,6 +314,14 @@ void addScenarios()
       }
     }
   }
+
+  // the new look with the sizes of text that a person can choose
+  for (const int percent : {90, 115, 130, 150}) {
+    for (const auto mode : {SizeMode::Default, SizeMode::Preferred, SizeMode::Minimum}) {
+      QTest::addRow("%s at text size %d %%, %s", qPrintable(kDeskflowStyle), percent, sizeModeName(mode))
+          << QStringLiteral("%1@%2").arg(kDeskflowStyle).arg(percent) << 1.0 << static_cast<int>(mode);
+    }
+  }
 }
 
 } // namespace
@@ -304,6 +336,9 @@ void DialogLayoutTests::initTestCase()
 
 void DialogLayoutTests::cleanup()
 {
+  deskflow::gui::style::TextSize::uninstall();
+  QApplication::setFont(QFont());
+  Settings::setValue(Settings::Gui::TextSize);
   QApplication::setStyle(m_originalStyle);
 }
 

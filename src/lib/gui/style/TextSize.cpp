@@ -25,6 +25,7 @@ namespace {
 
 TextSize *s_instance = nullptr;
 double s_metricScale = 1.0;
+double s_fontRatio = 1.0;
 
 TextPlatform platformOfThisComputer()
 {
@@ -119,6 +120,7 @@ TextSize::~TextSize()
   if (s_instance == this)
     s_instance = nullptr;
   s_metricScale = 1.0;
+  s_fontRatio = 1.0;
 }
 
 TextSizePlan TextSize::plan() const
@@ -160,6 +162,20 @@ void TextSize::refresh()
   apply();
 }
 
+QString TextSize::describe() const
+{
+  return QStringLiteral(
+             "text size: body %1 px (system font %2 px x OS text size %3, least %4 px%5), step %6 %, controls x%7"
+  )
+      .arg(m_plan.bodyPixels, 0, 'f', 2)
+      .arg(m_input.systemPixels, 0, 'f', 2)
+      .arg(m_input.osTextScale, 0, 'f', 2)
+      .arg(minimumBodyPixels(m_input.platform), 0, 'f', 0)
+      .arg(m_plan.raisedByFloor ? QStringLiteral(", raised") : QString())
+      .arg(m_percent)
+      .arg(m_plan.metricScale, 0, 'f', 2);
+}
+
 void TextSize::followSetting(const QString &key)
 {
   if (key != Settings::Gui::TextSize)
@@ -198,6 +214,7 @@ void TextSize::apply()
   input.systemPixels = systemPixels(m_system);
   input.percent = m_percent;
   const auto plan = planTextSize(input);
+  m_input = input;
 
   // the font of the application is the one of the system, but for its size; with the size of the system it is not
   // touched (a Mac that has the size that the settings of macOS have keeps its font as it is)
@@ -215,6 +232,7 @@ void TextSize::apply()
   m_plan = plan;
   // the sizes of the controls come first: a widget that is told of the font asks for them
   s_metricScale = plan.metricScale;
+  s_fontRatio = sameAsSystem || input.systemPixels <= 0 ? 1.0 : plan.bodyPixels / input.systemPixels;
   if (!sameAsSystem || m_fontIsOurs) {
     if (QApplication::font() != target)
       setApplicationFont(target);
@@ -237,6 +255,11 @@ TextSizeNotifier *TextSizeNotifier::instance()
 QMetaObject::Connection onTextSizeChanged(const QObject *context, const std::function<void()> &callback)
 {
   return QObject::connect(TextSizeNotifier::instance(), &TextSizeNotifier::changed, context, callback);
+}
+
+double fontRatio()
+{
+  return s_fontRatio;
 }
 
 double metricScale()

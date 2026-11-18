@@ -66,6 +66,10 @@ public:
   //! Asks the system again for its font and its size of text
   void refresh();
 
+  //! One line that says what the size of text is and where it comes from (for the log, to find out why text is as large
+  //! as it is)
+  QString describe() const;
+
 Q_SIGNALS:
   //! The size of text is another (the font of the application and the scale of the controls)
   void planChanged(const deskflow::gui::style::TextSizePlan &plan);
@@ -81,6 +85,7 @@ private:
 
   TextSizeEnvironment m_environment;
   TextSizePlan m_plan;
+  TextSizeInput m_input;
   QFont m_system;
   int m_percent = kDefaultTextPercent;
   bool m_fontIsOurs = false;
@@ -109,6 +114,11 @@ private:
 //! Calls the function when the size of text changes: for a widget that sets fonts and sizes of its own. The connection
 //! ends with the context object.
 QMetaObject::Connection onTextSizeChanged(const QObject *context, const std::function<void()> &callback);
+
+//! What the font of the application is, as many times as the font of the system (1 while the application has the look
+//! of the system, or the size of the system): for a font that has a size of its own, as the font of the log has on a
+//! Mac
+double fontRatio();
 
 //! The scale of the controls (1 while the application has the look of the system)
 double metricScale();

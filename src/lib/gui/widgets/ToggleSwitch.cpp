@@ -5,6 +5,7 @@
  */
 
 #include "ToggleSwitch.h"
+#include "gui/style/TextSize.h"
 
 #include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
@@ -51,8 +52,8 @@ ToggleSwitch::ToggleSwitch(const QString &text, QWidget *parent) : ToggleSwitch(
 
 QSize ToggleSwitch::trackSize(bool withText)
 {
-  return withText ? QSize(metrics::toggleCompactWidth, metrics::toggleCompactHeight)
-                  : QSize(metrics::toggleWidth, metrics::toggleHeight);
+  return withText ? QSize(px(metrics::toggleCompactWidth), px(metrics::toggleCompactHeight))
+                  : QSize(px(metrics::toggleWidth), px(metrics::toggleHeight));
 }
 
 qreal ToggleSwitch::knobPosition() const

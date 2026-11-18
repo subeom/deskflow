@@ -65,7 +65,9 @@ public:
   QSize sizeHint() const override;
   QSize minimumSizeHint() const override;
 
+  //! The height at the size of text that the layout was drawn for; controlHeight() is it at the size of text now
   static constexpr int kHeight = 44;
+  static int controlHeight();
   static constexpr int kPadding = 4;
 
 Q_SIGNALS:

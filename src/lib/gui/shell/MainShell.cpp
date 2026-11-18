@@ -15,6 +15,7 @@
 #include "gui/style/Icons.h"
 #include "gui/style/LookFollower.h"
 #include "gui/style/PanelWidget.h"
+#include "gui/style/TextSize.h"
 #include "gui/widgets/NavRail.h"
 #include "gui/widgets/PageTitle.h"
 #include "gui/widgets/SectionHeader.h"
@@ -30,6 +31,7 @@
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPointer>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QStackedWidget>
@@ -234,17 +236,26 @@ MainShell::MainShell(const MainShellParts &parts, QObject *parent) : QObject(par
   if (parts.oldGroup)
     parts.oldGroup->hide();
 
-  // the buttons of the state are the buttons of the window, made for this place
-  if (parts.toggleCore) {
+  // the buttons of the state are the buttons of the window, made for this place; they are as high as the size of text
+  // asks
+  if (parts.toggleCore)
     parts.toggleCore->setDefault(true);
-    parts.toggleCore->setMinimumSize(104, 40);
-    parts.toggleCore->setMaximumSize(QWIDGETSIZE_MAX, 40);
-  }
-  if (parts.restartCore) {
-    parts.restartCore->setMinimumSize(0, 40);
-    parts.restartCore->setMaximumSize(QWIDGETSIZE_MAX, 40);
+  if (parts.restartCore)
     parts.restartCore->setIcon(icon(QStringLiteral("arrow-clockwise")));
-  }
+  const QPointer<QPushButton> toggleCore = parts.toggleCore;
+  const QPointer<QPushButton> restartCore = parts.restartCore;
+  const auto sizeStateButtons = [toggleCore, restartCore] {
+    if (toggleCore) {
+      toggleCore->setMinimumSize(px(104), px(40));
+      toggleCore->setMaximumSize(QWIDGETSIZE_MAX, px(40));
+    }
+    if (restartCore) {
+      restartCore->setMinimumSize(0, px(40));
+      restartCore->setMaximumSize(QWIDGETSIZE_MAX, px(40));
+    }
+  };
+  sizeStateButtons();
+  onTextSizeChanged(this, sizeStateButtons);
 
   // the mode: the control and the radio buttons are one choice. The radio buttons stay where they were (hidden): the
   // window reads them
@@ -562,6 +573,11 @@ QString MainShell::currentPageId() const
 settings::RestartBanner *MainShell::restartBanner() const
 {
   return m_restartBanner;
+}
+
+int MainShell::minimumWindowWidth()
+{
+  return px(kMinimumWindowWidth);
 }
 
 void MainShell::setHeader(QWidget *header)

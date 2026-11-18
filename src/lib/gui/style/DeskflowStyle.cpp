@@ -5,6 +5,7 @@
  */
 
 #include "DeskflowStyle.h"
+#include "TextSize.h"
 
 #include "AppearanceHints.h"
 #include "Contrast.h"
@@ -194,11 +195,11 @@ int DeskflowStyle::pixelMetric(PixelMetric metric, const QStyleOption *option, c
   switch (metric) {
   case PM_IndicatorWidth:
     if (!inItemView(widget))
-      return metrics::toggleCompactWidth;
+      return px(metrics::toggleCompactWidth);
     break;
   case PM_IndicatorHeight:
     if (!inItemView(widget))
-      return metrics::toggleCompactHeight;
+      return px(metrics::toggleCompactHeight);
     break;
   case PM_MenuHMargin:
   case PM_MenuVMargin:
@@ -208,7 +209,7 @@ int DeskflowStyle::pixelMetric(PixelMetric metric, const QStyleOption *option, c
   case PM_SmallIconSize:
     // the icons of a menu: Fusion has 16, which is small for a row of 36
     if (qobject_cast<const QMenu *>(widget) || qobject_cast<const QMenuBar *>(widget))
-      return kMenuIconColumn - 2;
+      return px(kMenuIconColumn) - 2;
     break;
   default:
     break;
@@ -227,14 +228,14 @@ QSize DeskflowStyle::sizeFromContents(
     // a capsule needs the width of its curve at each end; a button with only an icon is as wide as it was
     if (button && !button->text.isEmpty())
       size.rwidth() += 2 * kInputPadding;
-    size.setHeight(qMax(size.height(), kMinControlHeight));
+    size.setHeight(qMax(size.height(), px(kMinControlHeight)));
     break;
   }
   case CT_LineEdit:
   case CT_SpinBox:
   case CT_ComboBox:
     size.rwidth() += 2 * kInputPadding;
-    size.setHeight(qMax(size.height(), kMinControlHeight));
+    size.setHeight(qMax(size.height(), px(kMinControlHeight)));
     break;
   case CT_MenuItem:
     if (const auto *menuItem = qstyleoption_cast<const QStyleOptionMenuItem *>(option))
@@ -242,7 +243,7 @@ QSize DeskflowStyle::sizeFromContents(
     break;
   case CT_MenuBarItem:
     size.rwidth() += 2 * (kMenuBarPadding - 8);
-    size.setHeight(qMax(size.height(), kMinControlHeight));
+    size.setHeight(qMax(size.height(), px(kMinControlHeight)));
     break;
   default:
     break;
@@ -290,12 +291,12 @@ QSize DeskflowStyle::menuItemSize(const QStyleOptionMenuItem *option, const QSiz
   const QFontMetrics metrics(option->font);
   int width = 2 * kMenuTextPadding + metrics.horizontalAdvance(label);
   if (option->maxIconWidth > 0 || option->menuHasCheckableItems)
-    width += kMenuIconColumn + kMenuIconGap;
+    width += px(kMenuIconColumn) + kMenuIconGap;
   if (!shortcut.isEmpty())
     width += kMenuShortcutGap + metrics.horizontalAdvance(shortcut);
   if (option->menuItemType == QStyleOptionMenuItem::SubMenu)
-    width += kMenuArrowColumn;
-  return {width, qMax(kMenuRowHeight, metrics.height() + 2 * metrics::spaceSm)};
+    width += px(kMenuArrowColumn);
+  return {width, qMax(px(kMenuRowHeight), metrics.height() + 2 * metrics::spaceSm)};
 }
 
 void DeskflowStyle::paintMenuItem(const QStyleOptionMenuItem *option, QPainter *painter, const QWidget *) const
@@ -325,12 +326,12 @@ void DeskflowStyle::paintMenuItem(const QStyleOptionMenuItem *option, QPainter *
   int x = rect.left() + kMenuTextPadding;
   int right = rect.right() - kMenuTextPadding + 1;
   if (option->menuItemType == QStyleOptionMenuItem::SubMenu)
-    right -= kMenuArrowColumn;
+    right -= px(kMenuArrowColumn);
 
   // the icon column: the icon, or the mark of a row that is checked
   if (option->maxIconWidth > 0 || option->menuHasCheckableItems) {
     const auto side = pixelMetric(PM_SmallIconSize, option, nullptr);
-    const QRect box(x, rect.center().y() - side / 2 + 1, kMenuIconColumn - 2, side);
+    const QRect box(x, rect.center().y() - side / 2 + 1, px(kMenuIconColumn) - 2, side);
     const bool checked = option->checkType != QStyleOptionMenuItem::NotCheckable && option->checked;
     if (checked && !option->icon.isNull())
       drawRounded(painter, box.adjusted(-2, -2, 2, 2), 6, c.accentSoft, c.accent, 1);
@@ -352,7 +353,7 @@ void DeskflowStyle::paintMenuItem(const QStyleOptionMenuItem *option, QPainter *
       painter->drawPath(tick);
       painter->restore();
     }
-    x += kMenuIconColumn + kMenuIconGap;
+    x += px(kMenuIconColumn) + kMenuIconGap;
   }
 
   QString shortcut;
@@ -499,7 +500,7 @@ void DeskflowStyle::paintToggle(const QStyleOptionButton *option, QPainter *pain
   const bool partial = state & State_NoChange;
   const bool focus = (state & State_HasFocus) && (state & State_KeyboardFocusChange);
 
-  const QSize size(metrics::toggleCompactWidth, metrics::toggleCompactHeight);
+  const QSize size(px(metrics::toggleCompactWidth), px(metrics::toggleCompactHeight));
   const QRect track(
       QPoint(option->rect.center().x() - size.width() / 2 + 1, option->rect.center().y() - size.height() / 2 + 1), size
   );

@@ -11,6 +11,7 @@
 #include "gui/style/Contrast.h"
 #include "gui/style/LookFollower.h"
 #include "gui/style/PixelSnap.h"
+#include "gui/style/TextSize.h"
 
 #include <QFocusEvent>
 #include <QKeyEvent>
@@ -44,7 +45,7 @@ QSize SegmentedControlSegment::sizeHint() const
   font.setWeight(QFont::DemiBold);
   return QSize(
       QFontMetrics(font).horizontalAdvance(text()) + 2 * kSegmentPadding,
-      SegmentedControl::kHeight - 2 * SegmentedControl::kPadding
+      SegmentedControl::controlHeight() - 2 * SegmentedControl::kPadding
   );
 }
 
@@ -56,7 +57,7 @@ QSize SegmentedControlSegment::minimumSizeHint() const
                         (text().size() > kSegmentLeastCharacters ? QString(QChar(0x2026)) : QString());
   return QSize(
       qMin(QFontMetrics(font).horizontalAdvance(shortest) + 2 * kSegmentLeast, sizeHint().width()),
-      SegmentedControl::kHeight - 2 * SegmentedControl::kPadding
+      SegmentedControl::controlHeight() - 2 * SegmentedControl::kPadding
   );
 }
 
@@ -236,12 +237,17 @@ void SegmentedControl::navigate(int key)
   m_segments[index]->setFocus(Qt::TabFocusReason);
 }
 
+int SegmentedControl::controlHeight()
+{
+  return px(kHeight);
+}
+
 QSize SegmentedControl::sizeHint() const
 {
   int width = 2 * kPadding;
   for (const auto *s : m_segments)
     width += s->sizeHint().width();
-  return QSize(width, kHeight);
+  return QSize(width, controlHeight());
 }
 
 QSize SegmentedControl::minimumSizeHint() const
@@ -249,7 +255,7 @@ QSize SegmentedControl::minimumSizeHint() const
   int width = 2 * kPadding;
   for (const auto *s : m_segments)
     width += s->minimumSizeHint().width();
-  return QSize(width, kHeight);
+  return QSize(width, controlHeight());
 }
 
 void SegmentedControl::resizeEvent(QResizeEvent *event)

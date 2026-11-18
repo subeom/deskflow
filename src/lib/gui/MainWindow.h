@@ -298,6 +298,10 @@ private:
   QAction *m_actionShowHelp = nullptr;
   //! Only in the window of the new look (View menu): folds and unfolds the sidebar, as its button does
   QAction *m_actionToggleSidebar = nullptr;
+  // the keys of the size of text (the new look): larger, smaller, and back to Automatic
+  QAction *m_actionTextLarger = nullptr;
+  QAction *m_actionTextSmaller = nullptr;
+  QAction *m_actionTextReset = nullptr;
   // Only in the window of the new look: the rows of the menu of sharing (the actions above are the ones of the system look)
   QAction *m_sharingStart = nullptr;
   QAction *m_sharingRestart = nullptr;

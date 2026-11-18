@@ -105,7 +105,10 @@ public:
     bool connected = false;
   };
 
+  //! The width that the window promises to be usable at, at the size of text that the layout was drawn for;
+  //! minimumWindowWidth() is it at the size of text now
   static constexpr int kMinimumWindowWidth = 720;
+  static int minimumWindowWidth();
 
   MainShell(const MainShellParts &parts, QObject *parent = nullptr);
 

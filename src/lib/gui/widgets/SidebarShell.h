@@ -72,6 +72,8 @@ protected:
 
 private:
   void relayout();
+  //! Folds the sidebar or opens it again as the width of the window asks, as it is now
+  void followWidth();
   void applyState(bool animate);
   void toggleRequested();
   bool wantsExpanded() const;
@@ -82,5 +84,6 @@ private:
   bool m_collapsed = false;
   bool m_narrow = false;
   bool m_overlay = false;
-  int m_autoCollapseWidth = kDefaultAutoCollapseWidth;
+  //! -1: not set, the width follows the size of text
+  int m_autoCollapseWidth = -1;
 };

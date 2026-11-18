@@ -10,6 +10,7 @@
 #include "gui/style/Appearance.h"
 #include "gui/style/DesignTokens.h"
 #include "gui/style/Icons.h"
+#include "gui/style/TextSize.h"
 
 #include <QPainter>
 #include <QStyle>
@@ -57,7 +58,7 @@ void DisclosureBox::paintEvent(QPaintEvent *event)
   painter.setRenderHint(QPainter::Antialiasing);
   const auto mode = isEnabled() ? QIcon::Normal : QIcon::Disabled;
   const auto chevron = icon(isChecked() ? QStringLiteral("caret-down") : QStringLiteral("caret-right"));
-  const QRect where(0, 0, kChevron, kChevron);
+  const QRect where(0, 0, px(kChevron), px(kChevron));
   chevron.paint(&painter, QRect(where.translated(indicator.center() - where.center())), Qt::AlignCenter, mode);
 
   painter.setPen(palette().color(isEnabled() ? QPalette::Active : QPalette::Disabled, QPalette::WindowText));

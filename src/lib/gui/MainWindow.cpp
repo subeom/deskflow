@@ -44,6 +44,7 @@
 #include "gui/shell/StatusModel.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/Icons.h"
+#include "gui/style/TextSize.h"
 #include "gui/tray/TrayController.h"
 #include "gui/tray/TrayMenuModel.h"
 #include "gui/tray/TrayPolicy.h"
@@ -1835,6 +1836,28 @@ void MainWindow::setupShell()
   });
   m_menuView->addAction(m_actionToggleSidebar);
 
+  // the size of text: larger, smaller, and back to Automatic. They are keys of the window (the menu bar is not shown
+  // with the header), and they write the setting, which the page of the settings and the service follow
+  const auto textSizeAction = [this](const QString &name, const QList<QKeySequence> &keys, int direction) {
+    auto *action = new QAction(this);
+    action->setObjectName(name);
+    action->setShortcuts(keys);
+    action->setMenuRole(QAction::NoRole);
+    connect(action, &QAction::triggered, this, [direction] {
+      const auto current = deskflow::gui::style::snapTextPercent(Settings::value(Settings::Gui::TextSize).toInt());
+      Settings::setValue(Settings::Gui::TextSize, deskflow::gui::style::stepTextPercent(current, direction));
+    });
+    addAction(action);
+    return action;
+  };
+  m_actionTextLarger = textSizeAction(
+      QStringLiteral("actionTextLarger"),
+      {QKeySequence(Qt::CTRL | Qt::Key_Equal), QKeySequence(Qt::CTRL | Qt::Key_Plus)}, 1
+  );
+  m_actionTextSmaller =
+      textSizeAction(QStringLiteral("actionTextSmaller"), {QKeySequence(Qt::CTRL | Qt::Key_Minus)}, -1);
+  m_actionTextReset = textSizeAction(QStringLiteral("actionTextReset"), {QKeySequence(Qt::CTRL | Qt::Key_0)}, 0);
+
   // the settings are pages of the sidebar; a change is written at once and sharing is restarted by the banner
   m_settingsPages = new deskflow::gui::settings::SettingsPages(this);
   for (const auto &entry : m_settingsPages->entries())
@@ -1860,7 +1883,24 @@ void MainWindow::setupShell()
   // the tray says what the status says: its header is the headline of the window
   connect(m_shell->status(), &deskflow::gui::StatusModel::changed, this, &MainWindow::updateTray);
 
-  setMinimumWidth(deskflow::gui::MainShell::kMinimumWindowWidth);
+  // the log says what the size of text is, and why: a person who finds the text small can tell what the program was
+  // given
+  if (auto *textSize = deskflow::gui::style::TextSize::instance()) {
+    qInfo().noquote() << textSize->describe();
+    connect(textSize, &deskflow::gui::style::TextSize::planChanged, this, [textSize] {
+      qInfo().noquote() << textSize->describe();
+    });
+  }
+
+  // the window is usable down to a width that follows the size of text, and never asks for more than the screen has
+  const auto sizeWindow = [this] {
+    int width = deskflow::gui::MainShell::minimumWindowWidth();
+    if (const auto *screen = this->screen())
+      width = qMin(width, qMax(deskflow::gui::MainShell::kMinimumWindowWidth, screen->availableGeometry().width()));
+    setMinimumWidth(width);
+  };
+  sizeWindow();
+  deskflow::gui::style::onTextSizeChanged(this, sizeWindow);
   updateModeControls();
   updateModeControlLabels();
   updateShellTexts();

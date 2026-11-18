@@ -13,6 +13,7 @@
 #include "gui/style/FontScale.h"
 #include "gui/style/Icons.h"
 #include "gui/style/PanelWidget.h"
+#include "gui/style/TextSize.h"
 
 #include <QApplication>
 #include <QEvent>
@@ -93,14 +94,18 @@ void LogDock::buildCard()
   panel->setElevated(false);
   panel->setPadding(metrics::spaceMd);
 
-  auto titleFont = scaleFont(QApplication::font(this), qreal(metrics::fontSubtitle) / metrics::fontBody);
-  titleFont.setWeight(QFont::DemiBold);
-  m_lblTitle->setFont(titleFont);
-
-  for (auto *button : {m_btnFloat, m_btnClose}) {
-    button->setFixedSize(28, 28);
-    button->setIconSize(QSize(18, 18));
-  }
+  // the title and the buttons follow the size of text
+  const auto sizeHeader = [this] {
+    auto titleFont = scaleFont(QApplication::font(this), qreal(metrics::fontSubtitle) / metrics::fontBody);
+    titleFont.setWeight(QFont::DemiBold);
+    m_lblTitle->setFont(titleFont);
+    for (auto *button : {m_btnFloat, m_btnClose}) {
+      button->setFixedSize(px(28), px(28));
+      button->setIconSize(QSize(px(18), px(18)));
+    }
+  };
+  sizeHeader();
+  onTextSizeChanged(this, sizeHeader);
   updateButtonIcons();
 
   auto *header = new QHBoxLayout;

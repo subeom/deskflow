@@ -8,6 +8,7 @@
 #include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/LookFollower.h"
+#include "gui/style/TextSize.h"
 
 #include <QAccessible>
 #include <QApplication>
@@ -575,16 +576,19 @@ void ArrangementCanvas::paintComputer(
   if (area.width() > 24 && area.height() > 16) {
     auto nameFont = font();
     nameFont.setBold(true);
-    const auto basePixels = font().pixelSize() > 0 ? font().pixelSize() : 12;
-    auto pixels = static_cast<int>(std::clamp(area.height() * 0.16, static_cast<double>(basePixels), 22.0));
+    // the sizes of the name follow the size of text (px() is the size itself with the look of the system)
+    const auto basePixels = font().pixelSize() > 0 ? font().pixelSize() : deskflow::gui::style::px(12);
+    auto pixels = static_cast<int>(std::clamp(
+        area.height() * 0.16, static_cast<double>(basePixels), static_cast<double>(deskflow::gui::style::px(22))
+    ));
     // as big as the name fits on the monitor, down to a size that can still be read
     nameFont.setPixelSize(pixels);
-    while (pixels > 10 && QFontMetricsF(nameFont).horizontalAdvance(name) > area.width()) {
+    while (pixels > deskflow::gui::style::px(10) && QFontMetricsF(nameFont).horizontalAdvance(name) > area.width()) {
       --pixels;
       nameFont.setPixelSize(pixels);
     }
     auto smallFont = font();
-    smallFont.setPixelSize(std::max(9, static_cast<int>(nameFont.pixelSize() * 0.78)));
+    smallFont.setPixelSize(std::max(deskflow::gui::style::px(9), static_cast<int>(nameFont.pixelSize() * 0.78)));
     const QFontMetricsF nameMetrics(nameFont);
     const QFontMetricsF smallMetrics(smallFont);
 

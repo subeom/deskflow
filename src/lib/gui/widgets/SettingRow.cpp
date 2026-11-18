@@ -12,6 +12,7 @@
 #include "gui/style/Appearance.h"
 #include "gui/style/LookFollower.h"
 #include "gui/style/PixelSnap.h"
+#include "gui/style/TextSize.h"
 
 #include <QAbstractButton>
 #include <QEvent>
@@ -61,7 +62,7 @@ SettingRow::SettingRow(const QString &title, const QString &description, QWidget
   // the row is named by its title and described by its hint: the two texts are not walked to again below it
   markRedundantForScreenReader(m_title);
   markRedundantForScreenReader(m_hint);
-  setMinimumHeight(kMinimumHeight);
+  setMinimumHeight(minimumRowHeight());
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
   m_title->setWordWrap(true);
@@ -91,7 +92,7 @@ SettingRow::SettingRow(const QString &title, const QString &description, QWidget
 
 int SettingRow::minimumRowHeight()
 {
-  return kMinimumHeight;
+  return px(kMinimumHeight);
 }
 
 QString SettingRow::rawTitle() const
@@ -310,6 +311,7 @@ void SettingRow::mouseReleaseEvent(QMouseEvent *event)
 
 void SettingRow::applyLook()
 {
+  setMinimumHeight(minimumRowHeight());
   auto font = m_title->font();
   font.setWeight(QFont::Medium);
   m_title->setFont(font);

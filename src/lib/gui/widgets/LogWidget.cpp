@@ -8,6 +8,7 @@
 
 #include <gui/Logger.h>
 #include <gui/StyleUtils.h>
+#include <gui/style/TextSize.h>
 
 #include <QAbstractTextDocumentLayout>
 #include <QPlainTextEdit>
@@ -28,6 +29,8 @@ LogWidget::LogWidget(QWidget *parent) : QWidget{parent}, m_textLog{new QPlainTex
   setLayout(layout);
 
   connect(deskflow::gui::Logger::instance(), &deskflow::gui::Logger::newLine, this, &LogWidget::appendLine);
+  // the font of the log has a size of its own on a Mac: it follows the size of text of the new look
+  deskflow::gui::style::onTextSizeChanged(this, [this] { m_textLog->setFont(fixedFont()); });
 }
 
 void LogWidget::useCardLook(const QString &accessibleName)

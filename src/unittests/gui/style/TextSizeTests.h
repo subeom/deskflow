@@ -30,6 +30,8 @@ private Q_SLOTS:
   void aFontInPoints_keepsItsPointsAndItsFamily();
   void aWidgetThatSetsItsOwnFont_isToldOfTheNewSize_throughTheLookFollower();
   void onTextSizeChanged_endsWithItsContext();
+  void fontRatio_isHowManyTimesTheFontOfTheSystemTheTextIs();
+  void describe_saysTheSizeAndWhereItComesFrom();
   void uninstall_putsTheFontOfTheSystemBack();
   void applyAppearance_hasTheServiceForTheNewLook_andNotForTheSystem();
 

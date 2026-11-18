@@ -49,7 +49,10 @@ public:
 
   //! The room for the ring of the keyboard focus around the capsule
   static constexpr int kRing = 3;
+  //! The height of an item at the size of text that the layout was drawn for; itemHeight() is it at the size of text
+  //! now
   static constexpr int kHeight = 44;
+  static int itemHeight();
   QSize sizeHint() const override;
 
 Q_SIGNALS:

@@ -10,6 +10,7 @@
 #include "gui/style/Appearance.h"
 #include "gui/style/Icons.h"
 #include "gui/style/LookFollower.h"
+#include "gui/style/TextSize.h"
 
 #include <QAccessible>
 #include <QHBoxLayout>
@@ -30,12 +31,10 @@ RestartBanner::RestartBanner(QWidget *parent)
   setObjectName(QStringLiteral("restartBanner"));
   setPadding(metrics::spaceLg);
 
-  m_icon->setFixedSize(24, 24);
   m_text->setWordWrap(true);
   m_text->setTextFormat(Qt::PlainText);
   m_text->setTextInteractionFlags(Qt::NoTextInteraction);
   m_button->setObjectName(QStringLiteral("btnRestartSharing"));
-  m_button->setMinimumHeight(36);
   m_button->setDefault(false);
 
   auto *layout = new QHBoxLayout(this);
@@ -43,6 +42,14 @@ RestartBanner::RestartBanner(QWidget *parent)
   layout->addWidget(m_icon, 0, Qt::AlignVCenter);
   layout->addWidget(m_text, 1);
   layout->addWidget(m_button, 0, Qt::AlignVCenter);
+
+  // the icon and the button are as large as the size of text asks
+  const auto sizeParts = [this] {
+    m_icon->setFixedSize(px(24), px(24));
+    m_button->setMinimumHeight(px(36));
+  };
+  sizeParts();
+  onTextSizeChanged(this, sizeParts);
 
   connect(m_button, &QPushButton::clicked, this, &RestartBanner::restartRequested);
   new LookFollower(this, [this] { applyLook(); });

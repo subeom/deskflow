@@ -13,6 +13,7 @@
 #include "gui/style/Icons.h"
 #include "gui/style/LookFollower.h"
 #include "gui/style/PixelSnap.h"
+#include "gui/style/TextSize.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -25,6 +26,17 @@ constexpr int kHeight = 24;
 constexpr int kPadding = 9;
 constexpr int kIcon = 14;
 constexpr int kGap = 5;
+
+// the height and the icon follow the size of text
+int chipHeight()
+{
+  return px(kHeight);
+}
+
+int iconSize()
+{
+  return px(kIcon);
+}
 // what a text of 12 px needs on its fill (WCAG AA for small text)
 constexpr double kTextContrast = 4.5;
 
@@ -154,8 +166,8 @@ void StatusChip::updateAccessibleName()
 QSize StatusChip::sizeHint() const
 {
   const auto textWidth = QFontMetrics(chipFont(this)).horizontalAdvance(m_text);
-  const auto iconWidth = iconName(m_kind).isEmpty() ? 0 : kIcon + kGap;
-  return QSize(2 * kPadding + iconWidth + textWidth, kHeight);
+  const auto iconWidth = iconName(m_kind).isEmpty() ? 0 : iconSize() + kGap;
+  return QSize(2 * kPadding + iconWidth + textWidth, chipHeight());
 }
 
 QSize StatusChip::minimumSizeHint() const
@@ -182,9 +194,9 @@ void StatusChip::paintEvent(QPaintEvent *)
   int x = kPadding;
   const auto name = iconName(m_kind);
   if (!name.isEmpty()) {
-    const auto pixmap = iconPixmap(name, IconWeight::Fill, colors.text, QSize(kIcon, kIcon), dpr);
-    painter.drawPixmap(QRect(x, (height() - kIcon) / 2, kIcon, kIcon), pixmap);
-    x += kIcon + kGap;
+    const auto pixmap = iconPixmap(name, IconWeight::Fill, colors.text, QSize(iconSize(), iconSize()), dpr);
+    painter.drawPixmap(QRect(x, (height() - iconSize()) / 2, iconSize(), iconSize()), pixmap);
+    x += iconSize() + kGap;
   }
   painter.setFont(chipFont(this));
   painter.setPen(colors.text);

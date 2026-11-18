@@ -10,6 +10,7 @@
 #include "gui/style/FontScale.h"
 #include "gui/style/Icons.h"
 #include "gui/style/LookFollower.h"
+#include "gui/style/TextSize.h"
 
 #include <QApplication>
 #include <QHBoxLayout>
@@ -36,7 +37,7 @@ class TrayHeaderWidget::StateIcon : public QWidget
 public:
   explicit StateIcon(QWidget *parent) : QWidget(parent)
   {
-    setFixedSize(kIconSize, kIconSize);
+    new deskflow::gui::style::LookFollower(this, [this] { setFixedSize(px(kIconSize), px(kIconSize)); });
   }
 
   void setPixmap(const QPixmap &pixmap)
@@ -67,15 +68,19 @@ TrayHeaderWidget::TrayHeaderWidget(QWidget *parent)
   setFocusPolicy(Qt::NoFocus);
   setAttribute(Qt::WA_TransparentForMouseEvents);
 
-  auto headFont = scaleFont(QApplication::font(this), qreal(metrics::fontSubtitle) / metrics::fontBody);
-  headFont.setWeight(QFont::DemiBold);
-  m_headline->setFont(headFont);
   m_headline->setTextInteractionFlags(Qt::NoTextInteraction);
-
-  m_detail->setFont(scaleFont(QApplication::font(this), qreal(metrics::fontCaption) / metrics::fontBody));
   m_detail->setWordWrap(true);
-  m_detail->setFixedWidth(kDetailWidth);
   m_detail->setTextInteractionFlags(Qt::NoTextInteraction);
+  // the fonts and the width of the text follow the size of text
+  const auto sizeTexts = [this] {
+    auto headFont = scaleFont(QApplication::font(this), qreal(metrics::fontSubtitle) / metrics::fontBody);
+    headFont.setWeight(QFont::DemiBold);
+    m_headline->setFont(headFont);
+    m_detail->setFont(scaleFont(QApplication::font(this), qreal(metrics::fontCaption) / metrics::fontBody));
+    m_detail->setFixedWidth(px(kDetailWidth));
+  };
+  sizeTexts();
+  onTextSizeChanged(this, sizeTexts);
 
   auto *text = new QVBoxLayout;
   text->setContentsMargins(0, 0, 0, 0);

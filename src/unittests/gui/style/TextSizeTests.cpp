@@ -321,6 +321,52 @@ void TextSizeTests::onTextSizeChanged_endsWithItsContext()
   QCOMPARE(calls, 1);
 }
 
+void TextSizeTests::fontRatio_isHowManyTimesTheFontOfTheSystemTheTextIs()
+{
+  QCOMPARE(fontRatio(), 1.0);
+  FakeSystem system;
+  QApplication::setFont(fontOfPixels(12));
+  auto *service = TextSize::install(system.environment());
+  // Windows: 14 px of text on a system of 12 px
+  QCOMPARE(fontRatio(), 14.0 / 12.0);
+  service->setPercent(150);
+  QCOMPARE(fontRatio(), 21.0 / 12.0);
+  service->setPercent(100);
+  TextSize::uninstall();
+  QCOMPARE(fontRatio(), 1.0);
+
+  // a Mac that has the size of its settings has the font as it is
+  system.pixels = 13;
+  system.platform = TextPlatform::Mac;
+  QApplication::setFont(fontOfPixels(13));
+  TextSize::install(system.environment());
+  QCOMPARE(fontRatio(), 1.0);
+}
+
+void TextSizeTests::describe_saysTheSizeAndWhereItComesFrom()
+{
+  FakeSystem system;
+  QApplication::setFont(fontOfPixels(12));
+  auto *service = TextSize::install(system.environment());
+  QCOMPARE(
+      service->describe(),
+      QStringLiteral(
+          "text size: body 14.00 px (system font 12.00 px x OS text size 1.00, least 14 px, raised), step 100 %, "
+          "controls x1.00"
+      )
+  );
+
+  system.osScale = 1.5;
+  service->setPercent(130);
+  QCOMPARE(
+      service->describe(),
+      QStringLiteral(
+          "text size: body 23.40 px (system font 12.00 px x OS text size 1.50, least 14 px), step 130 %, "
+          "controls x1.67"
+      )
+  );
+}
+
 void TextSizeTests::uninstall_putsTheFontOfTheSystemBack()
 {
   FakeSystem system;

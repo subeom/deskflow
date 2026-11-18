@@ -30,6 +30,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QKeySequence>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
@@ -313,6 +314,25 @@ SettingsPage *SettingsPages::buildGeneral()
       tx("Takes effect the next time the application starts."),
       {{tx("Deskflow"), QStringLiteral("deskflow")}, {tx("System"), QStringLiteral("system")}}
   )->setObjectName(QStringLiteral("comboAppearance"));
+  // the size of text: Automatic is the size that the system gives, as large as the settings of the OS have it
+  addChoice(
+      page, m_binder, look, Settings::Gui::TextSize, tx("Text size"),
+      [] {
+        const auto key = [](Qt::Key key) { return QKeySequence(Qt::CTRL | key).toString(QKeySequence::NativeText); };
+        return QCoreApplication::translate(
+                   "SettingsPages",
+                   "Automatic follows the text size of the system. %1 and %2 make the text larger and smaller, and %3 "
+                   "goes back to Automatic."
+        )
+            .arg(key(Qt::Key_Equal), key(Qt::Key_Minus), key(Qt::Key_0));
+      },
+      {{tx("Smaller (90 %)"), 90},
+       {tx("Automatic"), 100},
+       {tx("Large (115 %)"), 115},
+       {tx("Larger (130 %)"), 130},
+       {tx("Largest (150 %)"), 150}}
+  )
+      ->setObjectName(QStringLiteral("comboTextSize"));
   return page;
 }
 

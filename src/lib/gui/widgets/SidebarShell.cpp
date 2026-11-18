@@ -9,6 +9,7 @@
 #include "NavRail.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/LookFollower.h"
+#include "gui/style/TextSize.h"
 
 #include <QApplication>
 #include <QEvent>
@@ -111,7 +112,8 @@ bool SidebarShell::isNarrow() const
 
 int SidebarShell::autoCollapseWidth() const
 {
-  return m_autoCollapseWidth;
+  // the width at which the sidebar folds is the one that was set, or one that follows the size of text
+  return m_autoCollapseWidth >= 0 ? m_autoCollapseWidth : px(kDefaultAutoCollapseWidth);
 }
 
 void SidebarShell::setAutoCollapseWidth(int width)
@@ -206,7 +208,12 @@ bool SidebarShell::event(QEvent *event)
 void SidebarShell::resizeEvent(QResizeEvent *event)
 {
   QWidget::resizeEvent(event);
-  const bool narrow = width() < m_autoCollapseWidth;
+  followWidth();
+}
+
+void SidebarShell::followWidth()
+{
+  const bool narrow = width() < autoCollapseWidth();
   if (narrow != m_narrow) {
     m_narrow = narrow;
     if (!narrow && m_overlay) {

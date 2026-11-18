@@ -9,6 +9,7 @@
 #include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/LookFollower.h"
+#include "gui/style/TextSize.h"
 
 #include <QFocusEvent>
 #include <QKeyEvent>
@@ -305,7 +306,9 @@ void MonitorEditorWidget::paintEvent(QPaintEvent *)
     if (area.width() > 30 && area.height() > 18) {
       painter.setPen(m_themed ? m_theme.text : luminance(color) > 0.6 ? QColor(24, 24, 24) : QColor(255, 255, 255));
       auto big = nameFont;
-      big.setPixelSize(std::clamp(static_cast<int>(area.height() * 0.2), 11, 22));
+      big.setPixelSize(
+          std::clamp(static_cast<int>(area.height() * 0.2), deskflow::gui::style::px(11), deskflow::gui::style::px(22))
+      );
       painter.setFont(big);
       const QString line = tr("%1 × %2").arg(monitor.pixelsW()).arg(monitor.pixelsH());
       QString second = tr("%1 %").arg(std::lround(monitor.scale));
@@ -314,7 +317,7 @@ void MonitorEditorWidget::paintEvent(QPaintEvent *)
       if (i == 0)
         second += QStringLiteral(" · ") + tr("main");
       auto small = font();
-      small.setPixelSize(std::max(10, big.pixelSize() * 3 / 4));
+      small.setPixelSize(std::max(deskflow::gui::style::px(10), big.pixelSize() * 3 / 4));
       const QFontMetricsF bigMetrics(big);
       const QFontMetricsF smallMetrics(small);
       const double total = bigMetrics.height() + smallMetrics.height();

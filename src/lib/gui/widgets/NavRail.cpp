@@ -12,6 +12,7 @@
 #include "gui/style/FontScale.h"
 #include "gui/style/LookFollower.h"
 #include "gui/style/PixelSnap.h"
+#include "gui/style/TextSize.h"
 
 #include <QFocusEvent>
 #include <QKeyEvent>
@@ -30,6 +31,27 @@ constexpr int kSectionHeight = 30;
 constexpr int kSeparatorHeight = 17;
 constexpr int kIconSize = 20;
 constexpr int kStatusHeight = 36;
+
+// the sizes that carry text follow the size of text: the height of a row of the rail, its icons, its group titles
+int sectionHeight()
+{
+  return px(kSectionHeight);
+}
+
+int separatorHeight()
+{
+  return px(kSeparatorHeight);
+}
+
+int railIconSize()
+{
+  return px(kIconSize);
+}
+
+int statusHeight()
+{
+  return px(kStatusHeight);
+}
 
 QColor textColor(const Tokens &tokens, NavItem::Kind kind, bool current, bool checked)
 {
@@ -108,11 +130,16 @@ void NavItem::setRailCollapsed(bool collapsed)
   update();
 }
 
+int NavItem::itemHeight()
+{
+  return px(kHeight);
+}
+
 QSize NavItem::sizeHint() const
 {
   const auto label = fontMetrics().horizontalAdvance(text());
-  const int height = (m_kind == Kind::Status ? kStatusHeight : kHeight) + 2 * kRing;
-  return QSize(2 * kRing + kHeight + 8 + label + 12, height);
+  const int height = (m_kind == Kind::Status ? statusHeight() : itemHeight()) + 2 * kRing;
+  return QSize(2 * kRing + itemHeight() + 8 + label + 12, height);
 }
 
 void NavItem::changeEvent(QEvent *event)
@@ -197,8 +224,8 @@ void NavItem::paintEvent(QPaintEvent *)
   const auto color = textColor(tokens, m_kind, current, checked);
   // the icons keep their place while the rail moves: they are centred in the first square of the capsule
   const QRect iconBox(
-      qRound(capsule.left()) + (kHeight - kIconSize) / 2, qRound(capsule.center().y() - kIconSize / 2.0), kIconSize,
-      kIconSize
+      qRound(capsule.left()) + (itemHeight() - railIconSize()) / 2, qRound(capsule.center().y() - railIconSize() / 2.0),
+      railIconSize(), railIconSize()
   );
   auto iconTint = color;
   if (m_kind == Kind::Status && !current)
@@ -206,11 +233,11 @@ void NavItem::paintEvent(QPaintEvent *)
   auto weight = IconWeight::Regular;
   if (m_kind == Kind::Page && hasIcon(m_iconName, IconWeight::Duotone))
     weight = IconWeight::Duotone;
-  const auto pixmap = iconPixmap(m_iconName, weight, iconTint, QSize(kIconSize, kIconSize), dpr);
+  const auto pixmap = iconPixmap(m_iconName, weight, iconTint, QSize(railIconSize(), railIconSize()), dpr);
   painter.drawPixmap(iconBox, pixmap);
 
   // the label is drawn where it is room for it: the rail that is moving shows as much of it as there is
-  const int textLeft = qRound(capsule.left()) + kHeight + 4;
+  const int textLeft = qRound(capsule.left()) + itemHeight() + 4;
   const QRect textBox(
       textLeft, qRound(capsule.top()), qMax(0, qRound(capsule.right()) - textLeft - 10), qRound(capsule.height())
   );
@@ -261,7 +288,7 @@ bool NavToggleButton::isExpandedState() const
 
 QSize NavToggleButton::sizeHint() const
 {
-  return QSize(NavItem::kHeight + 2 * NavItem::kRing, NavItem::kHeight + 2 * NavItem::kRing);
+  return QSize(NavItem::itemHeight() + 2 * NavItem::kRing, NavItem::itemHeight() + 2 * NavItem::kRing);
 }
 
 void NavToggleButton::focusInEvent(QFocusEvent *event)
@@ -299,10 +326,10 @@ void NavToggleButton::paintEvent(QPaintEvent *)
   painter.drawRoundedRect(shape, shape.height() / 2, shape.height() / 2);
 
   const auto pixmap = iconPixmap(
-      QStringLiteral("sidebar-simple"), IconWeight::Regular, c.text, QSize(NavItem::kHeight / 2, NavItem::kHeight / 2),
-      dpr
+      QStringLiteral("sidebar-simple"), IconWeight::Regular, c.text,
+      QSize(NavItem::itemHeight() / 2, NavItem::itemHeight() / 2), dpr
   );
-  const auto side = NavItem::kHeight / 2;
+  const auto side = NavItem::itemHeight() / 2;
   painter.drawPixmap(
       QRect(qRound(circle.center().x() - side / 2.0), qRound(circle.center().y() - side / 2.0), side, side), pixmap
   );
@@ -335,16 +362,22 @@ NavRail::NavRail(QWidget *parent) : PanelWidget(Density::Normal, parent), m_togg
   connect(&m_animation, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) {
     applyPanelWidth(value.toReal());
   });
+  // the widths of the rail follow the size of text, at once
+  onTextSizeChanged(this, [this] {
+    m_animation.stop();
+    applyPanelWidth(m_expanded ? expandedPanelWidth() : collapsedPanelWidth());
+    updateGeometry();
+  });
 }
 
 int NavRail::collapsedPanelWidth()
 {
-  return deskflow::gui::style::metrics::sidebarCollapsed;
+  return px(deskflow::gui::style::metrics::sidebarCollapsed);
 }
 
 int NavRail::expandedPanelWidth()
 {
-  return deskflow::gui::style::metrics::sidebarExpanded;
+  return px(deskflow::gui::style::metrics::sidebarExpanded);
 }
 
 int NavRail::widgetWidthFor(int panelWidth)
@@ -626,9 +659,10 @@ void NavRail::relayout()
   );
 
   auto place = [&](Entry &entry, int y, bool fromBottom) {
-    const int height = entry.item ? (entry.item->kind() == NavItem::Kind::Status ? kStatusHeight : NavItem::kHeight)
-                       : entry.separator ? kSeparatorHeight
-                                         : kSectionHeight;
+    const int height = entry.item
+                           ? (entry.item->kind() == NavItem::Kind::Status ? statusHeight() : NavItem::itemHeight())
+                       : entry.separator ? separatorHeight()
+                                         : sectionHeight();
     const int top = fromBottom ? y - height : y;
     entry.slot = QRect(panel.left() + kSidePadding, top, panel.width() - 2 * kSidePadding, height);
     if (entry.item) {
@@ -637,7 +671,7 @@ void NavRail::relayout()
     return fromBottom ? top - kGap : top + height + kGap;
   };
 
-  int top = panel.top() + kTopPadding + NavItem::kHeight + 12;
+  int top = panel.top() + kTopPadding + NavItem::itemHeight() + 12;
   for (auto &entry : m_entries) {
     if (entry.region != Region::Top || (entry.item && entry.item->isHidden()))
       continue;
@@ -665,14 +699,15 @@ QSize NavRail::sizeHint() const
 
 QSize NavRail::minimumSizeHint() const
 {
-  int top = kTopPadding + NavItem::kHeight + 12;
+  int top = kTopPadding + NavItem::itemHeight() + 12;
   int bottom = kBottomPadding;
   for (const auto &entry : m_entries) {
     if (entry.item && entry.item->isHidden())
       continue;
-    const int height = entry.item ? (entry.item->kind() == NavItem::Kind::Status ? kStatusHeight : NavItem::kHeight)
-                       : entry.separator ? kSeparatorHeight
-                                         : kSectionHeight;
+    const int height = entry.item
+                           ? (entry.item->kind() == NavItem::Kind::Status ? statusHeight() : NavItem::itemHeight())
+                       : entry.separator ? separatorHeight()
+                                         : sectionHeight();
     (entry.region == Region::Top ? top : bottom) += height + kGap;
   }
   const auto room = shadowMargins();
@@ -718,7 +753,7 @@ void NavRail::paintEvent(QPaintEvent *event)
       continue;
     }
     // a group title: written in the rail with its labels, and a short line in the rail of icons
-    if (m_panelWidth > collapsedPanelWidth() + 70) {
+    if (m_panelWidth > collapsedPanelWidth() + px(70)) {
       auto font = scaleFont(this->font(), qreal(metrics::fontCaption) / metrics::fontBody);
       font.setWeight(QFont::DemiBold);
       painter.setFont(font);

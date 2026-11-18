@@ -11,6 +11,7 @@
 #include "gui/style/FontScale.h"
 #include "gui/style/Icons.h"
 #include "gui/style/LookFollower.h"
+#include "gui/style/TextSize.h"
 
 #include <QAccessible>
 #include <QApplication>
@@ -29,6 +30,17 @@ constexpr int kOrb = 64;
 constexpr int kOrbIcon = 30;
 constexpr int kPadding = 20;
 constexpr int kGap = 16;
+
+// the badge follows the size of text
+int orb()
+{
+  return px(kOrb);
+}
+
+int orbIcon()
+{
+  return px(kOrbIcon);
+}
 
 QString defaultIcon(StatusChip::Kind kind)
 {
@@ -51,7 +63,7 @@ class StatusOrb : public QWidget
 public:
   explicit StatusOrb(QWidget *parent) : QWidget(parent)
   {
-    setFixedSize(kOrb, kOrb);
+    new LookFollower(this, [this] { setFixedSize(orb(), orb()); });
   }
 
   void setState(StatusChip::Kind kind, const QString &icon)
@@ -78,8 +90,8 @@ protected:
     painter.drawEllipse(QRectF(rect()));
 
     const auto weight = hasIcon(m_icon, IconWeight::Fill) ? IconWeight::Fill : IconWeight::Regular;
-    const auto pixmap = iconPixmap(m_icon, weight, colors.text, QSize(kOrbIcon, kOrbIcon), dpr);
-    painter.drawPixmap(QRect((kOrb - kOrbIcon) / 2, (kOrb - kOrbIcon) / 2, kOrbIcon, kOrbIcon), pixmap);
+    const auto pixmap = iconPixmap(m_icon, weight, colors.text, QSize(orbIcon(), orbIcon()), dpr);
+    painter.drawPixmap(QRect((orb() - orbIcon()) / 2, (orb() - orbIcon()) / 2, orbIcon(), orbIcon()), pixmap);
   }
 
 private:
@@ -186,7 +198,7 @@ void StatusHero::placeActions()
 QSize StatusHero::minimumSizeHint() const
 {
   const auto margins = contentsMargins();
-  const int text = kOrb + kGap + m_textsBox->minimumSizeHint().width();
+  const int text = orb() + kGap + m_textsBox->minimumSizeHint().width();
   const int actions = m_actionBox->isHidden() ? 0 : m_actionBox->sizeHint().width();
   return QSize(margins.left() + margins.right() + qMax(text, actions), PanelWidget::minimumSizeHint().height());
 }
@@ -196,9 +208,9 @@ void StatusHero::updateActionPlacement()
   // beside the text when the text at its narrowest and the buttons both fit in the width, and under it when they do
   // not. What fits depends on the font, so it is asked of the parts: a width that was told would be right for one font
   // only
-  const int needed = kOrb + kGap + m_textsBox->minimumSizeHint().width() + kGap +
+  const int needed = orb() + kGap + m_textsBox->minimumSizeHint().width() + kGap +
                      (m_actionBox->isHidden() ? 0 : m_actionBox->sizeHint().width());
-  const bool below = width() < kWrapWidth || contentsRect().width() < needed;
+  const bool below = width() < px(kWrapWidth) || contentsRect().width() < needed;
   if (below != m_actionsBelow) {
     m_actionsBelow = below;
     placeActions();
