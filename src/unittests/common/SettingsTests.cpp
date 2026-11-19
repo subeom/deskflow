@@ -101,21 +101,25 @@ void SettingsTests::clipboardTextOnly_isOffByDefaultAndRoundTrips()
   QCOMPARE(Settings::value(key).toBool(), false);
 }
 
-void SettingsTests::appearance_defaultsToSystemAndRoundTrips()
+void SettingsTests::appearance_defaultsToTheNewLookAndRoundTrips()
 {
   const auto key = Settings::Gui::Appearance;
   QCOMPARE(key, QStringLiteral("gui/appearance"));
   QVERIFY(Settings::validKeys().contains(key));
 
-  // a config from before the setting existed has no value for it: the look is the one that the OS gave the program
+  // a config that has no value for it (a first run, or a version from before the setting) has the look of the
+  // application: the one that is the same on every OS
   Settings::setValue(key);
-  QCOMPARE(Settings::defaultValue(key), QVariant(QStringLiteral("system")));
-  QCOMPARE(Settings::value(key).toString(), QStringLiteral("system"));
+  QCOMPARE(Settings::defaultValue(key), QVariant(QStringLiteral("deskflow")));
+  QCOMPARE(Settings::value(key).toString(), QStringLiteral("deskflow"));
 
+  // the look of the system is a choice, and it is kept
+  Settings::setValue(key, QStringLiteral("system"));
+  QCOMPARE(Settings::value(key).toString(), QStringLiteral("system"));
   Settings::setValue(key, QStringLiteral("deskflow"));
   QCOMPARE(Settings::value(key).toString(), QStringLiteral("deskflow"));
   Settings::setValue(key);
-  QCOMPARE(Settings::value(key).toString(), QStringLiteral("system"));
+  QCOMPARE(Settings::value(key).toString(), QStringLiteral("deskflow"));
 }
 
 void SettingsTests::experimentalMultiMonitor_isOffByDefaultAndRoundTrips()

@@ -17,12 +17,20 @@ private Q_SLOTS:
   void cleanup();
 
   void mode_isReadFromTextAndWrittenBack();
-  void configuredMode_isSystemUntilAskedOtherwise();
+  void configuredMode_isTheNewLookUntilAskedOtherwise();
+  void configuredMode_isTheDefaultOfTheSetting();
   void configuredMode_theSettingAsks_andTheEnvironmentOverrides();
+  void configuredMode_followsTheTableOfTheSettingAndTheEnvironment_data();
+  void configuredMode_followsTheTableOfTheSettingAndTheEnvironment();
+
+  void firstRun_withoutAFileOpensTheNewLook_andWritesNothing();
+  void anUpgrade_withTheSystemLookStoredKeepsItAtEveryStart();
+  void anUpgrade_withAFileThatHasNoLook_opensTheNewLook();
 
   void apply_system_leavesTheApplicationAsToday();
   void apply_systemOnKde_leavesTheStyleToKde();
   void apply_deskflow_installsTheStyleAndItsPalette();
+  void apply_withoutAChoice_installsTheNewLook();
 
   void currentTokens_withoutTheStyle_areFlatAndOpaqueInTheColoursOfTheOs();
   void currentTokens_withTheStyle_areTheOnesOfItsLook();

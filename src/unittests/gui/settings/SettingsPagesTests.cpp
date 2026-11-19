@@ -212,6 +212,44 @@ void SettingsPagesTests::pages_theWindowFrameIsChosenWithOneSwitch_whichSaysTheF
   QVERIFY(toggle->isChecked());
 }
 
+void SettingsPagesTests::pages_theAppearanceCard_isTheWayBackToTheLookOfTheSystem_andTheWayForward()
+{
+  // the new look is what a person has until a choice is made: the card shows it, and the page does not choose for them
+  Settings::setValue(Settings::Gui::Appearance);
+  {
+    SettingsPages pages;
+    auto *combo = must<QComboBox>(pages, "comboAppearance");
+    QCOMPARE(combo->currentData().toString(), QStringLiteral("deskflow"));
+    QCOMPARE(combo->currentText(), QStringLiteral("Deskflow"));
+    QVERIFY(!Settings::proxy().contains(Settings::Gui::Appearance));
+    // what the card offers is the two looks that there are, with the words that the person knows
+    QCOMPARE(combo->count(), 2);
+    QCOMPARE(combo->itemData(0).toString(), QStringLiteral("deskflow"));
+    QCOMPARE(combo->itemData(1).toString(), QStringLiteral("system"));
+    // and it says when the choice is used
+    const auto row = qobject_cast<SettingRow *>(combo->parentWidget());
+    QVERIFY(row);
+    QCOMPARE(row->description(), QStringLiteral("Takes effect the next time the application starts."));
+    QCOMPARE(effectOf(Settings::Gui::Appearance), std::optional<Effect>(Effect::Live));
+
+    // the way back: the choice is written at once, as the word that the application reads at its start
+    choose(combo, QStringLiteral("system"));
+    QCOMPARE(Settings::value(Settings::Gui::Appearance).toString(), QStringLiteral("system"));
+    QVERIFY(Settings::proxy().contains(Settings::Gui::Appearance));
+    QCOMPARE(deskflow::gui::style::configuredMode(), deskflow::gui::style::Mode::System);
+  }
+  // the next start: the card shows the choice, and does not give it back
+  {
+    SettingsPages pages;
+    auto *combo = must<QComboBox>(pages, "comboAppearance");
+    QCOMPARE(combo->currentData().toString(), QStringLiteral("system"));
+    choose(combo, QStringLiteral("deskflow"));
+    QCOMPARE(Settings::value(Settings::Gui::Appearance).toString(), QStringLiteral("deskflow"));
+    QCOMPARE(deskflow::gui::style::configuredMode(), deskflow::gui::style::Mode::Deskflow);
+  }
+  Settings::setValue(Settings::Gui::Appearance);
+}
+
 void SettingsPagesTests::effects_theSettingsThatTheCoreReadsNeedARestart()
 {
   // the dialogs of the system look restart a running core after every Save: the pages ask for it for these, which are

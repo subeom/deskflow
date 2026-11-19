@@ -19,6 +19,7 @@ private Q_SLOTS:
 
   void effects_everyBoundSettingSaysWhatItNeeds();
   void pages_theWindowFrameIsChosenWithOneSwitch_whichSaysTheFrameOfTheNewLook();
+  void pages_theAppearanceCard_isTheWayBackToTheLookOfTheSystem_andTheWayForward();
   void effects_theSettingsThatTheCoreReadsNeedARestart();
 
   void pages_areInTheOrderOfTheSidebar_withTitlesAndCards();

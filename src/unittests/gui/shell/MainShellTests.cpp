@@ -5,8 +5,10 @@
 
 #include "MainShellTests.h"
 
+#include "common/PlatformInfo.h"
 #include "common/Settings.h"
 #include "gui/MainWindow.h"
+#include "gui/chrome/WindowChrome.h"
 #include "gui/chrome/WindowHeader.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/settings/RestartBanner.h"
@@ -77,6 +79,18 @@ struct MainWindowTestAccess
   static deskflow::gui::CoreProcess &core(MainWindow &w)
   {
     return w.m_coreProcess;
+  }
+  static deskflow::gui::chrome::FrameDecision frame(const MainWindow &w)
+  {
+    return w.m_frame;
+  }
+  static deskflow::gui::chrome::WindowHeader *header(const MainWindow &w)
+  {
+    return w.m_header;
+  }
+  static deskflow::gui::chrome::WindowChrome *chrome(const MainWindow &w)
+  {
+    return w.m_chrome;
   }
   static void states(MainWindow &w, ProcessState process, ConnectionState connection)
   {
@@ -1178,6 +1192,51 @@ void MainShellTests::deskflowLook_startsAtItsOwnSize_whateverTheSystemLookSaved(
   window.reset();
   auto again = makeWindow(true);
   QCOMPARE(again->size(), QSize(900, 700));
+}
+
+void MainShellTests::deskflowLook_ifThePlatformCannotGiveTheFrame_theWindowKeepsTheFrameOfTheSystem()
+{
+  // The frame of the new look is the default, and on a Mac nobody has seen it made. When the platform cannot give it
+  // (the content cannot go under the title bar), the window has to be what it was: the frame and the menu bar of the
+  // system, and the shell in it, whole. The environment asks for the frame where the platform of the test would not
+  qputenv("DESKFLOW_WINDOW_FRAME", "client");
+  const auto unset = qScopeGuard([] { qunsetenv("DESKFLOW_WINDOW_FRAME"); });
+  const auto reset = qScopeGuard([] { chrome::WindowChrome::s_failsToApply = false; });
+
+  // as a control: the platform gives the frame, and the window has the header, the chrome and no menu bar (not a Mac)
+  {
+    auto window = makeWindow(true);
+    QVERIFY(Access::frame(*window).clientSide());
+    QVERIFY(Access::header(*window));
+    QVERIFY(Access::chrome(*window));
+    QVERIFY(Access::chrome(*window)->isApplied());
+    QCOMPARE(window->findChildren<chrome::WindowHeader *>().size(), 1);
+    if (!deskflow::platform::isMac())
+      QVERIFY(window->menuBar()->isHidden());
+  }
+
+  chrome::WindowChrome::s_failsToApply = true;
+  auto window = makeWindow(true);
+  const auto frame = Access::frame(*window);
+  QVERIFY(!frame.clientSide());
+  QCOMPARE(frame.kind, chrome::FrameKind::Native);
+  QCOMPARE(frame.reason, chrome::FrameReason::PlatformPluginUnsupported);
+  // nothing of the frame of the new look is left: no header, no object that does what the header asks, no flag
+  QVERIFY(!Access::header(*window));
+  QVERIFY(!Access::chrome(*window));
+  QVERIFY(window->findChildren<chrome::WindowHeader *>().isEmpty());
+  QVERIFY(window->findChildren<chrome::WindowChrome *>().isEmpty());
+  QVERIFY(!window->windowFlags().testFlag(Qt::FramelessWindowHint));
+  QVERIFY(!window->windowFlags().testFlag(Qt::ExpandedClientAreaHint));
+  QVERIFY(!window->windowFlags().testFlag(Qt::NoTitleBarBackgroundHint));
+  // the menus that the header would have are the window's own: the menu bar is there, with the menus
+  QVERIFY(!window->menuBar()->isHidden());
+  QVERIFY(!window->menuBar()->actions().isEmpty());
+  // and the shell works: the sidebar and its pages, in a window that has its size
+  showWindow(*window);
+  QVERIFY(Access::shell(*window));
+  QVERIFY(Access::shell(*window)->rail()->isVisible());
+  QVERIFY(window->width() >= window->minimumWidth());
 }
 
 void MainShellTests::deskflowLook_canBeLowEnoughForASmallScreen_data()

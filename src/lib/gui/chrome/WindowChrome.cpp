@@ -63,6 +63,8 @@ bool WindowChrome::apply()
 {
   if (m_applied)
     return true;
+  if (s_failsToApply)
+    return false;
 
 #if defined(Q_OS_WIN)
   // a platform plugin that is not the one of Windows (the tests of the program run offscreen) has no window of the

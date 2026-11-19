@@ -65,6 +65,32 @@ void ChromePolicyTests::decideFrame_followsTheRulesInTheOrderOfTheirSafety_data(
       << FrameReason::QtTooOld;
   QTest::newRow("macOS, offscreen") << environment(Platform::MacOS, QStringLiteral("offscreen")) << native
                                     << FrameReason::PlatformPluginUnsupported;
+  // The new look is what a Mac has when nothing is chosen, and the frame of it (the title bar that is part of the
+  // window) has not been seen by a person on a Mac. Every way out of it comes before what the system can do: the Mac of
+  // a person who cannot use it has the frame of the system without a new version
+  auto macSetting = environment(Platform::MacOS, QStringLiteral("cocoa"));
+  macSetting.nativeFrameSetting = true;
+  QTest::newRow("macOS, the setting says native") << macSetting << native << FrameReason::OptedOutBySetting;
+  auto macVariable = environment(Platform::MacOS, QStringLiteral("cocoa"));
+  macVariable.frameVariable = QStringLiteral("native");
+  QTest::newRow("macOS, the variable says native") << macVariable << native << FrameReason::OptedOutByEnvironment;
+  auto macContrast = environment(Platform::MacOS, QStringLiteral("cocoa"));
+  macContrast.highContrast = true;
+  QTest::newRow("macOS, high contrast") << macContrast << native << FrameReason::HighContrast;
+  auto macNotNative = environment(Platform::MacOS, QStringLiteral("cocoa"));
+  macNotNative.nativeFrameSetting = false;
+  QTest::newRow("macOS, the setting says not native: the default") << macNotNative << client << FrameReason::Default;
+  auto macOldQtForced = environment(Platform::MacOS, QStringLiteral("cocoa"), QVersionNumber(6, 8, 3));
+  macOldQtForced.nativeFrameSetting = true;
+  QTest::newRow("macOS, an old Qt and the setting says native")
+      << macOldQtForced << native << FrameReason::OptedOutBySetting;
+  auto macUnknownPlugin = environment(Platform::MacOS, QStringLiteral("minimal"), QVersionNumber(6, 12, 0));
+  QTest::newRow("macOS, a platform plugin that is not cocoa")
+      << macUnknownPlugin << native << FrameReason::PlatformPluginUnsupported;
+  QTest::newRow("macOS, the look of the system, whatever else")
+      << environment(Platform::MacOS, QStringLiteral("cocoa"), QVersionNumber(6, 12, 0), false) << native
+      << FrameReason::SystemLook;
+
   // Linux has the frame of the system in the first release: the compositors differ and none is tried here. The frame of
   // the new look is chosen there with the setting or with the variable (below)
   QTest::newRow("Linux, X11") << environment(Platform::Linux, QStringLiteral("xcb")) << native

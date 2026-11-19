@@ -37,3 +37,26 @@ create_test(
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
 target_include_directories(TunnelShellTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+
+# The new look in Korean with the translation that is shipped: the .qm that the build makes of translations/deskflow_ko.ts
+# (the test builds it first), and the file of the translation itself
+create_test(
+  NAME KoreanLookTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE KoreanLookTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(KoreanLookTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+target_compile_definitions(KoreanLookTests PRIVATE DESKFLOW_KO_QM="${CMAKE_BINARY_DIR}/translations/deskflow_ko.qm")
+add_dependencies(KoreanLookTests app_translations)
+
+create_test(
+  NAME TranslationFileTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TranslationFileTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_compile_definitions(TranslationFileTests PRIVATE DESKFLOW_KO_TS="${CMAKE_SOURCE_DIR}/translations/deskflow_ko.ts")
+add_dependencies(TranslationFileTests app_translations)

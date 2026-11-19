@@ -19,18 +19,24 @@ enum class Mode
 {
   // the look of this application (DeskflowStyle), the same on every OS
   Deskflow,
-  // the look that each OS gave the application: what it was before the look above was made
+  // the look that each OS gave the application: what it was before the look above was made. A person chooses it with
+  // the setting gui/appearance or, for one run, with DESKFLOW_APPEARANCE=system
   System
 };
 
 // The environment variable that sets the mode for one run (deskflow or system); it wins over the setting
 inline constexpr auto kAppearanceEnvironment = "DESKFLOW_APPEARANCE";
 
+// The mode of a person who has not chosen one (no gui/appearance in the settings), and of a value that is no mode. It
+// is the default of the setting too: Settings::defaultValue(Gui::Appearance) says the same word
+inline constexpr Mode kDefaultMode = Mode::Deskflow;
+
 Mode modeFromString(const QString &text, Mode fallback);
 QString modeToString(Mode mode);
 
 /*!
- * The mode that is asked for: the environment variable, else the setting gui/appearance, else System.
+ * The mode that is asked for: the environment variable, else the setting gui/appearance, else kDefaultMode (also for a
+ * value that is no mode).
  */
 Mode configuredMode();
 

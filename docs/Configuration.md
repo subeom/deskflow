@@ -98,18 +98,39 @@ This section contains options used by the GUI it will begin with `[gui]`
 
 |Option                          | Valid Values      |Description|
 |:-------------------------------|:-----------------:|:-----------|
+| appearance                     | `deskflow` or `system` | The look of the application. `deskflow` is the look of its own, the same on every OS; `system` is the look that each OS gave it before that. A value that is neither is `deskflow`. Used when the app starts [default: deskflow] |
 | autoHide                       | `true` or `false` | When true the app will hide itself on start up [default: false] |
 | enableUpdateCheck              | `true` or `false` | When true check the update URL to see if a new version was released on start up [default: false] |
 | closeReminder                  | `true` or `false` | Used to track if we have shown the reminder that when you close the app it remain running in the background  [default: true]|
 | closeToTray                    | `true` or `false` | When `true` the gui will run in the systemTray when its closed [default: true] |
 | logExpanded                    | `true` or `false` | Should the log section of the GUI be opened [default: false] |
+| nativeWindowFrame              | `true` or `false` | When `true` the window of the look `deskflow` has the title bar and the buttons of the OS instead of its own. Used when the app starts [default: false, but `true` on Linux] |
 | symbolicTrayIcon               | `true` or `false` | When true use the monocolor (symbolic) icon false uses a colorful icon for the tray [default: true] |
 | showGenericClientFailureDialog | `true` or `false` | When `true` client connection errors will not show popup error messages [default: true] |
 | shownFirstConnectedMessage     | `true` or `false` | When `true` GUI has shown the user the message for connecting the first time [default: false] |
 | shownServerFirstStartMessage   | `true` or `false` | When `true` GUI has shown the user the Deskflow server is now running message [default: false] |
 | shownVerionInTitle             | `true` or `false` | When `true` GUI will include the version in the window title [default: false] |
 | startCoreWithGui               | `true` or `false` | When true the Core will be started with the GUI. It is set to the Core's state on exit. |
+| textSize                       | `90`, `100`, `115`, `130` or `150` | The size of the text of the look `deskflow`, in percent of the size that the OS has [default: 100] |
 | updateCheckUrl                 | URL               | The URL to use when checking for a new version number, it should return a version [default: https://api.deskflow.org/version]|
+
+#### The look of the application, and the way back to the one of before
+
+A new installation, and a configuration that has no `appearance`, start with the look `deskflow`. A configuration that
+has `appearance=system` keeps the look of the system at every start. To change the look:
+
+- In the application: *Settings* > *General* > *Appearance* > *Look of the application*. The choice is saved at once and
+  used the next time the application starts. The look of the system has no such control in its own settings dialog, so
+  to come back to the look `deskflow` set `appearance=deskflow` (or delete the line) in the `[gui]` section.
+- For one run: the environment variable `DESKFLOW_APPEARANCE=system` or `DESKFLOW_APPEARANCE=deskflow`. It wins over the
+  setting. A value that is neither is ignored.
+
+The window of the look `deskflow` draws its own title bar on Windows and macOS. If that does not work on a computer, the
+title bar of the OS comes back with the switch *Use the Deskflow window frame* (off) in the same card, with
+`nativeWindowFrame=true`, or for one run with `DESKFLOW_WINDOW_FRAME=native`. The window has the title bar of the OS by
+itself with high contrast, without desktop composition (Windows) and with a Qt older than 6.9 (macOS). On Linux the title
+bar of the OS is the default, and `DESKFLOW_WINDOW_FRAME=client` or `nativeWindowFrame=false` chooses the one of the
+application.
 
 ### Log
 

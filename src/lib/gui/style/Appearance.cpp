@@ -44,7 +44,7 @@ QString modeToString(Mode mode)
 
 Mode configuredMode()
 {
-  const auto fromSettings = modeFromString(Settings::value(Settings::Gui::Appearance).toString(), Mode::System);
+  const auto fromSettings = modeFromString(Settings::value(Settings::Gui::Appearance).toString(), kDefaultMode);
   return modeFromString(qEnvironmentVariable(kAppearanceEnvironment), fromSettings);
 }
 

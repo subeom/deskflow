@@ -1,9 +1,10 @@
 # The tray icon and the menus of the new look
 
 This describes the tray icon, the menu of the tray, the menus of the window and the log of the window with the look
-Deskflow (the setting `gui/appearance`, or the environment variable `DESKFLOW_APPEARANCE=deskflow`). With the look System
-(the default) the tray, the menu bar and the log are what they have always been, except for the three fixes that are
-listed first: they are bugs, and they apply to both looks.
+Deskflow (the default; the setting `gui/appearance`, or the environment variable `DESKFLOW_APPEARANCE=deskflow`). With the
+look System (`gui/appearance=system`, or `DESKFLOW_APPEARANCE=system` for one run) the tray, the menu bar and the log are
+what they have always been, except for the three fixes that are listed first: they are bugs, and they apply to both
+looks.
 
 The code is in `src/lib/gui/tray/`. Nothing in it needs a window or a screen to be tested, except the builder and the
 controller, which need widgets but are tested offscreen (`src/unittests/gui/tray/`).

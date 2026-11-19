@@ -46,6 +46,10 @@ public:
   bool apply();
   bool isApplied() const;
 
+  //! Only a test sets it: the platform cannot give the frame, to see that the window then keeps the frame of the system
+  //! (a Mac that cannot expand the content under its title bar is the case that matters: nobody has seen it fail)
+  inline static bool s_failsToApply = false;
+
   //! The width of the strip along the edges that resizes the window (logical pixels)
   static constexpr int kResizeBorder = 6;
 

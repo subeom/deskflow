@@ -41,6 +41,7 @@ private Q_SLOTS:
   void deskflowLook_theHintOfTheAddressIsInItsRow_andNotAlsoInTheField();
   void deskflowLook_everyButtonHasAName_andNoGroupIsRepeatedByItsOwnText();
   void deskflowLook_startsAtItsOwnSize_whateverTheSystemLookSaved();
+  void deskflowLook_ifThePlatformCannotGiveTheFrame_theWindowKeepsTheFrameOfTheSystem();
   void deskflowLook_canBeLowEnoughForASmallScreen_data();
   void deskflowLook_canBeLowEnoughForASmallScreen();
   void deskflowLook_opensInsideTheWorkAreaOfAScreen_data();
