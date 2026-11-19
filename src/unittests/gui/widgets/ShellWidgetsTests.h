@@ -24,6 +24,7 @@ private Q_SLOTS:
   void rail_theNameOfTheListFollowsTheLanguage();
   void rail_tellsAScreenReaderTheListTheEntriesAndTheStateOfTheButton();
 
+  void segmented_choosesOne_andNeverUnchoosesIt_data();
   void segmented_choosesOne_andNeverUnchoosesIt();
   void segmented_isOneStopAndTheArrowKeysChoose();
   void segmented_tellsAScreenReaderTheChoices();

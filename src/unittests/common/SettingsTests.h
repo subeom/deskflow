@@ -32,6 +32,10 @@ private Q_SLOTS:
   void checkClearState();
   void nativeWindowFrame_isTheFrameOfTheSystemOnLinuxOnlyByDefault();
   void portableMode_keepsTheStateKeysWhenTheSettingsAreReadAgain();
+  void keys_aChoiceOfTheNewLookIsKeptWhenTheProgramIsStartedAgain_data();
+  void keys_aChoiceOfTheNewLookIsKeptWhenTheProgramIsStartedAgain();
+  void keys_everyKeyThatIsDeclaredIsEitherKeptOrAStateKey();
+  void keys_theListsOfDefaultsHaveNoKeyThatTheProgramDoesNotKnow();
 
 private:
   inline static const QString m_settingsPathTemp = QStringLiteral("tmp/test");

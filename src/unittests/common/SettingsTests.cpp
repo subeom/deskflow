@@ -9,9 +9,11 @@
 #include <QDir>
 #include <QFile>
 #include <QRect>
+#include <QRegularExpression>
 #include <QScopeGuard>
 #include <QSettings>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 
 void SettingsTests::initTestCase()
 {
@@ -294,6 +296,181 @@ void SettingsTests::portableMode_keepsTheStateKeysWhenTheSettingsAreReadAgain()
 
   Settings::setSettingsFile(m_settingsFile);
   QFile::remove(reread);
+}
+
+namespace {
+
+// The program is started again: the settings and the state are read again, and what is not kept is taken away
+void startAgain(const QString &settingsFile, const QString &stateFile, const QString &otherSettingsFile)
+{
+  Settings::setSettingsFile(otherSettingsFile);
+  Settings::setSettingsFile(settingsFile);
+  Settings::setStateFile(otherSettingsFile + QStringLiteral(".state"));
+  Settings::setStateFile(stateFile);
+}
+
+} // namespace
+
+void SettingsTests::keys_aChoiceOfTheNewLookIsKeptWhenTheProgramIsStartedAgain_data()
+{
+  QTest::addColumn<QString>("key");
+  QTest::addColumn<QVariant>("value");
+
+  // The keys that the new look writes. A key that is not kept was written, and taken away when the program was
+  // started again: the switch of the frame of the window was off at every start (Windows, the 6th run of the checks).
+  // These are all of its keys that the person chooses, and the ones that the window writes by itself
+  using S = Settings::Gui;
+  QTest::newRow("appearance") << S::Appearance << QVariant(QStringLiteral("deskflow"));
+  QTest::newRow("text size") << S::TextSize << QVariant(130);
+  QTest::newRow("the frame of the window") << S::NativeWindowFrame << QVariant(true);
+  QTest::newRow("the sidebar is an icon rail") << S::SidebarCollapsed << QVariant(true);
+  QTest::newRow("the log is shown") << S::ShellLogExpanded << QVariant(true);
+  QTest::newRow("the tray icon is symbolic") << S::SymbolicTrayIcon << QVariant(false);
+  QTest::newRow("the window is closed to the tray") << S::CloseToTray << QVariant(false);
+  QTest::newRow("the window of the new look") << S::ShellWindowGeometry << QVariant(QRect(208, 175, 1000, 620));
+  QTest::newRow("the window of the system look") << S::WindowGeometry << QVariant(QRect(10, 20, 640, 480));
+  QTest::newRow("clipboard of text only") << Settings::Server::ClipboardTextOnly << QVariant(true);
+  QTest::newRow("the monitors are arranged") << Settings::Server::ExperimentalMultiMonitor << QVariant(true);
+  QTest::newRow("a connect timeout") << Settings::Client::ConnectTimeout << QVariant(7.5);
+}
+
+void SettingsTests::keys_aChoiceOfTheNewLookIsKeptWhenTheProgramIsStartedAgain()
+{
+  QFETCH(QString, key);
+  QFETCH(QVariant, value);
+  QTemporaryDir dir;
+  QVERIFY(dir.isValid());
+  const auto file = dir.filePath(QStringLiteral("Deskflow.conf"));
+  const auto state = dir.filePath(QStringLiteral("Deskflow.state"));
+  const auto other = dir.filePath(QStringLiteral("Other.conf"));
+  const auto restore = qScopeGuard([&] {
+    Settings::setSettingsFile(m_settingsFile);
+    Settings::setStateFile(m_stateFile);
+  });
+  Settings::setSettingsFile(file);
+  Settings::setStateFile(state);
+
+  // the choice is written the way the program writes it ...
+  Settings::setValue(key, value);
+  QCOMPARE(Settings::value(key), value);
+  // ... and it is still the choice after the program is started again, twice (a key is taken away at the start)
+  for (int start = 1; start <= 2; ++start) {
+    startAgain(file, state, other);
+    // (in a file: the file of the settings, or the file of the state for the keys that it keeps)
+    const bool stored =
+        QSettings(file, QSettings::IniFormat).contains(key) || QSettings(state, QSettings::IniFormat).contains(key);
+    QVERIFY2(stored, qPrintable(QStringLiteral("%1 is gone after start %2").arg(key).arg(start)));
+    QCOMPARE(Settings::value(key), value);
+  }
+}
+
+namespace {
+
+struct Declared
+{
+  // Struct::Name of the key and the key
+  QMap<QString, QString> keys;
+  QStringList valid;
+  QStringList state;
+  QStringList defaultFalse;
+  QStringList defaultTrue;
+};
+
+// What is declared in Settings.h: the keys of its structures and the lists that say what is done with them
+Declared readDeclarations()
+{
+  Declared declared;
+  QFile header(QStringLiteral(DESKFLOW_SETTINGS_HEADER));
+  if (!header.open(QIODevice::ReadOnly | QIODevice::Text))
+    return declared;
+  const auto text = QString::fromUtf8(header.readAll());
+
+  const auto structs = QRegularExpression(QStringLiteral(R"(struct\s+(\w+)\s*\{)")).globalMatch(text);
+  QList<QPair<int, QString>> starts;
+  for (auto it = structs; it.hasNext();) {
+    const auto match = it.next();
+    starts.append({int(match.capturedStart()), match.captured(1)});
+  }
+  const auto keys =
+      QRegularExpression(QStringLiteral(R"re(inline static const auto (\w+) = QStringLiteral\("([^"]*)"\);)re"))
+          .globalMatch(text);
+  for (auto it = keys; it.hasNext();) {
+    const auto match = it.next();
+    QString owner;
+    for (const auto &start : starts)
+      if (start.first < match.capturedStart())
+        owner = start.second;
+    declared.keys.insert(QStringLiteral("%1::%2").arg(owner, match.captured(1)), match.captured(2));
+  }
+
+  const auto list = [&text](const QString &name) {
+    QStringList names;
+    const auto block = QRegularExpression(QStringLiteral("%1\\s*=\\s*\\{([^}]*)\\}").arg(name)).match(text);
+    for (auto it = QRegularExpression(QStringLiteral(R"((\w+::\w+))")).globalMatch(block.captured(1)); it.hasNext();)
+      names.append(it.next().captured(1));
+    return names;
+  };
+  declared.valid = list(QStringLiteral("m_validKeys"));
+  declared.state = list(QStringLiteral("m_stateKeys"));
+  declared.defaultFalse = list(QStringLiteral("m_defaultFalseValues"));
+  declared.defaultTrue = list(QStringLiteral("m_defaultTrueValues"));
+  return declared;
+}
+
+} // namespace
+
+void SettingsTests::keys_everyKeyThatIsDeclaredIsEitherKeptOrAStateKey()
+{
+  const auto declared = readDeclarations();
+  QVERIFY2(declared.keys.size() > 50, "the declarations of Settings.h were not read");
+  QVERIFY(declared.valid.size() > 50);
+  QVERIFY(declared.state.size() >= 6);
+
+  // The keys of a computer are made from a pattern, and the keys of the old configuration file of the server are only
+  // read to be moved: neither is a setting that is kept as it is
+  const QStringList notSettings = {QStringLiteral("Computer"), QStringLiteral("InternalConfig")};
+  QStringList lost;
+  for (auto it = declared.keys.cbegin(); it != declared.keys.cend(); ++it) {
+    const auto owner = it.key().section(QStringLiteral("::"), 0, 0);
+    if (notSettings.contains(owner))
+      continue;
+    // the program takes away the keys that are not in the list of the valid keys (cleanSettings), but those of the
+    // state, which are kept in the state file (and in the settings file of a portable program)
+    if (!declared.valid.contains(it.key()) && !declared.state.contains(it.key()))
+      lost.append(QStringLiteral("%1 (%2)").arg(it.key(), it.value()));
+  }
+  QVERIFY2(
+      lost.isEmpty(),
+      qPrintable(QStringLiteral("declared and taken away at every start of the program: %1").arg(lost.join(", ")))
+  );
+  // and the valid keys are keys that are declared (a name that is not there would not be compiled, but a typo that is
+  // another key would)
+  for (const auto &name : declared.valid + declared.state)
+    QVERIFY2(declared.keys.contains(name), qPrintable(name));
+}
+
+void SettingsTests::keys_theListsOfDefaultsHaveNoKeyThatTheProgramDoesNotKnow()
+{
+  const auto declared = readDeclarations();
+  QVERIFY(declared.defaultFalse.size() > 10);
+  QVERIFY(declared.defaultTrue.size() > 3);
+
+  // a default is for a key that is kept (or is a key of the state): the default of a key that is taken away at the
+  // start is never seen, and it hides that it is not kept
+  QStringList unknown;
+  for (const auto &name : declared.defaultFalse + declared.defaultTrue)
+    if (!declared.valid.contains(name) && !declared.state.contains(name))
+      unknown.append(name);
+  QVERIFY2(unknown.isEmpty(), qPrintable(QStringLiteral("a default but not kept: %1").arg(unknown.join(", "))));
+
+  // the default of the frame of the window is the one of the platform (Settings::defaultValue says it), not a name in a
+  // list of the ones that are false: on Linux it is true
+  QVERIFY(!declared.defaultFalse.contains(QStringLiteral("Gui::NativeWindowFrame")));
+  QVERIFY(!declared.defaultTrue.contains(QStringLiteral("Gui::NativeWindowFrame")));
+
+  // no key is true and false by default
+  for (const auto &name : declared.defaultTrue)
+    QVERIFY2(!declared.defaultFalse.contains(name), qPrintable(name));
 }
 
 QTEST_MAIN(SettingsTests)

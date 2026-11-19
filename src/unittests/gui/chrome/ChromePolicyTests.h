@@ -17,6 +17,8 @@ private Q_SLOTS:
   void linux_hasTheFrameOfTheSystemInTheFirstRelease();
   void prefersDeskflowFrame_isWhatThePersonChoseOrWhatThePlatformHasByDefault_data();
   void prefersDeskflowFrame_isWhatThePersonChoseOrWhatThePlatformHasByDefault();
+  void frameSwitch_whatThePersonChoseIsKeptAtTheNextStartAndChoosesTheFrame_data();
+  void frameSwitch_whatThePersonChoseIsKeptAtTheNextStartAndChoosesTheFrame();
   void reasonName_isAWordForEveryReason();
   void current_hasTheLookAndThePlatformThatItIsAskedAbout();
 };

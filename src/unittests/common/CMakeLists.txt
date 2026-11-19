@@ -7,6 +7,8 @@ create_test(
   SOURCE SettingsTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/common"
 )
+# the test reads the declarations of the keys: the keys that are declared and not kept were taken away at every start
+target_compile_definitions(SettingsTests PRIVATE DESKFLOW_SETTINGS_HEADER="${CMAKE_SOURCE_DIR}/src/lib/common/Settings.h")
 
 create_test(
   NAME ConnectionDiagnosisTests

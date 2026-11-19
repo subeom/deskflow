@@ -379,6 +379,7 @@ private:
     , Gui::LogExpanded
     , Gui::SidebarCollapsed
     , Gui::ShellLogExpanded
+    , Gui::NativeWindowFrame
     , Gui::TextSize
     , Gui::SymbolicTrayIcon
     , Gui::ShownFirstConnectedMessage
@@ -418,7 +419,6 @@ private:
     , Gui::AutoStartCore
     , Gui::SidebarCollapsed
     , Gui::ShellLogExpanded
-    , Gui::NativeWindowFrame
     , Gui::ShownFirstConnectedMessage
     , Gui::ShownServerFirstStartMessage
     , Gui::ShowVersionInTitle

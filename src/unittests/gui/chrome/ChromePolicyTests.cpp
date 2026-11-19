@@ -8,6 +8,8 @@
 #include "gui/chrome/ChromePolicy.h"
 
 #include <QGuiApplication>
+#include <QScopeGuard>
+#include <QTemporaryDir>
 
 using namespace deskflow::gui::chrome;
 
@@ -218,6 +220,87 @@ void ChromePolicyTests::prefersDeskflowFrame_isWhatThePersonChoseOrWhatThePlatfo
   QFETCH(ChromeEnvironment, env);
   QFETCH(bool, preferred);
   QCOMPARE(prefersDeskflowFrame(env), preferred);
+}
+
+void ChromePolicyTests::frameSwitch_whatThePersonChoseIsKeptAtTheNextStartAndChoosesTheFrame_data()
+{
+  QTest::addColumn<int>("platform");
+  QTest::addColumn<QString>("plugin");
+  QTest::addColumn<bool>("native");
+  QTest::addColumn<int>("kind");
+  QTest::addColumn<int>("reason");
+
+  const auto windows = int(Platform::Windows);
+  const auto mac = int(Platform::MacOS);
+  const auto linux = int(Platform::Linux);
+  const auto native = int(FrameKind::Native);
+  const auto client = int(FrameKind::ClientSide);
+  // The switch off writes true: the frame of the system. It was taken away when the program was started (Windows, the
+  // 6th run of the checks), and the window had the new frame at the next start. What is stored is what decides.
+  QTest::newRow("Windows, the frame of the system")
+      << windows << QStringLiteral("windows") << true << native << int(FrameReason::OptedOutBySetting);
+  QTest::newRow("macOS, the frame of the system")
+      << mac << QStringLiteral("cocoa") << true << native << int(FrameReason::OptedOutBySetting);
+  QTest::newRow("Linux (xcb), the frame of the system")
+      << linux << QStringLiteral("xcb") << true << native << int(FrameReason::OptedOutBySetting);
+  // the switch on: the frame of the new look is what the person chose (it is the default except on Linux)
+  QTest::newRow("Windows, the frame of the new look")
+      << windows << QStringLiteral("windows") << false << client << int(FrameReason::Default);
+  QTest::newRow("macOS, the frame of the new look")
+      << mac << QStringLiteral("cocoa") << false << client << int(FrameReason::Default);
+  QTest::newRow("Linux (xcb), the frame of the new look")
+      << linux << QStringLiteral("xcb") << false << client << int(FrameReason::ChosenBySetting);
+  QTest::newRow("Linux (Wayland), the frame of the new look")
+      << linux << QStringLiteral("wayland") << false << client << int(FrameReason::ChosenBySetting);
+}
+
+void ChromePolicyTests::frameSwitch_whatThePersonChoseIsKeptAtTheNextStartAndChoosesTheFrame()
+{
+  QFETCH(int, platform);
+  QFETCH(QString, plugin);
+  QFETCH(bool, native);
+  QFETCH(int, kind);
+  QFETCH(int, reason);
+
+  QTemporaryDir dir;
+  QVERIFY(dir.isValid());
+  const auto file = dir.filePath(QStringLiteral("Deskflow.conf"));
+  const auto other = dir.filePath(QStringLiteral("Other.conf"));
+  const auto before = Settings::settingsFile();
+  const auto restore = qScopeGuard([&] { Settings::setSettingsFile(before); });
+  Settings::setSettingsFile(file);
+
+  // the program as it is at the start: the settings are read, and the frame is chosen from them
+  const auto start = [&] {
+    Settings::setSettingsFile(other);
+    Settings::setSettingsFile(file);
+    auto env = ChromeEnvironment::current();
+    env.platform = Platform(platform);
+    env.platformPlugin = plugin;
+    env.qtVersion = QVersionNumber(6, 9, 3);
+    env.deskflowLook = true;
+    env.frameVariable.clear();
+    env.highContrast = false;
+    env.compositionEnabled = true;
+    return env;
+  };
+
+  // a person who never chose has the frame that the platform has
+  QVERIFY(!start().nativeFrameSetting.has_value());
+
+  // the choice is made in the settings, the way that the switch writes it, and the program is started again
+  Settings::setValue(Settings::Gui::NativeWindowFrame, native);
+  for (int again = 1; again <= 2; ++again) {
+    const auto env = start();
+    QVERIFY2(
+        env.nativeFrameSetting.has_value(), qPrintable(QStringLiteral("the choice is gone at start %1").arg(again))
+    );
+    QCOMPARE(*env.nativeFrameSetting, native);
+    const auto decision = decideFrame(env);
+    QCOMPARE(int(decision.kind), kind);
+    QCOMPARE(int(decision.reason), reason);
+    QCOMPARE(prefersDeskflowFrame(env), !native);
+  }
 }
 
 void ChromePolicyTests::reasonName_isAWordForEveryReason()

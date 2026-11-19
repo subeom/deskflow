@@ -416,10 +416,36 @@ void ShellWidgetsTests::rail_tellsAScreenReaderTheListTheEntriesAndTheStateOfThe
   QCOMPARE(button->text(QAccessible::Name), QStringLiteral("Show the sidebar"));
 }
 
+void ShellWidgetsTests::segmented_choosesOne_andNeverUnchoosesIt_data()
+{
+  QTest::addColumn<int>("pixels");
+  QTest::addColumn<int>("spacing");
+  // The font of the test platform has letters that are wider than the ones of Segoe UI, the font of Windows 11 (12 px
+  // there): with the real fonts of the PC the control was under 400 px wide (the 7th run of the checks). The letters
+  // that are closer together (a spacing of the letters under 100 %) are the narrower font, and the sizes are the ones
+  // of the body of the text
+  QTest::newRow("the font of the platform") << 0 << 100;
+  QTest::newRow("12 px") << 12 << 100;
+  QTest::newRow("12 px, a narrower font") << 12 << 90;
+  QTest::newRow("12 px, a narrow font") << 12 << 80;
+  QTest::newRow("14 px") << 14 << 100;
+  QTest::newRow("14 px, a narrower font") << 14 << 90;
+  QTest::newRow("20 px") << 20 << 100;
+}
+
 void ShellWidgetsTests::segmented_choosesOne_andNeverUnchoosesIt()
 {
+  QFETCH(int, pixels);
+  QFETCH(int, spacing);
   install();
   SegmentedControl control;
+  {
+    auto font = control.font();
+    if (pixels > 0)
+      font.setPixelSize(pixels);
+    font.setLetterSpacing(QFont::PercentageSpacing, spacing);
+    control.setFont(font);
+  }
   control.addSegment(QStringLiteral("Share this computer"), QStringLiteral("Use this computer's keyboard and mouse"));
   control.addSegment(QStringLiteral("Use another computer"));
   QCOMPARE(control.count(), 2);
@@ -443,11 +469,27 @@ void ShellWidgetsTests::segmented_choosesOne_andNeverUnchoosesIt()
   QVERIFY(control.segment(1)->isChecked());
   QCOMPARE(changed.size(), 2);
 
-  // the size: the height of a target, and the width of what is written
+  // The size: the height of a target, and the width of what is written. The width is the letters of every choice (in
+  // the semibold that a choice is drawn in) with the room of 20 px on each side of it, and the padding of the capsule.
+  // A longer text is as much wider as its letters are: this is asked of the font that there is (an absolute width was
+  // not, and it was more than a font as narrow as Segoe UI has)
   QCOMPARE(control.sizeHint().height(), 44);
-  QVERIFY(control.sizeHint().width() > control.segment(0)->sizeHint().width() + control.segment(1)->sizeHint().width());
-  control.setSegmentText(1, QStringLiteral("Use another computer, a longer text"));
-  QVERIFY(control.sizeHint().width() > 400);
+  const auto written = [&control](const QString &text) {
+    auto font = control.segment(1)->font();
+    font.setWeight(QFont::DemiBold);
+    return QFontMetrics(font).horizontalAdvance(text);
+  };
+  const auto first = control.segment(0)->sizeHint().width();
+  const auto second = control.segment(1)->sizeHint().width();
+  QCOMPARE(control.sizeHint().width(), 2 * SegmentedControl::kPadding + first + second);
+  QVERIFY(control.sizeHint().width() > first + second);
+  const auto before = control.sizeHint().width();
+  const QString longer = QStringLiteral("Use another computer, a longer text");
+  control.setSegmentText(1, longer);
+  const auto wider = written(longer) - written(QStringLiteral("Use another computer"));
+  QVERIFY(wider > 0);
+  QCOMPARE(control.sizeHint().width(), before + wider);
+  QCOMPARE(control.segment(1)->sizeHint().width(), written(longer) + 40);
 }
 
 void ShellWidgetsTests::segmented_isOneStopAndTheArrowKeysChoose()
