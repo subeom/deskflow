@@ -31,6 +31,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFile>
+#include <QFileInfo>
 #include <QGroupBox>
 #include <QLabel>
 #include <QLayout>
@@ -78,6 +79,17 @@ void choose(QComboBox *combo, const QVariant &data)
     }
   }
   qFatal("no such choice");
+}
+
+// An empty file: a test that cannot make it is a failure of the test, and not a page that is shown a file that is not
+// there
+bool touch(const QString &path)
+{
+  QFile file(path);
+  if (!file.open(QIODevice::WriteOnly))
+    return false;
+  file.close();
+  return file.error() == QFileDevice::NoError && QFileInfo::exists(path);
 }
 
 void type(QLineEdit *edit, const QString &text)
@@ -467,7 +479,7 @@ void SettingsPagesTests::pages_writeWhatTheServerDialogWritesForTheSameChanges()
 {
   using S = Settings;
   const auto configFile = m_dir.filePath(QStringLiteral("server.conf"));
-  QFile(configFile).open(QIODevice::WriteOnly);
+  QVERIFY2(touch(configFile), qPrintable(configFile));
   const bool windows = deskflow::platform::isWindows();
   // every one of them the other way from what it is by default
   const bool clipboard = !S::defaultValue(S::Server::EnableClipboard).toBool();
@@ -648,7 +660,7 @@ void SettingsPagesTests::pages_theServerSettingsFollowTheirRules()
   QCOMPARE(S::value(S::Server::ExternalConfigFile).toString(), before);
   QVERIFY(!rowOf(path)->error().isEmpty());
   const auto existing = m_dir.filePath(QStringLiteral("there.conf"));
-  QFile(existing).open(QIODevice::WriteOnly);
+  QVERIFY2(touch(existing), qPrintable(existing));
   type(path, existing);
   QCOMPARE(S::value(S::Server::ExternalConfigFile).toString(), existing);
   QVERIFY(rowOf(path)->error().isEmpty());
