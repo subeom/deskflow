@@ -63,11 +63,39 @@ void ChromePolicyTests::decideFrame_followsTheRulesInTheOrderOfTheirSafety_data(
       << FrameReason::QtTooOld;
   QTest::newRow("macOS, offscreen") << environment(Platform::MacOS, QStringLiteral("offscreen")) << native
                                     << FrameReason::PlatformPluginUnsupported;
-  QTest::newRow("Linux, X11") << environment(Platform::Linux, QStringLiteral("xcb")) << client << FrameReason::Default;
-  QTest::newRow("Linux, Wayland") << environment(Platform::Linux, QStringLiteral("wayland")) << client
-                                  << FrameReason::Default;
+  // Linux has the frame of the system in the first release: the compositors differ and none is tried here. The frame of
+  // the new look is chosen there with the setting or with the variable (below)
+  QTest::newRow("Linux, X11") << environment(Platform::Linux, QStringLiteral("xcb")) << native
+                              << FrameReason::LinuxNativeByDefault;
+  QTest::newRow("Linux, Wayland") << environment(Platform::Linux, QStringLiteral("wayland")) << native
+                                  << FrameReason::LinuxNativeByDefault;
   QTest::newRow("Linux, Wayland with EGL")
-      << environment(Platform::Linux, QStringLiteral("wayland-egl")) << client << FrameReason::Default;
+      << environment(Platform::Linux, QStringLiteral("wayland-egl")) << native << FrameReason::LinuxNativeByDefault;
+  auto linuxChosen = environment(Platform::Linux, QStringLiteral("xcb"));
+  linuxChosen.nativeFrameSetting = false;
+  QTest::newRow("Linux, X11, the setting chooses the frame of the new look")
+      << linuxChosen << client << FrameReason::ChosenBySetting;
+  linuxChosen.platformPlugin = QStringLiteral("wayland");
+  QTest::newRow("Linux, Wayland, the setting chooses the frame of the new look")
+      << linuxChosen << client << FrameReason::ChosenBySetting;
+  linuxChosen.platformPlugin = QStringLiteral("eglfs");
+  QTest::newRow("Linux, a console, the setting cannot give a frame that the plugin does not have")
+      << linuxChosen << native << FrameReason::PlatformPluginUnsupported;
+  auto linuxNative = environment(Platform::Linux, QStringLiteral("xcb"));
+  linuxNative.nativeFrameSetting = true;
+  QTest::newRow("Linux, the setting says native") << linuxNative << native << FrameReason::OptedOutBySetting;
+  auto linuxVariable = environment(Platform::Linux, QStringLiteral("xcb"));
+  linuxVariable.frameVariable = QStringLiteral("client");
+  QTest::newRow("Linux, the variable chooses the frame of the new look")
+      << linuxVariable << client << FrameReason::Forced;
+  auto linuxContrast = linuxChosen;
+  linuxContrast.platformPlugin = QStringLiteral("xcb");
+  linuxContrast.highContrast = true;
+  QTest::newRow("Linux, chosen, but high contrast") << linuxContrast << native << FrameReason::HighContrast;
+  auto windowsChosen = environment(Platform::Windows, QStringLiteral("windows"));
+  windowsChosen.nativeFrameSetting = false;
+  QTest::newRow("Windows, the setting says not native: what it has by default")
+      << windowsChosen << client << FrameReason::Default;
   QTest::newRow("Linux, a console") << environment(Platform::Linux, QStringLiteral("eglfs")) << native
                                     << FrameReason::PlatformPluginUnsupported;
   QTest::newRow("Linux, offscreen") << environment(Platform::Linux, QStringLiteral("offscreen")) << native
@@ -144,13 +172,62 @@ void ChromePolicyTests::decideFrame_readsTheVariableWithoutCareForCaseOrSpaces()
   QCOMPARE(decideFrame(env).reason, FrameReason::Default);
 }
 
+void ChromePolicyTests::linux_hasTheFrameOfTheSystemInTheFirstRelease()
+{
+  // one line of the code says it: when the frame of the new look is tried on the compositors of Linux and found good,
+  // the line is changed and the rows above are changed with it
+  QVERIFY(!kLinuxClientSideByDefault);
+}
+
+void ChromePolicyTests::prefersDeskflowFrame_isWhatThePersonChoseOrWhatThePlatformHasByDefault_data()
+{
+  QTest::addColumn<ChromeEnvironment>("env");
+  QTest::addColumn<bool>("preferred");
+
+  QTest::newRow("Windows, nothing chosen") << environment(Platform::Windows, QStringLiteral("windows")) << true;
+  QTest::newRow("macOS, nothing chosen") << environment(Platform::MacOS, QStringLiteral("cocoa")) << true;
+  QTest::newRow("Linux, nothing chosen") << environment(Platform::Linux, QStringLiteral("xcb")) << false;
+  QTest::newRow("another system, nothing chosen") << environment(Platform::Other, QStringLiteral("xcb")) << false;
+
+  auto windowsNative = environment(Platform::Windows, QStringLiteral("windows"));
+  windowsNative.nativeFrameSetting = true;
+  QTest::newRow("Windows, the setting says native") << windowsNative << false;
+  auto linuxChosen = environment(Platform::Linux, QStringLiteral("xcb"));
+  linuxChosen.nativeFrameSetting = false;
+  QTest::newRow("Linux, the setting says not native") << linuxChosen << true;
+  auto linuxNative = environment(Platform::Linux, QStringLiteral("xcb"));
+  linuxNative.nativeFrameSetting = true;
+  QTest::newRow("Linux, the setting says native") << linuxNative << false;
+
+  // what the system can or cannot do is not a choice: high contrast does not change what the person chose
+  auto contrast = environment(Platform::Windows, QStringLiteral("windows"));
+  contrast.highContrast = true;
+  QTest::newRow("Windows, high contrast") << contrast << true;
+
+  // the variable is the way of a trial and of a person who has no window of settings
+  auto variableNative = environment(Platform::Windows, QStringLiteral("windows"));
+  variableNative.frameVariable = QStringLiteral("native");
+  QTest::newRow("the variable says native") << variableNative << false;
+  auto variableClient = environment(Platform::Linux, QStringLiteral("xcb"));
+  variableClient.frameVariable = QStringLiteral("client");
+  QTest::newRow("Linux, the variable says client") << variableClient << true;
+}
+
+void ChromePolicyTests::prefersDeskflowFrame_isWhatThePersonChoseOrWhatThePlatformHasByDefault()
+{
+  QFETCH(ChromeEnvironment, env);
+  QFETCH(bool, preferred);
+  QCOMPARE(prefersDeskflowFrame(env), preferred);
+}
+
 void ChromePolicyTests::reasonName_isAWordForEveryReason()
 {
   QStringList names;
   for (const auto reason :
        {FrameReason::Default, FrameReason::Forced, FrameReason::SystemLook, FrameReason::OptedOutByEnvironment,
         FrameReason::OptedOutBySetting, FrameReason::HighContrast, FrameReason::NoComposition, FrameReason::QtTooOld,
-        FrameReason::PlatformPluginUnsupported, FrameReason::OtherSystem}) {
+        FrameReason::PlatformPluginUnsupported, FrameReason::OtherSystem, FrameReason::LinuxNativeByDefault,
+        FrameReason::ChosenBySetting}) {
     const auto name = reasonName(reason);
     QVERIFY(!name.isEmpty());
     QVERIFY2(!names.contains(name), qPrintable(name));

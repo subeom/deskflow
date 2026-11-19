@@ -93,6 +93,36 @@ void AboutCardsTests::deskflowLook_hasTheCreditsInCards_withTheHeaderAndTheButto
   QVERIFY(!dialog.isVisible());
 }
 
+void AboutCardsTests::iconsOfTheNewLook_areCreditedWithTheirLicence_onlyWhereTheyAreUsed()
+{
+  // the icons of the new look are the Phosphor icons (MIT): the copyright notice is in the repository, and the person
+  // who has the program can read where the icons are from. The look of the system draws none of them
+  QApplication::setStyle(QStringLiteral("Fusion"));
+  {
+    AboutDialog dialog;
+    for (const auto *label : dialog.findChildren<QLabel *>())
+      QVERIFY2(!label->text().contains(QStringLiteral("Phosphor")), qPrintable(label->objectName()));
+  }
+
+  installDeskflowStyle();
+  AboutDialog dialog;
+  dialog.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+  auto *credit = child<QLabel>(dialog, "lblPhosphorCredit");
+  QVERIFY(credit->isVisibleTo(&dialog));
+  QVERIFY(credit->text().contains(QStringLiteral("Phosphor Icons")));
+  QVERIFY(credit->text().contains(QStringLiteral("MIT")));
+  QVERIFY(credit->text().contains(QStringLiteral("https://phosphoricons.com")));
+  QVERIFY(credit->openExternalLinks());
+  QVERIFY(credit->wordWrap());
+  // it is in the card with the other credit of icons, under it, and is not cut at the side
+  auto *breeze = child<QLabel>(dialog, "label_2");
+  QCOMPARE(credit->parentWidget(), breeze->parentWidget());
+  QVERIFY(credit->mapTo(&dialog, QPoint(0, 0)).y() >= breeze->mapTo(&dialog, QPoint(0, breeze->height())).y() - 1);
+  QVERIFY(credit->mapTo(&dialog, QPoint(credit->width(), 0)).x() <= dialog.width());
+  QVERIFY(credit->height() >= credit->heightForWidth(credit->width()));
+}
+
 void AboutCardsTests::deskflowLook_isAsSmallAsTheFormWas_andTheCardsAreNotCutAtTheSide()
 {
   QApplication::setStyle(QStringLiteral("Fusion"));

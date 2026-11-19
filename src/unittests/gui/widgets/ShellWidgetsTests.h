@@ -21,6 +21,7 @@ private Q_SLOTS:
   void rail_isOneStopForTheTabKey_andTheArrowKeysMoveInIt();
   void rail_aHiddenEntryTakesNoRoomAndNoFocus_aStatusLineHasNoFocus();
   void rail_paintsThePageThatIsShownInTheAccent_andTheIconsWhenFolded();
+  void rail_theNameOfTheListFollowsTheLanguage();
   void rail_tellsAScreenReaderTheListTheEntriesAndTheStateOfTheButton();
 
   void segmented_choosesOne_andNeverUnchoosesIt();

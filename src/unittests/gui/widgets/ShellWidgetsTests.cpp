@@ -16,7 +16,9 @@
 #include <QApplication>
 #include <QLabel>
 #include <QPixmapCache>
+#include <QScopeGuard>
 #include <QSignalSpy>
+#include <QTranslator>
 
 using namespace deskflow::gui::style;
 
@@ -325,6 +327,40 @@ void ShellWidgetsTests::rail_paintsThePageThatIsShownInTheAccent_andTheIconsWhen
       near(key.pixelColor(key.width() / 2, 1), c.accent) || near(key.pixelColor(key.width() / 2, 2), c.accent),
       qPrintable(key.pixelColor(key.width() / 2, 2).name())
   );
+}
+
+namespace {
+
+// A language that has one word: what the name of the sidebar becomes when the language changes
+class OneWordTranslator : public QTranslator
+{
+public:
+  QString translate(const char *context, const char *sourceText, const char *, int) const override
+  {
+    if (QLatin1String(context) == QLatin1String("NavRail") && QLatin1String(sourceText) == QLatin1String("Sidebar"))
+      return QStringLiteral("사이드바");
+    return {};
+  }
+  bool isEmpty() const override
+  {
+    return false;
+  }
+};
+
+} // namespace
+
+void ShellWidgetsTests::rail_theNameOfTheListFollowsTheLanguage()
+{
+  install();
+  NavRail rail;
+  fill(rail);
+  QCOMPARE(a11y(&rail)->text(QAccessible::Name), QStringLiteral("Sidebar"));
+
+  OneWordTranslator translator;
+  QVERIFY(QCoreApplication::installTranslator(&translator));
+  const auto remove = qScopeGuard([&] { QCoreApplication::removeTranslator(&translator); });
+  QCoreApplication::processEvents();
+  QCOMPARE(a11y(&rail)->text(QAccessible::Name), QStringLiteral("사이드바"));
 }
 
 void ShellWidgetsTests::rail_tellsAScreenReaderTheListTheEntriesAndTheStateOfTheButton()

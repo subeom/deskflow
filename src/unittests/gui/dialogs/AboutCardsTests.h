@@ -16,5 +16,6 @@ private Q_SLOTS:
 
   void systemLook_isTheFormAsItWas();
   void deskflowLook_hasTheCreditsInCards_withTheHeaderAndTheButtonKept();
+  void iconsOfTheNewLook_areCreditedWithTheirLicence_onlyWhereTheyAreUsed();
   void deskflowLook_isAsSmallAsTheFormWas_andTheCardsAreNotCutAtTheSide();
 };

@@ -31,6 +31,8 @@ const QHash<QString, Effect> &table()
     live(S::Gui::AutoUpdateCheck);
     // the look is chosen when the application starts
     live(S::Gui::Appearance);
+    // the frame of the window is chosen when the window is made, at the start of the application
+    live(S::Gui::NativeWindowFrame);
     // the size of text follows at once (TextSize listens to the setting)
     live(S::Gui::TextSize);
     // the GUI logger listens for it

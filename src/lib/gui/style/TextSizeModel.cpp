@@ -86,4 +86,12 @@ int scaledPixels(int logicalPixels, double scale)
   return logicalPixels > 0 ? std::max(1, scaled) : scaled;
 }
 
+double pixelsPerPoint(int measuredPixels, double points)
+{
+  constexpr double kDpi96 = 96.0 / 72.0;
+  if (measuredPixels <= 0 || points <= 0)
+    return kDpi96;
+  return measuredPixels / points;
+}
+
 } // namespace deskflow::gui::style

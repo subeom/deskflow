@@ -18,6 +18,7 @@ private Q_SLOTS:
   void cleanup();
 
   void effects_everyBoundSettingSaysWhatItNeeds();
+  void pages_theWindowFrameIsChosenWithOneSwitch_whichSaysTheFrameOfTheNewLook();
   void effects_theSettingsThatTheCoreReadsNeedARestart();
 
   void pages_areInTheOrderOfTheSidebar_withTitlesAndCards();

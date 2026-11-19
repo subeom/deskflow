@@ -193,8 +193,7 @@ double TextSize::pixelsPerPoint(const QFont &font) const
   // that is large enough to be exact
   auto probe = font;
   probe.setPointSizeF(288.0);
-  const auto pixels = QFontInfo(probe).pixelSize();
-  return pixels > 0 ? pixels / 288.0 : 96.0 / 72.0;
+  return deskflow::gui::style::pixelsPerPoint(QFontInfo(probe).pixelSize(), 288.0);
 }
 
 double TextSize::systemPixels(const QFont &font) const

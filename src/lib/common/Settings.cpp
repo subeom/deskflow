@@ -331,6 +331,9 @@ QVariant Settings::defaultValue(const QString &key)
     return computerDefaults(computerKey);
   }
 
+  if (key == Gui::NativeWindowFrame)
+    return kLinuxNativeWindowFrameByDefault && QSysInfo::kernelType() == QLatin1String("linux");
+
   if (m_defaultFalseValues.contains(key))
     return false;
 

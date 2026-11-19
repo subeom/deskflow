@@ -17,6 +17,8 @@
 #include "gui/widgets/SegmentedControl.h"
 #include "gui/widgets/StatusHero.h"
 
+#include "../FontEnvironment.h"
+
 #include <QAccessible>
 #include <QApplication>
 #include <QDir>
@@ -162,6 +164,8 @@ QList<QAction *> withoutSeparators(const QList<QAction *> &actions)
 
 void WindowChromeTests::initTestCase()
 {
+  // the width of text is what these tests measure: without fonts every letter is a box (see FontEnvironment.h)
+  SKIP_WITHOUT_FONTS();
   QVERIFY(m_dir.isValid());
   // the window listens on a local socket that is named in the temporary directory: it is the one of this test
   qputenv("TMPDIR", m_dir.path().toUtf8());
@@ -601,6 +605,26 @@ void WindowChromeTests::headerAndShell_keepTheMinimumWidth_withWideFonts()
   }
 }
 
+// The texts in a tree that a screen reader walks that say again what the group above them is named: it would say it
+// twice (once as the group, once as the text)
+QStringList sayAgain(QAccessibleInterface *node)
+{
+  QStringList found;
+  if (!node || node->state().invisible)
+    return found;
+  const auto name = node->text(QAccessible::Name);
+  for (int i = 0; i < node->childCount(); ++i) {
+    auto *child = node->child(i);
+    if (!child || child->state().invisible)
+      continue;
+    if (child->role() == QAccessible::StaticText && !name.isEmpty() && child->text(QAccessible::Name) == name &&
+        node->role() != QAccessible::StaticText)
+      found << QStringLiteral("\"%1\" says it again in a text of its own").arg(name);
+    found << sayAgain(child);
+  }
+  return found;
+}
+
 // The buttons of a header, found as a screen reader finds them: named, buttons, and telling the truth about the
 // keyboard. The state of a button says that it can take the focus exactly when it is a stop of the keyboard (its policy
 // of focus): the window of Windows has the three buttons of the window that are not stops (the keys of the system,
@@ -632,6 +656,49 @@ void checkTheButtons(const WindowHeader &header)
   for (auto *button : buttons)
     names.insert(nameOf(button));
   QCOMPARE(names.count(), buttons.count());
+}
+
+void WindowChromeTests::theHeader_saysItsNameOnce_whateverTheSystemDrawsInIt_data()
+{
+  QTest::addColumn<bool>("captionButtons");
+  QTest::addColumn<bool>("title");
+  QTest::addColumn<int>("leftInset");
+
+  // the header of a Mac (the buttons of the window and the title are the system's: nothing of its own but the menu),
+  // the one of Windows (the name, the menu and the three buttons), and the one that has the name and no buttons of its
+  // own
+  QTest::newRow("macOS") << false << false << WindowHeader::kTrafficLightsInset;
+  QTest::newRow("Windows and Linux") << true << true << 0;
+  QTest::newRow("the name, without buttons") << false << true << 0;
+}
+
+void WindowChromeTests::theHeader_saysItsNameOnce_whateverTheSystemDrawsInIt()
+{
+  QFETCH(bool, captionButtons);
+  QFETCH(bool, title);
+  QFETCH(int, leftInset);
+
+  auto window = makeClientSideWindow();
+  showWindow(*window);
+  WindowHeader::Options options;
+  options.captionButtons = captionButtons;
+  options.title = title;
+  options.leftInset = leftInset;
+  WindowHeader header(options, window.get());
+  header.setTitle(QStringLiteral("Deskflow"));
+  header.setGeometry(0, 0, window->width(), WindowHeader::kHeight);
+  header.show();
+  QCoreApplication::processEvents();
+
+  auto *interface = QAccessible::queryAccessibleInterface(&header);
+  QVERIFY(interface);
+  // the header is named by the name of the program, and the name is not a text again below it
+  QCOMPARE(interface->text(QAccessible::Name), QStringLiteral("Deskflow"));
+  const auto again = sayAgain(interface);
+  QVERIFY2(again.isEmpty(), qPrintable(again.join(QLatin1Char('\n'))));
+  // the same of the whole window, as the window of the platform has it
+  const auto whole = sayAgain(QAccessible::queryAccessibleInterface(window.get()));
+  QVERIFY2(whole.isEmpty(), qPrintable(whole.join(QLatin1Char('\n'))));
 }
 
 void WindowChromeTests::theButtonsOfTheHeader_areNamedForTheScreenReader_andAreButtons()

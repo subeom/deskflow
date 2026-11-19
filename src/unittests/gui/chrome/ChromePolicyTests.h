@@ -14,6 +14,9 @@ private Q_SLOTS:
   void decideFrame_followsTheRulesInTheOrderOfTheirSafety_data();
   void decideFrame_followsTheRulesInTheOrderOfTheirSafety();
   void decideFrame_readsTheVariableWithoutCareForCaseOrSpaces();
+  void linux_hasTheFrameOfTheSystemInTheFirstRelease();
+  void prefersDeskflowFrame_isWhatThePersonChoseOrWhatThePlatformHasByDefault_data();
+  void prefersDeskflowFrame_isWhatThePersonChoseOrWhatThePlatformHasByDefault();
   void reasonName_isAWordForEveryReason();
   void current_hasTheLookAndThePlatformThatItIsAskedAbout();
 };

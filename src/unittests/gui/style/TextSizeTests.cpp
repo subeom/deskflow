@@ -11,6 +11,8 @@
 #include "gui/style/LookFollower.h"
 #include "gui/style/TextSize.h"
 
+#include "../FontEnvironment.h"
+
 #include <QApplication>
 #include <QEvent>
 #include <QFontInfo>
@@ -48,7 +50,7 @@ struct FakeSystem
 
 int appFontPixels()
 {
-  return QFontInfo(QApplication::font()).pixelSize();
+  return testfonts::fontPixels(QApplication::font());
 }
 
 // Counts the QEvent::ApplicationFontChange that a widget is sent
@@ -265,15 +267,15 @@ void TextSizeTests::aFontInPoints_keepsItsPointsAndItsFamily()
   env.systemFont = [system] { return system; };
   env.platform = TextPlatform::Windows;
   QApplication::setFont(system);
-  const auto pixelsOf9Points = QFontInfo(system).pixelSize();
+  const auto pixelsOf9Points = testfonts::fontPixels(system);
   auto *service = TextSize::install(env);
   QVERIFY(QApplication::font().pointSizeF() > 0);
   QVERIFY(QApplication::font().pixelSize() <= 0);
   // 9 points are below the floor wherever the point is 1.33 pixels or fewer: the body is 14 px in any case
   const auto expected = pixelsOf9Points <= 14 ? 14 : pixelsOf9Points;
   QVERIFY2(
-      qAbs(QFontInfo(QApplication::font()).pixelSize() - expected) <= 1,
-      qPrintable(QString::number(QFontInfo(QApplication::font()).pixelSize()))
+      qAbs(testfonts::fontPixels(QApplication::font()) - expected) <= 1,
+      qPrintable(QString::number(testfonts::fontPixels(QApplication::font())))
   );
   QCOMPARE(QApplication::font().family(), system.family());
   Q_UNUSED(service);
@@ -290,16 +292,16 @@ void TextSizeTests::aWidgetThatSetsItsOwnFont_isToldOfTheNewSize_throughTheLookF
   QWidget window;
   auto *title = new QLabel(QStringLiteral("Title"), &window);
   new LookFollower(title, [title] { title->setFont(scaleFont(QApplication::font(title), 26.0 / 14.0)); });
-  QCOMPARE(QFontInfo(title->font()).pixelSize(), 26);
+  QCOMPARE(testfonts::fontPixels(title->font()), 26);
 
   service->setPercent(150);
   // 21 px of body, and a title of 26 / 14 of it
-  QCOMPARE(QFontInfo(title->font()).pixelSize(), 39);
+  QCOMPARE(testfonts::fontPixels(title->font()), 39);
   service->setPercent(90);
   // 12.6 px of body are 13 px of font (the system of the test gives pixels), and a title of 26 / 14 of that
-  QCOMPARE(QFontInfo(title->font()).pixelSize(), 24);
+  QCOMPARE(testfonts::fontPixels(title->font()), 24);
   service->setPercent(100);
-  QCOMPARE(QFontInfo(title->font()).pixelSize(), 26);
+  QCOMPARE(testfonts::fontPixels(title->font()), 26);
 }
 
 void TextSizeTests::onTextSizeChanged_endsWithItsContext()
@@ -367,6 +369,31 @@ void TextSizeTests::describe_saysTheSizeAndWhereItComesFrom()
   );
 }
 
+void TextSizeTests::fontPixels_isTheAskedSize_whereTheFontDatabaseCannotAnswer()
+{
+  // a font that is larger than a font engine can have gets the box engine of Qt, and the box engine has no size: that
+  // is what a font database with no fonts answers for every font (the offscreen platform of Qt on Windows), here made
+  // with one font that no database can match
+  QFont absurd;
+  absurd.setPixelSize(70000);
+  QCOMPARE(QFontInfo(absurd).pixelSize(), -1);
+  QCOMPARE(testfonts::fontPixels(absurd), 70000);
+  // the check that the layout tests skip themselves by sees a font that cannot be matched as one that is no answer
+  QVERIFY(!testfonts::fontDatabaseAnswers(absurd));
+
+  const qreal dpi = QGuiApplication::primaryScreen()->logicalDotsPerInchY();
+  QFont inPoints;
+  inPoints.setPointSizeF(70000.0 * 72.0 / dpi);
+  QCOMPARE(QFontInfo(inPoints).pixelSize(), -1);
+  QCOMPARE(testfonts::fontPixels(inPoints), 70000);
+
+  // where the database can answer the answer is its own: a font of 14 px is 14 px
+  QFont normal;
+  normal.setPixelSize(14);
+  QCOMPARE(testfonts::fontPixels(normal), 14);
+  QVERIFY(testfonts::fontDatabaseAnswers());
+}
+
 void TextSizeTests::uninstall_putsTheFontOfTheSystemBack()
 {
   FakeSystem system;
@@ -401,7 +428,7 @@ void TextSizeTests::applyAppearance_hasTheServiceForTheNewLook_andNotForTheSyste
   Settings::setValue(Settings::Gui::Appearance, QStringLiteral("system"));
   applyAppearance();
   QVERIFY(!TextSize::instance());
-  QCOMPARE(QFontInfo(QApplication::font()).pixelSize(), QFontInfo(before).pixelSize());
+  QCOMPARE(testfonts::fontPixels(QApplication::font()), testfonts::fontPixels(before));
   QCOMPARE(metricScale(), 1.0);
 }
 

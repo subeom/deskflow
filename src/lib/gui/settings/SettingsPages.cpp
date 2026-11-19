@@ -14,6 +14,7 @@
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
 #include "gui/TlsUtility.h"
+#include "gui/chrome/ChromePolicy.h"
 #include "gui/core/NetworkMonitor.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/LookFollower.h"
@@ -59,6 +60,8 @@ Text sdPlain(const char *source)
 }
 
 // The texts of the pages themselves (English until the translation of this part is done)
+// The source of each text is marked at its call (QT_TRANSLATE_NOOP), which is what lets lupdate find it: the helper
+// itself cannot be seen by it
 Text tx(const char *source)
 {
   return [source] { return QCoreApplication::translate("SettingsPages", source); };
@@ -230,10 +233,12 @@ SettingsPages::SettingsPages(QObject *parent) : QObject(parent), m_binder(new Se
 
   // the order of the sidebar
   m_entries = {
-      {QStringLiteral("settings.security"), QStringLiteral("shield-check"), tx("Security & clipboard"),
-       buildSecurity()},
-      {QStringLiteral("settings.display"), QStringLiteral("monitor"), tx("Display & monitors"), buildDisplay()},
-      {QStringLiteral("settings.keyboard"), QStringLiteral("keyboard"), tx("Keyboard & mouse"), buildKeyboard()},
+      {QStringLiteral("settings.security"), QStringLiteral("shield-check"),
+       tx(QT_TRANSLATE_NOOP("SettingsPages", "Security & clipboard")), buildSecurity()},
+      {QStringLiteral("settings.display"), QStringLiteral("monitor"),
+       tx(QT_TRANSLATE_NOOP("SettingsPages", "Display & monitors")), buildDisplay()},
+      {QStringLiteral("settings.keyboard"), QStringLiteral("keyboard"),
+       tx(QT_TRANSLATE_NOOP("SettingsPages", "Keyboard & mouse")), buildKeyboard()},
       {QStringLiteral("settings.network"), QStringLiteral("network"), sdPlain("&Network"), buildNetwork()},
       {generalId(), QStringLiteral("gear"), sdPlain("&General"), buildGeneral()},
       {QStringLiteral("settings.advanced"), QStringLiteral("sliders-horizontal"), sdPlain("&Advanced"),
@@ -301,22 +306,45 @@ SettingsPage *SettingsPages::buildGeneral()
   )->setObjectName(QStringLiteral("comboTrayIcon"));
 
   // The program: updates and sleep
-  auto *program = page->addCard(tx("Updates and power"));
+  auto *program = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Updates and power")));
   addSwitch(page, m_binder, program, Settings::Gui::AutoUpdateCheck, sd("Check for updates on startup"))
       ->setObjectName(QStringLiteral("cbAutoUpdate"));
   addSwitch(page, m_binder, program, Settings::Core::PreventSleep, sd("Prevent this computer from going to sleep"))
       ->setObjectName(QStringLiteral("cbPreventSleep"));
 
   // The look of the application: chosen when the application starts
-  auto *look = page->addCard(tx("Appearance"));
+  auto *look = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Appearance")));
   addChoice(
-      page, m_binder, look, Settings::Gui::Appearance, tx("Look of the application"),
-      tx("Takes effect the next time the application starts."),
-      {{tx("Deskflow"), QStringLiteral("deskflow")}, {tx("System"), QStringLiteral("system")}}
+      page, m_binder, look, Settings::Gui::Appearance,
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Look of the application")),
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Takes effect the next time the application starts.")),
+      {{tx(QT_TRANSLATE_NOOP("SettingsPages", "Deskflow")), QStringLiteral("deskflow")},
+       {tx(QT_TRANSLATE_NOOP("SettingsPages", "System")), QStringLiteral("system")}}
   )->setObjectName(QStringLiteral("comboAppearance"));
+  // the frame of the window: the title and the buttons of the window are drawn by the application (on) or by the system
+  // (off). The setting says it the other way round (true is the frame of the system), and the default is not the same
+  // on every system, so the switch shows what the person prefers (see prefersDeskflowFrame)
+  {
+    auto *row = page->addRow(
+        look, tx(QT_TRANSLATE_NOOP("SettingsPages", "Use the Deskflow window frame")),
+        tx(QT_TRANSLATE_NOOP("SettingsPages", "Takes effect the next time the application starts."))
+    );
+    auto *frame = new ToggleSwitch;
+    frame->setObjectName(QStringLiteral("cbDeskflowFrame"));
+    row->addControl(frame);
+    m_binder->bind(
+        Settings::Gui::NativeWindowFrame, frame, frame, &QAbstractButton::toggled,
+        [frame] { return QVariant(!frame->isChecked()); },
+        [frame](const QVariant &) {
+          frame->setChecked(
+              deskflow::gui::chrome::prefersDeskflowFrame(deskflow::gui::chrome::ChromeEnvironment::current())
+          );
+        }
+    );
+  }
   // the size of text: Automatic is the size that the system gives, as large as the settings of the OS have it
   addChoice(
-      page, m_binder, look, Settings::Gui::TextSize, tx("Text size"),
+      page, m_binder, look, Settings::Gui::TextSize, tx(QT_TRANSLATE_NOOP("SettingsPages", "Text size")),
       [] {
         const auto key = [](Qt::Key key) { return QKeySequence(Qt::CTRL | key).toString(QKeySequence::NativeText); };
         return QCoreApplication::translate(
@@ -326,11 +354,11 @@ SettingsPage *SettingsPages::buildGeneral()
         )
             .arg(key(Qt::Key_Equal), key(Qt::Key_Minus), key(Qt::Key_0));
       },
-      {{tx("Smaller (90 %)"), 90},
-       {tx("Automatic"), 100},
-       {tx("Large (115 %)"), 115},
-       {tx("Larger (130 %)"), 130},
-       {tx("Largest (150 %)"), 150}}
+      {{tx(QT_TRANSLATE_NOOP("SettingsPages", "Smaller (90 %)")), 90},
+       {tx(QT_TRANSLATE_NOOP("SettingsPages", "Automatic")), 100},
+       {tx(QT_TRANSLATE_NOOP("SettingsPages", "Large (115 %)")), 115},
+       {tx(QT_TRANSLATE_NOOP("SettingsPages", "Larger (130 %)")), 130},
+       {tx(QT_TRANSLATE_NOOP("SettingsPages", "Largest (150 %)")), 150}}
   )
       ->setObjectName(QStringLiteral("comboTextSize"));
   return page;
@@ -338,13 +366,15 @@ SettingsPage *SettingsPages::buildGeneral()
 
 SettingsPage *SettingsPages::buildSecurity()
 {
-  auto *page = new SettingsPage(QStringLiteral("settings.security"), tx("Security & clipboard"));
+  auto *page = new SettingsPage(
+      QStringLiteral("settings.security"), tx(QT_TRANSLATE_NOOP("SettingsPages", "Security & clipboard"))
+  );
 
-  auto *encryption = page->addCard(tx("Encryption"));
+  auto *encryption = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Encryption")));
   encryption->setObjectName(QStringLiteral("cardEncryption"));
   auto *tls = addSwitch(
       page, m_binder, encryption, Settings::Security::TlsEnabled, sd("Enable TLS Encryption"),
-      tx("Both computers must use the same TLS (encryption) setting.")
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Both computers must use the same TLS (encryption) setting."))
   );
   tls->setObjectName(QStringLiteral("cbTlsEnabled"));
 
@@ -400,7 +430,9 @@ SettingsPage *SettingsPages::buildSecurity()
 
   auto *peers = addSwitch(
       page, m_binder, encryption, Settings::Security::CheckPeers, sd("Require client certificates"),
-      tx("The server accepts only the clients that have a certificate that it trusts.")
+      tx(QT_TRANSLATE_NOOP(
+          "SettingsPages", "The server accepts only the clients that have a certificate that it trusts."
+      ))
   );
   peers->setObjectName(QStringLiteral("cbRequireClientCert"));
 
@@ -417,10 +449,11 @@ SettingsPage *SettingsPages::buildSecurity()
   });
 
   // the fingerprint to compare with the one of the other computer
-  auto *trusted = page->addCard(tx("Trusted computers"));
+  auto *trusted = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Trusted computers")));
   trusted->setObjectName(QStringLiteral("cardTrusted"));
   auto *fingerprintRow = page->addRow(
-      trusted, tx("Local fingerprint"), tx("Compare it with the one shown on the other computer before you trust it.")
+      trusted, tx(QT_TRANSLATE_NOOP("SettingsPages", "Local fingerprint")),
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Compare it with the one shown on the other computer before you trust it."))
   );
   auto *fingerprint = new QPushButton;
   fingerprint->setObjectName(QStringLiteral("btnFingerprint"));
@@ -433,7 +466,7 @@ SettingsPage *SettingsPages::buildSecurity()
   m_binder->onRefresh([=] { fingerprint->setVisible(tls->isChecked()); });
 
   // the clipboard that the server shares: on or off, only text, and how large
-  auto *clipboard = page->addCard(tx("Clipboard"));
+  auto *clipboard = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Clipboard")));
   clipboard->setObjectName(QStringLiteral("cardClipboard"));
   auto *clipboardOn =
       addSwitch(page, m_binder, clipboard, Settings::Server::EnableClipboard, sv("Enable clipboard sharing"));
@@ -494,7 +527,7 @@ void SettingsPages::fillAddresses(QComboBox *combo)
 SettingsPage *SettingsPages::buildNetwork()
 {
   auto *page = new SettingsPage(QStringLiteral("settings.network"), sdPlain("&Network"));
-  auto *connection = page->addCard(tx("Connection"));
+  auto *connection = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Connection")));
 
   auto *interfaceRow = page->addRow(connection, sd("Network IP"));
   auto *interfaces = new QComboBox;
@@ -515,7 +548,7 @@ SettingsPage *SettingsPages::buildNetwork()
       ->setObjectName(QStringLiteral("sbPort"));
 
   // the clients are asked now and then whether they are there: how often, and how they speak
-  auto *keepAlive = page->addCard(tx("Server"));
+  auto *keepAlive = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Server")));
   keepAlive->setObjectName(QStringLiteral("cardServerNetwork"));
   auto *heartbeatRow = page->addRow(keepAlive, svPlain("&Check clients every"), [] {
     return plainText(
@@ -575,7 +608,9 @@ SettingsPage *SettingsPages::buildNetwork()
 
 SettingsPage *SettingsPages::buildDisplay()
 {
-  auto *page = new SettingsPage(QStringLiteral("settings.display"), tx("Display & monitors"));
+  auto *page = new SettingsPage(
+      QStringLiteral("settings.display"), tx(QT_TRANSLATE_NOOP("SettingsPages", "Display & monitors"))
+  );
 
   // how a pointer that stays at the edge of a screen goes to the next one
   auto *switching = page->addCard(svPlain("&Switching"));
@@ -635,9 +670,10 @@ SettingsPage *SettingsPages::buildDisplay()
 
 SettingsPage *SettingsPages::buildKeyboard()
 {
-  auto *page = new SettingsPage(QStringLiteral("settings.keyboard"), tx("Keyboard & mouse"));
+  auto *page =
+      new SettingsPage(QStringLiteral("settings.keyboard"), tx(QT_TRANSLATE_NOOP("SettingsPages", "Keyboard & mouse")));
 
-  auto *lock = page->addCard(tx("Lock to computer"));
+  auto *lock = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Lock to computer")));
   addSwitch(
       page, m_binder, lock, Settings::Server::DisableLockToComputer, sv("Disable lock to computer (scroll lock key)")
   )
@@ -647,7 +683,7 @@ SettingsPage *SettingsPages::buildKeyboard()
   )
       ->setObjectName(QStringLiteral("cbDefaultLockToComputerState"));
 
-  auto *pointer = page->addCard(tx("Pointer"));
+  auto *pointer = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Pointer")));
   auto *relative = addSwitch(
       page, m_binder, pointer, Settings::Server::RelativeMouseMoves, svPlain("Use &relative mouse movements")
   );
@@ -671,7 +707,7 @@ SettingsPage *SettingsPages::buildAdvanced()
 
   // the background service of Windows: not where there is none, and not in the portable mode
   if (deskflow::platform::isWindows() && !Settings::isPortableMode()) {
-    auto *service = page->addCard(tx("Background service"));
+    auto *service = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Background service")));
     service->setObjectName(QStringLiteral("cardService"));
     auto *row = page->addRow(service, sd("Use background service (daemon)"));
     auto *daemon = new ToggleSwitch;
@@ -696,7 +732,7 @@ SettingsPage *SettingsPages::buildAdvanced()
   }
 
   // the commands: a switch and the command that it runs
-  auto *commands = page->addCard(tx("Commands"));
+  auto *commands = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Commands")));
   auto addCommand = [&](const QString &enableKey, const QString &commandKey, Text title, const char *name) {
     auto *row = page->addRow(commands, std::move(title));
     auto *enable = new ToggleSwitch;
@@ -793,7 +829,7 @@ SettingsPage *SettingsPages::buildAdvanced()
       ->setObjectName(QStringLiteral("cbGuiDebug"));
 
   // the file that the server reads its configuration from, in place of the computers of the grid
-  auto *configFile = page->addCard(tx("Server configuration file"));
+  auto *configFile = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Server configuration file")));
   configFile->setObjectName(QStringLiteral("cardConfigFile"));
   auto *external =
       addSwitch(page, m_binder, configFile, Settings::Server::ExternalConfig, sv("Use a server config file"), [] {
@@ -844,9 +880,11 @@ SettingsPage *SettingsPages::buildAdvanced()
   markServerOnly(page, m_binder, configFile);
 
   // the way back to the settings that a new copy of the program has
-  auto *reset = page->addCard(tx("Reset"));
-  auto *resetRow =
-      page->addRow(reset, sd("Remove all settings"), tx("Clears every setting and starts the application again."));
+  auto *reset = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Reset")));
+  auto *resetRow = page->addRow(
+      reset, sd("Remove all settings"),
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Clears every setting and starts the application again."))
+  );
   auto *remove = new QPushButton;
   remove->setObjectName(QStringLiteral("btnClearAllSettings"));
   page->follow([remove] { remove->setText(QCoreApplication::translate("SettingsDialog", "Remove all settings")); });

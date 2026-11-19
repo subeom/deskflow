@@ -353,7 +353,7 @@ NavRail::NavRail(QWidget *parent) : PanelWidget(Density::Normal, parent), m_togg
   installAccessibleInterfaces();
   setObjectName(QStringLiteral("navRail"));
   setPadding(0);
-  setAccessibleName(QStringLiteral("Sidebar"));
+  setAccessibleName(tr("Sidebar"));
   m_panelWidth = expandedPanelWidth();
   setFixedWidth(widgetWidthFor(expandedPanelWidth()));
 
@@ -738,6 +738,14 @@ void NavRail::relayout()
       continue;
     bottom = place(entry, bottom, true);
   }
+}
+
+void NavRail::changeEvent(QEvent *event)
+{
+  PanelWidget::changeEvent(event);
+  // the name of the list is read by a screen reader: it is in the language of the application
+  if (event->type() == QEvent::LanguageChange)
+    setAccessibleName(tr("Sidebar"));
 }
 
 void NavRail::resizeEvent(QResizeEvent *event)

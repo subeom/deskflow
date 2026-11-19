@@ -6,6 +6,7 @@
 
 #include "WindowHeader.h"
 
+#include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/FontScale.h"
 #include "gui/style/Icons.h"
@@ -213,6 +214,7 @@ WindowHeader::WindowHeader(const Options &options, QWidget *parent)
       m_title(new QLabel(this)),
       m_more(new HeaderButton(HeaderButton::Glyph::More, this))
 {
+  installAccessibleInterfaces();
   setObjectName(QStringLiteral("windowHeader"));
   setFixedHeight(kHeight);
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -221,6 +223,8 @@ WindowHeader::WindowHeader(const Options &options, QWidget *parent)
   layout->setContentsMargins(options.leftInset > 0 ? options.leftInset : metrics::spaceXl, 0, 0, 0);
   layout->setSpacing(0);
 
+  // the header is named by the name of the program (setTitle): the text of the name is not walked to again below it
+  markRedundantForScreenReader(m_title);
   m_title->setObjectName(QStringLiteral("windowHeaderTitle"));
   m_title->setTextFormat(Qt::PlainText);
   m_title->setTextInteractionFlags(Qt::NoTextInteraction);

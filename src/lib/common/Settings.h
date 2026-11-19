@@ -258,6 +258,11 @@ public:
   static QVariant defaultValue(const QString &key);
   static bool isServerConfigFileReadable();
   static bool isWritable();
+  //! The first release has the frame of the system on Linux: the default of gui/nativeWindowFrame is true there (and
+  //! false on the other systems, which have the frame of the new look). The frame of the new look is chosen with the
+  //! setting or with DESKFLOW_WINDOW_FRAME=client. This is the one place that says it (the policy of the frame reads
+  //! it)
+  static constexpr bool kLinuxNativeWindowFrameByDefault = true;
   static bool isPortableMode();
   static QString settingsFile();
   static QString settingsPath();
@@ -374,7 +379,6 @@ private:
     , Gui::LogExpanded
     , Gui::SidebarCollapsed
     , Gui::ShellLogExpanded
-    , Gui::NativeWindowFrame
     , Gui::TextSize
     , Gui::SymbolicTrayIcon
     , Gui::ShownFirstConnectedMessage

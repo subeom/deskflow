@@ -28,6 +28,8 @@
 #include "gui/widgets/StatusChip.h"
 #include "gui/widgets/StatusHero.h"
 
+#include "../FontEnvironment.h"
+
 #include <QAccessible>
 #include <QApplication>
 #include <QCheckBox>
@@ -295,6 +297,8 @@ QString widestMinimum(const QWidget &window)
 
 void MainShellTests::initTestCase()
 {
+  // the width of text is what these tests measure: without fonts every letter is a box (see FontEnvironment.h)
+  SKIP_WITHOUT_FONTS();
   QVERIFY(m_dir.isValid());
   // the window listens on a local socket that is named in the temporary directory: it is the one of this test
   qputenv("TMPDIR", m_dir.path().toUtf8());

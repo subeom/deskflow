@@ -375,6 +375,9 @@ QAccessibleInterface *factory(const QString &className, QObject *object)
   }
   if (className == QLatin1String("SectionHeader"))
     return new GroupAccessible(widget, QAccessible::Heading);
+  // the top of the window: named by the name of the program, which is the text in it
+  if (className == QLatin1String("deskflow::gui::chrome::WindowHeader"))
+    return new GroupAccessible(widget, QAccessible::Grouping);
   if (className == QLatin1String("PageTitle"))
     return new TitleAccessible(static_cast<QLabel *>(widget));
   if (className == QLatin1String("deskflow::gui::settings::RestartBanner"))

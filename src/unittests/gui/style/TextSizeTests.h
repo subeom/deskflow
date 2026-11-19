@@ -32,6 +32,7 @@ private Q_SLOTS:
   void onTextSizeChanged_endsWithItsContext();
   void fontRatio_isHowManyTimesTheFontOfTheSystemTheTextIs();
   void describe_saysTheSizeAndWhereItComesFrom();
+  void fontPixels_isTheAskedSize_whereTheFontDatabaseCannotAnswer();
   void uninstall_putsTheFontOfTheSystemBack();
   void applyAppearance_hasTheServiceForTheNewLook_andNotForTheSystem();
 

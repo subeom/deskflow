@@ -30,6 +30,7 @@ private Q_SLOTS:
   void checkCleanComputerName();
   void checkCleanComputerName_LongName();
   void checkClearState();
+  void nativeWindowFrame_isTheFrameOfTheSystemOnLinuxOnlyByDefault();
   void portableMode_keepsTheStateKeysWhenTheSettingsAreReadAgain();
 
 private:

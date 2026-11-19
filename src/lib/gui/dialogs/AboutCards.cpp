@@ -12,6 +12,7 @@
 #include "gui/widgets/SettingCard.h"
 
 #include <QBoxLayout>
+#include <QCoreApplication>
 #include <QDialog>
 #include <QGroupBox>
 #include <QLabel>
@@ -49,6 +50,19 @@ bool applyAboutCards(QDialog *dialog)
   aboutLayout->addWidget(description);
   aboutLayout->addWidget(copyright);
   aboutLayout->addWidget(icons);
+  // the icons of the new look: the MIT licence of Phosphor Icons asks that its notice goes with them (it is in the
+  // repository, in icons/phosphor/LICENSE), and the person who has the program can see where they are from
+  auto *phosphor = new QLabel(
+      QCoreApplication::translate(
+          "AboutCards",
+          "Icons of the new look from <a href=\"https://phosphoricons.com\">Phosphor Icons</a> (MIT license)"
+      )
+  );
+  phosphor->setObjectName(QStringLiteral("lblPhosphorCredit"));
+  phosphor->setTextFormat(Qt::RichText);
+  phosphor->setOpenExternalLinks(true);
+  phosphor->setWordWrap(true);
+  aboutLayout->addWidget(phosphor);
   about->addContent(aboutText);
 
   // The people that the program is thanks to

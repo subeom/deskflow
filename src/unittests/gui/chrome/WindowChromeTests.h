@@ -38,6 +38,8 @@ private Q_SLOTS:
 
   void headerAndShell_keepTheMinimumWidth_withWideFonts_data();
   void headerAndShell_keepTheMinimumWidth_withWideFonts();
+  void theHeader_saysItsNameOnce_whateverTheSystemDrawsInIt_data();
+  void theHeader_saysItsNameOnce_whateverTheSystemDrawsInIt();
   void theButtonsOfTheHeader_areNamedForTheScreenReader_andAreButtons();
   void theHeaderOfWindows_hasTheButtonOfTheMenuAsTheOnlyStopOfTheKeyboard();
   void theLog_saysWhatTheWindowHadBeforeItWasMaximized_andAfterItIsRestored();

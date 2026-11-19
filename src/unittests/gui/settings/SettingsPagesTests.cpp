@@ -145,6 +145,7 @@ void forgetAll()
   Settings::setValue(Settings::Server::XdpRestoreToken);
   Settings::setValue(Settings::Server::XdpClipboardRetried);
   Settings::setValue(Settings::Gui::Appearance);
+  Settings::setValue(Settings::Gui::NativeWindowFrame);
   Settings::setValue(Settings::Core::CoreMode);
 }
 
@@ -173,6 +174,41 @@ void SettingsPagesTests::effects_everyBoundSettingSaysWhatItNeeds()
     QVERIFY2(effectOf(key).has_value(), qPrintable(key));
   // a key that no page binds has no effect to give
   QVERIFY(!effectOf(QStringLiteral("computer_x/name")).has_value());
+}
+
+void SettingsPagesTests::pages_theWindowFrameIsChosenWithOneSwitch_whichSaysTheFrameOfTheNewLook()
+{
+  SettingsPages pages;
+  auto *toggle = must<ToggleSwitch>(pages, "cbDeskflowFrame");
+  // the title of the row says what is on, not what is off, on every system
+  const auto row = qobject_cast<SettingRow *>(toggle->parentWidget());
+  QVERIFY(row);
+  QCOMPARE(row->title(), QStringLiteral("Use the Deskflow window frame"));
+  // it is read at the start of the application, and it says so, with the words that the look has for it
+  QCOMPARE(row->description(), QStringLiteral("Takes effect the next time the application starts."));
+  QCOMPARE(effectOf(Settings::Gui::NativeWindowFrame), std::optional<Effect>(Effect::Live));
+
+  // the setting is the other way round (it says the frame of the system): the switch is on where the new frame is what
+  // the platform has by default (not on Linux in the first release), and a choice is written whatever the default is
+  Settings::setValue(Settings::Gui::NativeWindowFrame);
+  const bool newFrameByDefault = !Settings::defaultValue(Settings::Gui::NativeWindowFrame).toBool();
+  QCOMPARE(toggle->isChecked(), newFrameByDefault);
+  QVERIFY(!Settings::proxy().contains(Settings::Gui::NativeWindowFrame));
+
+  toggle->setChecked(!newFrameByDefault);
+  QCOMPARE(Settings::value(Settings::Gui::NativeWindowFrame).toBool(), newFrameByDefault);
+  QVERIFY(Settings::proxy().contains(Settings::Gui::NativeWindowFrame));
+  toggle->setChecked(newFrameByDefault);
+  QCOMPARE(Settings::value(Settings::Gui::NativeWindowFrame).toBool(), !newFrameByDefault);
+  // the choice is written even where it is the default: on Linux the frame of the new look is chosen by writing false,
+  // where the default is true
+  QVERIFY(Settings::proxy().contains(Settings::Gui::NativeWindowFrame));
+
+  // a change of the setting from elsewhere is taken by the switch
+  Settings::setValue(Settings::Gui::NativeWindowFrame, true);
+  QVERIFY(!toggle->isChecked());
+  Settings::setValue(Settings::Gui::NativeWindowFrame, false);
+  QVERIFY(toggle->isChecked());
 }
 
 void SettingsPagesTests::effects_theSettingsThatTheCoreReadsNeedARestart()

@@ -86,4 +86,11 @@ double osTextScaleFromPercent(int percent);
 //! A size in logical pixels made larger or smaller by \p scale (not less than 1 for a positive size)
 int scaledPixels(int logicalPixels, double scale);
 
+/*!
+ * How many pixels a point is: from the pixels (\p measuredPixels) that a font of \p points points was measured to have.
+ * A font database that has no fonts says -1 (or nothing) for every font; the screen is then taken to have 96 dpi, as
+ * the screens of Windows have, so that the size of the font of the system is still known.
+ */
+double pixelsPerPoint(int measuredPixels, double points);
+
 } // namespace deskflow::gui::style

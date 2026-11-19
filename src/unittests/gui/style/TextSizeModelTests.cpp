@@ -214,4 +214,16 @@ void TextSizeModelTests::scaledPixels_roundsAndNeverLosesASize()
   QCOMPARE(scaledPixels(-4, 2.0), -8);
 }
 
+void TextSizeModelTests::pixelsPerPoint_isWhatWasMeasured_andForAScreenThatCannotSayItIs96Dpi()
+{
+  // a font of 288 points that a screen of 96 dpi has is 384 px, and one of 72 dpi is 288 px
+  QCOMPARE(pixelsPerPoint(384, 288.0), 384.0 / 288.0);
+  QCOMPARE(pixelsPerPoint(288, 288.0), 1.0);
+  // a font database that has no fonts says -1 (or nothing) for every font: the screen of Windows has 96 dpi
+  QCOMPARE(pixelsPerPoint(-1, 288.0), 96.0 / 72.0);
+  QCOMPARE(pixelsPerPoint(0, 288.0), 96.0 / 72.0);
+  // a size of no points cannot be measured
+  QCOMPARE(pixelsPerPoint(100, 0.0), 96.0 / 72.0);
+}
+
 QTEST_APPLESS_MAIN(TextSizeModelTests)

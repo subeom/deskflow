@@ -201,6 +201,28 @@ void SettingsTests::checkClearState()
   QVERIFY(!Settings::value(Settings::Gui::WindowGeometry).toRect().isValid());
 }
 
+void SettingsTests::nativeWindowFrame_isTheFrameOfTheSystemOnLinuxOnlyByDefault()
+{
+  // the frame of the new look is what Windows and macOS have; Linux has the frame of the system until it is chosen
+  const bool linux = QSysInfo::kernelType() == QLatin1String("linux");
+  QCOMPARE(
+      Settings::defaultValue(Settings::Gui::NativeWindowFrame).toBool(),
+      linux && Settings::kLinuxNativeWindowFrameByDefault
+  );
+  QCOMPARE(
+      Settings::value(Settings::Gui::NativeWindowFrame).toBool(), linux && Settings::kLinuxNativeWindowFrameByDefault
+  );
+  // a choice is kept: true is the frame of the system, false the frame of the new look
+  Settings::setValue(Settings::Gui::NativeWindowFrame, true);
+  QVERIFY(Settings::value(Settings::Gui::NativeWindowFrame).toBool());
+  Settings::setValue(Settings::Gui::NativeWindowFrame, false);
+  QVERIFY(!Settings::value(Settings::Gui::NativeWindowFrame).toBool());
+  Settings::setValue(Settings::Gui::NativeWindowFrame);
+  QCOMPARE(
+      Settings::value(Settings::Gui::NativeWindowFrame).toBool(), linux && Settings::kLinuxNativeWindowFrameByDefault
+  );
+}
+
 void SettingsTests::portableMode_keepsTheStateKeysWhenTheSettingsAreReadAgain()
 {
   // portable mode is "the file settings/Deskflow.conf is next to the program": the test makes it and takes it away

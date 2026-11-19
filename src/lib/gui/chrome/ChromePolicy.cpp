@@ -49,7 +49,9 @@ ChromeEnvironment ChromeEnvironment::current()
   env.qtVersion = QVersionNumber::fromString(QString::fromLatin1(qVersion()));
   env.deskflowLook = style::isDeskflowStyleInstalled();
   env.frameVariable = qEnvironmentVariable("DESKFLOW_WINDOW_FRAME");
-  env.nativeFrameSetting = Settings::value(Settings::Gui::NativeWindowFrame).toBool();
+  // a setting that was never written is not a choice: the platform has its own default
+  if (Settings::proxy().contains(Settings::Gui::NativeWindowFrame))
+    env.nativeFrameSetting = Settings::value(Settings::Gui::NativeWindowFrame).toBool();
   env.highContrast = style::readSystemHints().highContrast;
   return env;
 }
@@ -65,7 +67,7 @@ FrameDecision decideFrame(const ChromeEnvironment &environment)
   const auto wish = wishOf(environment.frameVariable);
   if (wish == Wish::Native)
     return native(FrameReason::OptedOutByEnvironment);
-  if (environment.nativeFrameSetting)
+  if (environment.nativeFrameSetting.value_or(false))
     return native(FrameReason::OptedOutBySetting);
   if (environment.highContrast)
     return native(FrameReason::HighContrast);
@@ -87,17 +89,43 @@ FrameDecision decideFrame(const ChromeEnvironment &environment)
     if (environment.qtVersion < QVersionNumber(6, 9))
       return native(FrameReason::QtTooOld);
     return clientSide(FrameReason::Default);
-  case Platform::Linux:
-    if (!kLinuxClientSideByDefault)
-      return native(FrameReason::OtherSystem);
+  case Platform::Linux: {
     if (environment.platformPlugin != QLatin1String("xcb") &&
         !environment.platformPlugin.startsWith(QLatin1String("wayland")))
       return native(FrameReason::PlatformPluginUnsupported);
+    // the frame of the new look is there for whoever chose it (the setting says not native)
+    const bool chosen = environment.nativeFrameSetting.has_value() && !*environment.nativeFrameSetting;
+    if (chosen)
+      return clientSide(FrameReason::ChosenBySetting);
+    if (!kLinuxClientSideByDefault)
+      return native(FrameReason::LinuxNativeByDefault);
     return clientSide(FrameReason::Default);
+  }
   case Platform::Other:
     break;
   }
   return native(FrameReason::OtherSystem);
+}
+
+bool prefersDeskflowFrame(const ChromeEnvironment &environment)
+{
+  const auto wish = wishOf(environment.frameVariable);
+  if (wish == Wish::Native)
+    return false;
+  if (wish == Wish::Client)
+    return true;
+  if (environment.nativeFrameSetting.has_value())
+    return !*environment.nativeFrameSetting;
+  switch (environment.platform) {
+  case Platform::Windows:
+  case Platform::MacOS:
+    return true;
+  case Platform::Linux:
+    return kLinuxClientSideByDefault;
+  case Platform::Other:
+    break;
+  }
+  return false;
 }
 
 QString reasonName(FrameReason reason)
@@ -123,6 +151,10 @@ QString reasonName(FrameReason reason)
     return QStringLiteral("the platform plugin has no frame to replace");
   case FrameReason::OtherSystem:
     return QStringLiteral("another system");
+  case FrameReason::LinuxNativeByDefault:
+    return QStringLiteral("Linux has the frame of the system by default");
+  case FrameReason::ChosenBySetting:
+    return QStringLiteral("chosen with the setting gui/nativeWindowFrame");
   }
   return {};
 }

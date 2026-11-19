@@ -22,6 +22,8 @@
 #include "gui/widgets/StatusHero.h"
 #include "gui/widgets/ToggleSwitch.h"
 
+#include "../FontEnvironment.h"
+
 #include <QAccessible>
 #include <QAction>
 #include <QApplication>
@@ -137,7 +139,7 @@ QSize orbSizeOf(const QWidget &hero)
 
 int fontPixels(const QWidget *widget)
 {
-  return QFontInfo(widget->font()).pixelSize();
+  return testfonts::fontPixels(widget->font());
 }
 
 QRect rectIn(const QWidget &window, const QWidget *widget)
@@ -164,6 +166,8 @@ QString placed(const QWidget &window, const QWidget *widget)
 
 void TextSizeShellTests::initTestCase()
 {
+  // the width of text is what these tests measure: without fonts every letter is a box (see FontEnvironment.h)
+  SKIP_WITHOUT_FONTS();
   QVERIFY(m_dir.isValid());
   qputenv("TMPDIR", m_dir.path().toUtf8());
   Settings::setSettingsFile(m_dir.filePath(QStringLiteral("Deskflow.conf")));
@@ -211,7 +215,7 @@ void TextSizeShellTests::keys_makeTheTextLargerAndSmaller_andGoBackToAutomatic()
   QVERIFY(QTest::qWaitForWindowActive(window.get()));
   auto *service = TextSize::instance();
   QVERIFY(service);
-  QCOMPARE(QFontInfo(QApplication::font()).pixelSize(), 14);
+  QCOMPARE(testfonts::fontPixels(QApplication::font()), 14);
 
   // larger: Ctrl+= (and Ctrl++ for the keyboards that have the plus without Shift)
   QTest::keySequence(window.get(), QKeySequence(Qt::CTRL | Qt::Key_Equal));
@@ -219,7 +223,7 @@ void TextSizeShellTests::keys_makeTheTextLargerAndSmaller_andGoBackToAutomatic()
   QCOMPARE(service->percent(), 115);
   QTest::keySequence(window.get(), QKeySequence(Qt::CTRL | Qt::Key_Plus));
   QCOMPARE(service->percent(), 130);
-  QCOMPARE(QFontInfo(QApplication::font()).pixelSize(), 18);
+  QCOMPARE(testfonts::fontPixels(QApplication::font()), 18);
 
   // the end is the end
   QTest::keySequence(window.get(), QKeySequence(Qt::CTRL | Qt::Key_Equal));
@@ -230,7 +234,7 @@ void TextSizeShellTests::keys_makeTheTextLargerAndSmaller_andGoBackToAutomatic()
   QTest::keySequence(window.get(), QKeySequence(Qt::CTRL | Qt::Key_0));
   QCOMPARE(service->percent(), 100);
   QCOMPARE(Settings::value(Settings::Gui::TextSize).toInt(), 100);
-  QCOMPARE(QFontInfo(QApplication::font()).pixelSize(), 14);
+  QCOMPARE(testfonts::fontPixels(QApplication::font()), 14);
 
   // smaller
   QTest::keySequence(window.get(), QKeySequence(Qt::CTRL | Qt::Key_Minus));
@@ -266,14 +270,14 @@ void TextSizeShellTests::theChoiceInTheSettings_followsTheKeys_andTheKeysFollowI
   Q_EMIT combo->activated(3);
   QCOMPARE(Settings::value(Settings::Gui::TextSize).toInt(), 130);
   QCOMPARE(TextSize::instance()->percent(), 130);
-  QCOMPARE(QFontInfo(QApplication::font()).pixelSize(), 18);
+  QCOMPARE(testfonts::fontPixels(QApplication::font()), 18);
 
   // a key moves the choice
   window->findChild<QAction *>(QStringLiteral("actionTextLarger"))->trigger();
   QCOMPARE(combo->currentData().toInt(), 150);
   window->findChild<QAction *>(QStringLiteral("actionTextReset"))->trigger();
   QCOMPARE(combo->currentData().toInt(), 100);
-  QCOMPARE(QFontInfo(QApplication::font()).pixelSize(), 14);
+  QCOMPARE(testfonts::fontPixels(QApplication::font()), 14);
 
   // the description says the keys of this computer
   auto *row = general->findChild<SettingRow *>();
@@ -310,7 +314,7 @@ void TextSizeShellTests::theControlsFollowTheText_andStayAsDrawnAtTheSizeOfTheFl
   {
     auto window = makeWindow(system, 150);
     showWindow(*window);
-    QCOMPARE(QFontInfo(QApplication::font()).pixelSize(), 21);
+    QCOMPARE(testfonts::fontPixels(QApplication::font()), 21);
     QCOMPARE(metricScale(), 1.5);
     QCOMPARE(NavItem::itemHeight(), 66);
     QCOMPARE(SegmentedControl::controlHeight(), 66);

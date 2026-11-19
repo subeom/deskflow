@@ -29,4 +29,5 @@ private Q_SLOTS:
 
   void osTextScale_isAMultipleBetweenOneAndTwoAndAQuarter();
   void scaledPixels_roundsAndNeverLosesASize();
+  void pixelsPerPoint_isWhatWasMeasured_andForAScreenThatCannotSayItIs96Dpi();
 };
