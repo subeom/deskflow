@@ -227,4 +227,65 @@ void ChromeGeometryTests::edgesOf_saysWhichEdgesARegionResizes()
     QCOMPARE(edgesOf(region), Qt::Edges());
 }
 
+void ChromeGeometryTests::trackSizes_areTheSizesOfTheWindowAsManyTimesAsTheScale_data()
+{
+  QTest::addColumn<QSize>("minimum");
+  QTest::addColumn<QSize>("maximum");
+  QTest::addColumn<qreal>("scale");
+  QTest::addColumn<QSize>("frame");
+  QTest::addColumn<QSize>("expectedMinimum");
+  QTest::addColumn<QSize>("expectedMaximum");
+
+  const QSize none(16777215, 16777215);
+  // the least size that the window had on Windows with the Log closed and with it open (the height of the second is
+  // what made a window that was restored from maximized 16 pixels higher than it was)
+  QTest::newRow("100 %") << QSize(519, 551) << none << 1.0 << QSize() << QSize(519, 551) << QSize(0, 0);
+  QTest::newRow("the Log open at 100 %") << QSize(519, 767) << none << 1.0 << QSize() << QSize(519, 767) << QSize(0, 0);
+  QTest::newRow("125 %") << QSize(519, 551) << none << 1.25 << QSize() << QSize(649, 689) << QSize(0, 0);
+  QTest::newRow("150 %") << QSize(519, 551) << none << 1.5 << QSize() << QSize(779, 827) << QSize(0, 0);
+  QTest::newRow("200 %") << QSize(519, 551) << none << 2.0 << QSize() << QSize(1038, 1102) << QSize(0, 0);
+  QTest::newRow("no least size") << QSize(0, 0) << none << 1.5 << QSize() << QSize(0, 0) << QSize(0, 0);
+  QTest::newRow("a side that is not limited")
+      << QSize(519, 0) << QSize(none.width(), 800) << 1.0 << QSize() << QSize(519, 0) << QSize(0, 800);
+  QTest::newRow("a most size") << QSize(300, 200) << QSize(1200, 900) << 1.5 << QSize() << QSize(450, 300)
+                               << QSize(1800, 1350);
+  // the window is never meant to be the least size and not the most: a most size under the least one is the least one
+  QTest::newRow("a most size under the least size")
+      << QSize(500, 400) << QSize(300, 300) << 1.0 << QSize() << QSize(500, 400) << QSize(500, 400);
+  // a window that has a frame of the system takes it from the size that its content has
+  QTest::newRow("with a frame") << QSize(500, 400) << none << 1.0 << QSize(16, 39) << QSize(516, 439) << QSize(0, 0);
+  QTest::newRow("a side that has no least size has no frame added to it")
+      << QSize(500, 0) << none << 1.0 << QSize(16, 39) << QSize(516, 0) << QSize(0, 0);
+  QTest::newRow("with a frame and a most size")
+      << QSize(500, 400) << QSize(1200, 900) << 1.0 << QSize(16, 39) << QSize(516, 439) << QSize(1216, 939);
+}
+
+void ChromeGeometryTests::trackSizes_areTheSizesOfTheWindowAsManyTimesAsTheScale()
+{
+  QFETCH(QSize, minimum);
+  QFETCH(QSize, maximum);
+  QFETCH(qreal, scale);
+  QFETCH(QSize, frame);
+  QFETCH(QSize, expectedMinimum);
+  QFETCH(QSize, expectedMaximum);
+  const auto sizes = trackSizes(minimum, maximum, scale, frame);
+  QCOMPARE(sizes.minimum, expectedMinimum);
+  QCOMPARE(sizes.maximum, expectedMaximum);
+}
+
+void ChromeGeometryTests::trackSizes_ofAWindowWithNoFrame_addNothingToTheSizes()
+{
+  // the window with no title bar has no frame to add, at any scale and at any size: the least size of a window that
+  // is as small as it can be is what the window is restored to, not a bigger one
+  for (const qreal scale : {1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0}) {
+    for (const int width : {1, 340, 519, 720, 1000}) {
+      for (const int height : {1, 230, 551, 767, 1040}) {
+        const auto sizes = trackSizes(QSize(width, height), QSize(16777215, 16777215), scale);
+        QCOMPARE(sizes.minimum, QSize(qRound(width * scale), qRound(height * scale)));
+        QCOMPARE(sizes.maximum, QSize(0, 0));
+      }
+    }
+  }
+}
+
 QTEST_MAIN(ChromeGeometryTests)

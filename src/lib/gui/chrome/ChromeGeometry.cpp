@@ -127,4 +127,34 @@ QSize firstWindowSize(const QSize &wanted, const QSize &minimum, const QSize &av
   return QSize(qMax(width, minimum.width()), qMax(height, minimum.height()));
 }
 
+TrackSizes trackSizes(const QSize &minimum, const QSize &maximum, qreal scale, const QSize &frame)
+{
+  // the side of a size that is not limited (what a widget has for a window that has no most size)
+  constexpr int kNotLimited = 16777215;
+
+  const auto scaled = [scale](int side) { return side > 0 && side < kNotLimited ? qRound(side * scale) : side; };
+  const auto sizeOf = [&](int least, int most, int frameSide, int &leastOut, int &mostOut) {
+    leastOut = scaled(least);
+    mostOut = scaled(most);
+    // a most size that is under the least size is the least size
+    const int bound = qMax(mostOut, leastOut);
+    if (leastOut > 0)
+      leastOut += frameSide;
+    mostOut = bound < kNotLimited ? bound + frameSide : 0;
+  };
+
+  const int frameWidth = qMax(0, frame.width());
+  const int frameHeight = qMax(0, frame.height());
+  TrackSizes sizes;
+  int leastWidth = 0;
+  int mostWidth = 0;
+  int leastHeight = 0;
+  int mostHeight = 0;
+  sizeOf(minimum.width(), maximum.width(), frameWidth, leastWidth, mostWidth);
+  sizeOf(minimum.height(), maximum.height(), frameHeight, leastHeight, mostHeight);
+  sizes.minimum = QSize(qMax(0, leastWidth), qMax(0, leastHeight));
+  sizes.maximum = QSize(mostWidth, mostHeight);
+  return sizes;
+}
+
 } // namespace deskflow::gui::chrome

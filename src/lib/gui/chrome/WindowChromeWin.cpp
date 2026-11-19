@@ -17,9 +17,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QMainWindow>
-#include <QMargins>
 #include <QOperatingSystemVersion>
-#include <QVariant>
 #include <QWindow>
 
 // the headers of Windows depend on the order: windows.h comes first (the sorting of includes must not change it)
@@ -180,6 +178,31 @@ public:
       *result = 0;
       return true;
 
+    // The least and the most that the window is dragged to are the sizes of the window as they are. Qt adds to them the
+    // frame that it saw when the client area was last calculated, and while the window is maximized that is the border
+    // that the system gives it and that the content is moved inside of (the frame of the window is not there, but Qt
+    // takes the border for one). The system asks for these sizes first when the window is restored, before the client
+    // area is calculated again, so a window that was as low as it can be came back 16 pixels higher. The place and the
+    // size of a maximized window are left as the system has them
+    case WM_GETMINMAXINFO: {
+      auto *info = reinterpret_cast<MINMAXINFO *>(msg->lParam);
+      const auto *handle = m_window->windowHandle();
+      const auto sizes = trackSizes(
+          handle ? handle->minimumSize() : m_window->minimumSize(),
+          handle ? handle->maximumSize() : m_window->maximumSize(), m_window->devicePixelRatioF()
+      );
+      if (sizes.minimum.width() > 0)
+        info->ptMinTrackSize.x = sizes.minimum.width();
+      if (sizes.minimum.height() > 0)
+        info->ptMinTrackSize.y = sizes.minimum.height();
+      if (sizes.maximum.width() > 0)
+        info->ptMaxTrackSize.x = sizes.maximum.width();
+      if (sizes.maximum.height() > 0)
+        info->ptMaxTrackSize.y = sizes.maximum.height();
+      *result = 0;
+      return true;
+    }
+
     // The part of the window that the program has not painted yet (an edge that is dragged, a window that comes back
     // from the taskbar) is the colour of the look and not what the system leaves there, which is white or black: the
     // program paints over it as it is ready, and what shows in between is of the colour of the window
@@ -332,20 +355,14 @@ bool installWindowsFrame(QMainWindow *window, WindowHeader *header, QObject *own
   // the system calculates the client area again, now through the filter
   SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 
-  // Qt takes a window that has the styles of a frame for one that has the frame, and makes the window bigger than the
-  // size that is asked for by the margins of it. The frame is not there (the client area is the whole window), so the
-  // margins that Qt assumes are taken back: the size that is asked for is the size of the client area. The property is
-  // the one that Qt has for a program that draws its own frame; the line of the log says what Qt assumed
+  // Qt takes a window that has the styles of a frame for one that has the frame. The line of the log says what it
+  // assumed. (Qt has a property for a program that draws its own frame, _q_windowsCustomMargins, but it reads it only
+  // when the window of the system is made, which is above, so it is not set here: it changes nothing for this window
+  // and it would be taken for margins if the window were made again)
   if (auto *handle = window->windowHandle()) {
     const auto frame = handle->frameMargins();
     qInfo().noquote() << "window frame: Qt assumed margins" << frame.left() << frame.top() << frame.right()
                       << frame.bottom();
-    if (!frame.isNull()) {
-      handle->setProperty(
-          "_q_windowsCustomMargins",
-          QVariant::fromValue(QMargins(-frame.left(), -frame.top(), -frame.right(), -frame.bottom()))
-      );
-    }
   }
   return true;
 }

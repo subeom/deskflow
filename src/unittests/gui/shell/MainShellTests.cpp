@@ -7,6 +7,7 @@
 
 #include "common/Settings.h"
 #include "gui/MainWindow.h"
+#include "gui/chrome/WindowHeader.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/settings/RestartBanner.h"
 #include "gui/settings/SettingsPage.h"
@@ -1139,16 +1140,55 @@ void MainShellTests::deskflowLook_startsAtItsOwnSize_whateverTheSystemLookSaved(
   QCOMPARE(again->size(), QSize(900, 700));
 }
 
+void MainShellTests::deskflowLook_canBeLowEnoughForASmallScreen_data()
+{
+  QTest::addColumn<int>("basePixels");
+  QTest::addColumn<int>("spacing");
+  // the font of the test platform; the body that Windows 11 has (14 px) with letters as far apart as the fonts of the
+  // PC of the checks of Windows were wide; and a font with lines that are higher than the ones of the platform
+  QTest::newRow("the font of the platform") << 0 << 100;
+  QTest::newRow("14 px body") << 14 << 100;
+  QTest::newRow("14 px body, wide") << 14 << 130;
+  QTest::newRow("20 px, high lines") << 20 << 100;
+}
+
 void MainShellTests::deskflowLook_canBeLowEnoughForASmallScreen()
 {
-  // the rail of the sidebar gives its entries less height when the window is not high: the window can be as low as the
-  // screens of laptops have the room for (1366x768 at 125 % has 576 px of work area, with a taskbar)
+  QFETCH(int, basePixels);
+  QFETCH(int, spacing);
+
+  // The window that Windows and Linux have: the header of the new look is in the place of the title bar and of the
+  // menu bar (which is hidden), so the window is as high as the header and what is under it. (The window of a Mac has a
+  // menu bar of its own, which is at the top of the screen and not in the window, but the platform of this test draws
+  // it in the window, so what is asked of the window is the height of its content.)
+  qputenv("DESKFLOW_WINDOW_FRAME", "client");
+  const auto unset = qScopeGuard([] { qunsetenv("DESKFLOW_WINDOW_FRAME"); });
   auto window = makeWindow(true);
+  window->setFont(scaledFont(window->font(), QString(), basePixels, 1.0, spacing));
   showWindow(*window);
-  const auto least = window->minimumSizeHint().height();
-  QVERIFY2(least <= 540, qPrintable(QStringLiteral("the window asks for a height of %1").arg(least)));
-  // and it is not made so low that the entries of the rail are on top of each other
   const auto *rail = Access::shell(*window)->rail();
+  const int content = window->centralWidget()->minimumSizeHint().height();
+
+  // The window can be as low as the screens of laptops have the room for: 1366x768 at 125 % has 576 logical pixels of
+  // work area, and the first window keeps 16 of them from the taskbar. The height of the window is not a number for the
+  // font of a platform: Windows has 551 (the header and the rail of the sidebar) and the platform of this test less
+  // than that with no header, and the limit is the screen
+  constexpr int kSmallWorkArea = 576;
+  constexpr int kRoomFromTheTaskbar = 16;
+  QVERIFY2(
+      content <= kSmallWorkArea - kRoomFromTheTaskbar,
+      qPrintable(QStringLiteral("the window asks for a height of %1").arg(content))
+  );
+  // and what asks for it is the rail of the sidebar at the height of its entries when they are the least high, under
+  // the header: the page and the cards do not ask for more height than the rail has, at any font
+  const int header = chrome::WindowHeader::kHeight;
+  QVERIFY2(
+      content <= rail->minimumSizeHint().height() + header + 16,
+      qPrintable(QStringLiteral("%1 for a rail of %2").arg(content).arg(rail->minimumSizeHint().height()))
+  );
+  const auto least = window->minimumSizeHint().height();
+  QVERIFY(least >= content);
+  // and it is not made so low that the entries of the rail are on top of each other
   window->resize(window->width(), least);
   QTRY_COMPARE(window->height(), least);
   QCoreApplication::processEvents();

@@ -23,4 +23,7 @@ private Q_SLOTS:
   void firstWindowSize_isTheWantedSize_whereTheScreenHasTheRoom_data();
   void firstWindowSize_isTheWantedSize_whereTheScreenHasTheRoom();
   void edgesOf_saysWhichEdgesARegionResizes();
+  void trackSizes_areTheSizesOfTheWindowAsManyTimesAsTheScale_data();
+  void trackSizes_areTheSizesOfTheWindowAsManyTimesAsTheScale();
+  void trackSizes_ofAWindowWithNoFrame_addNothingToTheSizes();
 };

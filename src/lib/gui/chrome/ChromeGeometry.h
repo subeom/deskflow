@@ -81,4 +81,25 @@ QMargins maximizedInsets(int frameThickness);
  */
 QSize firstWindowSize(const QSize &wanted, const QSize &minimum, const QSize &available, const QSize &frame = {});
 
+//! The sizes that a window is dragged between, as the system is told them (what WM_GETMINMAXINFO asks for). A side that
+//! is 0 is not limited by the program: the system keeps what it has for it
+struct TrackSizes
+{
+  QSize minimum;
+  QSize maximum;
+};
+
+/*!
+ * \brief The least and the most that the system lets the window be dragged to, in pixels of the window: the least and
+ * the most size of the window (\p minimum and \p maximum, in logical pixels, a side of 16777215 or more is not limited)
+ * as many times as the scale of the screen (\p scale), and the frame that the system takes from the window (\p frame,
+ * in pixels of the window) added.
+ *
+ * The window with no title bar has no frame: its client area is the whole window, so \p frame is empty. Qt adds the
+ * frame that it last saw to these sizes, and while the window is maximized that is the thickness of the border that
+ * the window is moved inside of: a window that is restored from it at its least size is asked to be that much bigger
+ * (16 pixels in each direction), so the program tells the system these sizes itself.
+ */
+TrackSizes trackSizes(const QSize &minimum, const QSize &maximum, qreal scale, const QSize &frame = {});
+
 } // namespace deskflow::gui::chrome
