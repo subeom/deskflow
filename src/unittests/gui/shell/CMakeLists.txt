@@ -28,3 +28,12 @@ create_test(
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
 target_include_directories(TextSizeShellTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+
+create_test(
+  NAME TunnelShellTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TunnelShellTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(TunnelShellTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")

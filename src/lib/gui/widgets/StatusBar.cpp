@@ -7,6 +7,7 @@
 #include "StatusBar.h"
 #include "common/Constants.h"
 #include "common/Settings.h"
+#include "common/TunnelAddress.h"
 
 #include <QEvent>
 #include <QLabel>
@@ -107,9 +108,17 @@ void StatusBar::setStatus(ConnectionState connectionState, ProcessState processS
           setSecurityIconVisible(true);
           m_connectionInterval = -1;
           if (!isServer) {
-            m_lblStatus->setText(
-                tr("%1 is connected as client of %2").arg(kAppName, Settings::textValue(Settings::Client::RemoteHost))
-            );
+            // (a Cloudflare Tunnel is named by its host name: 127.0.0.1 is where it listens, not who the server is)
+            const auto tunnelHost = deskflow::tunnel::displayedTunnelHost();
+            if (tunnelHost.isEmpty()) {
+              m_lblStatus->setText(
+                  tr("%1 is connected as client of %2").arg(kAppName, Settings::textValue(Settings::Client::RemoteHost))
+              );
+            } else {
+              m_lblStatus->setText(
+                  tr("%1 is connected as client of %2 through a Cloudflare Tunnel").arg(kAppName, tunnelHost)
+              );
+            }
           }
           break;
         }

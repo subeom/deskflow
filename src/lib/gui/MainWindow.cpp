@@ -21,6 +21,7 @@
 #include "dialogs/ServerAddressesDialog.h"
 #include "dialogs/ServerConfigDialog.h"
 #include "dialogs/SettingsDialog.h"
+#include "dialogs/TunnelTestDialog.h"
 
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
@@ -43,21 +44,25 @@
 #include "gui/shell/ClientConnectionSection.h"
 #include "gui/shell/MainShell.h"
 #include "gui/shell/StatusModel.h"
+#include "gui/shell/TunnelChip.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/Icons.h"
 #include "gui/style/TextSize.h"
 #include "gui/tray/TrayController.h"
 #include "gui/tray/TrayMenuModel.h"
 #include "gui/tray/TrayPolicy.h"
+#include "gui/tunnel/TunnelController.h"
+#include "gui/widgets/InlineHint.h"
 #include "gui/widgets/LayoutNoticeBar.h"
 #include "gui/widgets/LogDock.h"
 #include "gui/widgets/NavRail.h"
 #include "gui/widgets/SidebarShell.h"
+#include "gui/widgets/TunnelStatusWidget.h"
 #include "net/FingerprintDatabase.h"
 #include "widgets/StatusBar.h"
 
-#include <QCheckBox>
 #include <QBoxLayout>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDesktopServices>
@@ -76,6 +81,7 @@
 #include <QScreen>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QStackedLayout>
 #include <QVersionNumber>
 
 #include <memory>
@@ -162,6 +168,7 @@ MainWindow::MainWindow()
   updateText();
   connectSlots();
   setupTrayIcon();
+  setupTunnel();
   updateComputerName();
   setHelpFilePath();
 
@@ -188,6 +195,7 @@ MainWindow::MainWindow()
   m_statusBar->setSecurityIcon(TlsUtility::isEnabled());
   if (deskflow::gui::style::isDeskflowStyleInstalled()) {
     setupShell();
+    attachTunnelToShell();
     applyWindowChrome();
   }
   restoreWindow();
@@ -212,6 +220,10 @@ MainWindow::~MainWindow()
 
   m_guiDupeChecker->close();
   m_coreProcess.cleanup();
+  // Cloudflare Tunnel: the core is stopped first, the tunnel second
+  if (m_tunnelController != nullptr) {
+    m_tunnelController->shutdown();
+  }
 }
 
 const QString &MainWindow::windowGeometryKey() const
@@ -565,7 +577,9 @@ void MainWindow::startCore()
   }
 
   // Invalid client settings
-  if (m_coreProcess.mode() == CoreMode::Client && Settings::textValue(Settings::Client::RemoteHost).isEmpty()) {
+  // (with a Cloudflare Tunnel the saved address is not needed)
+  if (m_coreProcess.mode() == CoreMode::Client && Settings::textValue(Settings::Client::RemoteHost).isEmpty() &&
+      !m_coreProcess.isTunnelRequired()) {
     qDebug().noquote() << "skipping core start, undefined remotehost";
     return;
   }
@@ -603,6 +617,10 @@ void MainWindow::clearSettings()
 
   m_coreProcess.stop();
   m_coreProcess.clearSettings();
+  // Cloudflare Tunnel: cloudflared ends before the settings and the Service Token are removed
+  if (m_tunnelController != nullptr) {
+    m_tunnelController->shutdown();
+  }
 
   m_saveOnExit = false;
   diagnostic::clearSettings(true);
@@ -687,6 +705,11 @@ void MainWindow::coreModeToggled(bool checked)
   if (m_coreProcess.isStarted() && m_coreProcess.mode() != mode)
     m_coreProcess.stop();
   m_coreProcess.setMode(mode);
+  // Cloudflare Tunnel: a switch to the server stops the tunnel
+  if (m_tunnelController != nullptr) {
+    m_tunnelController->setClientMode(mode == Settings::CoreMode::Client);
+    m_tunnelStatus->refresh();
+  }
 
   Settings::setValue(Settings::Core::CoreMode, mode);
   Settings::save();
@@ -1059,6 +1082,162 @@ void MainWindow::updateWindowTitle()
   }
 }
 
+// Cloudflare Tunnel: everything that the main window does for it is in these functions and in the lines that name it
+void MainWindow::setupTunnel()
+{
+  m_tunnelController = deskflow::tunnel::TunnelController::createSystem(this);
+  m_coreProcess.setTunnelGate(m_tunnelController);
+
+  // The window of the new look has no place under the options of the client for the two lines (its connection is a card
+  // of the shell, which is made later: see attachTunnelToShell). The widget is there for what the lines say, in a
+  // holder that is never shown; the window of the system look has the lines where it always had them
+  const bool shellLook = deskflow::gui::style::isDeskflowStyleInstalled();
+  if (shellLook) {
+    m_tunnelHolder = new QWidget(this);
+    m_tunnelHolder->hide();
+  }
+  m_tunnelStatus = new TunnelStatusWidget(m_tunnelController, shellLook ? m_tunnelHolder : this);
+  if (!shellLook) {
+    // under the row of the options of the client: while the tunnel is used it takes the place of the address field
+    ui->verticalLayout->insertWidget(ui->verticalLayout->indexOf(ui->widgetModeOptions) + 1, m_tunnelStatus);
+  }
+  connect(m_tunnelStatus, &TunnelStatusWidget::usedChanged, this, &MainWindow::tunnelUsedChanged);
+
+  // the log: what the tunnel does and what cloudflared writes (already without the token)
+  connect(m_tunnelController, &deskflow::tunnel::TunnelController::logLine, this, [](const QString &line) {
+    qInfo().noquote() << "tunnel:" << line;
+  });
+
+  if (shellLook) {
+    // the tray of the new look makes its menu from what it is told: the line of the tunnel is a row of it
+    connect(m_tunnelStatus, &TunnelStatusWidget::statusTextChanged, this, &MainWindow::updateTunnelShell);
+    connect(m_tunnelStatus, &TunnelStatusWidget::pathTextChanged, this, &MainWindow::updateTunnelShell);
+  } else {
+    // the tray menu: a line that says how the tunnel is
+    m_actionTunnelStatus = new QAction(this);
+    m_actionTunnelStatus->setEnabled(false);
+    m_actionTunnelStatus->setVisible(false);
+    m_actionTunnelStatus->setMenuRole(QAction::NoRole);
+    if (auto *trayMenu = m_trayIcon->contextMenu(); trayMenu != nullptr) {
+      trayMenu->insertAction(m_actionStartCore, m_actionTunnelStatus);
+    }
+    connect(m_tunnelStatus, &TunnelStatusWidget::statusTextChanged, this, [this](const QString &text) {
+      m_actionTunnelStatus->setText(text);
+    });
+  }
+  // with the tunnel off nothing of the window is touched
+  if (m_tunnelStatus->isTunnelUsed()) {
+    tunnelUsedChanged(true);
+  }
+}
+
+void MainWindow::tunnelUsedChanged(bool used)
+{
+  if (m_tunnelHolder != nullptr) {
+    updateTunnelShell();
+  } else {
+    // the saved address stays where it is, only not shown: switching the tunnel off shows it again as it was
+    ui->m_pLabelServerName->setVisible(!used);
+    ui->cbHostname->setVisible(!used);
+    m_actionTunnelStatus->setVisible(used);
+    m_actionTunnelStatus->setText(m_tunnelStatus->statusText());
+  }
+  if (used) {
+    ui->btnTestConnection->setEnabled(true);
+  } else {
+    ui->btnTestConnection->setEnabled(!ui->cbHostname->currentText().trimmed().isEmpty());
+  }
+  toggleCanRunCore(canRunCore());
+}
+
+// The window of the new look: where the tunnel is told in the shell. Nothing of it is there while the tunnel is not
+// used (the address field, no line, no chip, no row of the tray)
+void MainWindow::attachTunnelToShell()
+{
+  if (m_shell == nullptr || m_tunnelStatus == nullptr)
+    return;
+  auto *section = m_shell->clientSection();
+
+  // the path line takes the place of the address field (the second of the stack that holds it), as a line that cannot
+  // be typed in and can be selected; what does not fit is cut and is in the tool tip
+  m_tunnelPathLine = new QLabel(section);
+  m_tunnelPathLine->setObjectName(QStringLiteral("tunnelPathLine"));
+  m_tunnelPathLine->setWordWrap(false);
+  m_tunnelPathLine->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  m_tunnelPathLine->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  section->addressStack()->addWidget(m_tunnelPathLine);
+
+  // the status line is the one under the row of the address
+  // (a line of a hint: smaller text in the colour of a secondary one, and it wraps, which a failure that has a sentence
+  // of what to do needs: the page scrolls)
+  m_tunnelStatusLine = new InlineHint(section);
+  m_tunnelStatusLine->setObjectName(QStringLiteral("tunnelStatusLine"));
+  m_tunnelStatusLine->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+  updateTunnelShell();
+}
+
+void MainWindow::updateTunnelShell()
+{
+  if (m_tunnelStatus == nullptr)
+    return;
+  const bool used = m_tunnelStatus->isTunnelUsed();
+  const auto status = m_tunnelController->status();
+  const auto statusText = used ? m_tunnelStatus->statusText() : QString();
+
+  // the menu of the tray
+  if (m_trayController != nullptr)
+    m_trayController->setExternalRow(QStringLiteral("tunnel"), statusText);
+
+  if (m_shell == nullptr || m_tunnelPathLine == nullptr)
+    return;
+  auto *section = m_shell->clientSection();
+  m_tunnelPathLine->setText(m_tunnelStatus->pathText());
+  m_tunnelPathLine->setToolTip(m_tunnelStatus->pathText());
+  m_tunnelStatusLine->setText(m_tunnelStatus->statusText());
+  m_tunnelStatusLine->setToolTip(m_tunnelStatus->statusText());
+  // a tunnel that failed, or that listens and has a failure to tell, is the colour of a problem
+  m_tunnelStatusLine->setDanger(
+      status.state == deskflow::tunnel::TunnelState::Failed || status.failure != deskflow::tunnel::TunnelFailure::None
+  );
+  section->addressStack()->setCurrentIndex(used ? 1 : 0);
+  if (used && section->statusLineCount() == 0)
+    section->addStatusLine(m_tunnelStatusLine);
+  else if (!used && section->statusLineCount() > 0)
+    section->removeStatusLine(m_tunnelStatusLine);
+  m_tunnelStatusLine->setVisible(used);
+
+  // the chip beside the state of sharing
+  // (short: a chip is as wide as its text, and the whole line is under the address)
+  if (used) {
+    const auto chip = deskflow::gui::tunnelChip(status, m_tunnelServerLink);
+    m_shell->status()->setExternalChip(QStringLiteral("tunnel"), chip.text, chip.kind);
+  } else {
+    m_shell->status()->clearExternalChip(QStringLiteral("tunnel"));
+  }
+}
+
+void MainWindow::updateTunnelServerLink(ConnectionState state)
+{
+  using deskflow::tunnel::ServerLink;
+  if (m_tunnelStatus == nullptr) {
+    return;
+  }
+
+  if (state == ConnectionState::Connected) {
+    m_tunnelController->notifyServerConnected();
+    m_tunnelServerLink = ServerLink::Connected;
+  } else if (state == ConnectionState::Connecting) {
+    m_tunnelServerLink = ServerLink::Connecting;
+  } else {
+    m_tunnelServerLink = ServerLink::Unknown;
+  }
+  m_tunnelStatus->setServerLink(m_tunnelServerLink);
+  // the chip of the new look says the link too (the line of the status may not have changed)
+  if (m_tunnelHolder != nullptr)
+    updateTunnelShell();
+}
+
 void MainWindow::applyConfig()
 {
   updateWindowTitle();
@@ -1069,8 +1248,13 @@ void MainWindow::applyConfig()
   ui->cbHostname->addItems(Settings::value(Settings::Client::RecentRemoteHosts).toStringList());
   if (!host.isEmpty())
     ui->cbHostname->setCurrentText(host);
-  // the signals of the field are blocked here, so the button is not told about the text
-  ui->btnTestConnection->setEnabled(!ui->cbHostname->currentText().trimmed().isEmpty());
+  // the signals of the field are blocked here, so the button is not told about the text. With a Cloudflare Tunnel the
+  // test goes through the tunnel and needs no saved address (the tunnel can be on from the start of the program, which
+  // no change of it tells the window)
+  ui->btnTestConnection->setEnabled(
+      !ui->cbHostname->currentText().trimmed().isEmpty() ||
+      (m_tunnelStatus != nullptr && m_tunnelStatus->isTunnelUsed())
+  );
 
   updateFingerprintButton();
   setTrayIcon();
@@ -1081,6 +1265,10 @@ void MainWindow::applyConfig()
   }
 
   coreModeToggled(true);
+  // Cloudflare Tunnel: the lines for the tunnel show what the dialog saved
+  if (m_tunnelStatus != nullptr) {
+    m_tunnelStatus->refresh();
+  }
 }
 
 void MainWindow::saveSettings() const
@@ -1397,6 +1585,7 @@ void MainWindow::coreConnectionStateChanged(ConnectionState state)
   qDebug() << "core connection state changed:" << static_cast<int>(state);
 
   updateStatus();
+  updateTunnelServerLink(state);
 
   // always assume connection is not secure when connection changes
   // to anything except connected. the only way the padlock shows is
@@ -1404,7 +1593,8 @@ void MainWindow::coreConnectionStateChanged(ConnectionState state)
   if (state != ConnectionState::Connected) {
     secureSocket(false);
   } else {
-    if (m_coreProcess.mode() == CoreMode::Client) {
+    // (through a Cloudflare Tunnel the saved address is not what connected, so it is not put in the recent ones)
+    if (m_coreProcess.mode() == CoreMode::Client && !m_coreProcess.isTunnelRequired()) {
       if (const auto host = ui->cbHostname->currentText(); !host.isEmpty()) {
         QStringList recentHosts = Settings::value(Settings::Client::RecentRemoteHosts).toStringList();
         if (recentHosts.isEmpty() || recentHosts.first() != host) {
@@ -1533,6 +1723,14 @@ void MainWindow::showConfigureServer(const QString &message)
 
 void MainWindow::showConfigureClient()
 {
+  // the settings of the new look are pages of the window: the settings of the client are the page of the client
+  if (m_shell) {
+    m_shell->showPage(deskflow::gui::settings::SettingsPages::clientId());
+    if (!isVisible() || isMinimized())
+      showAndActivate();
+    return;
+  }
+
   ClientConfigDialog dialog(this);
   if (dialog.exec() == QDialog::Accepted) {
     applyConfig();
@@ -1544,6 +1742,16 @@ void MainWindow::showConfigureClient()
 
 void MainWindow::showConnectionTest()
 {
+  // Cloudflare Tunnel: the test goes the way that the client goes, through the tunnel
+  if (m_tunnelController != nullptr && m_tunnelController->isRequired()) {
+    deskflow::tunnel::TunnelTestRunner::Dependencies dependencies;
+    dependencies.controller = m_tunnelController;
+    TunnelTestDialog dialog(this, dependencies);
+    dialog.runTest();
+    dialog.exec();
+    return;
+  }
+
   // what is typed in the field, which may not be what the core was started with
   ConnectionTestDialog dialog(this, ui->cbHostname->currentText(), Settings::value(Settings::Core::Port).toInt());
   dialog.runTest();
@@ -1694,7 +1902,7 @@ void MainWindow::remoteHostChanged(const QString &newRemoteHost)
 {
   m_coreProcess.setAddress(newRemoteHost);
   ui->btnTestConnection->setEnabled(!newRemoteHost.trimmed().isEmpty());
-  toggleCanRunCore(!newRemoteHost.isEmpty() && ui->rbModeClient->isChecked());
+  toggleCanRunCore((!newRemoteHost.isEmpty() || m_coreProcess.isTunnelRequired()) && ui->rbModeClient->isChecked());
   if (newRemoteHost.isEmpty()) {
     Settings::setValue(Settings::Client::RemoteHost);
   } else {
@@ -1813,7 +2021,11 @@ bool MainWindow::canRunCore() const
   const auto mode = m_coreProcess.mode();
   const bool isServer = mode == Settings::CoreMode::Server;
   const bool isClient = mode == Settings::CoreMode::Client;
-  return ((isServer || isClient) && (isClient && !ui->cbHostname->currentText().isEmpty()) || isServer);
+  return (
+      (isServer || isClient) &&
+          (isClient && (!ui->cbHostname->currentText().isEmpty() || m_coreProcess.isTunnelRequired())) ||
+      isServer
+  );
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1891,8 +2103,15 @@ void MainWindow::setupShell()
 
   // the settings are pages of the sidebar; a change is written at once and sharing is restarted by the banner
   m_settingsPages = new deskflow::gui::settings::SettingsPages(this);
-  for (const auto &entry : m_settingsPages->entries())
-    m_shell->addSettingsPage(entry.id, entry.icon, entry.title(), entry.page);
+  for (const auto &entry : m_settingsPages->entries()) {
+    if (entry.parentId.isEmpty())
+      m_shell->addSettingsPage(entry.id, entry.icon, entry.title(), entry.page);
+    else
+      m_shell->addSubPage(entry.id, entry.parentId, entry.page);
+  }
+  connect(m_settingsPages, &deskflow::gui::settings::SettingsPages::pageRequested, m_shell, [this](const QString &id) {
+    m_shell->showPage(id);
+  });
   connect(m_settingsPages, &deskflow::gui::settings::SettingsPages::applied, this, &MainWindow::settingApplied);
   connect(
       m_settingsPages, &deskflow::gui::settings::SettingsPages::fingerprintRequested, this,
@@ -1902,6 +2121,20 @@ void MainWindow::setupShell()
       m_settingsPages, &deskflow::gui::settings::SettingsPages::removeAllSettingsRequested, this,
       &MainWindow::clearSettings
   );
+  // the page of the client: the Cloudflare Tunnel that it saved is what the window says from now on, and the list of
+  // the servers that it cleared is what the address field has
+  connect(m_settingsPages, &deskflow::gui::settings::SettingsPages::tunnelSaved, this, [this] {
+    if (m_tunnelStatus != nullptr)
+      m_tunnelStatus->refresh();
+    toggleCanRunCore(canRunCore());
+  });
+  connect(m_settingsPages, &deskflow::gui::settings::SettingsPages::serverHistoryCleared, this, [this] {
+    const auto host = ui->cbHostname->currentText();
+    QSignalBlocker hostnameBlocker(ui->cbHostname);
+    ui->cbHostname->clear();
+    ui->cbHostname->addItems(Settings::value(Settings::Client::RecentRemoteHosts).toStringList());
+    ui->cbHostname->setCurrentText(host);
+  });
   connect(m_shell->restartBanner(), &deskflow::gui::settings::RestartBanner::restartRequested, this, [this] {
     m_shell->restartBanner()->setPending(false);
     resetCore();
@@ -2077,8 +2310,10 @@ void MainWindow::updateShellTexts()
   m_shell->setTexts(texts);
   m_shell->clientSection()->setAddressHint(tr("LAN address first, then the VPN address, separated by commas"));
   m_actionToggleSidebar->setText(m_shell->rail()->toggleButton()->accessibleName());
-  for (const auto &entry : m_settingsPages->entries())
-    m_shell->setPageText(entry.id, entry.title());
+  for (const auto &entry : m_settingsPages->entries()) {
+    if (entry.parentId.isEmpty())
+      m_shell->setPageText(entry.id, entry.title());
+  }
   m_shell->restartBanner()->retranslate();
   updateShellComputers();
   refreshShell();

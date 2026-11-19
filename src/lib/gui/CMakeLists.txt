@@ -48,6 +48,8 @@ add_library(${target} STATIC
   core/ConnectionProbe.h
   core/AddressClassifier.cpp
   core/AddressClassifier.h
+  core/ServiceQuit.cpp
+  core/ServiceQuit.h
   core/NetworkMonitor.cpp
   core/ReportedMonitors.cpp
   core/ReportedMonitors.h
@@ -116,6 +118,8 @@ add_library(${target} STATIC
   dialogs/SettingsDialog.cpp
   dialogs/SettingsDialog.h
   dialogs/SettingsDialog.ui
+  dialogs/TunnelTestDialog.cpp
+  dialogs/TunnelTestDialog.h
   ipc/IpcClient.cpp
   ipc/IpcClient.h
   ipc/DaemonIpcClient.cpp
@@ -225,6 +229,8 @@ add_library(${target} STATIC
   shell/MainShell.h
   shell/StatusModel.cpp
   shell/StatusModel.h
+  shell/TunnelChip.cpp
+  shell/TunnelChip.h
   chrome/ChromeGeometry.cpp
   chrome/ChromeGeometry.h
   chrome/ChromePolicy.cpp
@@ -265,11 +271,76 @@ add_library(${target} STATIC
   widgets/StatusHero.h
   widgets/InlineHint.cpp
   widgets/InlineHint.h
+  widgets/TestResultRows.cpp
+  widgets/TestResultRows.h
   widgets/ToggleSwitch.cpp
   widgets/ToggleSwitch.h
   widgets/SettingsDialogButtonBox.cpp
   widgets/SettingsDialogButtonBox.h
 )
+
+# the Cloudflare Tunnel: the logic, without a window and without a process of its own
+target_sources(${target} PRIVATE
+  tunnel/CloudflaredLaunch.cpp
+  tunnel/CloudflaredLaunch.h
+  tunnel/CloudflaredLocator.cpp
+  tunnel/CloudflaredLocator.h
+  tunnel/CloudflaredLogParser.cpp
+  tunnel/CloudflaredLogParser.h
+  tunnel/IPortProber.h
+  tunnel/ISecretStore.h
+  tunnel/ITunnelGate.h
+  tunnel/ITunnelProcess.h
+  tunnel/InMemorySecretStore.cpp
+  tunnel/InMemorySecretStore.h
+  tunnel/MacKeychainStore.cpp
+  tunnel/MacKeychainStore.h
+  tunnel/OrphanRecord.cpp
+  tunnel/OrphanRecord.h
+  tunnel/OutputLineSplitter.cpp
+  tunnel/OutputLineSplitter.h
+  tunnel/ProcessInspector.h
+  tunnel/QtPortProber.cpp
+  tunnel/QtPortProber.h
+  tunnel/QtTunnelProcess.cpp
+  tunnel/QtTunnelProcess.h
+  tunnel/SecretRedactor.cpp
+  tunnel/SecretRedactor.h
+  tunnel/SecretStoreFactory.cpp
+  tunnel/SecretStoreFactory.h
+  tunnel/ServiceToken.h
+  tunnel/SystemProcessInspector.cpp
+  tunnel/TunnelController.cpp
+  tunnel/TunnelController.h
+  tunnel/TunnelStartGuard.cpp
+  tunnel/TunnelStartGuard.h
+  tunnel/TunnelStateMachine.cpp
+  tunnel/TunnelStateMachine.h
+  tunnel/TunnelSupervisor.cpp
+  tunnel/TunnelSupervisor.h
+  tunnel/TunnelTestRunner.cpp
+  tunnel/TunnelTestRunner.h
+  tunnel/TunnelTypes.cpp
+  tunnel/TunnelTypes.h
+  tunnel/WindowsCredentialStore.cpp
+  tunnel/WindowsCredentialStore.h
+  tunnel/WindowsKillOnCloseJob.cpp
+  tunnel/WindowsKillOnCloseJob.h
+  widgets/TunnelSettingsGroup.cpp
+  widgets/TunnelSettingsGroup.h
+  widgets/TunnelStatusWidget.cpp
+  widgets/TunnelStatusWidget.h
+)
+
+# the secure stores of the systems that have one (each file is empty on the others); the Credential Manager is in
+# advapi32 and the keychain in the Security framework
+if(WIN32)
+  target_link_libraries(${target} PUBLIC advapi32)
+elseif(APPLE)
+  find_library(lib_Security Security REQUIRED)
+  find_library(lib_CoreFoundation CoreFoundation REQUIRED)
+  target_link_libraries(${target} PUBLIC ${lib_Security} ${lib_CoreFoundation})
+endif()
 
 target_link_libraries(${target}
   PUBLIC

@@ -20,6 +20,8 @@ private Q_SLOTS:
   void computerSettingsDialog_isLaidOutWithoutSqueezing();
   void clientConfigDialog_isLaidOutWithoutSqueezing_data();
   void clientConfigDialog_isLaidOutWithoutSqueezing();
+  void clientConfigDialog_withTheTunnel_isLaidOutWithoutSqueezing_data();
+  void clientConfigDialog_withTheTunnel_isLaidOutWithoutSqueezing();
   void computerSettingsDialog_monitorLayout_isLaidOutWithoutSqueezing_data();
   void computerSettingsDialog_monitorLayout_isLaidOutWithoutSqueezing();
   void serverConfigDialog_advancedTab_isLaidOutWithoutSqueezing_data();

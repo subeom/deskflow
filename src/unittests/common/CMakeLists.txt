@@ -37,3 +37,10 @@ create_test(
   SOURCE KeySequenceTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/common"
 )
+
+create_test(
+  NAME TunnelAddressTests
+  DEPENDS common
+  SOURCE TunnelAddressTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/common"
+)

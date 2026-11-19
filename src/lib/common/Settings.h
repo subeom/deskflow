@@ -48,6 +48,18 @@ public:
     inline static const auto XdpClipboardRetried = QStringLiteral("client/xdpClipboardRetried");
     inline static const auto XdpRestoreToken = QStringLiteral("client/xdpRestoreToken");
   };
+  // The client reaches the server through a Cloudflare Tunnel (a cloudflared that Deskflow runs). Off by default, and
+  // none of these keys is written until the user turns the feature on. The group is not under client/ on purpose: an
+  // older build removes the keys of a known group that it does not know, and it ignores a group that it does not know.
+  struct Tunnel
+  {
+    inline static const auto Enabled = QStringLiteral("tunnel/enabled");
+    inline static const auto Hostname = QStringLiteral("tunnel/hostname");
+    inline static const auto LocalPort = QStringLiteral("tunnel/localPort");
+    inline static const auto CloudflaredPath = QStringLiteral("tunnel/cloudflaredPath");
+    // the port that is listening right now when it is not LocalPort (that one was busy); written by the GUI
+    inline static const auto ActivePort = QStringLiteral("tunnel/activePort");
+  };
   struct Core
   {
     inline static const auto CoreMode = QStringLiteral("core/coreMode");
@@ -334,6 +346,7 @@ private:
     , QStringLiteral("log")
     , QStringLiteral("security")
     , QStringLiteral("server")
+    , QStringLiteral("tunnel")
     , QStringLiteral("internalConfig")
   };
 
@@ -390,6 +403,11 @@ private:
     , Security::CheckPeers
     , Security::KeySize
     , Security::TlsEnabled
+    , Tunnel::Enabled
+    , Tunnel::Hostname
+    , Tunnel::LocalPort
+    , Tunnel::CloudflaredPath
+    , Tunnel::ActivePort
     , Server::ClipboardSize
     , Server::ClipboardTextOnly
     , Server::DefaultLockToComputerState
@@ -433,6 +451,7 @@ private:
     , Client::XdpClipboardRetried
     , Log::ToFile
     , Log::GuiDebug
+    , Tunnel::Enabled
     , Server::ClipboardTextOnly
     , Server::DefaultLockToComputerState
     , Server::DisableLockToComputer

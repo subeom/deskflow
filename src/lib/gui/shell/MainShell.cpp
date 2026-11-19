@@ -283,6 +283,8 @@ MainShell::MainShell(const MainShellParts &parts, QObject *parent) : QObject(par
 
   // the sidebar and the stack of pages
   connect(rail, &NavRail::pageSelected, this, [this](const QString &id) {
+    // an entry of the sidebar that is chosen is the page that is shown, also when it is the entry of a sub page
+    m_subPage.clear();
     if (id == QLatin1String(kHomeId))
       m_pages->setCurrentIndex(0);
   });
@@ -537,6 +539,12 @@ void MainShell::addSettingsPage(const QString &id, const QString &iconName, cons
   registerPage(id, page);
 }
 
+void MainShell::addSubPage(const QString &id, const QString &parentId, QWidget *page)
+{
+  m_subPageParent.insert(id, parentId);
+  registerPage(id, page);
+}
+
 void MainShell::registerPage(const QString &id, QWidget *page)
 {
   const int index = m_pages->addWidget(page);
@@ -562,12 +570,14 @@ void MainShell::showPage(const QString &id)
   if (index < 0)
     return;
   m_pages->setCurrentIndex(index);
-  m_sidebar->rail()->setCurrentPage(id);
+  const auto parent = m_subPageParent.value(id);
+  m_subPage = parent.isEmpty() ? QString() : id;
+  m_sidebar->rail()->setCurrentPage(parent.isEmpty() ? id : parent);
 }
 
 QString MainShell::currentPageId() const
 {
-  return m_sidebar->rail()->currentPage();
+  return m_subPage.isEmpty() ? m_sidebar->rail()->currentPage() : m_subPage;
 }
 
 settings::RestartBanner *MainShell::restartBanner() const

@@ -6,8 +6,11 @@
 
 #pragma once
 
+#include "gui/widgets/TunnelSettingsGroup.h"
+
 #include <QList>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 
 #include <functional>
@@ -45,17 +48,29 @@ public:
     QString icon;
     std::function<QString()> title;
     SettingsPage *page = nullptr;
+    //! A page that the sidebar has no entry for (the entry of this page is marked while it is shown); empty: it has one
+    QString parentId;
   };
 
-  explicit SettingsPages(QObject *parent = nullptr);
+  /**
+   * \p tunnel is what the group of the Cloudflare Tunnel asks of its surroundings; by default the secure store of the
+   * system and the real file system. Tests give it a store in memory. The group is made when the page of the client is
+   * first shown (not when the program starts): the store of the system can ask the user for a password, which is for
+   * the person who looks at the page to meet and not the one who starts the program.
+   */
+  explicit SettingsPages(QObject *parent = nullptr, TunnelSettingsDependencies tunnel = {});
 
   //! The pages in the order of the sidebar
   QList<Entry> entries() const;
   SettingsPage *page(const QString &id) const;
   SettingsBinder *binder() const;
+  //! The group of the Cloudflare Tunnel of the page of the client; null until the page is first shown
+  TunnelSettingsGroup *tunnelGroup() const;
 
   //! The id of the page that "Preferences" opens
   static QString generalId();
+  //! The id of the page of the client (the settings that the dialog "Client Configuration" has)
+  static QString clientId();
 
 Q_SIGNALS:
   //! A control changed a setting (and it was written)
@@ -64,6 +79,12 @@ Q_SIGNALS:
   void fingerprintRequested();
   //! The person confirmed that all the settings are to be removed
   void removeAllSettingsRequested();
+  //! The settings of the Cloudflare Tunnel were saved with the button of the page (the window reads them again)
+  void tunnelSaved();
+  //! The list of the servers that were typed in the address field was cleared (the field has the list again)
+  void serverHistoryCleared();
+  //! The person asked to go to another page of the settings (the id of the page)
+  void pageRequested(const QString &id);
 
 private:
   SettingsPage *buildGeneral();
@@ -71,10 +92,13 @@ private:
   SettingsPage *buildDisplay();
   SettingsPage *buildKeyboard();
   SettingsPage *buildNetwork();
+  SettingsPage *buildClient();
   SettingsPage *buildAdvanced();
   void fillAddresses(QComboBox *combo);
 
   SettingsBinder *m_binder = nullptr;
+  TunnelSettingsDependencies m_tunnel;
+  QPointer<TunnelSettingsGroup> m_tunnelGroup;
   QList<Entry> m_entries;
 };
 

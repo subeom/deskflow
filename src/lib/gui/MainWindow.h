@@ -23,13 +23,16 @@
 #include "gui/core/AddressClassifier.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/core/NetworkMonitor.h"
+#include "gui/tunnel/TunnelTypes.h"
 #include "net/Fingerprint.h"
 
 #ifdef Q_OS_MACOS
 #include "gui/OSXHelpers.h"
 #endif
 
+class InlineHint;
 class QAction;
+class QLabel;
 class QMenu;
 class QLocalServer;
 
@@ -71,6 +74,14 @@ class DaemonIpcClient;
 }
 
 struct MainWindowTestAccess;
+
+// Cloudflare Tunnel (see docs/dev/cloudflare-tunnel.md)
+namespace deskflow::tunnel {
+class TunnelController;
+}
+namespace deskflow::gui {
+class TunnelStatusWidget;
+}
 
 class MainWindow : public QMainWindow
 {
@@ -158,6 +169,13 @@ private:
   void createSharingMenu();
   void updateSharingMenu(const deskflow::gui::tray::TrayInput &input);
   void trayCommand(deskflow::gui::tray::TrayCommand command);
+  // Cloudflare Tunnel
+  void setupTunnel();
+  void tunnelUsedChanged(bool used);
+  void updateTunnelServerLink(ConnectionState state);
+  //! The window of the new look: the lines of the tunnel are in its shell (see attachTunnelToShell in MainWindow.cpp)
+  void attachTunnelToShell();
+  void updateTunnelShell();
   void applyConfig();
   void setTrayIcon();
   void handleUnrecognisedClient(const QString &clientName);
@@ -313,6 +331,17 @@ private:
   QAction *m_sharingTestConnection = nullptr;
   QAction *m_sharingFingerprint = nullptr;
   QAction *m_sharingMinimize = nullptr;
+
+  // Cloudflare Tunnel
+  deskflow::tunnel::TunnelController *m_tunnelController = nullptr;
+  deskflow::gui::TunnelStatusWidget *m_tunnelStatus = nullptr;
+  QAction *m_actionTunnelStatus = nullptr;
+  // The window of the new look: the widget above only knows what the two lines say (it is in a holder that is never
+  // shown), the lines are these, in the card of the connection
+  QWidget *m_tunnelHolder = nullptr;
+  QLabel *m_tunnelPathLine = nullptr;
+  InlineHint *m_tunnelStatusLine = nullptr;
+  deskflow::tunnel::ServerLink m_tunnelServerLink = deskflow::tunnel::ServerLink::Unknown;
 
   // Network monitoring
   NetworkMonitor *m_networkMonitor = nullptr;

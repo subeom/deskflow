@@ -8,6 +8,7 @@
 
 #include "SettingsBinder.h"
 #include "SettingsPage.h"
+#include "common/ConnectionDiagnosis.h"
 #include "common/I18N.h"
 #include "common/LogLevel.h"
 #include "common/NetworkProtocol.h"
@@ -27,16 +28,20 @@
 
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QDialogButtonBox>
 #include <QDir>
+#include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QKeySequence>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTextDocument>
+#include <QVBoxLayout>
 
 using namespace deskflow::gui::style;
 
@@ -67,6 +72,12 @@ Text tx(const char *source)
   return [source] { return QCoreApplication::translate("SettingsPages", source); };
 }
 
+// The texts that the dialog of the configuration of the client has: the same use as for the dialog of the preferences
+Text cc(const char *source)
+{
+  return [source] { return QCoreApplication::translate("ClientConfigDialog", source); };
+}
+
 // The texts that the configuration of the server has (its context): the same use as for the dialog of the preferences
 Text sv(const char *source)
 {
@@ -85,6 +96,11 @@ QString plainLabel(QString text)
 Text svPlain(const char *source)
 {
   return [source] { return plainLabel(QCoreApplication::translate("ServerConfigDialog", source)); };
+}
+
+Text ccPlain(const char *source)
+{
+  return [source] { return plainLabel(QCoreApplication::translate("ClientConfigDialog", source)); };
 }
 
 // "Experimental: multi-monitor aware cursor mapping" under a card called "Experimental" is "Multi-monitor aware cursor
@@ -220,6 +236,48 @@ void markServerOnly(SettingsPage *page, SettingsBinder *binder, SettingCard *car
   });
 }
 
+// Settings that only a client uses: where this computer is a server the cards say so and cannot be changed (the dialog
+// of the client is not there for a server either)
+void markClientOnly(SettingsPage *page, SettingsBinder *binder, SettingCard *card)
+{
+  auto *note = new InlineHint;
+  note->setObjectName(QStringLiteral("noteClientOnly"));
+  page->follow([note] {
+    note->setText(
+        QCoreApplication::translate("SettingsPages", "These settings are used when this computer is a client.")
+    );
+  });
+  card->addNote(note);
+  binder->onRefresh([note, card] {
+    const bool client = isClientMode();
+    note->setVisible(!client);
+    card->setEnabled(client);
+  });
+}
+
+// A number with decimals, written when the value is taken (and not at each digit that is typed)
+QDoubleSpinBox *addDecimal(
+    SettingsPage *page, SettingsBinder *binder, SettingCard *card, const QString &key, Text title, double minimum,
+    double maximum, double step, int decimals, const QString &suffix, std::function<QString()> description = {},
+    const std::function<QVariant(const QVariant &)> &stored = {}
+)
+{
+  auto *row = page->addRow(card, std::move(title), std::move(description));
+  auto *spin = new QDoubleSpinBox;
+  spin->setRange(minimum, maximum);
+  spin->setSingleStep(step);
+  spin->setDecimals(decimals);
+  spin->setSuffix(suffix);
+  spin->setKeyboardTracking(false);
+  spin->setMinimumWidth(120);
+  row->addControl(spin);
+  binder->bind(
+      key, spin, spin, &QDoubleSpinBox::valueChanged, [spin] { return QVariant(spin->value()); },
+      [spin, stored](const QVariant &value) { spin->setValue((stored ? stored(value) : value).toDouble()); }
+  );
+  return spin;
+}
+
 } // namespace
 
 QString SettingsPages::generalId()
@@ -227,7 +285,15 @@ QString SettingsPages::generalId()
   return QStringLiteral("settings.general");
 }
 
-SettingsPages::SettingsPages(QObject *parent) : QObject(parent), m_binder(new SettingsBinder(this))
+QString SettingsPages::clientId()
+{
+  return QStringLiteral("settings.client");
+}
+
+SettingsPages::SettingsPages(QObject *parent, TunnelSettingsDependencies tunnel)
+    : QObject(parent),
+      m_binder(new SettingsBinder(this)),
+      m_tunnel(std::move(tunnel))
 {
   connect(m_binder, &SettingsBinder::applied, this, &SettingsPages::applied);
 
@@ -240,6 +306,10 @@ SettingsPages::SettingsPages(QObject *parent) : QObject(parent), m_binder(new Se
       {QStringLiteral("settings.keyboard"), QStringLiteral("keyboard"),
        tx(QT_TRANSLATE_NOOP("SettingsPages", "Keyboard & mouse")), buildKeyboard()},
       {QStringLiteral("settings.network"), QStringLiteral("network"), sdPlain("&Network"), buildNetwork()},
+      // the page of the client is reached from the page of the network and from the home page: one more entry in the
+      // sidebar would make the window higher than a small screen has the room for
+      {clientId(), QStringLiteral("desktop"), tx(QT_TRANSLATE_NOOP("SettingsPages", "Client")), buildClient(),
+       QStringLiteral("settings.network")},
       {generalId(), QStringLiteral("gear"), sdPlain("&General"), buildGeneral()},
       {QStringLiteral("settings.advanced"), QStringLiteral("sliders-horizontal"), sdPlain("&Advanced"),
        buildAdvanced()},
@@ -264,6 +334,11 @@ SettingsPage *SettingsPages::page(const QString &id) const
 SettingsBinder *SettingsPages::binder() const
 {
   return m_binder;
+}
+
+TunnelSettingsGroup *SettingsPages::tunnelGroup() const
+{
+  return m_tunnelGroup;
 }
 
 SettingsPage *SettingsPages::buildGeneral()
@@ -603,6 +678,216 @@ SettingsPage *SettingsPages::buildNetwork()
       }
   );
   markServerOnly(page, m_binder, keepAlive);
+
+  // the settings of this computer as a client are a page of their own, which has no entry in the sidebar: this is the
+  // way to it from the settings (the home page has the other)
+  auto *clientCard = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Client")));
+  clientCard->setObjectName(QStringLiteral("cardClientLink"));
+  auto *clientRow = page->addRow(
+      clientCard, tx(QT_TRANSLATE_NOOP("SettingsPages", "Client settings")),
+      tx(QT_TRANSLATE_NOOP(
+          "SettingsPages",
+          "Connection timeout, scrolling and the Cloudflare Tunnel, for when this computer is a client."
+      ))
+  );
+  auto *openClient = new QPushButton;
+  openClient->setObjectName(QStringLiteral("btnOpenClientSettings"));
+  page->follow([openClient] { openClient->setText(QCoreApplication::translate("SettingsPages", "Open")); });
+  clientRow->addControl(openClient);
+  connect(openClient, &QPushButton::clicked, this, [this] { Q_EMIT pageRequested(clientId()); });
+  return page;
+}
+
+SettingsPage *SettingsPages::buildClient()
+{
+  auto *page = new SettingsPage(clientId(), tx(QT_TRANSLATE_NOOP("SettingsPages", "Client")));
+
+  // how the client reaches the server and keeps trying
+  auto *connection = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Connection")));
+  connection->setObjectName(QStringLiteral("cardClientConnection"));
+  addSwitch(
+      page, m_binder, connection, Settings::Client::DynamicConnectionRetry,
+      cc("Use dynamic reconnection time based on connection attempts"),
+      [] {
+        return plainText(
+            QCoreApplication::translate(
+                "ClientConfigDialog",
+                "<html><head/><body><p>Allow the client to slow the rate it attempts to reconnect to the server when "
+                "connections attempts are failing. The delay between connection attempts will  start at 1 second "
+                "intervals and can be a maxium of 5 minutes between connection attempts.</p></body></html>"
+            )
+        );
+      }
+  )->setObjectName(QStringLiteral("cbDynamicConnectTime"));
+  addDecimal(
+      page, m_binder, connection, Settings::Client::ConnectTimeout, ccPlain("Connect timeout:"), 1.0, 60.0, 0.5, 1,
+      QStringLiteral(" s"),
+      [] {
+        return QCoreApplication::translate(
+            "ClientConfigDialog",
+            "How long one attempt to connect to the server may take: the connection, the secure handshake and the "
+            "server's greeting together. Raise it on a slow or far away network."
+        );
+      },
+      // what the client uses when the settings file holds something that is not a time limit
+      [](const QVariant &value) { return QVariant(deskflow::diagnosis::connectTimeoutFromSetting(value).seconds); }
+  )->setObjectName(QStringLiteral("sbConnectTimeout"));
+  addSwitch(
+      page, m_binder, connection, Settings::Client::LanguageSync, cc("Use server's keyboard language on this computer")
+  )
+      ->setObjectName(QStringLiteral("cbLanguageSync"));
+
+  // the wheel of this computer: every wheel event, inverted and scaled, before what the server may add
+  auto *scroll = page->addCard(cc("Local Scroll (this destination computer)"));
+  scroll->setObjectName(QStringLiteral("cardClientScroll"));
+  auto *scrollNote = new InlineHint;
+  page->follow([scrollNote] {
+    scrollNote->setText(
+        QCoreApplication::translate(
+            "ClientConfigDialog", "Applies to every wheel event; can compound with Cross-OS inversion."
+        )
+    );
+  });
+  scroll->addNote(scrollNote);
+  const auto addScroll = [&](Text title, const QString &invertKey, const QString &scaleKey, const char *name) {
+    auto *row = page->addRow(scroll, std::move(title));
+    auto *scaleLabel = new QLabel;
+    auto *scale = new QDoubleSpinBox;
+    scale->setObjectName(QStringLiteral("sb%1ScrollScale").arg(QLatin1String(name)));
+    scale->setRange(0.1, 10.0);
+    scale->setSingleStep(0.1);
+    scale->setKeyboardTracking(false);
+    scale->setMinimumWidth(100);
+    scaleLabel->setBuddy(scale);
+    auto *invertLabel = new QLabel;
+    auto *invert = new ToggleSwitch;
+    invert->setObjectName(QStringLiteral("cb%1ScrollInvert").arg(QLatin1String(name)));
+    page->follow([scaleLabel, invertLabel] {
+      scaleLabel->setText(QCoreApplication::translate("ClientConfigDialog", "Scale"));
+      invertLabel->setText(QCoreApplication::translate("ClientConfigDialog", "Invert"));
+    });
+    row->addControl(scaleLabel);
+    row->addControl(scale);
+    row->addControl(invertLabel);
+    row->addControl(invert);
+    m_binder->bindSwitch(invertKey, invert);
+    m_binder->bind(
+        scaleKey, scale, scale, &QDoubleSpinBox::valueChanged, [scale] { return QVariant(scale->value()); },
+        [scale](const QVariant &stored) { scale->setValue(stored.toDouble()); }
+    );
+  };
+  addScroll(cc("Vertical Scroll"), Settings::Client::InvertYScroll, Settings::Client::YScrollScale, "Y");
+  addScroll(cc("Horizontal Scroll"), Settings::Client::InvertXScroll, Settings::Client::XScrollScale, "X");
+
+  // the addresses that were typed in the field of the main window
+  auto *history = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Recent servers")));
+  history->setObjectName(QStringLiteral("cardClientHistory"));
+  auto *historyRow = page->addRow(
+      history, cc("Clear Server History"),
+      tx(QT_TRANSLATE_NOOP(
+          "SettingsPages", "Forget the addresses that were typed in the address field of the main window."
+      ))
+  );
+  auto *clear = new QPushButton;
+  clear->setObjectName(QStringLiteral("btnClearServerHistory"));
+  page->follow([clear] { clear->setText(QCoreApplication::translate("ClientConfigDialog", "Clear Server History")); });
+  historyRow->addControl(clear);
+  connect(clear, &QPushButton::clicked, this, [this, clear] {
+    Settings::setValue(Settings::Client::RecentRemoteHosts, QVariant());
+    clear->setEnabled(false);
+    Q_EMIT serverHistoryCleared();
+  });
+  m_binder->onRefresh([clear] {
+    clear->setEnabled(
+        Settings::isWritable() && !Settings::value(Settings::Client::RecentRemoteHosts).toStringList().isEmpty()
+    );
+  });
+
+  markClientOnly(page, m_binder, connection);
+  markClientOnly(page, m_binder, scroll);
+  markClientOnly(page, m_binder, history);
+
+  // The Cloudflare Tunnel: the group of the dialog of the client, as it is (the same settings, the same checks, the
+  // same way that the Service Token is stored). What the person types is not written at each letter: the Secret is
+  // stored when the button says so, as the dialog stores it when it is accepted. The group is made when the page is
+  // first shown
+  auto *tunnel = new SettingCard;
+  tunnel->setObjectName(QStringLiteral("cardClientTunnel"));
+  page->addCard(tunnel);
+  auto *tunnelNote = new InlineHint;
+  tunnelNote->setObjectName(QStringLiteral("noteTunnelSaved"));
+  page->follow([tunnelNote] {
+    tunnelNote->setText(
+        QCoreApplication::translate(
+            "SettingsPages",
+            "The Service Token is kept in the secure store of the system, so the tunnel settings are saved with "
+            "the buttons below."
+        )
+    );
+  });
+  tunnel->addNote(tunnelNote);
+  auto *holder = new QWidget;
+  holder->setObjectName(QStringLiteral("tunnelHolder"));
+  auto *holderLayout = new QVBoxLayout(holder);
+  holderLayout->setContentsMargins(0, 0, 0, 0);
+  tunnel->addContent(holder);
+  markClientOnly(page, m_binder, tunnel);
+
+  connect(page, &SettingsPage::shown, this, [this, holder, holderLayout] {
+    if (m_tunnelGroup)
+      return;
+    auto *made = new TunnelSettingsGroup(m_tunnel, holder);
+    m_tunnelGroup = made;
+    made->setFlat(true);
+    made->setWritable(Settings::isWritable());
+    made->load();
+    holderLayout->addWidget(made);
+
+    auto *buttons = new QDialogButtonBox(
+        QDialogButtonBox::Save | QDialogButtonBox::Reset | QDialogButtonBox::RestoreDefaults, holder
+    );
+    buttons->setObjectName(QStringLiteral("tunnelButtons"));
+    buttons->button(QDialogButtonBox::Reset)
+        ->setToolTip(QCoreApplication::translate("SettingsDialogButtonBox", "Reset to stored values"));
+    buttons->button(QDialogButtonBox::RestoreDefaults)
+        ->setToolTip(QCoreApplication::translate("SettingsDialogButtonBox", "Reset to default values"));
+    holderLayout->addWidget(buttons);
+
+    const auto update = [made, buttons] {
+      const bool writable = Settings::isWritable();
+      const bool modified = made->isModified();
+      buttons->button(QDialogButtonBox::Save)->setEnabled(writable && modified);
+      buttons->button(QDialogButtonBox::Reset)->setEnabled(modified);
+      buttons->button(QDialogButtonBox::RestoreDefaults)->setEnabled(writable && !made->isDefault());
+    };
+    connect(made, &TunnelSettingsGroup::changed, buttons, update);
+    connect(Settings::instance(), &Settings::settingsWritableChanged, buttons, [made, update](bool writable) {
+      made->setWritable(writable);
+      update();
+    });
+    connect(buttons->button(QDialogButtonBox::Save), &QPushButton::clicked, this, [this, made, update] {
+      // before anything is written: what cannot be saved is said, and nothing is written (as the dialog does)
+      if (const auto problem = made->validationProblem(); !problem.isEmpty()) {
+        made->showError(problem);
+        return;
+      }
+      if (!made->save())
+        return;
+      made->load();
+      update();
+      Q_EMIT applied(Settings::Tunnel::Enabled);
+      Q_EMIT tunnelSaved();
+    });
+    connect(buttons->button(QDialogButtonBox::Reset), &QPushButton::clicked, made, [made, update] {
+      made->load();
+      update();
+    });
+    connect(buttons->button(QDialogButtonBox::RestoreDefaults), &QPushButton::clicked, made, [made, update] {
+      made->resetToDefault();
+      update();
+    });
+    update();
+  });
   return page;
 }
 

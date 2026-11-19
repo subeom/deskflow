@@ -23,6 +23,10 @@ private Q_SLOTS:
   void parseArgs_listWithSpacesAndEmptyParts_keepsTheAddressesInOrder();
   void parseArgs_listWrittenByHandWithoutQuotes_isRead();
   void parseArgs_singleAddress_isOneAddress();
+  void parseArgs_tunnelOnAndUsable_dialsTheLocalAddressOnly();
+  void parseArgs_tunnelOnAndNotUsable_doesNotGoToTheSavedAddress_data();
+  void parseArgs_tunnelOnAndNotUsable_doesNotGoToTheSavedAddress();
+  void parseArgs_tunnelOffOrAbsent_isTheSavedAddressWhateverElseTheTunnelKeysHold();
 
   void connect_firstAddressRefuses_triesTheSecondAtOnceAfterTheRetryDelay();
   void connect_firstAddressNeverGreets_triesTheSecondAfterTheTimeLimitAndTheRetryDelay();

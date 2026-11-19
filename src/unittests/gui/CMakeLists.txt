@@ -19,6 +19,9 @@ add_subdirectory(style)
 add_subdirectory(tray)
 add_subdirectory(widgets)
 
+# the Cloudflare Tunnel
+add_subdirectory(tunnel)
+
 create_test(
   NAME LoggerTests
   DEPENDS gui

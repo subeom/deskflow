@@ -243,8 +243,11 @@ void SettingsPagesTests::pages_areInTheOrderOfTheSidebar_withTitlesAndCards()
     QCOMPARE(entry.page->pageId(), entry.id);
     QCOMPARE(entry.page->title(), entry.title());
     QVERIFY2(!entry.page->cards().isEmpty(), qPrintable(entry.id));
+    // (the card of the Cloudflare Tunnel holds the group of the dialog of the client, which is not a list of rows)
     for (auto *card : entry.page->cards())
-      QVERIFY2(!card->rows().isEmpty(), qPrintable(entry.id));
+      QVERIFY2(
+          !card->rows().isEmpty() || card->objectName() == QStringLiteral("cardClientTunnel"), qPrintable(entry.id)
+      );
     // no mnemonic in a title
     QVERIFY2(
         !entry.title().contains(QLatin1Char('&')) || entry.title().contains(QStringLiteral("& ")),
@@ -255,11 +258,13 @@ void SettingsPagesTests::pages_areInTheOrderOfTheSidebar_withTitlesAndCards()
       ids,
       (QStringList{
           QStringLiteral("settings.security"), QStringLiteral("settings.display"), QStringLiteral("settings.keyboard"),
-          QStringLiteral("settings.network"), QStringLiteral("settings.general"), QStringLiteral("settings.advanced")
+          QStringLiteral("settings.network"), QStringLiteral("settings.client"), QStringLiteral("settings.general"),
+          QStringLiteral("settings.advanced")
       })
   );
   QCOMPARE(SettingsPages::generalId(), QStringLiteral("settings.general"));
   QCOMPARE(pages.page(QStringLiteral("settings.network"))->title(), QStringLiteral("Network"));
+  QCOMPARE(pages.page(QStringLiteral("settings.client"))->title(), QStringLiteral("Client"));
   QCOMPARE(pages.page(QStringLiteral("settings.security"))->title(), QStringLiteral("Security & clipboard"));
   QCOMPARE(pages.page(QStringLiteral("settings.display"))->title(), QStringLiteral("Display & monitors"));
   QCOMPARE(pages.page(QStringLiteral("settings.keyboard"))->title(), QStringLiteral("Keyboard & mouse"));

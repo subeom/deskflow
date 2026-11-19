@@ -529,7 +529,8 @@ void TextSizeShellTests::pages_areNotCut_atTheLeastWidth_atEveryTextSize()
 
   const QStringList ids{QStringLiteral("settings.security"), QStringLiteral("settings.display"),
                         QStringLiteral("settings.keyboard"), QStringLiteral("settings.network"),
-                        QStringLiteral("settings.general"),  QStringLiteral("settings.advanced")};
+                        QStringLiteral("settings.client"),   QStringLiteral("settings.general"),
+                        QStringLiteral("settings.advanced")};
   for (const auto &id : ids) {
     shell->showPage(id);
     QCoreApplication::processEvents();

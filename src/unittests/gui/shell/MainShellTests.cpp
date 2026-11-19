@@ -811,6 +811,46 @@ void MainShellTests::deskflowLook_aChangeOfLanguageKeepsTheShell()
   QCOMPARE(shell->computersCard()->findChildren<SettingRow *>(QStringLiteral("computerRow")).size(), 2);
 }
 
+// The settings of the client are a page, and the sidebar has no entry for it: one more entry makes the window higher
+// than a small screen has the room for (deskflowLook_canBeLowEnoughForASmallScreen). It is reached from the button of
+// the client on the home page and from a row on the page of the network, and the entry of the network is the one marked
+void MainShellTests::deskflowLook_theClientSettings_haveNoEntryOfTheirOwn_andAreReachedFromHomeAndNetwork()
+{
+  auto window = makeWindow(true);
+  auto *shell = Access::shell(*window);
+  showWindow(*window);
+  auto *rail = shell->rail();
+  const auto client = QStringLiteral("settings.client");
+  const auto network = QStringLiteral("settings.network");
+  auto *pages = Access::settingsPages(*window);
+  QVERIFY(rail->item(client) == nullptr);
+  QVERIFY(pages->page(client) != nullptr);
+
+  // the button of the client on the home page
+  window->findChild<QPushButton *>(QStringLiteral("btnConfigureClient"))->click();
+  QCOMPARE(shell->currentPageId(), client);
+  QCOMPARE(shell->pages()->currentWidget(), pages->page(client));
+  QVERIFY(pages->page(client)->isVisible());
+  QCOMPARE(rail->currentPage(), network);
+  QVERIFY(rail->item(network)->isCurrent());
+
+  // the entry of the network that is marked leads to the page of the network, and the page leads on with its row
+  QTest::mouseClick(rail->item(network), Qt::LeftButton);
+  QCOMPARE(shell->currentPageId(), network);
+  QCOMPARE(shell->pages()->currentWidget(), pages->page(network));
+  auto *open = pages->page(network)->findChild<QPushButton *>(QStringLiteral("btnOpenClientSettings"));
+  QVERIFY(open != nullptr);
+  QVERIFY(open->isVisibleTo(pages->page(network)));
+  open->click();
+  QCOMPARE(shell->currentPageId(), client);
+  QCOMPARE(shell->pages()->currentWidget(), pages->page(client));
+
+  // home is home again
+  QTest::mouseClick(rail->item(QStringLiteral("home")), Qt::LeftButton);
+  QCOMPARE(shell->currentPageId(), QStringLiteral("home"));
+  QCOMPARE(shell->pages()->currentIndex(), 0);
+}
+
 void MainShellTests::deskflowLook_theViewMenuFoldsTheSidebar_withAShortcutThatNothingElseHas()
 {
   auto window = makeWindow(true);

@@ -27,13 +27,18 @@ class IpcClient : public QObject
 
 public:
   explicit IpcClient(QObject *parent, const QString &socketName, const QString &typeName);
-  void connectToServer();
+  // (the four that are virtual are what a test replaces, to talk to nobody)
+  virtual void connectToServer();
   void disconnectFromServer();
 
-  bool isConnected() const
+  virtual bool isConnected() const
   {
     return m_state == State::Connected;
   }
+
+  //! Writes what was sent and not yet written, waiting up to \p msecs: for a message that is sent right before the
+  //! program ends. False when it was not written in time or the client is not connected.
+  virtual bool flush(int msecs);
 
 Q_SIGNALS:
   void connected();
@@ -53,7 +58,7 @@ protected:
     Q_UNUSED(parts)
   }
 
-  void sendMessage(const QString &message);
+  virtual void sendMessage(const QString &message);
 
 private:
   void attemptConnection();

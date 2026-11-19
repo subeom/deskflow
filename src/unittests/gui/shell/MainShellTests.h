@@ -30,6 +30,7 @@ private Q_SLOTS:
   void deskflowLook_theWindowHasTheNamesAndTheRolesOfTheShell();
   void deskflowLook_aChangeOfLanguageKeepsTheShell();
   void deskflowLook_theSettingsArePagesOfTheSidebar_andPreferencesOpensTheFirst();
+  void deskflowLook_theClientSettings_haveNoEntryOfTheirOwn_andAreReachedFromHomeAndNetwork();
   void deskflowLook_aChangeThatTheCoreReadsAsksForARestart_andOnlyWhileItRuns();
   void deskflowLook_theViewMenuFoldsTheSidebar_withAShortcutThatNothingElseHas();
   void deskflowLook_fitsAtEveryWidth_withLargerTextAndLongKoreanStrings_data();

@@ -77,3 +77,11 @@ create_test(
 foreach(test DialogLayoutTests ServerConfigDialogTests ServerConfigAdvancedTabTests ComputerSettingsCardsTests FingerprintDialogTests AboutCardsTests MonitorEditorDialogTests ConnectionTestDialogTests LayoutProfilesDialogTests)
   target_include_directories(${test} PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
 endforeach()
+
+create_test(
+  NAME TestResultRowsTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE TestResultRowsTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)

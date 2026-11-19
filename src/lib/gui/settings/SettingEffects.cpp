@@ -57,6 +57,21 @@ const QHash<QString, Effect> &table()
     restart(S::Security::KeySize);
     restart(S::Security::CheckPeers);
 
+    // the client reads these when it starts (the dialog of the client restarts the core that runs, the page says it
+    // with the banner)
+    restart(S::Client::DynamicConnectionRetry);
+    restart(S::Client::LanguageSync);
+    restart(S::Client::ConnectTimeout);
+    restart(S::Client::InvertYScroll);
+    restart(S::Client::YScrollScale);
+    restart(S::Client::InvertXScroll);
+    restart(S::Client::XScrollScale);
+    // the Cloudflare Tunnel: the core is started behind it (see TunnelStartGuard)
+    restart(S::Tunnel::Enabled);
+    restart(S::Tunnel::Hostname);
+    restart(S::Tunnel::LocalPort);
+    restart(S::Tunnel::CloudflaredPath);
+
     // the server reads its configuration when it starts
     restart(S::Server::ClipboardSize);
     restart(S::Server::ClipboardTextOnly);

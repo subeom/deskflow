@@ -18,12 +18,16 @@
 #include "gui/dialogs/MonitorEditorDialog.h"
 #include "gui/dialogs/ServerAddressesDialog.h"
 #include "gui/dialogs/ServerConfigDialog.h"
+#include "gui/style/Appearance.h"
 #include "gui/style/DeskflowStyle.h"
 #include "gui/style/TextSize.h"
+#include "gui/tunnel/InMemorySecretStore.h"
+#include "gui/tunnel/SecretStoreFactory.h"
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
 #include "gui/widgets/LayoutNoticeBar.h"
 #include "gui/widgets/MonitorEditorWidget.h"
+#include "gui/widgets/TunnelSettingsGroup.h"
 #include "server/MonitorEditor.h"
 
 #include <QApplication>
@@ -329,6 +333,8 @@ void addScenarios()
 void DialogLayoutTests::initTestCase()
 {
   QVERIFY(m_settingsDir.isValid());
+  // a dialog that is made without a secret store of its own gets the one in memory: no test touches a keychain
+  qputenv(deskflow::tunnel::kSecretStoreVariable, "memory");
   Settings::setSettingsFile(m_settingsDir.filePath(QStringLiteral("Deskflow.conf")));
   Settings::setStateFile(m_settingsDir.filePath(QStringLiteral("Deskflow.state")));
   m_originalStyle = QApplication::style()->name();
@@ -372,6 +378,64 @@ void DialogLayoutTests::computerSettingsDialog_isLaidOutWithoutSqueezing()
 void DialogLayoutTests::clientConfigDialog_isLaidOutWithoutSqueezing_data()
 {
   addScenarios();
+}
+
+void DialogLayoutTests::clientConfigDialog_withTheTunnel_isLaidOutWithoutSqueezing_data()
+{
+  addScenarios();
+}
+
+// The Cloudflare Tunnel group with everything it can say at once: a long hostname, a path, a stored token, the note
+// that this version starts no cloudflared, cloudflared that is not found and a message about what could not be saved.
+// All of it is wrapped text and fields in a grid: none of it may be squeezed or overlap.
+void DialogLayoutTests::clientConfigDialog_withTheTunnel_isLaidOutWithoutSqueezing()
+{
+  QFETCH(QString, style);
+  QFETCH(qreal, fontScale);
+  QFETCH(int, sizeMode);
+
+  QVERIFY(applyStyle(style) != nullptr);
+
+  const auto store = std::make_shared<deskflow::tunnel::InMemorySecretStore>();
+  QVERIFY(
+      store
+          ->save(
+              deskflow::tunnel::ServiceToken(QStringLiteral("TESTID0001a1b2c3.access"), QStringLiteral("TESTSECRET"))
+          )
+          .ok
+  );
+  deskflow::gui::TunnelSettingsDependencies deps;
+  deps.secretStore = store;
+  deps.locate = [](const QString &) { return deskflow::tunnel::CloudflaredLocation(); };
+  deps.tlsEnabled = [] { return false; };
+
+  Settings::setValue(Settings::Tunnel::Enabled, true);
+  Settings::setValue(
+      Settings::Tunnel::Hostname, QStringLiteral("a-rather-long-name-for-a-computer.some-long-domain.example.com")
+  );
+  Settings::setValue(
+      Settings::Tunnel::CloudflaredPath, QStringLiteral("C:/Program Files (x86)/cloudflared/cloudflared.exe")
+  );
+
+  ClientConfigDialog dialog(nullptr, deps);
+  auto *group = dialog.findChild<deskflow::gui::TunnelSettingsGroup *>();
+  QVERIFY(group != nullptr);
+  group->showError(QStringLiteral(
+      "The credentials could not be stored: the keychain is locked and the password was not given in time"
+  ));
+  showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
+  QVERIFY(dialog.isVisible());
+  QVERIFY(group->isVisibleTo(&dialog));
+  grabIfRequested(QStringLiteral("ClientConfigDialogTunnel"), dialog);
+
+  const auto violations = findLayoutViolations(dialog);
+  Settings::setValue(Settings::Tunnel::Enabled);
+  Settings::setValue(Settings::Tunnel::Hostname);
+  Settings::setValue(Settings::Tunnel::CloudflaredPath);
+  QVERIFY2(
+      violations.isEmpty(),
+      qPrintable(QStringLiteral("dialog is %1\n%2").arg(describe(dialog.geometry()), violations.join(u'\n')))
+  );
 }
 
 void DialogLayoutTests::computerSettingsDialog_monitorLayout_isLaidOutWithoutSqueezing_data()
@@ -421,9 +485,17 @@ void DialogLayoutTests::clientConfigDialog_isLaidOutWithoutSqueezing()
   QFETCH(int, sizeMode);
 
   QVERIFY(applyStyle(style) != nullptr);
+  // the secure store of this process (the one in memory, set by initTestCase): opening the dialog with the tunnel off
+  // does not ask it, which on macOS can ask the user for the password of a locked keychain
+  const auto sessionStore =
+      std::dynamic_pointer_cast<deskflow::tunnel::InMemorySecretStore>(deskflow::tunnel::sessionSecretStore());
+  QVERIFY(sessionStore != nullptr);
+  const auto readsBefore = sessionStore->state()->idReadCount + sessionStore->state()->loadCount;
   ClientConfigDialog dialog;
+  QCOMPARE(sessionStore->state()->idReadCount + sessionStore->state()->loadCount, readsBefore);
   showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
   QVERIFY(dialog.isVisible());
+  QCOMPARE(sessionStore->state()->idReadCount + sessionStore->state()->loadCount, readsBefore);
   grabIfRequested(QStringLiteral("ClientConfigDialog"), dialog);
 
   const auto violations = findLayoutViolations(dialog);
@@ -891,7 +963,10 @@ void DialogLayoutTests::connectionTestDialog_isLaidOutWithoutSqueezing()
   QTRY_VERIFY_WITH_TIMEOUT(!dialog.isTesting(), 5000);
   showAndSettle(dialog, fontScale, static_cast<SizeMode>(sizeMode));
   QVERIFY(dialog.isVisible());
-  auto *results = dialog.findChild<QTextBrowser *>(QStringLiteral("resultsView"));
+  // the new look shows the results as rows in a scroll area, the system look as a text
+  auto *results = dialog.findChild<QWidget *>(
+      deskflow::gui::style::isDeskflowStyleInstalled() ? QStringLiteral("resultsRows") : QStringLiteral("resultsView")
+  );
   QVERIFY(results != nullptr && results->isVisibleTo(&dialog));
   // the panel is a few lines of its own font, not a sliver
   QVERIFY2(results->height() >= results->fontMetrics().lineSpacing() * 10, qPrintable(describe(results->geometry())));

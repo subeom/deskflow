@@ -10,6 +10,7 @@
 #include "common/Settings.h"
 #include "gui/dialogs/ClientConfigDialog.h"
 #include "gui/dialogs/ConnectionTestDialog.h"
+#include "gui/tunnel/SecretStoreFactory.h"
 
 #include <QApplication>
 #include <QDir>
@@ -72,6 +73,8 @@ bool isMac()
 void ConnectionTestDialogTests::initTestCase()
 {
   QVERIFY(m_settingsDir.isValid());
+  // a dialog that is made without a secret store of its own gets the one in memory: no test touches a keychain
+  qputenv(deskflow::tunnel::kSecretStoreVariable, "memory");
   Settings::setSettingsFile(m_settingsDir.filePath(QStringLiteral("Deskflow.conf")));
   Settings::setStateFile(m_settingsDir.filePath(QStringLiteral("Deskflow.state")));
   qRegisterMetaType<ProbeResult>();

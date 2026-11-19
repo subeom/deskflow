@@ -207,6 +207,16 @@ void IpcClient::handleConnectionSuccess()
   qDebug().noquote() << QStringLiteral("%1 ipc client sent hello with version: %2").arg(m_typeName, versionId);
 }
 
+bool IpcClient::flush(int msecs)
+{
+  if (m_state != State::Connected) {
+    return false;
+  }
+
+  m_socket->flush();
+  return m_socket->bytesToWrite() == 0 || m_socket->waitForBytesWritten(msecs);
+}
+
 void IpcClient::sendMessage(const QString &message)
 {
   if (m_state != State::Connected) {

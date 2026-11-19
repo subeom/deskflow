@@ -8,8 +8,12 @@
 #include "CoreProcess.h"
 
 #include "common/ExitCodes.h"
+#include "gui/core/ServiceQuit.h"
 #include "gui/ipc/CoreIpcClient.h"
 #include "gui/ipc/DaemonIpcClient.h"
+#include "gui/tunnel/ITunnelGate.h"
+#include "gui/tunnel/TunnelStartGuard.h"
+#include "gui/tunnel/TunnelTypes.h"
 
 #if defined(Q_OS_MACOS)
 #include "OSXHelpers.h"
@@ -30,6 +34,9 @@
 namespace deskflow::gui {
 
 const int kRetryDelay = 1000;
+// how long the quit waits for the service to be reached, and then for the stop of the service core to be written to it
+const int kQuitConnectWaitMs = 1000;
+const int kQuitFlushMs = 1000;
 const auto kLineSplitRegex = QRegularExpression("\r|\n|\r\n");
 
 QString CoreProcess::processModeToString(const Settings::ProcessMode mode)
@@ -99,9 +106,9 @@ QString CoreProcess::wrapIpv6(const QString &address)
 // CoreProcess
 //
 
-CoreProcess::CoreProcess(const ServerConfig &serverConfig)
+CoreProcess::CoreProcess(const ServerConfig &serverConfig, DaemonClientFactory daemonClientFactory)
     : m_serverConfig(serverConfig),
-      m_daemonIpcClient{new ipc::DaemonIpcClient(this)}
+      m_daemonIpcClient{daemonClientFactory ? daemonClientFactory(this) : new ipc::DaemonIpcClient(this)}
 {
   m_appPath = QStringLiteral("%1/%2").arg(QCoreApplication::applicationDirPath(), kCoreBinName);
   if (!QFile::exists(m_appPath)) {
@@ -253,6 +260,9 @@ void CoreProcess::startProcessFromDaemon()
   qInfo("sending start to daemon (config file: %s)", qPrintable(configFile));
 
   auto sendStart = [this, configFile] {
+    if (m_quitting) {
+      return;
+    }
     m_daemonIpcClient->sendConfigFile(configFile);
     m_daemonIpcClient->sendStartProcess();
     setProcessState(ProcessState::Started);
@@ -261,7 +271,7 @@ void CoreProcess::startProcessFromDaemon()
   if (m_daemonIpcClient->isConnected()) {
     sendStart();
   } else {
-    connect(
+    m_pendingDaemonStart = connect(
         m_daemonIpcClient, &ipc::DaemonIpcClient::connected, this, sendStart,
         static_cast<Qt::ConnectionType>(Qt::SingleShotConnection | Qt::QueuedConnection)
     );
@@ -323,6 +333,12 @@ void CoreProcess::stopProcessFromDaemon()
     return;
   }
 
+  // the quit sends the stop itself (it waits for the service, which a queued send does not)
+  if (m_quitting) {
+    setProcessState(ProcessState::Stopped);
+    return;
+  }
+
   auto sendStop = [this] {
     m_daemonIpcClient->sendStopProcess();
     setProcessState(ProcessState::Stopped);
@@ -331,7 +347,7 @@ void CoreProcess::stopProcessFromDaemon()
   if (m_daemonIpcClient->isConnected()) {
     sendStop();
   } else {
-    connect(
+    m_pendingDaemonStop = connect(
         m_daemonIpcClient, &ipc::DaemonIpcClient::connected, this, sendStop,
         static_cast<Qt::ConnectionType>(Qt::SingleShotConnection | Qt::QueuedConnection)
     );
@@ -384,6 +400,20 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
   if (m_mode == Settings::CoreMode::None) {
     qCritical("not starting core process, no core mode set");
     return;
+  }
+
+  // Cloudflare Tunnel in service mode: the program is ending, and a start that was asked for late must not run
+  if (m_quitting) {
+    qDebug("not starting core process, the program is ending");
+    return;
+  }
+
+  // Cloudflare Tunnel: the client core starts when the tunnel listens (before the lock: the start is made again then)
+  if (m_tunnelGuard != nullptr) {
+    m_tunnelPendingMode = processModeOption;
+    if (m_tunnelGuard->intercept(m_mode == Settings::CoreMode::Client)) {
+      return;
+    }
   }
 
   QMutexLocker locker(&m_processMutex);
@@ -530,6 +560,11 @@ void CoreProcess::stop(std::optional<ProcessMode> processModeOption)
   }
 
   setConnectionState(ConnectionState::Disconnected);
+
+  // Cloudflare Tunnel: the core is stopped first, the tunnel is let go second
+  if (m_tunnelGuard != nullptr) {
+    m_tunnelGuard->coreStopped();
+  }
 }
 
 void CoreProcess::restart()
@@ -579,7 +614,74 @@ void CoreProcess::cleanup()
   const auto isRunning = m_processState == ProcessState::Started;
   if (isDesktop && isRunning) {
     stop();
+  } else if (!isDesktop && m_tunnelGuard != nullptr && isTunnelRequired() &&
+             (isRunning || m_processState == ProcessState::Starting)) {
+    // Cloudflare Tunnel in service mode: the service core would keep retrying a tunnel that is gone with this program,
+    // so it is stopped with it (the stop also clears the config of the service, so it does not start at boot either).
+    // From here nothing is started or queued: a start that waits for the connection to the service is cancelled, so
+    // that a connection that comes late cannot start the core while or after the program ends.
+    m_quitting = true;
+    disconnect(m_pendingDaemonStart);
+    disconnect(m_pendingDaemonStop);
+
+    // the service was told to start the core only when the state is Started; a start that was still waiting never
+    // reached it
+    const bool serviceHasTheCore = isRunning;
+    stop();
+
+    if (serviceHasTheCore) {
+      const auto result = deliverStopToService(*m_daemonIpcClient, kQuitConnectWaitMs, kQuitFlushMs);
+      if (result != StopDelivery::Delivered) {
+        qWarning().noquote() << stopDeliveryWarning(result);
+      }
+    }
   }
+}
+
+void CoreProcess::setMode(Settings::CoreMode mode)
+{
+  // Cloudflare Tunnel: a start that waits for the tunnel is a start of the client. When the mode changes to another one
+  // it is cancelled here, in the Starting state, which the window does not stop (it stops a core that has started); the
+  // core is back to Stopped and Disconnected, and the tunnel is let go. Without a tunnel nothing waits, and this does
+  // nothing.
+  if (m_tunnelGuard != nullptr && m_tunnelGuard->isWaiting() && mode != Settings::CoreMode::Client) {
+    stop();
+  }
+  m_mode = mode;
+}
+
+void CoreProcess::setTunnelGate(deskflow::tunnel::ITunnelGate *gate)
+{
+  delete m_tunnelGuard;
+  m_tunnelGuard = nullptr;
+  m_tunnelGate = gate;
+  if (gate == nullptr) {
+    return;
+  }
+
+  deskflow::tunnel::TunnelStartGuard::Actions actions;
+  actions.waiting = [this] {
+    setProcessState(ProcessState::Starting);
+    setConnectionState(ConnectionState::Connecting);
+  };
+  actions.resume = [this] { start(m_tunnelPendingMode); };
+  actions.failed = [this](deskflow::tunnel::TunnelFailure failure, bool wasWaiting) {
+    qWarning().noquote() << "Cloudflare Tunnel failed:" << deskflow::tunnel::failureText(failure);
+    if (wasWaiting) {
+      // the core never started: the state goes back as a start that failed leaves it
+      setProcessState(ProcessState::Stopped);
+      setConnectionState(ConnectionState::Disconnected);
+    } else if (m_processState != ProcessState::Stopped) {
+      // the core would retry a tunnel that is gone for ever
+      stop();
+    }
+  };
+  m_tunnelGuard = new deskflow::tunnel::TunnelStartGuard(gate, actions, this);
+}
+
+bool CoreProcess::isTunnelRequired() const
+{
+  return m_tunnelGate != nullptr && m_mode == Settings::CoreMode::Client && m_tunnelGate->isRequired();
 }
 
 QPair<bool, QString> CoreProcess::persistServerConfig() const

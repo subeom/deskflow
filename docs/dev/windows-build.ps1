@@ -163,6 +163,12 @@ $configureArgs = @(
     '-DBUILD_TESTS=ON',
     '-DSKIP_BUILD_TESTS=ON'
 )
+if ($Arch -eq 'x64') {
+    # On a Windows ARM64 PC the vcpkg program is native ARM64, so its host triplet would default to arm64-windows, and vcpkg
+    # then fails with "Unable to find a valid toolchain for requested target architecture arm64" under Visual Studio 2022.
+    # An x64 build always uses the x64 host triplet. On an x64 PC this is what vcpkg chooses anyway.
+    $configureArgs += '-DVCPKG_HOST_TRIPLET=x64-windows'
+}
 $vcpkgInstalled = Join-Path $build 'vcpkg_installed'
 if ($VcpkgInstalledDir) {
     $vcpkgInstalled = (Resolve-Path $VcpkgInstalledDir).Path

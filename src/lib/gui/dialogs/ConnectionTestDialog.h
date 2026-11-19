@@ -8,6 +8,7 @@
 
 #include "common/ConnectionDiagnosis.h"
 #include "gui/core/ConnectionProbe.h"
+#include "gui/widgets/TestResultRows.h"
 
 #include <QDateTime>
 #include <QDialog>
@@ -19,6 +20,7 @@
 class QDialogButtonBox;
 class QLabel;
 class QPushButton;
+class QScrollArea;
 class QTextBrowser;
 
 /**
@@ -51,6 +53,12 @@ public:
   static QString hintText(deskflow::diagnosis::Hint hint, int port, double timeoutSeconds);
   //! What came of one address, in a sentence, in the language of the application
   static QString statusText(const deskflow::gui::ProbeResult &result, double clientTimeoutSeconds);
+  //! The sentences of what to try for a result that did not open (the address is not one that failed: none); the
+  //! probe waited \p probeTimeoutSeconds
+  static QStringList hintTexts(const deskflow::gui::ProbeResult &result, double probeTimeoutSeconds);
+  //! The rows that the new look shows for the results: the same words as the text of the system look
+  static QList<deskflow::gui::TestResultRows::Row>
+  rowsFor(const QList<deskflow::gui::ProbeResult> &results, double probeTimeoutSeconds, double clientTimeoutSeconds);
 
 public Q_SLOTS:
   //! Starts the test again; the results of a test that is running are dropped
@@ -67,6 +75,7 @@ public:
 private:
   void retranslate();
   void showResults();
+  void showRows(bool noAddress, bool testing);
   QString resultHtml(const deskflow::gui::ProbeResult &result) const;
 
   QString m_servers;
@@ -81,6 +90,9 @@ private:
   double m_clientTimeoutSeconds = deskflow::diagnosis::kDefaultConnectTimeoutSeconds;
 
   QTextBrowser *m_resultsView;
+  //! The new look shows the results as rows (in a scroll area) in the place of the text of the system look
+  deskflow::gui::TestResultRows *m_rows = nullptr;
+  QScrollArea *m_rowsScroll = nullptr;
   QLabel *m_status;
   QPushButton *m_copyButton;
   QPushButton *m_runAgainButton;

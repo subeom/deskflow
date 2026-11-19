@@ -148,6 +148,13 @@ public:
    * shell. The first one takes the place of the entry "Preferences", which opened a dialog.
    */
   void addSettingsPage(const QString &id, const QString &iconName, const QString &text, QWidget *page);
+  /*!
+   * A page that has no entry of its own in the sidebar: the entry of \p parentId is the one that is marked while it is
+   * shown. The sidebar is as high as the smallest screens have the room for (see MainShellTests), so a page that is
+   * reached from another one (the settings of the client from the home page and from the page of the network) is not
+   * one more entry of it.
+   */
+  void addSubPage(const QString &id, const QString &parentId, QWidget *page);
   //! The text of the entry of a page (the language changed)
   void setPageText(const QString &id, const QString &text);
   //! Shows the page and marks its entry in the sidebar: "home" or the id of a page that was added
@@ -182,6 +189,9 @@ private:
   QLabel *m_title = nullptr;
   QStackedWidget *m_pages = nullptr;
   QHash<QString, int> m_pageIndex;
+  //! The sub pages: the entry of the sidebar that goes with each, and which of them is shown (empty: none)
+  QHash<QString, QString> m_subPageParent;
+  QString m_subPage;
   settings::RestartBanner *m_restartBanner = nullptr;
   QStackedWidget *m_modePages = nullptr;
   SettingCard *m_computersCard = nullptr;

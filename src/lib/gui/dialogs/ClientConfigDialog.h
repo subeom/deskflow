@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "gui/widgets/TunnelSettingsGroup.h"
+
 #include <QDialog>
 
 class SettingsDialogButtonBox;
@@ -23,7 +25,11 @@ class ClientConfigDialog : public QDialog
   Q_OBJECT
 
 public:
-  explicit ClientConfigDialog(QWidget *parent = nullptr);
+  /**
+   * \p tunnel is what the Cloudflare Tunnel group asks of its surroundings; by default the secure store of the system
+   * and the real file system. Tests give it a store in memory.
+   */
+  explicit ClientConfigDialog(QWidget *parent = nullptr, deskflow::gui::TunnelSettingsDependencies tunnel = {});
   ~ClientConfigDialog() override;
 
 protected:
@@ -78,4 +84,5 @@ private:
 
   Ui::ClientConfigDialog *ui = nullptr;
   SettingsDialogButtonBox *m_buttonBox = nullptr;
+  deskflow::gui::TunnelSettingsGroup *m_tunnelGroup = nullptr;
 };

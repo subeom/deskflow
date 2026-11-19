@@ -8,6 +8,7 @@
 
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
+#include "gui/style/Appearance.h"
 
 #include <QClipboard>
 #include <QDialogButtonBox>
@@ -15,6 +16,7 @@
 #include <QGuiApplication>
 #include <QLabel>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSysInfo>
 #include <QTextBrowser>
 #include <QVBoxLayout>
@@ -71,7 +73,22 @@ ConnectionTestDialog::ConnectionTestDialog(
   connect(m_runAgainButton, &QPushButton::clicked, this, &ConnectionTestDialog::runTest);
 
   auto *layout = new QVBoxLayout(this);
-  layout->addWidget(m_resultsView, 1);
+  if (deskflow::gui::style::isDeskflowStyleInstalled()) {
+    // the new look: a card for each address, with a chip and what to try, which follow the colours of the look
+    m_rows = new deskflow::gui::TestResultRows;
+    m_rowsScroll = new QScrollArea(this);
+    m_rowsScroll->setObjectName(QStringLiteral("resultsRows"));
+    m_rowsScroll->setWidgetResizable(true);
+    m_rowsScroll->setFrameShape(QFrame::NoFrame);
+    m_rowsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_rowsScroll->setWidget(m_rows);
+    m_rowsScroll->setMinimumHeight(m_resultsView->minimumHeight());
+    m_rowsScroll->setMinimumWidth(m_resultsView->minimumWidth());
+    m_resultsView->hide();
+    layout->addWidget(m_rowsScroll, 1);
+  } else {
+    layout->addWidget(m_resultsView, 1);
+  }
   layout->addWidget(m_status);
   layout->addWidget(m_buttons);
 
@@ -268,6 +285,11 @@ void ConnectionTestDialog::showResults()
   const auto entries = parseServerEntries(m_servers, m_defaultPort);
   const bool testing = isTesting();
 
+  if (m_rows != nullptr) {
+    showRows(entries.isEmpty(), testing);
+    return;
+  }
+
   QString html = QStringLiteral("<p><i>%1</i></p>")
                      .arg(tr("Tries to open a connection to each server address from this computer. Only the "
                              "connection is made and closed again: no Deskflow data is sent, the server just sees a "
@@ -308,6 +330,95 @@ void ConnectionTestDialog::showResults()
   m_runAgainButton->setEnabled(!testing);
 }
 
+QStringList ConnectionTestDialog::hintTexts(const ProbeResult &result, double probeTimeoutSeconds)
+{
+  QStringList texts;
+  if (result.open || !result.problem.isEmpty())
+    return texts;
+  diag::Failure failure;
+  failure.kind = result.kind;
+  failure.phase = result.kind == diag::FailureKind::DnsFailure ? diag::Phase::Resolving : diag::Phase::Tcp;
+  failure.host = result.host.toStdString();
+  failure.resolvedAddress = result.address.toStdString();
+  failure.port = result.port;
+  failure.timeoutSeconds = probeTimeoutSeconds;
+  failure.platform = deskflow::platform::currentInputPlatform();
+  for (const auto hint : diag::diagnose(failure).hints) {
+    // what the probe waited is not what the client waits: the client's limit is raised in the settings
+    if (hint == diag::Hint::SlowNetwork) {
+      continue;
+    }
+    texts << hintText(hint, result.port, probeTimeoutSeconds);
+  }
+  return texts;
+}
+
+QList<TestResultRows::Row> ConnectionTestDialog::rowsFor(
+    const QList<ProbeResult> &results, double probeTimeoutSeconds, double clientTimeoutSeconds
+)
+{
+  using Kind = StatusChip::Kind;
+  QList<TestResultRows::Row> rows;
+  for (const auto &result : results) {
+    TestResultRows::Row row;
+    row.title = result.problem.isEmpty()
+                    ? QString::fromStdString(
+                          diag::formatTarget(result.host.toStdString(), result.address.toStdString(), result.port)
+                      )
+                    : result.entry;
+    row.detail = statusText(result, clientTimeoutSeconds);
+    if (result.open) {
+      const bool slow = isSlowForTheClient(result, clientTimeoutSeconds);
+      row.kind = slow ? Kind::Warning : Kind::Success;
+      row.state = slow ? tr("Slow") : tr("Open");
+    } else {
+      row.kind = Kind::Danger;
+      row.state = tr("Failed");
+    }
+    row.hints = hintTexts(result, probeTimeoutSeconds);
+    rows << row;
+  }
+  return rows;
+}
+
+void ConnectionTestDialog::showRows(bool noAddress, bool testing)
+{
+  m_rows->setIntro(
+      tr("Tries to open a connection to each server address from this computer. Only the "
+         "connection is made and closed again: no Deskflow data is sent, the server just sees a "
+         "connection that ends at once.")
+  );
+  if (noAddress) {
+    m_rows->setRows({});
+    m_rows->setConclusion(tr("Type the address of the server computer in the \"Connect to\" field first."));
+    m_status->clear();
+    m_copyButton->setEnabled(false);
+    m_runAgainButton->setEnabled(true);
+    return;
+  }
+
+  const auto timeoutSeconds = (m_probe != nullptr ? m_probe->timeoutMs() : ConnectionProbe::kDefaultTimeoutMs) / 1000.0;
+  m_rows->setRows(rowsFor(m_results, timeoutSeconds, m_clientTimeoutSeconds));
+  const auto openCount =
+      static_cast<int>(std::ranges::count_if(m_results, [](const ProbeResult &result) { return result.open; }));
+  const bool anyFailed = openCount < m_results.size();
+  if (m_finished && openCount > 0 && anyFailed) {
+    m_rows->setConclusion(tr("Put the address that works first in the list, and remove the ones that do not."));
+  } else {
+    m_rows->setConclusion({});
+  }
+
+  if (testing) {
+    m_status->setText(tr("Testing…"));
+  } else if (m_finished) {
+    m_status->setText(tr("Done: %1 of %2 open.").arg(openCount).arg(m_results.size()));
+  } else {
+    m_status->setText(QString());
+  }
+  m_copyButton->setEnabled(m_finished && !m_results.isEmpty());
+  m_runAgainButton->setEnabled(!testing);
+}
+
 QString ConnectionTestDialog::resultHtml(const ProbeResult &result) const
 {
   const auto timeoutSeconds = (m_probe != nullptr ? m_probe->timeoutMs() : ConnectionProbe::kDefaultTimeoutMs) / 1000.0;
@@ -328,22 +439,9 @@ QString ConnectionTestDialog::resultHtml(const ProbeResult &result) const
           .arg(color, marker, target.toHtmlEscaped(), statusText(result, m_clientTimeoutSeconds).toHtmlEscaped());
 
   if (!good && result.problem.isEmpty()) {
-    diag::Failure failure;
-    failure.kind = result.kind;
-    failure.phase = result.kind == diag::FailureKind::DnsFailure ? diag::Phase::Resolving : diag::Phase::Tcp;
-    failure.host = result.host.toStdString();
-    failure.resolvedAddress = result.address.toStdString();
-    failure.port = result.port;
-    failure.timeoutSeconds = timeoutSeconds;
-    failure.platform = deskflow::platform::currentInputPlatform();
-
     QString items;
-    for (const auto hint : diag::diagnose(failure).hints) {
-      // what the probe waited is not what the client waits: the client's limit is raised in the settings
-      if (hint == diag::Hint::SlowNetwork) {
-        continue;
-      }
-      items += QStringLiteral("<li>%1</li>").arg(hintText(hint, result.port, timeoutSeconds).toHtmlEscaped());
+    for (const auto &text : hintTexts(result, timeoutSeconds)) {
+      items += QStringLiteral("<li>%1</li>").arg(text.toHtmlEscaped());
     }
     if (!items.isEmpty()) {
       html += QStringLiteral("<ul style=\"margin-top:0\">%1</ul>").arg(items);

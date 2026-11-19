@@ -186,6 +186,9 @@ QStringList trayMenu(
 )
 {
   return {
+      // the line of the Cloudflare Tunnel is the first row of the menu of the system look, and it is not there (hidden,
+      // with no text) while the tunnel is not used
+      row({}, {}, false, false, QStringLiteral("no icon")),
       row(start, QStringLiteral("Ctrl+S"), startShown, startShown, startIcon),
       row(QStringLiteral("Rest&art"), QStringLiteral("Ctrl+S"), restartShown, restartShown,
           QStringLiteral("view-refresh")),
