@@ -152,6 +152,33 @@ void TestResultRowsTests::rows_keepWhatWasOpened_whileTheTestGoesOn()
   QVERIFY(!rows.hintsShown(0));
 }
 
+// The button is pressed as a person presses it (the mouse and the key Space), not called: what is shown follows the
+// button
+void TestResultRowsTests::rows_theButtonOpensAndClosesWhatToTry_forTheMouseAndTheKeySpace()
+{
+  installDeskflowStyle();
+  TestResultRows rows;
+  rows.resize(640, 480);
+  rows.setRows(
+      {Row{Kind::Danger, QStringLiteral("Failed"), QStringLiteral("a"), QStringLiteral("d"), {QStringLiteral("hint")}}}
+  );
+  rows.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&rows));
+  auto *button = rows.hintsButton(0);
+  QVERIFY(button != nullptr);
+  QVERIFY(!rows.hintsShown(0));
+
+  QTest::mouseClick(button, Qt::LeftButton);
+  QVERIFY(button->isChecked());
+  QVERIFY(rows.hintsShown(0));
+  QTest::mouseClick(button, Qt::LeftButton);
+  QVERIFY(!rows.hintsShown(0));
+  QTest::keyClick(button, Qt::Key_Space);
+  QVERIFY(rows.hintsShown(0));
+  QTest::keyClick(button, Qt::Key_Space);
+  QVERIFY(!rows.hintsShown(0));
+}
+
 void TestResultRowsTests::connectionDialog_newLook_showsRowsInThePlaceOfTheText()
 {
   installDeskflowStyle();

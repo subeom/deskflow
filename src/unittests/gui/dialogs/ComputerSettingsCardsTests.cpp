@@ -5,6 +5,7 @@
 
 #include "ComputerSettingsCardsTests.h"
 
+#include "../SwitchInput.h"
 #include "common/Settings.h"
 #include "gui/config/Computer.h"
 #include "gui/dialogs/ComputerSettingsDialog.h"
@@ -345,6 +346,24 @@ void ComputerSettingsCardsTests::deskflowLook_showsTheErrorOfTheNameAndOfTheAlia
   alias->setText(QStringLiteral("desk-pc.local"));
   QVERIFY(aliasRow->error().isEmpty());
   QVERIFY(child<QPushButton>(dialog, "btnAddAlias")->isEnabled());
+}
+
+// Every switch of the dialog is given a click of the mouse and the key Space, and what it paints is looked at (the knob
+// of a switch stood still when it was clicked: the tests had set the switches by code)
+void ComputerSettingsCardsTests::deskflowLook_everySwitch_followsAClickAndTheKeySpace()
+{
+  Settings::setValue(Settings::Server::ExperimentalMultiMonitor, true);
+  installDeskflowStyle();
+  Computer computer(QStringLiteral("test-pc"));
+  ComputerSettingsDialog dialog(nullptr, &computer);
+  dialog.resize(900, 900);
+  dialog.show();
+  QCoreApplication::processEvents();
+  const auto sweep = switchinput::sweepSwitches(&dialog);
+  QVERIFY2(sweep.problems.isEmpty(), qPrintable(sweep.problems.join(QLatin1Char('\n'))));
+  QVERIFY2(
+      sweep.tried >= 5, qPrintable(QStringLiteral("%1 switches tried of %2 found").arg(sweep.tried).arg(sweep.found))
+  );
 }
 
 void ComputerSettingsCardsTests::deskflowLook_namesTheControlsByTheirRows()

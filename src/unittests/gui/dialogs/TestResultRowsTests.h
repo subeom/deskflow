@@ -20,6 +20,7 @@ private Q_SLOTS:
 
   void rows_haveAChipAndASentence_andWhatToTryIsHiddenUntilItIsAskedFor();
   void rows_keepWhatWasOpened_whileTheTestGoesOn();
+  void rows_theButtonOpensAndClosesWhatToTry_forTheMouseAndTheKeySpace();
   void connectionDialog_newLook_showsRowsInThePlaceOfTheText();
   void connectionDialog_systemLook_keepsItsText();
   void connectionDialog_aSlowConnect_isAWarning();

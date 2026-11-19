@@ -32,6 +32,7 @@ private Q_SLOTS:
   void pages_haveTheRolesAndTheNamesOfTheirParts();
   void pages_theTreeOfAScreenReaderHasHeadingsGroupsAndNamedControls();
   void pages_theBackgroundServiceIsOnlyOnWindows();
+  void switches_everySwitchOfThePages_followsAClickAndTheKeySpace();
 
   void banner_asksWhenAskedAndTellsItsAlert();
 

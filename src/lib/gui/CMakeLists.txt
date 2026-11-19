@@ -235,6 +235,7 @@ add_library(${target} STATIC
   chrome/ChromeGeometry.h
   chrome/ChromePolicy.cpp
   chrome/ChromePolicy.h
+  chrome/FrameMessages.h
   chrome/MenuMigration.cpp
   chrome/MenuMigration.h
   chrome/WindowChrome.cpp

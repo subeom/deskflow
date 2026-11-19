@@ -36,7 +36,12 @@ public:
 
 protected:
   void paintEvent(QPaintEvent *event) override;
+  // The state of a check box changes by four ways, and Qt tells a subclass of three of them in three different places:
+  // setChecked() calls checkStateSet(); a click, the key Space and the button that a group lets go (QButtonGroup) call
+  // nextCheckState(), which does not call checkStateSet(); and setCheckState() calls neither (it blocks the refresh and
+  // emits checkStateChanged()). The knob follows the state by all of them: see syncKnob().
   void checkStateSet() override;
+  void nextCheckState() override;
   void focusInEvent(QFocusEvent *event) override;
   void focusOutEvent(QFocusEvent *event) override;
   void changeEvent(QEvent *event) override;
@@ -46,8 +51,12 @@ private:
   static qreal targetOf(Qt::CheckState state);
   QSize switchArea() const;
   void moveKnobTo(qreal target);
+  //! The knob goes to the end of the state that the switch is in now (nothing is done when it is there or on its way)
+  void syncKnob();
 
   QVariantAnimation m_animation;
   qreal m_knob = 0;
+  //! The end that the knob is at or on its way to
+  qreal m_target = 0;
   bool m_keyboardFocus = false;
 };

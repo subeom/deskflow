@@ -9,6 +9,7 @@
 #ifdef Q_OS_WIN
 
 #include "ChromeGeometry.h"
+#include "FrameMessages.h"
 #include "WindowHeader.h"
 #include "gui/style/Appearance.h"
 
@@ -30,6 +31,18 @@
 namespace deskflow::gui::chrome {
 
 namespace {
+
+// the numbers of the messages in FrameMessages.h (which is plain code on every system) are those of the headers of
+// Windows
+static_assert(static_cast<std::uint32_t>(FrameMessage::EraseBackground) == WM_ERASEBKGND);
+static_assert(static_cast<std::uint32_t>(FrameMessage::GetMinMaxInfo) == WM_GETMINMAXINFO);
+static_assert(static_cast<std::uint32_t>(FrameMessage::NcCalcSize) == WM_NCCALCSIZE);
+static_assert(static_cast<std::uint32_t>(FrameMessage::NcHitTest) == WM_NCHITTEST);
+static_assert(static_cast<std::uint32_t>(FrameMessage::NcMouseMove) == WM_NCMOUSEMOVE);
+static_assert(static_cast<std::uint32_t>(FrameMessage::NcLeftButtonDown) == WM_NCLBUTTONDOWN);
+static_assert(static_cast<std::uint32_t>(FrameMessage::NcLeftButtonUp) == WM_NCLBUTTONUP);
+static_assert(static_cast<std::uint32_t>(FrameMessage::NcMouseLeave) == WM_NCMOUSELEAVE);
+static_assert(kHitMaximizeButton == HTMAXBUTTON);
 
 // What Windows 11 has and the headers of an older kit do not: the corners of a window are round
 constexpr DWORD kWindowCornerPreference = 33;
@@ -160,139 +173,140 @@ public:
     auto *msg = static_cast<MSG *>(message);
     if (msg->hwnd != m_hwnd)
       return false;
+    // What is answered how, and where the answer is written, is in FrameMessages.h: Qt gives no place for an answer to
+    // a message that it takes from the queue (the clicks and the moves of the mouse in the non client area), and a
+    // filter that writes there ends the program (the seventh run of the checks of Windows: a click on the button of
+    // maximizing)
+    return routeFrameMessage(*this, msg->message, msg->wParam, msg->lParam, result);
+  }
 
-    switch (msg->message) {
-    case WM_NCCALCSIZE:
-      // the client area is the whole window: there is no title bar and no frame to take a part of it
-      if (msg->wParam == TRUE && IsZoomed(m_hwnd)) {
-        auto *params = reinterpret_cast<NCCALCSIZE_PARAMS *>(msg->lParam);
-        RECT &rect = params->rgrc[0];
-        const int frame = frameThickness(m_hwnd);
-        // Windows makes a maximized window bigger than the monitor by the thickness of its frame
-        rect.left += frame;
-        rect.top += frame;
-        rect.right -= frame;
-        rect.bottom -= frame;
-        keepAutoHiddenTaskbar(m_hwnd, rect);
-      }
-      *result = 0;
-      return true;
+  // What routeFrameMessage asks of the window (its Host)
 
-    // The least and the most that the window is dragged to are the sizes of the window as they are. Qt adds to them the
-    // frame that it saw when the client area was last calculated, and while the window is maximized that is the border
-    // that the system gives it and that the content is moved inside of (the frame of the window is not there, but Qt
-    // takes the border for one). The system asks for these sizes first when the window is restored, before the client
-    // area is calculated again, so a window that was as low as it can be came back 16 pixels higher. The place and the
-    // size of a maximized window are left as the system has them
-    case WM_GETMINMAXINFO: {
-      auto *info = reinterpret_cast<MINMAXINFO *>(msg->lParam);
-      const auto *handle = m_window->windowHandle();
-      const auto sizes = trackSizes(
-          handle ? handle->minimumSize() : m_window->minimumSize(),
-          handle ? handle->maximumSize() : m_window->maximumSize(), m_window->devicePixelRatioF()
+  void calculateClientArea(std::uintptr_t wParam, std::intptr_t lParam)
+  {
+    // the client area is the whole window: there is no title bar and no frame to take a part of it
+    if (wParam == TRUE && IsZoomed(m_hwnd)) {
+      auto *params = reinterpret_cast<NCCALCSIZE_PARAMS *>(lParam);
+      RECT &rect = params->rgrc[0];
+      const int frame = frameThickness(m_hwnd);
+      // Windows makes a maximized window bigger than the monitor by the thickness of its frame
+      rect.left += frame;
+      rect.top += frame;
+      rect.right -= frame;
+      rect.bottom -= frame;
+      keepAutoHiddenTaskbar(m_hwnd, rect);
+    }
+  }
+
+  // The least and the most that the window is dragged to are the sizes of the window as they are. Qt adds to them the
+  // frame that it saw when the client area was last calculated, and while the window is maximized that is the border
+  // that the system gives it and that the content is moved inside of (the frame of the window is not there, but Qt
+  // takes the border for one). The system asks for these sizes first when the window is restored, before the client
+  // area is calculated again, so a window that was as low as it can be came back 16 pixels higher. The place and the
+  // size of a maximized window are left as the system has them
+  void limitSizes(std::intptr_t lParam)
+  {
+    auto *info = reinterpret_cast<MINMAXINFO *>(lParam);
+    const auto *handle = m_window->windowHandle();
+    const auto sizes = trackSizes(
+        handle ? handle->minimumSize() : m_window->minimumSize(),
+        handle ? handle->maximumSize() : m_window->maximumSize(), m_window->devicePixelRatioF()
+    );
+    if (sizes.minimum.width() > 0)
+      info->ptMinTrackSize.x = sizes.minimum.width();
+    if (sizes.minimum.height() > 0)
+      info->ptMinTrackSize.y = sizes.minimum.height();
+    if (sizes.maximum.width() > 0)
+      info->ptMaxTrackSize.x = sizes.maximum.width();
+    if (sizes.maximum.height() > 0)
+      info->ptMaxTrackSize.y = sizes.maximum.height();
+  }
+
+  // The part of the window that the program has not painted yet (an edge that is dragged, a window that comes back from
+  // the taskbar) is the colour of the look and not what the system leaves there, which is white or black: the program
+  // paints over it as it is ready, and what shows in between is of the colour of the window
+  void paintBackground(std::uintptr_t wParam)
+  {
+    RECT area{};
+    GetClientRect(m_hwnd, &area);
+    FillRect(reinterpret_cast<HDC>(wParam), &area, background());
+  }
+
+  qintptr hitCodeAt(std::intptr_t lParam)
+  {
+    const auto point = static_cast<LPARAM>(lParam);
+    POINT at{GET_X_LPARAM(point), GET_Y_LPARAM(point)};
+    ScreenToClient(m_hwnd, &at);
+    RECT client{};
+    GetClientRect(m_hwnd, &client);
+    const auto dpr = m_window->devicePixelRatioF();
+
+    ChromeMetrics metrics;
+    metrics.windowSize = QSize(client.right - client.left, client.bottom - client.top);
+    metrics.maximized = IsZoomed(m_hwnd) != FALSE;
+    metrics.resizeBorder = qRound(kEdge * dpr);
+    metrics.headerHeight = qRound(WindowHeader::kHeight * dpr);
+    metrics.buttonWidth = qRound(WindowHeader::kCaptionButtonWidth * dpr);
+
+    QList<QRect> interactive;
+    for (const auto &rect : m_header->interactiveRects()) {
+      const auto topLeft = m_header->mapTo(m_window, rect.topLeft());
+      interactive << QRect(
+          qRound(topLeft.x() * dpr), qRound(topLeft.y() * dpr), qRound(rect.width() * dpr), qRound(rect.height() * dpr)
       );
-      if (sizes.minimum.width() > 0)
-        info->ptMinTrackSize.x = sizes.minimum.width();
-      if (sizes.minimum.height() > 0)
-        info->ptMinTrackSize.y = sizes.minimum.height();
-      if (sizes.maximum.width() > 0)
-        info->ptMaxTrackSize.x = sizes.maximum.width();
-      if (sizes.maximum.height() > 0)
-        info->ptMaxTrackSize.y = sizes.maximum.height();
-      *result = 0;
-      return true;
     }
+    return hitCodeFor(hitTest(metrics, QPoint(at.x, at.y), interactive), m_snapLayouts);
+  }
 
-    // The part of the window that the program has not painted yet (an edge that is dragged, a window that comes back
-    // from the taskbar) is the colour of the look and not what the system leaves there, which is white or black: the
-    // program paints over it as it is ready, and what shows in between is of the colour of the window
-    case WM_ERASEBKGND: {
-      RECT area{};
-      GetClientRect(m_hwnd, &area);
-      FillRect(reinterpret_cast<HDC>(msg->wParam), &area, background());
-      *result = 1;
-      return true;
+  // the mouse is over the button of maximizing, which the system has for itself: the program draws what the mouse does
+  void noteMouseOverNonClient(std::uintptr_t hit)
+  {
+    if (m_snapLayouts && hit == kHitMaximizeButton) {
+      if (!m_hover) {
+        m_hover = true;
+        TRACKMOUSEEVENT track{};
+        track.cbSize = sizeof(track);
+        track.dwFlags = TME_LEAVE | TME_NONCLIENT;
+        track.hwndTrack = m_hwnd;
+        TrackMouseEvent(&track);
+      }
+      showMaximizeState();
+      return;
     }
-
-    case WM_NCHITTEST: {
-      POINT at{GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam)};
-      ScreenToClient(m_hwnd, &at);
-      RECT client{};
-      GetClientRect(m_hwnd, &client);
-      const auto dpr = m_window->devicePixelRatioF();
-
-      ChromeMetrics metrics;
-      metrics.windowSize = QSize(client.right - client.left, client.bottom - client.top);
-      metrics.maximized = IsZoomed(m_hwnd) != FALSE;
-      metrics.resizeBorder = qRound(kEdge * dpr);
-      metrics.headerHeight = qRound(WindowHeader::kHeight * dpr);
-      metrics.buttonWidth = qRound(WindowHeader::kCaptionButtonWidth * dpr);
-
-      QList<QRect> interactive;
-      for (const auto &rect : m_header->interactiveRects()) {
-        const auto topLeft = m_header->mapTo(m_window, rect.topLeft());
-        interactive << QRect(
-            qRound(topLeft.x() * dpr), qRound(topLeft.y() * dpr), qRound(rect.width() * dpr),
-            qRound(rect.height() * dpr)
-        );
-      }
-      *result = hitCodeFor(hitTest(metrics, QPoint(at.x, at.y), interactive), m_snapLayouts);
-      return true;
-    }
-
-    // the mouse is over the button of maximizing, which the system has for itself: the program draws what the mouse
-    // does
-    case WM_NCMOUSEMOVE:
-      if (m_snapLayouts && msg->wParam == HTMAXBUTTON) {
-        if (!m_hover) {
-          m_hover = true;
-          TRACKMOUSEEVENT track{};
-          track.cbSize = sizeof(track);
-          track.dwFlags = TME_LEAVE | TME_NONCLIENT;
-          track.hwndTrack = m_hwnd;
-          TrackMouseEvent(&track);
-        }
-        showMaximizeState();
-        return false;
-      }
-      if (m_hover) {
-        m_hover = false;
-        m_pressed = false;
-        showMaximizeState();
-      }
-      return false;
-
-    case WM_NCMOUSELEAVE:
+    if (m_hover) {
       m_hover = false;
       m_pressed = false;
       showMaximizeState();
-      return false;
-
-    case WM_NCLBUTTONDOWN:
-      if (m_snapLayouts && msg->wParam == HTMAXBUTTON) {
-        m_pressed = true;
-        showMaximizeState();
-        *result = 0;
-        return true;
-      }
-      return false;
-
-    case WM_NCLBUTTONUP:
-      if (m_snapLayouts && msg->wParam == HTMAXBUTTON) {
-        const bool wasPressed = m_pressed;
-        m_pressed = false;
-        showMaximizeState();
-        if (wasPressed)
-          ShowWindow(m_hwnd, IsZoomed(m_hwnd) ? SW_RESTORE : SW_MAXIMIZE);
-        *result = 0;
-        return true;
-      }
-      return false;
-
-    default:
-      break;
     }
-    return false;
+  }
+
+  void noteMouseLeftNonClient()
+  {
+    m_hover = false;
+    m_pressed = false;
+    showMaximizeState();
+  }
+
+  // the press on the button of maximizing is shown as pressed, and the release over it maximizes or restores
+  bool pressesMaximizeButton(std::uintptr_t hit)
+  {
+    if (!m_snapLayouts || hit != kHitMaximizeButton)
+      return false;
+    m_pressed = true;
+    showMaximizeState();
+    return true;
+  }
+
+  bool releasesMaximizeButton(std::uintptr_t hit)
+  {
+    if (!m_snapLayouts || hit != kHitMaximizeButton)
+      return false;
+    const bool wasPressed = m_pressed;
+    m_pressed = false;
+    showMaximizeState();
+    if (wasPressed)
+      ShowWindow(m_hwnd, IsZoomed(m_hwnd) ? SW_RESTORE : SW_MAXIMIZE);
+    return true;
   }
 
 private:

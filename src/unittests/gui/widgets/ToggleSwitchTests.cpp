@@ -5,11 +5,13 @@
 
 #include "ToggleSwitchTests.h"
 
+#include "../SwitchInput.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/ToggleSwitch.h"
 
 #include <QApplication>
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <QFocusEvent>
 #include <QImage>
@@ -256,6 +258,194 @@ void ToggleSwitchTests::text_isDrawnBesideTheTrack()
       found = !near(image.pixelColor(x, y), background, 40);
   }
   QVERIFY(found);
+}
+
+// A click of the mouse and the key Space reach the switch through nextCheckState(), not through the checkStateSet()
+// that setChecked() reaches: what the switch paints has to follow the state by every way that the state changes
+void ToggleSwitchTests::input_movesTheKnobAndPaintsTheState_data()
+{
+  QTest::addColumn<bool>("withText");
+  QTest::addColumn<bool>("keyboard");
+  QTest::newRow("click, no text") << false << false;
+  QTest::newRow("space, no text") << false << true;
+  QTest::newRow("click, with text") << true << false;
+  QTest::newRow("space, with text") << true << true;
+}
+
+void ToggleSwitchTests::input_movesTheKnobAndPaintsTheState()
+{
+  QFETCH(bool, withText);
+  QFETCH(bool, keyboard);
+  install(lookOf(false, true));
+  ToggleSwitch toggle(withText ? QStringLiteral("Heartbeat") : QString());
+  settle(toggle);
+  const auto give = [&] {
+    if (keyboard)
+      QTest::keyClick(&toggle, Qt::Key_Space);
+    else
+      QTest::mouseClick(&toggle, Qt::LeftButton);
+  };
+  QVERIFY2(
+      switchinput::whatIsWrongWithTheKnob(toggle, false).isEmpty(),
+      qPrintable(switchinput::whatIsWrongWithTheKnob(toggle, false))
+  );
+
+  give();
+  QVERIFY(toggle.isChecked());
+  QCOMPARE(toggle.knobPosition(), 1.0);
+  QVERIFY2(
+      switchinput::whatIsWrongWithTheKnob(toggle, true).isEmpty(),
+      qPrintable(switchinput::whatIsWrongWithTheKnob(toggle, true))
+  );
+
+  give();
+  QVERIFY(!toggle.isChecked());
+  QCOMPARE(toggle.knobPosition(), 0.0);
+  QVERIFY2(
+      switchinput::whatIsWrongWithTheKnob(toggle, false).isEmpty(),
+      qPrintable(switchinput::whatIsWrongWithTheKnob(toggle, false))
+  );
+}
+
+void ToggleSwitchTests::input_withTheMotionOfAHover_endsWithTheKnobAtTheEnd()
+{
+  install(lookOf(false, false));
+  ToggleSwitch toggle;
+  settle(toggle);
+
+  QTest::mouseClick(&toggle, Qt::LeftButton);
+  // the knob is on its way (a click is a change of state like any other), and arrives
+  QVERIFY(toggle.knobPosition() < 1.0);
+  QTRY_COMPARE_WITH_TIMEOUT(toggle.knobPosition(), 1.0, 2000);
+
+  QTest::keyClick(&toggle, Qt::Key_Space);
+  QTRY_COMPARE_WITH_TIMEOUT(toggle.knobPosition(), 0.0, 2000);
+}
+
+void ToggleSwitchTests::knob_followsEveryWayThatTheStateChanges_data()
+{
+  QTest::addColumn<int>("way");
+  QTest::newRow("setChecked") << 0;
+  QTest::newRow("toggle()") << 1;
+  QTest::newRow("click()") << 2;
+  QTest::newRow("animateClick()") << 3;
+  QTest::newRow("setCheckState") << 4;
+  QTest::newRow("a click of the mouse") << 5;
+  QTest::newRow("the key Space") << 6;
+  QTest::newRow("setChecked with the signals blocked") << 7;
+  QTest::newRow("a click of the mouse with the signals blocked") << 8;
+}
+
+void ToggleSwitchTests::knob_followsEveryWayThatTheStateChanges()
+{
+  QFETCH(int, way);
+  install(lookOf(false, true));
+  ToggleSwitch toggle;
+  settle(toggle);
+
+  const auto change = [&](bool toOn) {
+    switch (way) {
+    case 0:
+      toggle.setChecked(toOn);
+      break;
+    case 1:
+      toggle.toggle();
+      break;
+    case 2:
+      toggle.click();
+      break;
+    case 3:
+      toggle.animateClick();
+      QTest::qWait(150);
+      break;
+    case 4:
+      toggle.setCheckState(toOn ? Qt::Checked : Qt::Unchecked);
+      break;
+    case 5:
+      QTest::mouseClick(&toggle, Qt::LeftButton);
+      break;
+    case 6:
+      QTest::keyClick(&toggle, Qt::Key_Space);
+      break;
+    case 7: {
+      const QSignalBlocker blocker(&toggle);
+      toggle.setChecked(toOn);
+      break;
+    }
+    case 8: {
+      const QSignalBlocker blocker(&toggle);
+      QTest::mouseClick(&toggle, Qt::LeftButton);
+      break;
+    }
+    }
+  };
+  change(true);
+  QVERIFY(toggle.isChecked());
+  QVERIFY2(
+      switchinput::whatIsWrongWithTheKnob(toggle, true).isEmpty(),
+      qPrintable(switchinput::whatIsWrongWithTheKnob(toggle, true))
+  );
+  change(false);
+  QVERIFY(!toggle.isChecked());
+  QVERIFY2(
+      switchinput::whatIsWrongWithTheKnob(toggle, false).isEmpty(),
+      qPrintable(switchinput::whatIsWrongWithTheKnob(toggle, false))
+  );
+}
+
+// QButtonGroup unchecks the button that was chosen before by calling its nextCheckState(), so the switch that is let go
+// is another way that the state changes with no call of checkStateSet()
+void ToggleSwitchTests::knob_ofASwitchInAnExclusiveGroup_goesBackWhenAnotherIsChosen()
+{
+  install(lookOf(false, true));
+  QWidget host;
+  ToggleSwitch first(&host);
+  ToggleSwitch second(&host);
+  second.move(first.sizeHint().width() + 10, 0);
+  first.resize(first.sizeHint());
+  second.resize(second.sizeHint());
+  QButtonGroup group;
+  group.setExclusive(true);
+  group.addButton(&first);
+  group.addButton(&second);
+  host.resize(200, 50);
+  host.show();
+
+  QTest::mouseClick(&first, Qt::LeftButton);
+  QVERIFY(first.isChecked());
+  QCOMPARE(first.knobPosition(), 1.0);
+
+  QTest::mouseClick(&second, Qt::LeftButton);
+  QVERIFY(second.isChecked());
+  QVERIFY(!first.isChecked());
+  QVERIFY2(
+      switchinput::whatIsWrongWithTheKnob(second, true).isEmpty(),
+      qPrintable(switchinput::whatIsWrongWithTheKnob(second, true))
+  );
+  QVERIFY2(
+      switchinput::whatIsWrongWithTheKnob(first, false).isEmpty(),
+      qPrintable(switchinput::whatIsWrongWithTheKnob(first, false))
+  );
+}
+
+void ToggleSwitchTests::knob_ofAThreeStateSwitch_goesToTheMiddleAndAround()
+{
+  install(lookOf(false, true));
+  ToggleSwitch toggle;
+  toggle.setTristate(true);
+  settle(toggle);
+  QCOMPARE(toggle.knobPosition(), 0.0);
+
+  // unchecked, then partly, then checked, then unchecked: a click goes one step
+  QTest::mouseClick(&toggle, Qt::LeftButton);
+  QCOMPARE(toggle.checkState(), Qt::PartiallyChecked);
+  QCOMPARE(toggle.knobPosition(), 0.5);
+  QTest::mouseClick(&toggle, Qt::LeftButton);
+  QCOMPARE(toggle.checkState(), Qt::Checked);
+  QCOMPARE(toggle.knobPosition(), 1.0);
+  QTest::mouseClick(&toggle, Qt::LeftButton);
+  QCOMPARE(toggle.checkState(), Qt::Unchecked);
+  QCOMPARE(toggle.knobPosition(), 0.0);
 }
 
 QTEST_MAIN(ToggleSwitchTests)

@@ -23,6 +23,7 @@ private Q_SLOTS:
   void deskflowMode_clipboardLimitHasTheLabelAsItsTitle();
   void deskflowMode_experimentalCardHasAChipAndTheTitleWithoutItsPrefix();
   void deskflowMode_switchesDriveTheDialogAsBefore();
+  void deskflowMode_everySwitch_followsAClickAndTheKeySpace();
   void deskflowMode_settingsThatAreLoaded_showWithoutMovingTheKnob();
   void deskflowMode_aSettingOfAnotherOs_hasNoRow();
   void deskflowMode_tabKeyWalksTheControlsInTheOrderOfTheScreen();

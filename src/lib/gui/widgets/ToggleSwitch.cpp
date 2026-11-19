@@ -41,7 +41,9 @@ ToggleSwitch::ToggleSwitch(QWidget *parent) : QCheckBox(parent)
     m_knob = value.toReal();
     update();
   });
-  m_knob = targetOf(checkState());
+  m_knob = m_target = targetOf(checkState());
+  // setCheckState() reaches neither checkStateSet() nor nextCheckState() (see the header)
+  connect(this, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState) { syncKnob(); });
   new LookFollower(this, [this] { update(); });
 }
 
@@ -119,10 +121,27 @@ void ToggleSwitch::moveKnobTo(qreal target)
   m_animation.start();
 }
 
+void ToggleSwitch::syncKnob()
+{
+  const auto target = targetOf(checkState());
+  if (target == m_target)
+    return;
+  m_target = target;
+  moveKnobTo(target);
+}
+
 void ToggleSwitch::checkStateSet()
 {
   QCheckBox::checkStateSet();
-  moveKnobTo(targetOf(checkState()));
+  syncKnob();
+}
+
+// A click of the mouse, the key Space and a group that lets go of the button that was chosen before come here, and Qt
+// does not call checkStateSet() for them: the knob stood still when the switch was clicked
+void ToggleSwitch::nextCheckState()
+{
+  QCheckBox::nextCheckState();
+  syncKnob();
 }
 
 void ToggleSwitch::focusInEvent(QFocusEvent *event)
@@ -146,7 +165,7 @@ void ToggleSwitch::changeEvent(QEvent *event)
   switch (event->type()) {
   case QEvent::StyleChange:
     m_animation.stop();
-    m_knob = targetOf(checkState());
+    m_knob = m_target = targetOf(checkState());
     updateGeometry();
     update();
     break;

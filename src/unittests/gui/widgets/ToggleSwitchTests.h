@@ -22,5 +22,12 @@ private Q_SLOTS:
   void paint_followsTheLookWhenItChanges();
   void knob_movesInTheTimeOfAHover_andAtOnceWhenMotionIsReduced();
   void ring_showsForTheKeyboardOnly();
+  void input_movesTheKnobAndPaintsTheState_data();
+  void input_movesTheKnobAndPaintsTheState();
+  void input_withTheMotionOfAHover_endsWithTheKnobAtTheEnd();
+  void knob_followsEveryWayThatTheStateChanges_data();
+  void knob_followsEveryWayThatTheStateChanges();
+  void knob_ofASwitchInAnExclusiveGroup_goesBackWhenAnotherIsChosen();
+  void knob_ofAThreeStateSwitch_goesToTheMiddleAndAround();
   void text_isDrawnBesideTheTrack();
 };

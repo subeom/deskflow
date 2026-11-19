@@ -15,7 +15,9 @@
 
 #include <QApplication>
 #include <QLabel>
+#include <QLayout>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QScrollArea>
 #include <QTemporaryDir>
 #include <QTextBrowser>
@@ -182,13 +184,55 @@ void TunnelTestDialogTests::everyFailureHasAHint()
   }
 }
 
+void TunnelTestDialogTests::theDialog_asksForARoomThatFitsAScreen_data()
+{
+  QTest::addColumn<QString>("style");
+  QTest::addColumn<int>("pixels");
+  // the font of the platform and fonts of 12, 10, 8 and 6 px (the letters are 7, 6, 5 and 4 px wide on the average: the
+  // PC of the checks of Windows has narrower letters than a Mac), in the two styles that differ in their margins
+  for (const auto &style : {QStringLiteral("Fusion"), QStringLiteral("Windows")}) {
+    QTest::newRow(qPrintable(style + QStringLiteral(", the font of the platform"))) << style << 0;
+    for (const int pixels : {12, 10, 8, 6})
+      QTest::newRow(qPrintable(QStringLiteral("%1, %2 px").arg(style).arg(pixels))) << style << pixels;
+  }
+}
+
+// The room that the dialog asks for is what its panel asks for: the width of 64 letters of its font, and the margins of
+// the layout around it. It is not a number of pixels: the number 400 that was here is what a Mac asks for, and the
+// offscreen platform of a PC, with its own font and style, asked for less and failed the test there (qwindows passed
+// it). The letters of a font are 4 to 8 px wide and the margins are the style's
 void TunnelTestDialogTests::theDialog_asksForARoomThatFitsAScreen()
 {
+  QFETCH(QString, style);
+  QFETCH(int, pixels);
+  QApplication::setStyle(style);
+  const auto original = QApplication::font();
+  auto font = original;
+  if (pixels > 0)
+    font.setPixelSize(pixels);
+  QApplication::setFont(font);
+  const auto restoreFont = qScopeGuard([original] { QApplication::setFont(original); });
+
   Rig rig(m_dir);
   TunnelTestDialog dialog(nullptr, rig.dependencies());
   dialog.runTest();
   const auto size = dialog.sizeHint();
-  QVERIFY(size.width() >= 400);
+  const auto margins = dialog.layout()->contentsMargins();
+  const int panel = dialog.fontMetrics().averageCharWidth() * 64;
+  QVERIFY2(
+      size.width() >= panel + margins.left() + margins.right(),
+      qPrintable(QStringLiteral("%1 wide for a panel of %2 and margins of %3 + %4")
+                     .arg(size.width())
+                     .arg(panel)
+                     .arg(margins.left())
+                     .arg(margins.right()))
+  );
+  // it cannot be made narrower than that (the panel asks for the room, and the layout gives it)
+  QVERIFY2(
+      dialog.minimumSizeHint().width() >= panel + margins.left() + margins.right(),
+      qPrintable(QString::number(dialog.minimumSizeHint().width()))
+  );
+  // and it asks for no more than a screen has
   QVERIFY(size.width() <= 1100);
   QVERIFY(size.height() <= 800);
 }

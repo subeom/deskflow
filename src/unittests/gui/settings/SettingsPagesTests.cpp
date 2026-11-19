@@ -5,6 +5,7 @@
 
 #include "SettingsPagesTests.h"
 
+#include "../SwitchInput.h"
 #include "common/NetworkProtocol.h"
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
@@ -869,6 +870,48 @@ void SettingsPagesTests::pages_theBackgroundServiceIsOnlyOnWindows()
     QVERIFY(!find<QWidget>(pages, "cbElevateDaemon"));
     QVERIFY(!find<QWidget>(pages, "cardService"));
   }
+}
+
+// Every switch of the pages is given a click of the mouse and the key Space, as a person does, in both modes (the cards
+// of the server and the cards of the client are disabled in the other mode), and what each paints is looked at. The
+// seventh run of the checks of Windows found that the knob of every switch stood still: these tests had set the
+// switches by code
+void SettingsPagesTests::switches_everySwitchOfThePages_followsAClickAndTheKeySpace()
+{
+  auto *style = new deskflow::gui::style::DeskflowStyle;
+  QApplication::setStyle(style);
+  deskflow::gui::style::Look look;
+  look.reduceTransparency = true;
+  look.reduceMotion = true;
+  style->useLook(look);
+
+  QStringList tried;
+  for (const auto mode : {Settings::CoreMode::Server, Settings::CoreMode::Client}) {
+    Settings::setValue(Settings::Core::CoreMode, mode);
+    SettingsPages pages;
+    pages.binder()->refresh();
+    for (const auto &entry : pages.entries()) {
+      entry.page->resize(720, 560);
+      entry.page->show();
+      QCoreApplication::processEvents();
+      const auto sweep = switchinput::sweepSwitches(entry.page);
+      QVERIFY2(
+          sweep.problems.isEmpty(), qPrintable(entry.id + QStringLiteral(": ") + sweep.problems.join(QLatin1Char('\n')))
+      );
+      tried << QStringLiteral("%1/%2:%3")
+                   .arg(
+                       mode == Settings::CoreMode::Server ? QStringLiteral("server") : QStringLiteral("client"),
+                       entry.id
+                   )
+                   .arg(sweep.tried);
+      entry.page->hide();
+    }
+  }
+  // the scan is not looking at nothing: the pages have switches, and the ones of each mode are used in it
+  int total = 0;
+  for (const auto &line : tried)
+    total += line.section(QLatin1Char(':'), -1).toInt();
+  QVERIFY2(total >= 24, qPrintable(tried.join(QLatin1Char(' '))));
 }
 
 void SettingsPagesTests::banner_asksWhenAskedAndTellsItsAlert()

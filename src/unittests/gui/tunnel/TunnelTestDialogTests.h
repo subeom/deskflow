@@ -20,6 +20,7 @@ private Q_SLOTS:
   void copy_writesTheSummaryToTheWriterOnly();
   void runAgain_startsANewTest();
   void everyFailureHasAHint();
+  void theDialog_asksForARoomThatFitsAScreen_data();
   void theDialog_asksForARoomThatFitsAScreen();
   void newLook_showsTheStagesAsRows_andTheSystemLookKeepsItsText();
 

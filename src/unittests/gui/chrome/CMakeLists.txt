@@ -38,3 +38,15 @@ create_test(
 target_include_directories(WindowChromeTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
 # the icons of the program (the header asks for them by their names)
 target_sources(WindowChromeTests PRIVATE "${CMAKE_SOURCE_DIR}/src/apps/res/deskflow.qrc")
+
+# the rules of the native event filter of Windows, run with a made-up window; the scan of the sources reads the files of the
+# gui library
+create_test(
+  NAME FrameMessagesTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE FrameMessagesTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(FrameMessagesTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+target_compile_definitions(FrameMessagesTests PRIVATE DESKFLOW_GUI_SOURCE_DIR="${CMAKE_SOURCE_DIR}/src/lib/gui")
