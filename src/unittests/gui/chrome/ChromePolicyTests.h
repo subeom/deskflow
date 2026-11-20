@@ -21,4 +21,8 @@ private Q_SLOTS:
   void frameSwitch_whatThePersonChoseIsKeptAtTheNextStartAndChoosesTheFrame();
   void reasonName_isAWordForEveryReason();
   void current_hasTheLookAndThePlatformThatItIsAskedAbout();
+
+  void headerMoveMethod_isTheProgramsOnAMac_andTheSystemsElsewhere_data();
+  void headerMoveMethod_isTheProgramsOnAMac_andTheSystemsElsewhere();
+  void movedWindowPosition_followsTheMouse_andKeepsTheHeaderBelowTheTopOfTheScreen();
 };

@@ -7,6 +7,7 @@
 #include "WindowChrome.h"
 
 #include "ChromeGeometry.h"
+#include "ChromePolicy.h"
 #include "WindowHeader.h"
 
 #ifdef Q_OS_WIN
@@ -19,8 +20,11 @@
 #include <QGuiApplication>
 #include <QMainWindow>
 #include <QMouseEvent>
+#include <QScreen>
 #include <QWindow>
 #include <QWindowStateChangeEvent>
+
+#include <limits>
 
 namespace deskflow::gui::chrome {
 
@@ -79,6 +83,10 @@ bool WindowChrome::apply()
   // left end of the header
   m_window->setWindowFlag(Qt::ExpandedClientAreaHint, true);
   m_window->setWindowFlag(Qt::NoTitleBarBackgroundHint, true);
+  // Qt lays the layout of the window out in the contents rect, which leaves the title bar (the safe area) out: a band
+  // of the colour of the window at the top, and a minimum height that is that much short. The whole window is the
+  // layout's; the header has the title bar in it
+  m_window->setAttribute(Qt::WA_LayoutOnEntireRect, true);
 #else
   return false;
 #endif
@@ -96,8 +104,18 @@ bool WindowChrome::apply()
 #endif
   m_window->installEventFilter(this);
   m_header->setMaximized(m_window->isMaximized());
+  syncTitleBarInset();
   m_applied = true;
   return true;
+}
+
+void WindowChrome::syncTitleBarInset()
+{
+#ifdef Q_OS_MACOS
+  // the title bar is the top of the safe area of the window (contentsMargins() has it, and the margins that the program
+  // set, which the window has none of)
+  m_header->setTitleBarInset(s_titleBarInset ? s_titleBarInset(*m_window) : m_window->contentsMargins().top());
+#endif
 }
 
 void WindowChrome::toggleMaximized()
@@ -111,9 +129,12 @@ void WindowChrome::toggleMaximized()
 void WindowChrome::startMove()
 {
 #ifndef Q_OS_WIN
-  if (auto *handle = m_window->windowHandle(); handle && handle->startSystemMove())
-    return;
-  // the compositor did not do it: the window follows the mouse until the button is let go
+  if (headerMoveMethod(MoveEnvironment::current()) == MoveMethod::System) {
+    if (auto *handle = m_window->windowHandle(); handle && handle->startSystemMove())
+      return;
+  }
+  // the program does it (the way of a Mac, or the compositor did not): the window follows the mouse until the button is
+  // let go
   m_manualMove = true;
   m_pressedAt = QCursor::pos();
   m_windowAt = m_window->pos();
@@ -153,6 +174,12 @@ bool WindowChrome::eventFilter(QObject *watched, QEvent *event)
     m_header->setMaximized(m_window->isMaximized());
     logStateChange(static_cast<QWindowStateChangeEvent *>(event)->oldState());
   }
+#ifdef Q_OS_MACOS
+  // the system tells the window how high its title bar is when the window is shown, and again when it is not there
+  // (full screen)
+  if (watched == m_window && (event->type() == QEvent::ContentsRectChange || event->type() == QEvent::Show))
+    syncTitleBarInset();
+#endif
 
 #ifndef Q_OS_WIN
   const auto type = event->type();
@@ -165,7 +192,14 @@ bool WindowChrome::eventFilter(QObject *watched, QEvent *event)
 
   if (m_manualMove) {
     if (type == QEvent::MouseMove) {
-      m_window->move(m_windowAt + (QCursor::pos() - m_pressedAt));
+      // the button was let go where the program was not told of it (another window took the release): no move
+      if (!(static_cast<QMouseEvent *>(event)->buttons() & Qt::LeftButton)) {
+        m_manualMove = false;
+        return false;
+      }
+      const auto *screen = QGuiApplication::screenAt(QCursor::pos());
+      const int top = screen ? screen->availableGeometry().top() : std::numeric_limits<int>::min();
+      m_window->move(movedWindowPosition(m_windowAt, m_pressedAt, QCursor::pos(), top));
       return true;
     }
     if (type == QEvent::MouseButtonRelease) {

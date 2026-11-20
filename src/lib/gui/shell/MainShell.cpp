@@ -27,6 +27,7 @@
 #include "gui/widgets/StatusHero.h"
 
 #include <QApplication>
+#include <QBoxLayout>
 #include <QComboBox>
 #include <QEvent>
 #include <QHBoxLayout>
@@ -34,6 +35,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QSpacerItem>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
@@ -42,6 +44,9 @@ namespace deskflow::gui {
 using namespace deskflow::gui::style;
 
 namespace {
+
+// the height that the row of the name had in the old window (a fixed one), which is now the least that it has
+constexpr int kNameRowHeight = 28;
 
 constexpr auto kHomeId = "home";
 constexpr auto kPreferencesId = "preferences";
@@ -173,8 +178,26 @@ MainShell::MainShell(const MainShellParts &parts, QObject *parent) : QObject(par
   titleRow->addWidget(m_title, 1);
   titleRow->addWidget(m_modeControl, 0, Qt::AlignVCenter);
   headerLayout->addLayout(titleRow);
-  if (parts.nameRow)
+  if (parts.nameRow) {
+    // the old window gave the row a height of 28 that it could neither be less nor more than, whatever the text: at a
+    // larger text its words were cut. The row is as high as what it holds, never less than the 28 that it had: a spacer
+    // that is that high (without the margins) is what keeps the least, and the button of the name (a flat icon) takes
+    // the height that the row has, as it did
+    parts.nameRow->setMinimumHeight(0);
+    parts.nameRow->setMaximumHeight(QWIDGETSIZE_MAX);
+    if (auto *rowLayout = qobject_cast<QBoxLayout *>(parts.nameRow->layout())) {
+      const auto margins = rowLayout->contentsMargins();
+      rowLayout->addItem(new QSpacerItem(
+          0, kNameRowHeight - margins.top() - margins.bottom(), QSizePolicy::Minimum, QSizePolicy::Minimum
+      ));
+    }
+    for (auto *button : parts.nameRow->findChildren<QPushButton *>()) {
+      auto policy = button->sizePolicy();
+      policy.setVerticalPolicy(QSizePolicy::Ignored);
+      button->setSizePolicy(policy);
+    }
     headerLayout->addWidget(parts.nameRow);
+  }
   homeLayout->addWidget(header);
 
   m_hero = new StatusHero(home);

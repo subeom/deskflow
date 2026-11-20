@@ -8,10 +8,13 @@
 #include "common/Settings.h"
 #include "gui/MainWindow.h"
 #include "gui/chrome/MenuMigration.h"
+#include "gui/chrome/WindowChrome.h"
 #include "gui/chrome/WindowHeader.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/shell/MainShell.h"
 #include "gui/style/Appearance.h"
+#include "gui/style/BackdropWidget.h"
+#include "gui/style/Contrast.h"
 #include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/NavRail.h"
 #include "gui/widgets/SegmentedControl.h"
@@ -87,6 +90,9 @@ using namespace deskflow::gui::chrome;
 using namespace deskflow::gui::style;
 
 constexpr auto kFrameVariable = "DESKFLOW_WINDOW_FRAME";
+
+// The height of the title bar of a Mac (what its Qt says of the safe area of a window)
+constexpr int kTitleBar = 28;
 
 // the pictures of the report are made in both schemes
 bool g_darkLook = false;
@@ -380,6 +386,201 @@ void WindowChromeTests::header_followsTheLanguage()
   header.retranslate();
   QCOMPARE(header.moreButton()->accessibleName(), QStringLiteral("More"));
   QCOMPARE(header.captionButton(Region::Close)->toolTip(), QStringLiteral("Close"));
+}
+
+void WindowChromeTests::header_withTheTitleBarOfAMac_isHigherByIt_andKeepsItsRowBelow()
+{
+  installDeskflowStyle();
+  WindowHeader::Options options;
+  options.captionButtons = false;
+  options.leftInset = WindowHeader::kTrafficLightsInset;
+  options.title = false;
+  WindowHeader header(options, nullptr);
+  header.setFixedWidth(600);
+  header.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&header));
+  QCOMPARE(header.height(), WindowHeader::kHeight);
+  const auto rowAt = header.moreButton()->geometry().center().y();
+
+  // the title bar of the system is over the top of the window: the header is higher by it, and its row (the button of
+  // the menu) is below the title bar, where the mouse reaches it, at the same place in the row as before
+  header.setTitleBarInset(kTitleBar);
+  QCOMPARE(header.titleBarInset(), kTitleBar);
+  QCoreApplication::processEvents();
+  QCOMPARE(header.height(), WindowHeader::kHeight + kTitleBar);
+  QVERIFY(header.moreButton()->geometry().top() >= kTitleBar);
+  QCOMPARE(header.moreButton()->geometry().center().y(), rowAt + kTitleBar);
+  // the rectangles that take the mouse are the ones of the row
+  QCOMPARE(header.interactiveRects().first(), header.moreButton()->geometry());
+  // a press anywhere on the header, the part above its row as well, asks to drag the window
+  QSignalSpy dragged(&header, &WindowHeader::dragRequested);
+  QTest::mousePress(&header, Qt::LeftButton, {}, QPoint(200, 5));
+  QTest::mouseRelease(&header, Qt::LeftButton, {}, QPoint(200, 5));
+  QTest::mousePress(&header, Qt::LeftButton, {}, QPoint(200, header.height() - 5));
+  QTest::mouseRelease(&header, Qt::LeftButton, {}, QPoint(200, header.height() - 5));
+  QCOMPARE(dragged.count(), 2);
+
+  // no title bar: the header is what it was
+  header.setTitleBarInset(0);
+  QCoreApplication::processEvents();
+  QCOMPARE(header.height(), WindowHeader::kHeight);
+  QCOMPARE(header.moreButton()->geometry().center().y(), rowAt);
+}
+
+void WindowChromeTests::header_isOnTheBackdropAndPaintsNothingOfItsOwn()
+{
+  // the header has no colour of its own: what is seen behind its row is the backdrop of the window, so that the window
+  // is one surface (a band of another colour at the top is what a Mac had)
+  installDeskflowStyle();
+  QWidget host;
+  host.resize(600, 200);
+  host.setAutoFillBackground(true);
+  QPalette hostPalette = host.palette();
+  hostPalette.setColor(QPalette::Window, QColor(200, 30, 30));
+  host.setPalette(hostPalette);
+  WindowHeader::Options options;
+  options.captionButtons = false;
+  options.leftInset = WindowHeader::kTrafficLightsInset;
+  options.title = false;
+  auto *header = new WindowHeader(options, &host);
+  header->setGeometry(0, 0, 600, WindowHeader::kHeight + kTitleBar);
+  header->setTitleBarInset(kTitleBar);
+  host.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&host));
+  const auto picture = host.grab().toImage();
+  // the corners of the header, the part above its row and the part to the left of the button: all of them the colour of
+  // what is behind the header
+  for (const auto &point : {QPoint(5, 5), QPoint(590, 5), QPoint(300, 30), QPoint(300, 60), QPoint(5, 60)})
+    QCOMPARE(picture.pixelColor(point), QColor(200, 30, 30));
+}
+
+void WindowChromeTests::header_isLegibleOnEveryPointOfTheBackdrop_data()
+{
+  QTest::addColumn<bool>("dark");
+  QTest::newRow("light") << false;
+  QTest::newRow("dark") << true;
+}
+
+void WindowChromeTests::header_isLegibleOnEveryPointOfTheBackdrop()
+{
+  QFETCH(bool, dark);
+  // what the header draws is drawn over the backdrop, and the backdrop is a gradient with two soft lights: the name of
+  // the program (text, 4.5:1) and the glyphs of the buttons (3:1) are legible on every point of the top of the window,
+  // at the widths that the window can have
+  Look look;
+  look.scheme = dark ? Scheme::Dark : Scheme::Light;
+  const auto tokens = tokensFor(look, QPalette());
+  const auto &c = tokens.colors;
+  double worstText = 100;
+  double worstGlyph = 100;
+  for (const int width : {720, 1000, 1600}) {
+    const auto backdrop = backdropPixmap(QSize(width, 700), 1.0, tokens).toImage();
+    for (int y = 0; y < 76; y += 4) {
+      for (int x = 0; x < width; x += 8) {
+        const auto under = backdrop.pixelColor(x, y);
+        worstText = std::min(worstText, contrastRatio(c.textSecondary, under));
+        worstGlyph = std::min(worstGlyph, contrastRatio(c.text, under));
+      }
+    }
+  }
+  QVERIFY2(worstText >= 4.5, qPrintable(QStringLiteral("the name: %1 : 1").arg(worstText)));
+  QVERIFY2(worstGlyph >= 3.0, qPrintable(QStringLiteral("the glyphs: %1 : 1").arg(worstGlyph)));
+}
+
+void WindowChromeTests::aMac_givesTheWholeWindowToTheLayout_andTheMinimumHeightHasTheTitleBarInIt()
+{
+#ifndef Q_OS_MACOS
+  QSKIP("only a Mac has the content under the title bar");
+#else
+  const auto guard = qScopeGuard([] { WindowChrome::s_titleBarInset = nullptr; });
+  WindowChrome::s_titleBarInset = [](const QWidget &) { return kTitleBar; };
+  auto window = makeClientSideWindow();
+  auto *header = Access::header(*window);
+  QVERIFY(header);
+  // the content is expanded under the title bar: the layout of the window is given the whole window, and the title bar
+  // is the header's (so that the minimum size that Qt works out has it)
+  QVERIFY(window->testAttribute(Qt::WA_LayoutOnEntireRect));
+  QCOMPARE(header->titleBarInset(), kTitleBar);
+  QCOMPARE(header->height(), WindowHeader::kHeight + kTitleBar);
+  const int withTheTitleBar = window->minimumSizeHint().height();
+
+  WindowChrome::s_titleBarInset = [](const QWidget &) { return 0; };
+  auto bare = makeClientSideWindow();
+  QCOMPARE(Access::header(*bare)->titleBarInset(), 0);
+  QCOMPARE(withTheTitleBar, bare->minimumSizeHint().height() + kTitleBar);
+#endif
+}
+
+void WindowChromeTests::aMac_hasNoBandAtTheTopOfTheWindow_theBackdropIsOneSurface()
+{
+#ifndef Q_OS_MACOS
+  QSKIP("only a Mac has the content under the title bar");
+#else
+  const auto guard = qScopeGuard([] { WindowChrome::s_titleBarInset = nullptr; });
+  WindowChrome::s_titleBarInset = [](const QWidget &) { return kTitleBar; };
+  // the gradient of the look is painted (the tests of the other looks have it flat)
+  auto *style = new DeskflowStyle;
+  QApplication::setStyle(style);
+  Look look;
+  look.scheme = Scheme::Dark;
+  look.reduceMotion = true;
+  style->useLook(look);
+  Settings::setValue(Settings::Security::TlsEnabled, false);
+  Settings::setValue(Settings::Gui::ShownServerFirstStartMessage, true);
+  Settings::setValue(Settings::Gui::ShownFirstConnectedMessage, true);
+  qputenv(kFrameVariable, "client");
+  MainWindow window;
+  // the menu bar of a Mac is the one at the top of the screen (offscreen it is a widget of the window)
+  window.menuBar()->hide();
+  // what Qt does on a Mac with the title bar under the content: the window has the title bar as contents margins, and
+  // the layout of the window is given the contents rect, unless the window asks for the whole rect
+  window.setContentsMargins(0, kTitleBar, 0, 0);
+  window.resize(900, 700);
+  window.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&window));
+  QCoreApplication::processEvents();
+  const auto picture = window.grab().toImage();
+  if (const auto shots = qEnvironmentVariable("DESKFLOW_CHROME_SHOTS"); !shots.isEmpty())
+    picture.save(QDir(shots).filePath(QStringLiteral("mac-top-of-the-window.png")));
+  // the rows of the header (the title bar and its row: 28 + 40), at the left where the light of the backdrop is: the
+  // colour does not jump where the title bar ends (row 28), and the first rows are the backdrop's, not the colour of
+  // the window
+  const int x = 60;
+  QVERIFY2(
+      picture.pixelColor(x, 6) != window.palette().color(QPalette::Window),
+      "the first rows are the colour of the window, not the backdrop"
+  );
+  for (int y = 1; y < WindowHeader::kHeight + kTitleBar - 2; ++y) {
+    const auto before = picture.pixelColor(x, y - 1);
+    const auto after = picture.pixelColor(x, y);
+    const int jump = std::max(
+        {std::abs(before.red() - after.red()), std::abs(before.green() - after.green()),
+         std::abs(before.blue() - after.blue())}
+    );
+    QVERIFY2(
+        jump <= 6,
+        qPrintable(QStringLiteral("the colour jumps by %1 between rows %2 and %3").arg(jump).arg(y - 1).arg(y))
+    );
+  }
+#endif
+}
+
+void WindowChromeTests::otherSystems_haveNoInsetAndTheLayoutOfTheContentsRect()
+{
+#ifdef Q_OS_MACOS
+  QSKIP("a Mac has the title bar under the content");
+#else
+  // Windows and Linux have no title bar of the system under the content: the header is what it was, and the seam of the
+  // tests that says how high a title bar of a Mac is is not read
+  const auto guard = qScopeGuard([] { WindowChrome::s_titleBarInset = nullptr; });
+  WindowChrome::s_titleBarInset = [](const QWidget &) { return kTitleBar; };
+  auto window = makeClientSideWindow();
+  auto *header = Access::header(*window);
+  QVERIFY(header);
+  QCOMPARE(header->titleBarInset(), 0);
+  QCOMPARE(header->height(), WindowHeader::kHeight);
+  QVERIFY(!window->testAttribute(Qt::WA_LayoutOnEntireRect));
+#endif
 }
 
 void WindowChromeTests::headerMenu_isTheTableOfTheOldMenus_inItsOrder_withALineBetweenGroups()

@@ -13,6 +13,8 @@
 
 #include <QGuiApplication>
 
+#include <algorithm>
+
 namespace deskflow::gui::chrome {
 
 namespace {
@@ -34,17 +36,23 @@ Wish wishOf(const QString &value)
   return Wish::None;
 }
 
+Platform platformOfThisComputer()
+{
+  if (deskflow::platform::isWindows())
+    return Platform::Windows;
+  if (deskflow::platform::isMac())
+    return Platform::MacOS;
+  if (QSysInfo::kernelType() == QLatin1String("linux"))
+    return Platform::Linux;
+  return Platform::Other;
+}
+
 } // namespace
 
 ChromeEnvironment ChromeEnvironment::current()
 {
   ChromeEnvironment env;
-  if (deskflow::platform::isWindows())
-    env.platform = Platform::Windows;
-  else if (deskflow::platform::isMac())
-    env.platform = Platform::MacOS;
-  else if (QSysInfo::kernelType() == QLatin1String("linux"))
-    env.platform = Platform::Linux;
+  env.platform = platformOfThisComputer();
   env.platformPlugin = QGuiApplication::platformName();
   env.qtVersion = QVersionNumber::fromString(QString::fromLatin1(qVersion()));
   env.deskflowLook = style::isDeskflowStyleInstalled();
@@ -54,6 +62,33 @@ ChromeEnvironment ChromeEnvironment::current()
     env.nativeFrameSetting = Settings::value(Settings::Gui::NativeWindowFrame).toBool();
   env.highContrast = style::readSystemHints().highContrast;
   return env;
+}
+
+MoveEnvironment MoveEnvironment::current()
+{
+  MoveEnvironment env;
+  env.platform = platformOfThisComputer();
+  env.variable = qEnvironmentVariable("DESKFLOW_HEADER_DRAG");
+  return env;
+}
+
+MoveMethod headerMoveMethod(const MoveEnvironment &environment)
+{
+  const auto word = environment.variable.trimmed().toLower();
+  if (word == QLatin1String("system"))
+    return MoveMethod::System;
+  if (word == QLatin1String("manual"))
+    return MoveMethod::Manual;
+  // AppKit may not do the move that startSystemMove asks for (macOS 27 sometimes does not), and Qt says that it did:
+  // the program follows the mouse itself, which does not depend on it
+  return environment.platform == Platform::MacOS ? MoveMethod::Manual : MoveMethod::System;
+}
+
+QPoint movedWindowPosition(const QPoint &windowAt, const QPoint &pressedAt, const QPoint &cursor, int topLimit)
+{
+  auto target = windowAt + (cursor - pressedAt);
+  target.setY(std::max(target.y(), topLimit));
+  return target;
 }
 
 FrameDecision decideFrame(const ChromeEnvironment &environment)

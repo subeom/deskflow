@@ -165,9 +165,15 @@ void StatusHero::addAccessory(QWidget *widget)
 {
   widget->setParent(this);
   // a line of text goes on to the next line when the hero is narrow: it does not ask for the width of the whole text
-  if (auto *label = qobject_cast<QLabel *>(widget))
+  auto *label = qobject_cast<QLabel *>(widget);
+  if (label) {
     label->setWordWrap(true);
-  m_accessoryLayout->insertWidget(m_accessoryLayout->count() - 1, widget);
+    // and it has the width of the line, not the narrow one that a text that wraps asks for when it is alone (which
+    // breaks "Suggested IP: 10.0.0.2 (all 4 addresses)" at every space): the room that is left is the text's, not the
+    // spacer's
+    m_accessoryLayout->setStretch(m_accessoryLayout->count() - 1, 0);
+  }
+  m_accessoryLayout->insertWidget(m_accessoryLayout->count() - 1, widget, label ? 1 : 0);
 }
 
 void StatusHero::setActions(const QList<QWidget *> &actions)

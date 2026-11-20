@@ -51,6 +51,19 @@ target_include_directories(KoreanLookTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/
 target_compile_definitions(KoreanLookTests PRIVATE DESKFLOW_KO_QM="${CMAKE_BINARY_DIR}/translations/deskflow_ko.qm")
 add_dependencies(KoreanLookTests app_translations)
 
+# The main window of the new look at every size that it can have, page by page, in English and in Korean (the .qm that
+# is shipped): nothing covers a sibling, nothing is cut off, nothing has less room than it asks for
+create_test(
+  NAME LayoutAuditTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE LayoutAuditTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(LayoutAuditTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+target_compile_definitions(LayoutAuditTests PRIVATE DESKFLOW_KO_QM="${CMAKE_BINARY_DIR}/translations/deskflow_ko.qm")
+add_dependencies(LayoutAuditTests app_translations)
+
 create_test(
   NAME TranslationFileTests
   DEPENDS gui

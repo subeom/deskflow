@@ -100,6 +100,11 @@ public:
   void setTitle(const QString &title);
   QString title() const;
 
+  //! The height at the top that the title bar of the system takes (a Mac): the header is that much higher, with its row
+  //! below it
+  void setTitleBarInset(int inset);
+  int titleBarInset() const;
+
   //! The menu of the button with the three dots; it opens under the button, at its right edge
   void setMenu(QMenu *menu);
   QMenu *menu() const;
@@ -143,6 +148,7 @@ private:
   HeaderButton *m_close = nullptr;
   QPointer<QMenu> m_menu;
   bool m_maximized = false;
+  int m_titleBarInset = 0;
 };
 
 } // namespace deskflow::gui::chrome

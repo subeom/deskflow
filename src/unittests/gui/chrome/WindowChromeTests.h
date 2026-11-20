@@ -29,6 +29,13 @@ private Q_SLOTS:
   void header_ofAMac_hasNoButtonsOfItsOwn_andLeavesRoomForTheOnesOfTheSystem();
   void header_saysWhereItTakesTheMouse_andWhereTheWindowIsDragged();
   void header_followsTheLanguage();
+  void header_withTheTitleBarOfAMac_isHigherByIt_andKeepsItsRowBelow();
+  void header_isOnTheBackdropAndPaintsNothingOfItsOwn();
+  void header_isLegibleOnEveryPointOfTheBackdrop_data();
+  void header_isLegibleOnEveryPointOfTheBackdrop();
+  void aMac_givesTheWholeWindowToTheLayout_andTheMinimumHeightHasTheTitleBarInIt();
+  void aMac_hasNoBandAtTheTopOfTheWindow_theBackdropIsOneSurface();
+  void otherSystems_haveNoInsetAndTheLayoutOfTheContentsRect();
 
   void headerMenu_isTheTableOfTheOldMenus_inItsOrder_withALineBetweenGroups();
   void headerMenu_hasAnActionOfTheWindowForEveryEntryOfTheTable();

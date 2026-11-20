@@ -17,6 +17,7 @@ Q_DECLARE_METATYPE(ChromeEnvironment)
 Q_DECLARE_METATYPE(FrameKind)
 Q_DECLARE_METATYPE(FrameReason)
 Q_DECLARE_METATYPE(Platform)
+Q_DECLARE_METATYPE(MoveMethod)
 
 namespace {
 
@@ -366,6 +367,64 @@ void ChromePolicyTests::current_hasTheLookAndThePlatformThatItIsAskedAbout()
   QCOMPARE(ChromeEnvironment::current().frameVariable, QStringLiteral("native"));
   qunsetenv("DESKFLOW_WINDOW_FRAME");
   QVERIFY(ChromeEnvironment::current().frameVariable.isEmpty());
+}
+
+void ChromePolicyTests::headerMoveMethod_isTheProgramsOnAMac_andTheSystemsElsewhere_data()
+{
+  QTest::addColumn<Platform>("platform");
+  QTest::addColumn<QString>("variable");
+  QTest::addColumn<MoveMethod>("method");
+
+  // A Mac: QWindow::startSystemMove asks AppKit to drag the window (performWindowDragWithEvent: with an event that Qt
+  // makes), and AppKit of macOS 27 does not always do it, and says nothing: Qt answers that it did, so there is no
+  // other way tried. The window that follows the mouse does not depend on it, so it is the way of a Mac. The
+  // compositors of Linux do the move well (and say when they cannot): the system's way, with the program's as the way
+  // out.
+  QTest::newRow("a Mac moves the window itself") << Platform::MacOS << QString() << MoveMethod::Manual;
+  QTest::newRow("a Mac, asked for the system's way")
+      << Platform::MacOS << QStringLiteral("system") << MoveMethod::System;
+  QTest::newRow("a Mac, asked for the program's way")
+      << Platform::MacOS << QStringLiteral("manual") << MoveMethod::Manual;
+  QTest::newRow("the words are read without care for case or spaces")
+      << Platform::MacOS << QStringLiteral("  SYSTEM ") << MoveMethod::System;
+  QTest::newRow("a word that is not one is no choice")
+      << Platform::MacOS << QStringLiteral("fast") << MoveMethod::Manual;
+  QTest::newRow("Linux has the way of the compositor") << Platform::Linux << QString() << MoveMethod::System;
+  QTest::newRow("Linux, asked for the program's way")
+      << Platform::Linux << QStringLiteral("manual") << MoveMethod::Manual;
+  QTest::newRow("Windows has the caption (nothing is asked of this)")
+      << Platform::Windows << QString() << MoveMethod::System;
+  QTest::newRow("another system has the way of the system") << Platform::Other << QString() << MoveMethod::System;
+}
+
+void ChromePolicyTests::headerMoveMethod_isTheProgramsOnAMac_andTheSystemsElsewhere()
+{
+  QFETCH(Platform, platform);
+  QFETCH(QString, variable);
+  QFETCH(MoveMethod, method);
+
+  MoveEnvironment env;
+  env.platform = platform;
+  env.variable = variable;
+  QCOMPARE(headerMoveMethod(env), method);
+
+  // the variable is read from the environment of the process
+  qputenv("DESKFLOW_HEADER_DRAG", "manual");
+  const auto guard = qScopeGuard([] { qunsetenv("DESKFLOW_HEADER_DRAG"); });
+  QCOMPARE(MoveEnvironment::current().variable, QStringLiteral("manual"));
+}
+
+void ChromePolicyTests::movedWindowPosition_followsTheMouse_andKeepsTheHeaderBelowTheTopOfTheScreen()
+{
+  // the window moves as far as the mouse has moved since the press
+  QCOMPARE(movedWindowPosition({100, 200}, {400, 300}, {450, 340}, 25), QPoint(150, 240));
+  QCOMPARE(movedWindowPosition({100, 200}, {400, 300}, {400, 300}, 25), QPoint(100, 200));
+  QCOMPARE(movedWindowPosition({100, 200}, {400, 300}, {-50, 900}, 25), QPoint(-350, 800));
+  // up to the top of the screen that has the mouse (below its menu bar), and not above it
+  QCOMPARE(movedWindowPosition({100, 200}, {400, 300}, {420, 10}, 25), QPoint(120, 25));
+  QCOMPARE(movedWindowPosition({100, 30}, {400, 300}, {400, 100}, 25), QPoint(100, 25));
+  // a screen above the other one has a top that is negative
+  QCOMPARE(movedWindowPosition({100, -900}, {400, 300}, {400, 250}, -1040), QPoint(100, -950));
 }
 
 QTEST_MAIN(ChromePolicyTests)

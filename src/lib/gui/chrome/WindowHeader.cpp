@@ -24,6 +24,8 @@
 #include <QPainter>
 #include <QPainterPath>
 
+#include <algorithm>
+
 namespace deskflow::gui::chrome {
 
 using namespace deskflow::gui::style;
@@ -276,6 +278,26 @@ void WindowHeader::setTitle(const QString &title)
 QString WindowHeader::title() const
 {
   return m_title->text();
+}
+
+void WindowHeader::setTitleBarInset(int inset)
+{
+  inset = std::max(0, inset);
+  if (m_titleBarInset == inset)
+    return;
+  m_titleBarInset = inset;
+  // the row of the header is below the title bar of the system (where the mouse reaches it), and the header has the
+  // height of both: the layout of the window gives it the room, and the minimum size of the window has it
+  setFixedHeight(kHeight + inset);
+  auto margins = layout()->contentsMargins();
+  margins.setTop(inset);
+  layout()->setContentsMargins(margins);
+  updateGeometry();
+}
+
+int WindowHeader::titleBarInset() const
+{
+  return m_titleBarInset;
 }
 
 void WindowHeader::setMenu(QMenu *menu)

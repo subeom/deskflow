@@ -10,7 +10,10 @@
 #include <QPoint>
 #include <QSize>
 
+#include <functional>
+
 class QMainWindow;
+class QWidget;
 
 namespace deskflow::gui::chrome {
 
@@ -27,7 +30,11 @@ class WindowHeader;
  *    (ChromeGeometry), so that the header is the caption, the edges resize, and the button of maximizing has the flyout
  * of the snap layouts. The corners are round (DWM, Windows 11). See WindowChromeWin.cpp.
  *  - macOS: the content is expanded under the title bar, which has no background (Qt::ExpandedClientAreaHint, Qt 6.9).
- *    The buttons are the ones of the system, drawn over the left end of the header.
+ *    The buttons are the ones of the system, drawn over the left end of the header. Qt gives the window the title bar
+ * as its safe area, which a layout leaves empty (it is laid out in the contents rect, and the minimum size that Qt
+ * works out has none of it): the layout is given the whole window (Qt::WA_LayoutOnEntireRect), so that the backdrop is
+ * under the title bar, and the header has the title bar in its height (WindowHeader::setTitleBarInset), with its row
+ * below it. A press on the header moves the window the way that the program does it (see headerMoveMethod).
  *  - Linux: a window without a frame; the header moves the window and the edges resize it with the means of the
  *    compositor (QWindow::startSystemMove, startSystemResize).
  */
@@ -50,6 +57,10 @@ public:
   //! (a Mac that cannot expand the content under its title bar is the case that matters: nobody has seen it fail)
   inline static bool s_failsToApply = false;
 
+  //! Only a test sets it: the height of the title bar that a Mac gives the window (what its Qt says of the safe area of
+  //! the window), where there is none to ask (the tests run offscreen)
+  inline static std::function<int(const QWidget &)> s_titleBarInset;
+
   //! The width of the strip along the edges that resizes the window (logical pixels)
   static constexpr int kResizeBorder = 6;
 
@@ -59,6 +70,8 @@ protected:
 private:
   void toggleMaximized();
   void startMove();
+  //! The title bar that the system has over the top of the window (a Mac): the header has it in its height
+  void syncTitleBarInset();
   //! Says in the log what the state of the window was and is, and its size
   void logStateChange(Qt::WindowStates oldState);
 

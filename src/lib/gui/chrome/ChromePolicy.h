@@ -8,6 +8,7 @@
 
 #include "common/Settings.h"
 
+#include <QPoint>
 #include <QString>
 #include <QVersionNumber>
 
@@ -116,5 +117,32 @@ bool prefersDeskflowFrame(const ChromeEnvironment &environment);
 
 //! The reason in a few words, for the log
 QString reasonName(FrameReason reason);
+
+//! How a press on the header moves the window: the system does it (QWindow::startSystemMove), or the program does it,
+//! following the mouse
+enum class MoveMethod
+{
+  System,
+  Manual
+};
+
+//! What the choice of the way to move the window depends on, as plain values
+struct MoveEnvironment
+{
+  Platform platform = Platform::Other;
+  //! The value of the environment variable DESKFLOW_HEADER_DRAG: "system", "manual" or nothing
+  QString variable;
+
+  static MoveEnvironment current();
+};
+
+MoveMethod headerMoveMethod(const MoveEnvironment &environment);
+
+/*!
+ * Where the window is when the program moves it: where it was when the button was pressed, moved as far as the mouse
+ * has. The top of the window is not above the top of the screen that has the mouse (\p topLimit, the top of the area of
+ * the screen that is not the menu bar), where the header would be out of reach.
+ */
+QPoint movedWindowPosition(const QPoint &windowAt, const QPoint &pressedAt, const QPoint &cursor, int topLimit);
 
 } // namespace deskflow::gui::chrome
