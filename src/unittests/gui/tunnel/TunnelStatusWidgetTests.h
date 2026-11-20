@@ -15,6 +15,11 @@ private Q_SLOTS:
 
   void thePathLine_namesTheHostAndTheLocalPort();
   void theStatusLine_keepsThePortAndTheServerApart();
+  void theStatusLine_saysReconnectingAfterAServerThatWasReached();
+  void aPathProblem_isTransient_aMistakeIsNot_data();
+  void aPathProblem_isTransient_aMistakeIsNot();
+  void theColourOfAProblem_followsWhetherTheServerWasReached();
+  void theServerLinkTracker_remembersThatTheServerWasReached();
 
   void whileTheTunnelIsOff_theWidgetIsHiddenAndWritesNothing();
   void whileTheTunnelIsOn_theWidgetSaysWhichHostIsDialled();

@@ -2825,6 +2825,10 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>터널: 시작 중</translation>
     </message>
     <message>
+        <source>Tunnel: reconnecting</source>
+        <translation>터널: 다시 연결 중</translation>
+    </message>
+    <message>
         <source>Tunnel: problem</source>
         <translation>터널: 문제</translation>
     </message>
@@ -2969,6 +2973,14 @@ Enabling this setting will disable the server config GUI.</source>
     <message>
         <source>Via Cloudflare Tunnel: %1 (local %2:%3)</source>
         <translation>Cloudflare Tunnel 사용: %1 (로컬 %2:%3)</translation>
+    </message>
+    <message>
+        <source>%1 | Server: reconnecting</source>
+        <translation>%1 | 서버: 다시 연결 중</translation>
+    </message>
+    <message>
+        <source>%1 | Server: reconnecting, the path through Cloudflare is not available now</source>
+        <translation>%1 | 서버: 다시 연결 중, Cloudflare 경로를 지금은 쓸 수 없음</translation>
     </message>
     <message>
         <source>%1 | Server: connecting</source>

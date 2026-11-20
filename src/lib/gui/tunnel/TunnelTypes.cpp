@@ -32,10 +32,74 @@ QString tunnelPathLine(const QString &hostname, int localPort)
       .arg(localPort);
 }
 
+ServerLink ServerLinkTracker::update(ServerObservation observation, bool coreRunning)
+{
+  if (!coreRunning) {
+    m_wasReached = false;
+    return ServerLink::Unknown;
+  }
+  switch (observation) {
+  case ServerObservation::Connected:
+    m_wasReached = true;
+    return ServerLink::Connected;
+  case ServerObservation::Connecting:
+    return m_wasReached ? ServerLink::Reconnecting : ServerLink::Connecting;
+  case ServerObservation::Disconnected:
+    break;
+  }
+  return m_wasReached ? ServerLink::Reconnecting : ServerLink::Unknown;
+}
+
+void ServerLinkTracker::reset()
+{
+  m_wasReached = false;
+}
+
+bool isTransientPathFailure(TunnelFailure failure)
+{
+  switch (failure) {
+  case TunnelFailure::HandshakeRejected:
+  case TunnelFailure::ConnectFailed:
+  case TunnelFailure::EdgeUnreachable:
+  case TunnelFailure::HostUnresolvable:
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool tunnelStatusIsProblem(const TunnelStatus &status, ServerLink link)
+{
+  if (status.state == TunnelState::Failed) {
+    return true;
+  }
+  if (status.failure == TunnelFailure::None) {
+    return false;
+  }
+  const bool passes = status.state == TunnelState::Listening && link == ServerLink::Reconnecting &&
+                      isTransientPathFailure(status.failure);
+  // a failure that is told while the tunnel does not listen is a reason for that, whatever the link says
+  return !passes;
+}
+
 QString tunnelStatusLine(const TunnelStatus &status, ServerLink link)
 {
   const auto tunnel = status.text();
   if (status.state != TunnelState::Listening) {
+    return tunnel;
+  }
+  if (link == ServerLink::Reconnecting) {
+    if (status.failure == TunnelFailure::None) {
+      return TunnelTexts::tr("%1 | Server: reconnecting").arg(tunnel);
+    }
+    if (isTransientPathFailure(status.failure)) {
+      // what went wrong is not told as a mistake: the tunnel of the server connects to Cloudflare again, and the client
+      // tries again by itself
+      auto calm = status;
+      calm.failure = TunnelFailure::None;
+      return TunnelTexts::tr("%1 | Server: reconnecting, the path through Cloudflare is not available now")
+          .arg(calm.text());
+    }
     return tunnel;
   }
   switch (link) {
@@ -44,6 +108,7 @@ QString tunnelStatusLine(const TunnelStatus &status, ServerLink link)
   case ServerLink::Connected:
     return TunnelTexts::tr("%1 | Server: connected").arg(tunnel);
   case ServerLink::Unknown:
+  case ServerLink::Reconnecting:
     break;
   }
   return tunnel;

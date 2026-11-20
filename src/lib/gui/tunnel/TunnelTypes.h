@@ -71,8 +71,47 @@ enum class ServerLink
 {
   Unknown,
   Connecting,
-  Connected
+  Connected,
+  //! the server was reached through this tunnel, and is not now: the connection is made again
+  Reconnecting
 };
+
+//! What the core says of the connection of the client (the window gives it to a ServerLinkTracker)
+enum class ServerObservation
+{
+  Connected,
+  Connecting,
+  Disconnected
+};
+
+/**
+ * Remembers that the server was reached through the tunnel, so that a connection that is lost is "reconnecting" and not
+ * a connection that has never worked. What is wrong with the path while it is made again is most often a thing that
+ * passes (the tunnel of the server makes its own connections to Cloudflare again), and is not told as a mistake of the
+ * settings.
+ */
+class ServerLinkTracker
+{
+public:
+  //! \p coreRunning: the core of the client runs (a core that is stopped is not reconnecting)
+  ServerLink update(ServerObservation observation, bool coreRunning);
+
+  //! Forgets that the server was reached (the tunnel stopped or failed, or the core was stopped)
+  void reset();
+
+private:
+  bool m_wasReached = false;
+};
+
+//! A failure of the path through Cloudflare that passes by itself; not one of the settings, the login or the program
+bool isTransientPathFailure(TunnelFailure failure);
+
+/**
+ * Whether the line and the chip are the colour of a problem: a tunnel that failed, or one that listens and has a
+ * failure to tell, unless the server was reached before and the failure is one of the path that passes (see
+ * ServerLinkTracker).
+ */
+bool tunnelStatusIsProblem(const TunnelStatus &status, ServerLink link);
 
 //! "Via Cloudflare Tunnel: mbp.example.com (local 127.0.0.1:24800)": what is dialled instead of the saved address
 QString tunnelPathLine(const QString &hostname, int localPort);
