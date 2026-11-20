@@ -378,6 +378,93 @@ void ClientAppConnectTests::parseArgs_tunnelOffOrAbsent_isTheSavedAddressWhateve
   }
 }
 
+// The wait between two tries. A direct link: one second, whatever happened (unchanged by the tunnel, for every number
+// of tries). The numbers of the tunnel are in TunnelReconnectTests; here is what ClientApp does with them.
+void ClientAppConnectTests::retryTime_directLink_isOneSecondWhateverTheNumberOfTries()
+{
+  for (const auto &text :
+       {QStringLiteral(
+            "[client]\nremoteHost=10.0.0.5\n[core]\ncomputerName=test\nport=24800\n[security]\ntlsEnabled=true\n"
+        ),
+        QStringLiteral(
+            "[client]\nremoteHost=10.0.0.5\n[core]\ncomputerName=test\nport=24800\n[security]\ntlsEnabled=true\n"
+            "[tunnel]\nenabled=false\nhostname=mbp.example.com\n"
+        )}) {
+    QVERIFY(useConfigurationText(m_dir.path(), text));
+    EventQueue events;
+    TestClientApp app(&events, QStringLiteral("test"));
+    for (int tries = 0; tries < 80; ++tries) {
+      QCOMPARE(app.retryTime(), 1.0);
+      app.scheduleClientRestart(app.retryTime());
+    }
+  }
+}
+
+void ClientAppConnectTests::retryTime_tunnelUsed_firstRetryIsQuickThenOneSecondThenEases()
+{
+  QVERIFY(useConfigurationText(
+      m_dir.path(), QStringLiteral(
+                        "[client]\nremoteHost=10.0.0.5\n[core]\ncomputerName=test\nport=24800\n"
+                        "[security]\ntlsEnabled=true\n[tunnel]\nenabled=true\nhostname=mbp.example.com\n"
+                    )
+  ));
+  EventQueue events;
+  TestClientApp app(&events, QStringLiteral("test"));
+
+  QList<double> seen;
+  for (int tries = 0; tries < 50; ++tries) {
+    seen << app.retryTime();
+    app.scheduleClientRestart(app.retryTime());
+  }
+  QCOMPARE(seen.at(0), 0.25);
+  QCOMPARE(seen.at(1), 1.0);
+  QCOMPARE(seen.at(15), 1.0);
+  QCOMPARE(seen.at(16), 2.0);
+  QCOMPARE(seen.at(45), 2.0);
+  QCOMPARE(seen.at(46), 4.0);
+  QCOMPARE(seen.at(49), 4.0);
+}
+
+// a connection that was made (the hello was answered) starts the count again: the next session that ends gets the quick
+// first retry, however long the outage before it was
+void ClientAppConnectTests::retryTime_tunnelUsed_aConnectedSessionStartsTheCountAgain()
+{
+  QVERIFY(useConfigurationText(
+      m_dir.path(), QStringLiteral(
+                        "[client]\nremoteHost=10.0.0.5\n[core]\ncomputerName=test\nport=24800\n"
+                        "[security]\ntlsEnabled=true\n[tunnel]\nenabled=true\nhostname=mbp.example.com\n"
+                    )
+  ));
+  EventQueue events;
+  TestClientApp app(&events, QStringLiteral("test"));
+  for (int tries = 0; tries < 60; ++tries) {
+    app.scheduleClientRestart(app.retryTime());
+  }
+  QCOMPARE(app.retryTime(), 4.0);
+
+  app.handleClientConnected();
+  QCOMPARE(app.retryTime(), 0.25);
+  app.scheduleClientRestart(app.retryTime());
+  QCOMPARE(app.retryTime(), 1.0);
+}
+
+// the tunnel is on in the settings and cannot be used (the core does not connect at all then): nothing of the tunnel
+// reaches the retries
+void ClientAppConnectTests::retryTime_tunnelOnButNotUsable_isTheDirectOne()
+{
+  QVERIFY(useConfigurationText(
+      m_dir.path(), QStringLiteral(
+                        "[client]\nremoteHost=10.0.0.5\n[core]\ncomputerName=test\nport=24800\n"
+                        "[security]\ntlsEnabled=false\n[tunnel]\nenabled=true\nhostname=mbp.example.com\n"
+                    )
+  ));
+  EventQueue events;
+  TestClientApp app(&events, QStringLiteral("test"));
+  QCOMPARE(app.retryTime(), 1.0);
+  app.scheduleClientRestart(app.retryTime());
+  QCOMPARE(app.retryTime(), 1.0);
+}
+
 // What a client does with "A,B" when A does not take it: it goes on to B, after the retry delay of 1 s
 void ClientAppConnectTests::connect_firstAddressRefuses_triesTheSecondAtOnceAfterTheRetryDelay()
 {
