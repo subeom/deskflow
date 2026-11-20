@@ -171,6 +171,43 @@ and clears that configuration, which keeps it from happening after a normal quit
 power loss. **Advice: with the tunnel on, switch "start at boot" of the service off.** A permanent fix would be a tunnel that
 the daemon owns, which is a different design (decision 1 of the approved design chose the GUI).
 
+### Interruptions: what the tunnel loses, and what the client does about it
+
+A session through the tunnel has three legs: the client program to its own cloudflared (loopback), cloudflared to the edge of
+Cloudflare (a websocket over TCP, one per local connection), and the tunnel of the server to the edge (QUIC over UDP, four
+connections, `Retrying connection in up to 2s/4s/...32s` with no end). The interruptions that were measured on a server Mac
+(see the session notes of the change) are on the third leg: after a sleep of the Mac, a change of its network (a dock cable,
+Wi-Fi) or an IPv6 route that is not there, the four QUIC connections die (cloudflared gives up on a QUIC connection that
+was silent for 5 s, `MaxIdleTimeout`) and are made again after a back-off of up to 32 s. The client cannot shorten that; the
+tunnel of the server can be configured to lose less (a locally managed tunnel: `edge-ip-version: "4"`, see the session
+notes). What the client does, only while the tunnel is used (on, TLS on, a usable hostname):
+
+- **Retry timing** (`common/TunnelReconnect.*`, used by `ClientApp::retryTime()`): the first retry after a session ended waits
+  0.25 s (the other three connections of the tunnel are most often up, so a new connection is accepted at once); the next 15
+  wait 1 s as before; the next 30 wait 2 s; then 4 s for as long as the path is down, so that a tunnel that is down for
+  minutes is not asked about every second (every try is a new connection through Cloudflare). The count starts again when a
+  connection is made. A direct link keeps 1 s for every try (tested: `retryTime_directLink_isOneSecondWhateverTheNumberOfTries`);
+  a long retry of the dynamic retry setting is kept; a tunnel that is on but cannot be used (TLS off, invalid hostname) gets the
+  direct value.
+- **"Reconnecting" is not a mistake** (`ServerLinkTracker`, `ServerLink::Reconnecting`, `isTransientPathFailure`): after the
+  server was reached through this tunnel, a failure of the path that passes (`bad handshake`, could not connect, edge
+  unreachable, host not resolving) is told as "Server: reconnecting, the path through Cloudflare is not available now", the
+  chip is "Tunnel: reconnecting" (information) and the line is not the colour of a problem. Before the server was ever reached,
+  and for a login that is asked for or any other failure, nothing changed. The memory is dropped when the core stops and when
+  the tunnel stops or fails. MainWindow hooks: `updateTunnelServerLink` gives the tracker the connection state of the core
+  (and whether the core runs), `updateTunnelShell` resets it and takes the colour from `tunnelStatusIsProblem`.
+- **The log does not fill** (`RepeatCollapser`, in `TunnelSupervisor::onOutputLine`): the same `failed to connect to origin`
+  line again within 30 s is counted and not shown; "The line above came N more times in the last S s" follows when the window
+  is over, when another line comes and when the server connects. The supervisor still reads and counts every line
+  (`originFailureCount()`) and redacts it first.
+
+Not done, with the reason (the numbers are in the session notes): the dead-peer time of Deskflow (3 s keep-alive, 9 s) is not
+the limit, because the QUIC connection dies after 5 s of silence and cloudflared then closes the stream, which the other side
+sees at once; coalescing of mouse moves under back pressure does nothing, because a stalled path of at most 5 s holds about
+25 KB in the socket buffers (125 Hz) and the client already compresses a burst of absolute moves; `TCP_NODELAY` is already set
+on both ends (`TCPSocket::init`, also for accepted sockets); the 2 s connect time limit (`client/connectTimeout`) is not raised
+for the tunnel without a measurement of the connect time through it.
+
 ### Security notes
 
 - The Secret reaches cloudflared **only** through the environment of that one child (`TUNNEL_SERVICE_TOKEN_ID`,
@@ -211,6 +248,8 @@ show it:
 `TunnelAddressTests` (the address is the saved one for every shape of it), `TunnelControllerTests`
 (`withTheTunnelOff_nothingIsRequiredNothingStartsAndNothingIsWritten`: the bytes of the configuration file are the same),
 `TunnelStatusWidgetTests` (`whileTheTunnelIsOff_theWidgetIsHiddenAndWritesNothing`).
+The same holds for the interruption handling above: with the tunnel off, `ClientApp::retryTime()` is the value of a direct link
+for any number of tries, the link is never "reconnecting", and the log lines of cloudflared do not exist.
 
 ## Hooks in the main window
 
