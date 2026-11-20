@@ -137,6 +137,14 @@ create_test(
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
 
+# The log lines of cloudflared that repeat while a tunnel is down are shown once in a while, with their count
+create_test(
+  NAME RepeatCollapserTests
+  DEPENDS gui
+  SOURCE RepeatCollapserTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
 # The manual check of the secure store of the system (the keychain, the Credential Manager). Off: no test may call them.
 option(DESKFLOW_BUILD_SECRET_SMOKE "Build secret-store-smoke, the manual check of the secure store of the system" OFF)
 if(DESKFLOW_BUILD_SECRET_SMOKE)

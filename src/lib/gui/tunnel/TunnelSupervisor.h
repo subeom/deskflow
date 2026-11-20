@@ -11,6 +11,7 @@
 #include "gui/tunnel/ISecretStore.h"
 #include "gui/tunnel/ITunnelProcess.h"
 #include "gui/tunnel/ProcessInspector.h"
+#include "gui/tunnel/RepeatCollapser.h"
 #include "gui/tunnel/SecretRedactor.h"
 #include "gui/tunnel/ServiceToken.h"
 #include "gui/tunnel/TunnelStateMachine.h"
@@ -189,6 +190,9 @@ private:
   bool m_portRetried = false;
   bool m_portRetryPending = false;
   TunnelFailure m_lastOriginFailure = TunnelFailure::None;
+  //! the same failure of the connection, again and again while the tunnel of the server is down, is not in the log each
+  //! time
+  RepeatCollapser m_repeats;
   TunnelStatus m_published;
   bool m_publishedOnce = false;
 };

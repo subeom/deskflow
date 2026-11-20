@@ -573,6 +573,58 @@ void TunnelSupervisorTests::aFailureReportedDuringStart_canBeAnsweredByAStopFrom
   QVERIFY(rig.processes.front().isNull());
 }
 
+// While the tunnel of the server is down, every try of the client makes cloudflared write the same line. The log has
+// the first, and how many more there were once in a while; the supervisor still counts every one (a test of the
+// connection compares the counts) and every one passes the redactor.
+void TunnelSupervisorTests::theSameFailureOfTheConnection_isInTheLogOnceInAWhileWithItsCount()
+{
+  Rig rig;
+  QVERIFY(rig.bringUp());
+  rig.logs.clear();
+
+  for (int attempt = 0; attempt < 40; ++attempt) {
+    // the time at the start of the line changes, the failure does not
+    rig.process()->write(QStringLiteral(
+                             "2026-11-20T02:02:%1Z ERR failed to connect to origin error=\"websocket: bad handshake\" "
+                             "originURL=https://mbp.example.com"
+    )
+                             .arg(attempt % 60, 2, 10, QLatin1Char('0')));
+    rig.clock += 1000;
+  }
+
+  QCOMPARE(rig.supervisor->originFailureCount(), quint64(40));
+  const auto shown = std::ranges::count_if(rig.logs, [](const QString &l) {
+    return l.contains(QStringLiteral("failed to connect to origin"));
+  });
+  // the first one, and the same one again when the 30 s are over
+  QVERIFY2(shown >= 1 && shown <= 3, qPrintable(QString::number(shown)));
+  QVERIFY(rig.logsContain(QStringLiteral("more time")));
+
+  // the state is what it always was: it listens, with the problem to tell
+  QCOMPARE(rig.state(), TunnelState::Listening);
+  QCOMPARE(rig.supervisor->status().failure, TunnelFailure::HandshakeRejected);
+
+  // another line is shown, and says how many of the first were left out
+  rig.logs.clear();
+  rig.process()->write(QStringLiteral("2026-11-20T02:03:10Z INF something else"));
+  QVERIFY(rig.logsContain(QStringLiteral("something else")));
+}
+
+void TunnelSupervisorTests::aFailureThatCarriesTheToken_isMaskedWhetherOrNotItIsShown()
+{
+  Rig rig;
+  QVERIFY(rig.bringUp());
+  rig.logs.clear();
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    rig.process()->write(
+        QStringLiteral("ERR failed to connect to origin error=\"bad handshake\" secret=%1").arg(kSecret)
+    );
+    rig.clock += 500;
+  }
+  QVERIFY(!rig.logsContain(kSecret));
+  QCOMPARE(rig.supervisor->originFailureCount(), quint64(5));
+}
+
 void TunnelSupervisorTests::aProblemOfTheConnection_isShownUntilTheServerConnects()
 {
   Rig rig;

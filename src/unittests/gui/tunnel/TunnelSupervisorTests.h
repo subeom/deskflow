@@ -35,6 +35,8 @@ private Q_SLOTS:
   void aStartThatFails_isReportedOnceWhenTheProcessSaysSoDuringStartOrLater();
   void aRestartThatFailsDuringStart_failsTheTunnelOnceAndNothingFollows();
   void aFailureReportedDuringStart_canBeAnsweredByAStopFromTheHandler();
+  void theSameFailureOfTheConnection_isInTheLogOnceInAWhileWithItsCount();
+  void aFailureThatCarriesTheToken_isMaskedWhetherOrNotItIsShown();
   void aProblemOfTheConnection_isShownUntilTheServerConnects();
   void everyRefusedConnection_isCountedWithItsReason();
 
