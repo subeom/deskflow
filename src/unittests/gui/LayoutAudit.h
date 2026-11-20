@@ -122,6 +122,26 @@ inline int heightFor(const QWidget *widget, int width)
   return widget->heightForWidth(width);
 }
 
+/*!
+ * The least height that the widget needs at the width, for the rule "has what its minimum asks for". A text that wraps
+ * needs its lines. A widget that holds others needs what its layout needs at least: heightForWidth() is the height that
+ * the layout would like, in which a part that does not wrap (a page that scrolls) counts with its size hint and not
+ * with its minimum, and that is more than the widget has to be given.
+ */
+inline int minimumHeightFor(const QWidget *widget, int width)
+{
+  const int wanted = heightFor(widget, width);
+  if (qobject_cast<const QLabel *>(widget))
+    return wanted;
+  if (const auto *layout = widget->layout(); layout && layout->hasHeightForWidth()) {
+    const int liked = layout->heightForWidth(width);
+    const int least = layout->minimumHeightForWidth(width);
+    if (liked >= 0 && least >= 0 && least < liked)
+      return wanted - (liked - least);
+  }
+  return wanted;
+}
+
 inline void walk(const QWidget *parent, const Options &options, QStringList &found)
 {
   const auto children = shownChildren(parent);
@@ -174,7 +194,7 @@ inline void walk(const QWidget *parent, const Options &options, QStringList &fou
           !(child->minimumWidth() > 0 && child->minimumWidth() <= child->width()))
         lack += QStringLiteral(" width %1 of %2").arg(child->width()).arg(minimum.width());
       const bool wrapped = child->hasHeightForWidth();
-      const int needed = wrapped ? heightFor(child, child->width()) : minimum.height();
+      const int needed = wrapped ? minimumHeightFor(child, child->width()) : minimum.height();
       if (needed > child->height() && policy.verticalPolicy() != QSizePolicy::Ignored &&
           !(child->minimumHeight() > 0 && child->minimumHeight() <= child->height()))
         lack += QStringLiteral(" height %1 of %2").arg(child->height()).arg(needed);
@@ -234,6 +254,18 @@ inline void emulateMacTitleBar(QMainWindow &window, int inset)
   QCoreApplication::processEvents();
   const auto honest = window.minimumSizeHint();
   window.layout()->setSizeConstraint(QLayout::SetNoConstraint);
+  window.setMinimumSize(std::max(window.minimumWidth(), honest.width()), honest.height() - inset);
+}
+
+/*!
+ * The minimum size that a Mac gives the window now: what the content asks for, without the strip. The layout does it by
+ * itself when the content changes (a banner that comes), and the emulation above has switched that off, so a test that
+ * changes the content says it again here.
+ */
+inline void emulateMacMinimumSize(QMainWindow &window, int inset)
+{
+  QCoreApplication::processEvents();
+  const auto honest = window.minimumSizeHint();
   window.setMinimumSize(std::max(window.minimumWidth(), honest.width()), honest.height() - inset);
 }
 

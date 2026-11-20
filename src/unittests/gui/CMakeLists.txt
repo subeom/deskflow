@@ -8,6 +8,7 @@ if(WIN32)
   set(gui_server_libs base arch version app mt net)
 endif()
 
+add_subdirectory(awdl)
 add_subdirectory(chrome)
 add_subdirectory(config)
 add_subdirectory(core)

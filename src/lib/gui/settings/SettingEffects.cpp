@@ -37,6 +37,8 @@ const QHash<QString, Effect> &table()
     live(S::Gui::TextSize);
     // the GUI logger listens for it
     live(S::Log::GuiDebug);
+    // the window follows it at once (macOS: it asks, or stops asking, for the password while the core runs)
+    live(S::Network::MacAwdlOff);
     // the running core is told (CoreProcess::applyLogLevel)
     live(S::Log::Level);
 

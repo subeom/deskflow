@@ -8,6 +8,7 @@
 
 #include "ClientConnectionSection.h"
 #include "StatusModel.h"
+#include "gui/settings/AwdlBanner.h"
 #include "gui/settings/RestartBanner.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/BackdropWidget.h"
@@ -137,6 +138,21 @@ MainShell::MainShell(const MainShellParts &parts, QObject *parent) : QObject(par
     holderLayout->setContentsMargins(room.left(), room.top(), room.right(), 6);
     holderLayout->addWidget(parts.noticeBar);
     new HolderFollower(parts.noticeBar, holder);
+    contentLayout->addWidget(holder);
+  }
+
+  // the line that says that the wireless link of AirDrop can make the mouse stutter, above every page (a Mac only: it
+  // is shown when the window asks)
+  {
+    auto *holder = new QWidget(content);
+    holder->setObjectName(QStringLiteral("awdlHolder"));
+    auto *holderLayout = new QVBoxLayout(holder);
+    holderLayout->setContentsMargins(room.left(), room.top(), room.right(), 6);
+    m_awdlBanner = new settings::AwdlBanner(holder);
+    holderLayout->addWidget(m_awdlBanner);
+    setLeastWindowWidth(minimumWindowWidth());
+    onTextSizeChanged(m_awdlBanner, [this] { setLeastWindowWidth(m_leastWindowWidth); });
+    new HolderFollower(m_awdlBanner, holder);
     contentLayout->addWidget(holder);
   }
 
@@ -608,9 +624,28 @@ settings::RestartBanner *MainShell::restartBanner() const
   return m_restartBanner;
 }
 
+settings::AwdlBanner *MainShell::awdlBanner() const
+{
+  return m_awdlBanner;
+}
+
 int MainShell::minimumWindowWidth()
 {
   return px(kMinimumWindowWidth);
+}
+
+void MainShell::setLeastWindowWidth(int width)
+{
+  m_leastWindowWidth = width;
+  // the window is made high enough for the banner at its least width, where its text wraps the most: the width of the
+  // content there is what the sidebar leaves (see SidebarShell::relayout), less the room of the holder
+  const auto room = PanelWidget::shadowMargins();
+  if (m_awdlBanner != nullptr) {
+    m_awdlBanner->setLeastWidth(qMax(
+        0, width - 2 * SidebarShell::kMargin - NavRail::collapsedPanelWidth() - SidebarShell::kGap - room.left() -
+               room.right()
+    ));
+  }
 }
 
 void MainShell::setHeader(QWidget *header)

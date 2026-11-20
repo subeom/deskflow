@@ -60,6 +60,15 @@ public:
     // the port that is listening right now when it is not LocalPort (that one was busy); written by the GUI
     inline static const auto ActivePort = QStringLiteral("tunnel/activePort");
   };
+  // macOS only (the key is there on every system, and nothing reads it anywhere else). The group is not under core/ on
+  // purpose, like the tunnel: an older build removes the keys of a known group that it does not know, and it leaves a
+  // group that it does not know alone
+  struct Network
+  {
+    // true: the wireless link of AirDrop and Handoff (awdl0) is turned off while the core runs, with the password of an
+    // administrator, asked for once for a run of the core (default false: nothing changes)
+    inline static const auto MacAwdlOff = QStringLiteral("network/macAwdlOff");
+  };
   struct Core
   {
     inline static const auto CoreMode = QStringLiteral("core/coreMode");
@@ -344,6 +353,7 @@ private:
     , QStringLiteral("daemon")
     , QStringLiteral("gui")
     , QStringLiteral("log")
+    , QStringLiteral("network")
     , QStringLiteral("security")
     , QStringLiteral("server")
     , QStringLiteral("tunnel")
@@ -399,6 +409,7 @@ private:
     , Gui::ShownServerFirstStartMessage
     , Gui::ShowVersionInTitle
     , Gui::IgnoreMissingKeyboardLayouts
+    , Network::MacAwdlOff
     , Security::Certificate
     , Security::CheckPeers
     , Security::KeySize
@@ -451,6 +462,7 @@ private:
     , Client::XdpClipboardRetried
     , Log::ToFile
     , Log::GuiDebug
+    , Network::MacAwdlOff
     , Tunnel::Enabled
     , Server::ClipboardTextOnly
     , Server::DefaultLockToComputerState

@@ -73,3 +73,14 @@ create_test(
 )
 target_compile_definitions(TranslationFileTests PRIVATE DESKFLOW_KO_TS="${CMAKE_SOURCE_DIR}/translations/deskflow_ko.ts")
 add_dependencies(TranslationFileTests app_translations)
+
+# The option that turns off the wireless link of AirDrop while sharing (macOS) in the main window: what it asks of the
+# system (a fake) and when, the banner, and nothing at all where there is no such link
+create_test(
+  NAME AwdlShellTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE AwdlShellTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(AwdlShellTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")

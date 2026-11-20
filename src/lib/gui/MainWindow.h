@@ -75,6 +75,11 @@ class DaemonIpcClient;
 
 struct MainWindowTestAccess;
 
+// The option that turns off the wireless link of AirDrop while sharing (macOS, see docs/Configuration.md)
+namespace deskflow::awdl {
+class AwdlController;
+}
+
 // Cloudflare Tunnel (see docs/dev/cloudflare-tunnel.md)
 namespace deskflow::tunnel {
 class TunnelController;
@@ -176,6 +181,9 @@ private:
   //! The window of the new look: the lines of the tunnel are in its shell (see attachTunnelToShell in MainWindow.cpp)
   void attachTunnelToShell();
   void updateTunnelShell();
+  // The option that turns off the wireless link of AirDrop while sharing (macOS only: nowhere else is anything made)
+  void setupAwdl();
+  void attachAwdlToShell();
   void applyConfig();
   void setTrayIcon();
   void handleUnrecognisedClient(const QString &clientName);
@@ -332,6 +340,8 @@ private:
   QAction *m_sharingFingerprint = nullptr;
   QAction *m_sharingMinimize = nullptr;
 
+  // The wireless link of AirDrop (null: not a Mac, or not a Mac window)
+  deskflow::awdl::AwdlController *m_awdl = nullptr;
   // Cloudflare Tunnel
   deskflow::tunnel::TunnelController *m_tunnelController = nullptr;
   deskflow::gui::TunnelStatusWidget *m_tunnelStatus = nullptr;

@@ -29,6 +29,9 @@
 #include "common/VersionInfo.h"
 #include "gui/Messages.h"
 #include "gui/TlsUtility.h"
+#include "gui/awdl/AwdlController.h"
+#include "gui/awdl/AwdlPlatform.h"
+#include "gui/awdl/AwdlSetup.h"
 #include "gui/chrome/ChromeGeometry.h"
 #include "gui/chrome/MenuMigration.h"
 #include "gui/chrome/WindowChrome.h"
@@ -37,6 +40,7 @@
 #include "gui/ipc/DaemonIpcClient.h"
 #include "gui/layout/DisplayProvider.h"
 #include "gui/layout/LayoutMemoryService.h"
+#include "gui/settings/AwdlBanner.h"
 #include "gui/settings/RestartBanner.h"
 #include "gui/settings/SettingEffects.h"
 #include "gui/settings/SettingsPage.h"
@@ -169,6 +173,7 @@ MainWindow::MainWindow()
   connectSlots();
   setupTrayIcon();
   setupTunnel();
+  setupAwdl();
   updateComputerName();
   setHelpFilePath();
 
@@ -196,6 +201,7 @@ MainWindow::MainWindow()
   if (deskflow::gui::style::isDeskflowStyleInstalled()) {
     setupShell();
     attachTunnelToShell();
+    attachAwdlToShell();
     applyWindowChrome();
   }
   restoreWindow();
@@ -1177,6 +1183,39 @@ void MainWindow::attachTunnelToShell()
   updateTunnelShell();
 }
 
+void MainWindow::setupAwdl()
+{
+  // nothing is made where there is no such link (Windows, Linux), and nothing where the window has no screen (a test
+  // gives its own system): the option does not exist there
+  if (!deskflow::awdl::platformSupported())
+    return;
+  auto *system = deskflow::awdl::createSystem(this);
+  if (system == nullptr)
+    return;
+  m_awdl = deskflow::awdl::makeController(system, this);
+}
+
+void MainWindow::attachAwdlToShell()
+{
+  if (m_shell == nullptr || m_awdl == nullptr)
+    return;
+  m_settingsPages->setAwdlController(m_awdl);
+  // the banner says what the controller says, and its button is the same as the button of the card
+  auto *banner = m_shell->awdlBanner();
+  const auto show = [this, banner] {
+    banner->setStats(m_awdl->latency());
+    banner->setBusy(m_awdl->isAsking());
+    banner->setPending(m_awdl->hintVisible());
+  };
+  connect(m_awdl, &deskflow::awdl::AwdlController::hintChanged, this, show);
+  connect(m_awdl, &deskflow::awdl::AwdlController::latencyChanged, this, show);
+  connect(m_awdl, &deskflow::awdl::AwdlController::askingChanged, this, show);
+  connect(
+      banner, &deskflow::gui::settings::AwdlBanner::turnOffRequested, m_awdl,
+      &deskflow::awdl::AwdlController::turnOffNow
+  );
+}
+
 void MainWindow::updateTunnelShell()
 {
   if (m_tunnelStatus == nullptr)
@@ -1544,6 +1583,9 @@ void MainWindow::coreProcessStateChanged(ProcessState state)
 {
   using enum ProcessState;
   updateStatus();
+  // a run of the core is one that starts and is not stopped: a retry is part of it (the password is asked once for it)
+  if (m_awdl != nullptr)
+    m_awdl->setCoreRunning(state == Starting || state == Started || state == RetryPending);
   if (state == Started) {
     qDebug() << "recording that core has started";
     Settings::setValue(Settings::Gui::AutoStartCore, true);
@@ -2162,6 +2204,7 @@ void MainWindow::setupShell()
     if (const auto *screen = this->screen())
       width = qMin(width, qMax(deskflow::gui::MainShell::kMinimumWindowWidth, screen->availableGeometry().width()));
     setMinimumWidth(width);
+    m_shell->setLeastWindowWidth(width);
   };
   sizeWindow();
   deskflow::gui::style::onTextSizeChanged(this, sizeWindow);
@@ -2315,6 +2358,7 @@ void MainWindow::updateShellTexts()
       m_shell->setPageText(entry.id, entry.title());
   }
   m_shell->restartBanner()->retranslate();
+  m_shell->awdlBanner()->retranslate();
   updateShellComputers();
   refreshShell();
 }

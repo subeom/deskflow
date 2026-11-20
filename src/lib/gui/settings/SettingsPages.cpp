@@ -6,6 +6,7 @@
 
 #include "SettingsPages.h"
 
+#include "AwdlCard.h"
 #include "SettingsBinder.h"
 #include "SettingsPage.h"
 #include "common/ConnectionDiagnosis.h"
@@ -15,6 +16,7 @@
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
 #include "gui/TlsUtility.h"
+#include "gui/awdl/AwdlPlatform.h"
 #include "gui/chrome/ChromePolicy.h"
 #include "gui/core/NetworkMonitor.h"
 #include "gui/style/Appearance.h"
@@ -695,7 +697,17 @@ SettingsPage *SettingsPages::buildNetwork()
   page->follow([openClient] { openClient->setText(QCoreApplication::translate("SettingsPages", "Open")); });
   clientRow->addControl(openClient);
   connect(openClient, &QPushButton::clicked, this, [this] { Q_EMIT pageRequested(clientId()); });
+
+  // only a Mac has the wireless link of AirDrop: nowhere else is the card made, or the setting bound
+  if (deskflow::awdl::platformSupported())
+    m_awdlCard = new AwdlCard(page, m_binder);
   return page;
+}
+
+void SettingsPages::setAwdlController(deskflow::awdl::AwdlController *controller)
+{
+  if (m_awdlCard != nullptr)
+    m_awdlCard->setController(controller);
 }
 
 SettingsPage *SettingsPages::buildClient()

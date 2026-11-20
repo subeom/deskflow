@@ -27,6 +27,10 @@ private Q_SLOTS:
   void addressLabel_usesAsFewLinesAsItsRoomAllows_data();
   void addressLabel_usesAsFewLinesAsItsRoomAllows();
   void theAuditSeesWhatItIsMadeToSee();
+  //! The option of the wireless link of AirDrop (macOS): the card of the Network page with the numbers of a measurement
+  //! and the banner above every page, which is the longest thing that the window has to fit
+  void windowFits_whileTheAwdlHintIsShown_data();
+  void windowFits_whileTheAwdlHintIsShown();
 
 private:
   QTemporaryDir m_dir;
