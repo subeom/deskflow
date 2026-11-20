@@ -83,6 +83,16 @@ create_test(
 )
 target_include_directories(TextSizeModelTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
 
+# The fonts for the letters that the font of the system does not have (Hangul)
+create_test(
+  NAME FontPolicyTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE FontPolicyTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(FontPolicyTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+
 create_test(
   NAME TextSizeTests
   DEPENDS gui

@@ -5,11 +5,13 @@
 
 #include "TextSizeTests.h"
 
+#include "common/I18N.h"
 #include "common/Settings.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/FontScale.h"
 #include "gui/style/LookFollower.h"
 #include "gui/style/TextSize.h"
+#include "gui/widgets/PageTitle.h"
 
 #include "../FontEnvironment.h"
 
@@ -17,6 +19,7 @@
 #include <QEvent>
 #include <QFontInfo>
 #include <QLabel>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QWidget>
 
@@ -37,6 +40,11 @@ struct FakeSystem
   int pixels = 12;
   double osScale = 1.0;
   TextPlatform platform = TextPlatform::Windows;
+  // the fonts for the language (only a test that asks for them gives these)
+  bool withFonts = false;
+  QString language;
+  QString variable;
+  QStringList installed{QStringLiteral("Malgun Gothic")};
 
   TextSizeEnvironment environment()
   {
@@ -44,6 +52,26 @@ struct FakeSystem
     env.systemFont = [this] { return fontOfPixels(pixels); };
     env.osTextScale = [this] { return osScale; };
     env.platform = platform;
+    if (withFonts) {
+      // the system gives the same font whatever the application has made of its own (the font of the application is the
+      // one that the service sets)
+      const QFont base = QApplication::font();
+      env.systemFont = [this, base] {
+        QFont font = base;
+        font.setPixelSize(pixels);
+        return font;
+      };
+      env.language = [this] { return language; };
+      env.fontVariable = [this] { return variable; };
+      env.hasFamily = [this](const QString &family) { return installed.contains(family); };
+      env.weightsOf = [](const QString &family) -> QList<int> {
+        if (family == QLatin1String("Malgun Gothic"))
+          return {400, 700};
+        if (family == QLatin1String("Malgun Gothic Semilight"))
+          return {350};
+        return {};
+      };
+    }
     return env;
   }
 };
@@ -407,6 +435,140 @@ void TextSizeTests::uninstall_putsTheFontOfTheSystemBack()
   QCOMPARE(metricScale(), 1.0);
   QCOMPARE(px(44), 44);
   QVERIFY(watcher.changes >= 1);
+}
+
+void TextSizeTests::fonts_koreanOnWindows_hasTheFontOfWindowsAfterTheSystemFont_andTheWeightsOfThatFont()
+{
+  FakeSystem system;
+  system.pixels = 14;
+  system.withFonts = true;
+  system.language = QStringLiteral("ko");
+  QApplication::setFont(fontOfPixels(14));
+  const auto systemFamily = fontOfPixels(14).family();
+  auto *service = TextSize::install(system.environment());
+
+  // the Latin letters keep the font of the system, the Hangul are Malgun Gothic (and not the Gulim that Qt looks for
+  // first)
+  QCOMPARE(QApplication::font().families(), (QStringList{systemFamily, QStringLiteral("Malgun Gothic")}));
+  // the size is the size of the system (the body is 14 px already): only the families changed
+  QCOMPARE(appFontPixels(), 14);
+  // a role that asks for Medium gets Regular, and one that asks for DemiBold gets Bold: the two faces that Malgun
+  // Gothic has
+  QCOMPARE(fontWeight(QFont::Medium), QFont::Normal);
+  QCOMPARE(fontWeight(QFont::DemiBold), QFont::Bold);
+  QVERIFY2(service->describe().contains(QLatin1String("Malgun Gothic")), qPrintable(service->describe()));
+
+  // the system font is put back, with the weights as they were asked for
+  TextSize::uninstall();
+  QCOMPARE(fontWeight(QFont::DemiBold), QFont::DemiBold);
+  QCOMPARE(QApplication::font().families(), (QStringList{systemFamily}));
+}
+
+void TextSizeTests::fonts_englishAndTheLanguagesWithoutAChoice_keepTheFontOfTheSystemExactly()
+{
+  for (const QString &language : {QStringLiteral("en"), QString(), QStringLiteral("es"), QStringLiteral("ja")}) {
+    FakeSystem system;
+    system.pixels = 14;
+    system.withFonts = true;
+    system.language = language;
+    QApplication::setFont(fontOfPixels(14));
+    const QFont before = QApplication::font();
+    auto *service = TextSize::install(system.environment());
+    // the same font, the same families, no weight asked for another: nothing changed (not even a font set again)
+    QCOMPARE(QApplication::font(), before);
+    QCOMPARE(QApplication::font().families(), before.families());
+    QCOMPARE(fontWeight(QFont::DemiBold), QFont::DemiBold);
+    QVERIFY2(!service->describe().contains(QLatin1String("fonts")), qPrintable(service->describe()));
+    TextSize::uninstall();
+  }
+}
+
+void TextSizeTests::fonts_aChangeOfLanguage_changesTheFamiliesAtOnce_andTellsTheWidgets()
+{
+  FakeSystem system;
+  system.pixels = 14;
+  system.withFonts = true;
+  system.language = QStringLiteral("en");
+  QApplication::setFont(fontOfPixels(14));
+  const auto systemFamily = fontOfPixels(14).family();
+  TextSize::install(system.environment());
+  QCOMPARE(QApplication::font().families(), (QStringList{systemFamily}));
+
+  QSignalSpy told(TextSizeNotifier::instance(), &TextSizeNotifier::changed);
+  system.language = QStringLiteral("ko");
+  Q_EMIT I18N::instance()->languageChanged(QStringLiteral("ko"));
+  QCOMPARE(QApplication::font().families(), (QStringList{systemFamily, QStringLiteral("Malgun Gothic")}));
+  QCOMPARE(fontWeight(QFont::DemiBold), QFont::Bold);
+  QVERIFY(told.count() >= 1);
+
+  told.clear();
+  system.language = QStringLiteral("es");
+  Q_EMIT I18N::instance()->languageChanged(QStringLiteral("es"));
+  QCOMPARE(QApplication::font().families(), (QStringList{systemFamily}));
+  QCOMPARE(fontWeight(QFont::DemiBold), QFont::DemiBold);
+  QVERIFY(told.count() >= 1);
+}
+
+void TextSizeTests::fonts_theVariable_choosesTheFamiliesForEveryLanguage()
+{
+  FakeSystem system;
+  system.pixels = 14;
+  system.withFonts = true;
+  system.language = QStringLiteral("en");
+  system.variable = QStringLiteral("Segoe UI, Malgun Gothic Semilight");
+  QApplication::setFont(fontOfPixels(14));
+  auto *service = TextSize::install(system.environment());
+
+  // English as well: the person asked for these fonts
+  QCOMPARE(
+      QApplication::font().families(),
+      (QStringList{QStringLiteral("Segoe UI"), QStringLiteral("Malgun Gothic Semilight")})
+  );
+  QCOMPARE(int(fontWeight(QFont::DemiBold)), 350);
+  QVERIFY2(service->describe().contains(QLatin1String("DESKFLOW_FONT_FAMILIES")), qPrintable(service->describe()));
+
+  // nothing in it: the choice of the program (English: the system font)
+  system.variable = QStringLiteral(" , ");
+  service->refresh();
+  QCOMPARE(QApplication::font().families(), (QStringList{fontOfPixels(14).family()}));
+  QCOMPARE(fontWeight(QFont::DemiBold), QFont::DemiBold);
+}
+
+void TextSizeTests::fonts_aRoleOfTheLook_takesTheWeightThatTheFontHas()
+{
+  FakeSystem system;
+  system.pixels = 14;
+  system.withFonts = true;
+  system.language = QStringLiteral("ko");
+  QApplication::setFont(fontOfPixels(14));
+  TextSize::install(system.environment());
+
+  // the title of a page asks for DemiBold: with Malgun Gothic it is Bold (the Hangul would otherwise be a face that the
+  // font engine makes up, and the letters beside it a weight that the Hangul do not have)
+  {
+    PageTitle title;
+    QCOMPARE(title.font().weight(), QFont::Bold);
+  }
+  TextSize::uninstall();
+  QApplication::setFont(fontOfPixels(14));
+  system.language = QStringLiteral("en");
+  TextSize::install(system.environment());
+  PageTitle english;
+  QCOMPARE(english.font().weight(), QFont::DemiBold);
+}
+
+void TextSizeTests::fonts_theEnvironmentOfThisComputer_readsTheVariable()
+{
+  qunsetenv("DESKFLOW_FONT_FAMILIES");
+  const auto env = TextSizeEnvironment::ofThisComputer();
+  QVERIFY(env.fontVariable);
+  QVERIFY(env.language);
+  QVERIFY(env.hasFamily);
+  QVERIFY(env.weightsOf);
+  QCOMPARE(env.fontVariable(), QString());
+  qputenv("DESKFLOW_FONT_FAMILIES", "Segoe UI, Malgun Gothic");
+  const auto guard = qScopeGuard([] { qunsetenv("DESKFLOW_FONT_FAMILIES"); });
+  QCOMPARE(TextSizeEnvironment::ofThisComputer().fontVariable(), QStringLiteral("Segoe UI, Malgun Gothic"));
 }
 
 void TextSizeTests::applyAppearance_hasTheServiceForTheNewLook_andNotForTheSystem()

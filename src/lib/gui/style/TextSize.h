@@ -6,10 +6,13 @@
 
 #pragma once
 
+#include "FontPolicy.h"
 #include "TextSizeModel.h"
 
 #include <QFont>
+#include <QList>
 #include <QObject>
+#include <QString>
 
 #include <functional>
 
@@ -25,6 +28,13 @@ struct TextSizeEnvironment
   //! What the system has for the size of text apart from its font (Windows: Text size in the accessibility settings)
   std::function<double()> osTextScale;
   TextPlatform platform = TextPlatform::Other;
+  //! The language of the program (the 639 name: ko, ja, zh_CN, en ...); not given: no font is chosen for a language
+  std::function<QString()> language;
+  //! The value of the variable that chooses the fonts (kFontFamiliesVariable)
+  std::function<QString()> fontVariable;
+  //! Whether the computer has a family of fonts, and the weights that its faces have
+  std::function<bool(const QString &)> hasFamily;
+  std::function<QList<int>(const QString &)> weightsOf;
 
   //! The system font of this computer, Windows' own Text size where there is one, and this OS
   static TextSizeEnvironment ofThisComputer();
@@ -39,6 +49,10 @@ struct TextSizeEnvironment
  * application as the OS gave it. It changes the font of the application (QApplication::setFont) when the size is not
  * the one of the system, which every widget is told of (QEvent::ApplicationFontChange). It follows the setting at once,
  * and reads the system again when the application becomes active (the person changed a setting of the OS).
+ *
+ * It also chooses the fonts for the letters that the font of the system does not have, for the language of the program
+ * (FontPolicy.h: Hangul on Windows is Malgun Gothic and not the Gulim that Qt looks for first), and follows a change of
+ * the language. English and the languages that need no choice keep the font of the system as it is.
  */
 class TextSize : public QObject
 {
@@ -80,6 +94,7 @@ private:
 
   void apply();
   void followSetting(const QString &key);
+  FontChoice fontsForNow() const;
   double systemPixels(const QFont &font) const;
   double pixelsPerPoint(const QFont &font) const;
 
@@ -89,6 +104,7 @@ private:
   QFont m_system;
   int m_percent = kDefaultTextPercent;
   bool m_fontIsOurs = false;
+  FontChoice m_fonts;
 };
 
 /*!

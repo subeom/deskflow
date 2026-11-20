@@ -147,6 +147,8 @@ add_library(${target} STATIC
   style/Icons.cpp
   style/FontScale.h
   style/Icons.h
+  style/FontPolicy.cpp
+  style/FontPolicy.h
   style/LookFollower.cpp
   style/LookFollower.h
   style/PanelWidget.cpp

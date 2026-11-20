@@ -165,6 +165,29 @@ void DesignTokensTests::textPairs_meetTheContrastOfWcagAa()
   QVERIFY(contrastRatio(c.textSecondary, c.bg) >= 4.5);
 }
 
+void DesignTokensTests::secondaryText_isReadableWhereTheStrokesAreThin_data()
+{
+  addGlassLooks();
+}
+
+void DesignTokensTests::secondaryText_isReadableWhereTheStrokesAreThin()
+{
+  QFETCH(bool, dark);
+  const auto tokens = tokensFor(glass(dark ? Scheme::Dark : Scheme::Light));
+  const auto &c = tokens.colors;
+
+  // The small grey text (the hints under a setting, the detail of a state) is 12 px, and the strokes of Hangul are one
+  // pixel wide: 4.5:1 is the least that a person with good eyes reads at that size in Latin, and Hangul next to it
+  // looks pale. The grey is held to 7:1 (WCAG AAA for text) on the panels that carry it, wherever the panel is over the
+  // backdrop.
+  const auto dense = worstOnPanel(tokens, c.textSecondary, tokens.panelDenseOpacity);
+  const auto translucent = worstOnPanel(tokens, c.textSecondary, tokens.panelOpacity);
+  QVERIFY2(dense >= 7.0, qPrintable(QStringLiteral("on a dense panel: %1 : 1").arg(dense)));
+  QVERIFY2(translucent >= 7.0, qPrintable(QStringLiteral("on a translucent panel: %1 : 1").arg(translucent)));
+  // and it is still the second voice: dimmer than the text
+  QVERIFY(contrastRatio(c.textSecondary, tokens.colors.surface) < contrastRatio(c.text, tokens.colors.surface));
+}
+
 void DesignTokensTests::controlBorder_meetsThreeToOneOnADensePanel_data()
 {
   addGlassLooks();

@@ -9,6 +9,7 @@
 #include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/DesignTokens.h"
+#include "gui/style/FontPolicy.h"
 #include "gui/style/FontScale.h"
 #include "gui/style/LookFollower.h"
 
@@ -32,7 +33,7 @@ void PageTitle::init()
   setTextFormat(Qt::PlainText);
   new LookFollower(this, [this] {
     auto font = scaleFont(QApplication::font(this), qreal(metrics::fontTitle) / metrics::fontBody);
-    font.setWeight(QFont::DemiBold);
+    font.setWeight(fontWeight(QFont::DemiBold));
     setFont(font);
     auto palette = this->palette();
     palette.setColor(QPalette::WindowText, currentTokens().colors.text);

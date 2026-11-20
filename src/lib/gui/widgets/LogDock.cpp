@@ -10,6 +10,7 @@
 
 #include "gui/style/Appearance.h"
 #include "gui/style/DesignTokens.h"
+#include "gui/style/FontPolicy.h"
 #include "gui/style/FontScale.h"
 #include "gui/style/Icons.h"
 #include "gui/style/PanelWidget.h"
@@ -97,7 +98,7 @@ void LogDock::buildCard()
   // the title and the buttons follow the size of text
   const auto sizeHeader = [this] {
     auto titleFont = scaleFont(QApplication::font(this), qreal(metrics::fontSubtitle) / metrics::fontBody);
-    titleFont.setWeight(QFont::DemiBold);
+    titleFont.setWeight(fontWeight(QFont::DemiBold));
     m_lblTitle->setFont(titleFont);
     for (auto *button : {m_btnFloat, m_btnClose}) {
       button->setFixedSize(px(28), px(28));

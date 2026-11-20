@@ -446,7 +446,7 @@ void SettingRow::applyLook()
 {
   setMinimumHeight(minimumRowHeight());
   auto font = m_title->font();
-  font.setWeight(QFont::Medium);
+  font.setWeight(fontWeight(QFont::Medium));
   m_title->setFont(font);
 
   auto palette = m_title->palette();

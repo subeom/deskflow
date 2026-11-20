@@ -7,6 +7,7 @@
 #include "TrayHeaderWidget.h"
 
 #include "gui/style/Appearance.h"
+#include "gui/style/FontPolicy.h"
 #include "gui/style/FontScale.h"
 #include "gui/style/Icons.h"
 #include "gui/style/LookFollower.h"
@@ -74,7 +75,7 @@ TrayHeaderWidget::TrayHeaderWidget(QWidget *parent)
   // the fonts and the width of the text follow the size of text
   const auto sizeTexts = [this] {
     auto headFont = scaleFont(QApplication::font(this), qreal(metrics::fontSubtitle) / metrics::fontBody);
-    headFont.setWeight(QFont::DemiBold);
+    headFont.setWeight(fontWeight(QFont::DemiBold));
     m_headline->setFont(headFont);
     m_detail->setFont(scaleFont(QApplication::font(this), qreal(metrics::fontCaption) / metrics::fontBody));
     m_detail->setFixedWidth(px(kDetailWidth));

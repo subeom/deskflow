@@ -36,6 +36,13 @@ private Q_SLOTS:
   void uninstall_putsTheFontOfTheSystemBack();
   void applyAppearance_hasTheServiceForTheNewLook_andNotForTheSystem();
 
+  void fonts_koreanOnWindows_hasTheFontOfWindowsAfterTheSystemFont_andTheWeightsOfThatFont();
+  void fonts_englishAndTheLanguagesWithoutAChoice_keepTheFontOfTheSystemExactly();
+  void fonts_aChangeOfLanguage_changesTheFamiliesAtOnce_andTellsTheWidgets();
+  void fonts_theVariable_choosesTheFamiliesForEveryLanguage();
+  void fonts_aRoleOfTheLook_takesTheWeightThatTheFontHas();
+  void fonts_theEnvironmentOfThisComputer_readsTheVariable();
+
 private:
   QTemporaryDir m_dir;
 };

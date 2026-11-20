@@ -9,6 +9,7 @@
 #include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/Contrast.h"
+#include "gui/style/FontPolicy.h"
 #include "gui/style/FontScale.h"
 #include "gui/style/LookFollower.h"
 #include "gui/style/PixelSnap.h"
@@ -249,7 +250,7 @@ void NavItem::paintEvent(QPaintEvent *)
     if (m_kind == Kind::Status)
       font = scaleFont(font, 0.93);
     if (current)
-      font.setWeight(QFont::DemiBold);
+      font.setWeight(fontWeight(QFont::DemiBold));
     painter.setFont(font);
     painter.setPen(color);
     const auto elided = QFontMetrics(font).elidedText(text(), Qt::ElideRight, textBox.width());
@@ -809,7 +810,7 @@ void NavRail::paintEvent(QPaintEvent *event)
     // a group title: written in the rail with its labels, and a short line in the rail of icons
     if (m_panelWidth > collapsedPanelWidth() + px(70)) {
       auto font = scaleFont(this->font(), qreal(metrics::fontCaption) / metrics::fontBody);
-      font.setWeight(QFont::DemiBold);
+      font.setWeight(fontWeight(QFont::DemiBold));
       painter.setFont(font);
       painter.setPen(c.textSecondary);
       const QRect box = entry.slot.adjusted(14, 0, 0, 0);

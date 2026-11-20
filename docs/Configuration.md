@@ -132,6 +132,26 @@ itself with high contrast, without desktop composition (Windows) and with a Qt o
 bar of the OS is the default, and `DESKFLOW_WINDOW_FRAME=client` or `nativeWindowFrame=false` chooses the one of the
 application.
 
+On macOS the header of that window moves the window by itself, following the mouse (the move that the system offers is
+not reliable on macOS 27). For one run `DESKFLOW_HEADER_DRAG=system` asks for the move of the system and
+`DESKFLOW_HEADER_DRAG=manual` for the one of the program. Windows has the caption for it, and Linux the move of the
+compositor.
+
+### Fonts of the look `deskflow`
+
+The look uses the font that the OS gives text. For the letters that this font does not have, Qt on Windows looks for a
+font of its own list, which begins with Gulim for Korean and SimSun for Simplified Chinese (old fonts with one weight
+and thin strokes). With the language of the application set to Korean the look asks for Malgun Gothic (Windows) or
+Apple SD Gothic Neo (macOS) after the font of the system, and with Simplified Chinese for Microsoft YaHei UI (Windows);
+a role that asks for a weight that the font does not have gets the nearest one. English and the other languages keep the
+font of the system as it is.
+
+To try other fonts, set `DESKFLOW_FONT_FAMILIES` to a list of families separated by commas, before starting the
+application: the first family has the Latin letters and the next ones the letters that it does not have, in the
+language that the application has, for example `DESKFLOW_FONT_FAMILIES="Segoe UI, Malgun Gothic Semilight"`. Empty or not
+set, the choice above is used. The variable is not a setting and has no control in the dialogs; the line `text size:` of
+the log says which fonts the application has.
+
 ### Log
 
 This section contains options used by the application logging it will begin with `[log]`

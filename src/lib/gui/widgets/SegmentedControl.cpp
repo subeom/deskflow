@@ -42,7 +42,7 @@ SegmentedControlSegment::SegmentedControlSegment(QWidget *parent) : QAbstractBut
 QSize SegmentedControlSegment::sizeHint() const
 {
   auto font = this->font();
-  font.setWeight(QFont::DemiBold);
+  font.setWeight(fontWeight(QFont::DemiBold));
   return QSize(
       QFontMetrics(font).horizontalAdvance(text()) + 2 * kSegmentPadding,
       SegmentedControl::controlHeight() - 2 * SegmentedControl::kPadding
@@ -52,7 +52,7 @@ QSize SegmentedControlSegment::sizeHint() const
 QSize SegmentedControlSegment::minimumSizeHint() const
 {
   auto font = this->font();
-  font.setWeight(QFont::DemiBold);
+  font.setWeight(fontWeight(QFont::DemiBold));
   const auto shortest = text().left(kSegmentLeastCharacters) +
                         (text().size() > kSegmentLeastCharacters ? QString(QChar(0x2026)) : QString());
   return QSize(
@@ -116,7 +116,7 @@ void SegmentedControlSegment::paintEvent(QPaintEvent *)
   }
 
   auto font = this->font();
-  font.setWeight(QFont::DemiBold);
+  font.setWeight(fontWeight(QFont::DemiBold));
   painter.setFont(font);
   painter.setPen(isChecked() ? c.onAccent : c.text);
   // a control that is narrower than its text shows the beginning of it (the name is told in full to a screen reader)

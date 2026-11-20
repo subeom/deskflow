@@ -6,6 +6,7 @@
 
 #include "TextSize.h"
 
+#include "common/I18N.h"
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
 
@@ -17,6 +18,7 @@
 #include <QSettings>
 #include <QWidget>
 
+#include <algorithm>
 #include <cmath>
 
 namespace deskflow::gui::style {
@@ -64,6 +66,19 @@ void setApplicationFont(const QFont &font)
   }
 }
 
+// The weights that the faces of a family have (the italic faces say the same weights again)
+QList<int> weightsOfFamily(const QString &family)
+{
+  QList<int> weights;
+  for (const auto &style : QFontDatabase::styles(family)) {
+    const int weight = QFontDatabase::weight(family, style);
+    if (weight > 0 && !weights.contains(weight))
+      weights << weight;
+  }
+  std::sort(weights.begin(), weights.end());
+  return weights;
+}
+
 } // namespace
 
 TextSizeEnvironment TextSizeEnvironment::ofThisComputer()
@@ -72,6 +87,10 @@ TextSizeEnvironment TextSizeEnvironment::ofThisComputer()
   environment.systemFont = [] { return QFontDatabase::systemFont(QFontDatabase::GeneralFont); };
   environment.osTextScale = osTextScaleOfThisComputer;
   environment.platform = platformOfThisComputer();
+  environment.language = [] { return I18N::currentLanguage(); };
+  environment.fontVariable = [] { return qEnvironmentVariable(kFontFamiliesVariable); };
+  environment.hasFamily = [](const QString &family) { return QFontDatabase::hasFamily(family); };
+  environment.weightsOf = weightsOfFamily;
   return environment;
 }
 
@@ -96,6 +115,7 @@ void TextSize::uninstall()
   if (s_instance->m_fontIsOurs)
     setApplicationFont(s_instance->m_system);
   s_instance->m_fontIsOurs = false;
+  setFontWeights({});
   delete s_instance;
   // the controls are as they were drawn again
   Q_EMIT TextSizeNotifier::instance()->changed();
@@ -108,6 +128,9 @@ TextSize::TextSize(const TextSizeEnvironment &environment) : QObject(qApp), m_en
   m_percent = snapTextPercent(Settings::value(Settings::Gui::TextSize).toInt());
 
   connect(Settings::instance(), &Settings::settingsChanged, this, &TextSize::followSetting);
+  // the language of the program changes at once (the settings), and the fonts for its letters with it
+  if (m_environment.language)
+    connect(I18N::instance(), &I18N::languageChanged, this, [this] { apply(); });
   // the person changed the size of text or the font in the settings of the OS, and came back
   connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
     if (state == Qt::ApplicationActive)
@@ -166,14 +189,22 @@ QString TextSize::describe() const
 {
   return QStringLiteral(
              "text size: body %1 px (system font %2 px x OS text size %3, least %4 px%5), step %6 %, controls x%7"
-  )
-      .arg(m_plan.bodyPixels, 0, 'f', 2)
-      .arg(m_input.systemPixels, 0, 'f', 2)
-      .arg(m_input.osTextScale, 0, 'f', 2)
-      .arg(minimumBodyPixels(m_input.platform), 0, 'f', 0)
-      .arg(m_plan.raisedByFloor ? QStringLiteral(", raised") : QString())
-      .arg(m_percent)
-      .arg(m_plan.metricScale, 0, 'f', 2);
+         )
+             .arg(m_plan.bodyPixels, 0, 'f', 2)
+             .arg(m_input.systemPixels, 0, 'f', 2)
+             .arg(m_input.osTextScale, 0, 'f', 2)
+             .arg(minimumBodyPixels(m_input.platform), 0, 'f', 0)
+             .arg(m_plan.raisedByFloor ? QStringLiteral(", raised") : QString())
+             .arg(m_percent)
+             .arg(m_plan.metricScale, 0, 'f', 2) +
+         (m_fonts.families.isEmpty() ? QString()
+                                     : QStringLiteral(", fonts %1 (%2)")
+                                           .arg(m_fonts.families.join(QStringLiteral(" + ")))
+                                           .arg(
+                                               m_fonts.source == FontChoice::Source::Variable
+                                                   ? QStringLiteral("%1").arg(QLatin1String(kFontFamiliesVariable))
+                                                   : QStringLiteral("language")
+                                           ));
 }
 
 void TextSize::followSetting(const QString &key)
@@ -205,6 +236,18 @@ double TextSize::systemPixels(const QFont &font) const
   return QFontInfo(font).pixelSize();
 }
 
+FontChoice TextSize::fontsForNow() const
+{
+  FontPolicyInput input;
+  input.platform = m_environment.platform;
+  input.language = m_environment.language ? m_environment.language() : QString();
+  input.systemFamily = m_system.family();
+  input.variable = m_environment.fontVariable ? m_environment.fontVariable() : QString();
+  input.hasFamily = m_environment.hasFamily;
+  input.weightsOf = m_environment.weightsOf;
+  return chooseFonts(input);
+}
+
 void TextSize::apply()
 {
   TextSizeInput input;
@@ -226,16 +269,26 @@ void TextSize::apply()
       target.setPixelSize(std::max(1, static_cast<int>(std::lround(plan.bodyPixels))));
   }
 
-  const bool changed =
-      std::abs(plan.metricScale - m_plan.metricScale) > 1e-9 || std::abs(plan.bodyPixels - m_plan.bodyPixels) > 1e-9;
+  // the fonts for the letters that the system font does not have (Hangul): the families of the application font, and
+  // the weights that its roles get
+  const auto fonts = fontsForNow();
+  const bool fontsChanged = fonts.families != m_fonts.families || fonts.weights != m_fonts.weights;
+  m_fonts = fonts;
+  if (!fonts.families.isEmpty())
+    target.setFamilies(fonts.families);
+  setFontWeights(fonts.weights);
+
+  const bool changed = fontsChanged || std::abs(plan.metricScale - m_plan.metricScale) > 1e-9 ||
+                       std::abs(plan.bodyPixels - m_plan.bodyPixels) > 1e-9;
   m_plan = plan;
   // the sizes of the controls come first: a widget that is told of the font asks for them
   s_metricScale = plan.metricScale;
   s_fontRatio = sameAsSystem || input.systemPixels <= 0 ? 1.0 : plan.bodyPixels / input.systemPixels;
-  if (!sameAsSystem || m_fontIsOurs) {
+  const bool ours = !sameAsSystem || !fonts.families.isEmpty();
+  if (ours || m_fontIsOurs) {
     if (QApplication::font() != target)
       setApplicationFont(target);
-    m_fontIsOurs = !sameAsSystem;
+    m_fontIsOurs = ours;
   }
   if (changed) {
     Q_EMIT planChanged(plan);

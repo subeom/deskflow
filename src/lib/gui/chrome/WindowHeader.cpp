@@ -8,6 +8,7 @@
 
 #include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
+#include "gui/style/FontPolicy.h"
 #include "gui/style/FontScale.h"
 #include "gui/style/Icons.h"
 #include "gui/style/LookFollower.h"
@@ -42,7 +43,7 @@ constexpr int kMoreIcon = 20;
 QFont scaled(const QWidget *widget, int pixels, QFont::Weight weight)
 {
   auto font = scaleFont(QApplication::font(widget), qreal(pixels) / metrics::fontBody);
-  font.setWeight(weight);
+  font.setWeight(fontWeight(weight));
   return font;
 }
 

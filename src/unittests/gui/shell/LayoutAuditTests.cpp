@@ -56,7 +56,7 @@ using namespace deskflow::gui;
 using namespace deskflow::gui::style;
 
 // The height of the title bar of a Mac (what its Qt says of the safe area of a window)
-constexpr int kTitleBar = 28;
+[[maybe_unused]] constexpr int kTitleBar = 28;
 
 koreantest::RecordingTranslator *s_translator = nullptr;
 
@@ -65,13 +65,24 @@ struct FakeSystem
 {
   int pixels = 13;
   TextPlatform platform = TextPlatform::Mac;
+  QString language = QStringLiteral("en");
 
+  // The fonts are the ones of this computer for the language: where it has the font that the program chooses for Korean
+  // (Apple SD Gothic Neo on a Mac, Malgun Gothic on Windows) the window is made with it, and the sizes are those of its
+  // letters
   TextSizeEnvironment environment()
   {
-    TextSizeEnvironment env;
-    env.systemFont = [this] { return font(); };
+    auto env = TextSizeEnvironment::ofThisComputer();
+    const QFont base = QApplication::font();
+    env.systemFont = [this, base] {
+      QFont font = base;
+      font.setPixelSize(pixels);
+      return font;
+    };
     env.osTextScale = [] { return 1.0; };
     env.platform = platform;
+    env.language = [this] { return language; };
+    env.fontVariable = [] { return QString(); };
     return env;
   }
 
@@ -237,6 +248,7 @@ void LayoutAuditTests::windowFits_atItsLeastSizeAndLarger()
   FakeSystem system;
   system.pixels = pixels;
   system.platform = windowsFont ? TextPlatform::Windows : TextPlatform::Mac;
+  system.language = korean ? QStringLiteral("ko") : QStringLiteral("en");
   auto window = makeWindow(system, percent, client ? Settings::CoreMode::Client : Settings::CoreMode::Server);
   auto *shell = Access::shell(*window);
   QVERIFY(shell);
@@ -300,6 +312,7 @@ void LayoutAuditTests::addressLabel_usesAsFewLinesAsItsRoomAllows()
   }
   writeComputers();
   FakeSystem system;
+  system.language = korean ? QStringLiteral("ko") : QStringLiteral("en");
   auto window = makeWindow(system, 100, Settings::CoreMode::Server);
   window->show();
   QVERIFY(QTest::qWaitForWindowExposed(window.get()));

@@ -20,6 +20,8 @@ private Q_SLOTS:
 
   void textPairs_meetTheContrastOfWcagAa_data();
   void textPairs_meetTheContrastOfWcagAa();
+  void secondaryText_isReadableWhereTheStrokesAreThin_data();
+  void secondaryText_isReadableWhereTheStrokesAreThin();
   void controlBorder_meetsThreeToOneOnADensePanel_data();
   void controlBorder_meetsThreeToOneOnADensePanel();
   void tints_carryTheirTextAtAaContrast_data();

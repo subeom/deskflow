@@ -9,6 +9,7 @@
 #include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/Contrast.h"
+#include "gui/style/FontPolicy.h"
 #include "gui/style/FontScale.h"
 #include "gui/style/Icons.h"
 #include "gui/style/LookFollower.h"
@@ -43,7 +44,7 @@ constexpr double kTextContrast = 4.5;
 QFont chipFont(const QWidget *widget)
 {
   auto font = scaleFont(QApplication::font(widget), qreal(metrics::fontCaption) / metrics::fontBody);
-  font.setWeight(QFont::DemiBold);
+  font.setWeight(fontWeight(QFont::DemiBold));
   return font;
 }
 
