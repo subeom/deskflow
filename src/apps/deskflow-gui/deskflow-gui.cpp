@@ -16,6 +16,7 @@
 #include "gui/MainWindow.h"
 #include "gui/Messages.h"
 #include "gui/StyleUtils.h"
+#include "gui/UpdateInstaller.h"
 #include "gui/style/Appearance.h"
 
 #include <QApplication>
@@ -72,12 +73,31 @@ int main(int argc, char *argv[])
   auto helpOption = QCommandLineOption({"h", "help"}, "Display Help on the command line");
   auto versionOption = QCommandLineOption({"v", "version"}, "Display version information");
   auto resetOption = QCommandLineOption("reset", "Reset all settings");
+  auto applyUpdateOption =
+      QCommandLineOption("apply-update", "Apply a verified staged update from its manifest", "manifest");
+  auto updateParentPidOption =
+      QCommandLineOption("update-parent-pid", "Wait for the update parent process", "pid");
+  auto updateParentStartOption = QCommandLineOption(
+      "update-parent-start", "Verify the update parent process start identity", "identity"
+  );
+  auto updateReceiptOption =
+      QCommandLineOption("update-receipt", "Use the update transaction receipt", "receipt");
+  auto updateHandshakeOption =
+      QCommandLineOption("update-handshake", "Publish update relaunch readiness", "path");
+  auto updateHandshakeTokenOption =
+      QCommandLineOption("update-handshake-token", "Bind update relaunch readiness", "token");
 
   QCommandLineParser parser;
   parser.setSingleDashWordOptionMode(QCommandLineParser::ParseAsLongOptions);
   parser.addOption(helpOption);
   parser.addOption(versionOption);
   parser.addOption(resetOption);
+  parser.addOption(applyUpdateOption);
+  parser.addOption(updateParentPidOption);
+  parser.addOption(updateParentStartOption);
+  parser.addOption(updateReceiptOption);
+  parser.addOption(updateHandshakeOption);
+  parser.addOption(updateHandshakeTokenOption);
   parser.parse(QCoreApplication::arguments());
 
   if (!parser.errorText().isEmpty()) {
@@ -94,6 +114,48 @@ int main(int argc, char *argv[])
   if (parser.isSet(versionOption)) {
     QTextStream(stdout) << kHeader << kCopyright << Qt::endl;
     return s_exitSuccess;
+  }
+
+  const bool applyUpdate = parser.isSet(applyUpdateOption);
+  const bool hasParentPid = parser.isSet(updateParentPidOption);
+  const bool hasParentStart = parser.isSet(updateParentStartOption);
+  const bool hasReceipt = parser.isSet(updateReceiptOption);
+  const bool hasHandshake = parser.isSet(updateHandshakeOption);
+  const bool hasHandshakeToken = parser.isSet(updateHandshakeTokenOption);
+  if (applyUpdate) {
+    if (!hasParentPid || !hasParentStart || !hasReceipt || hasHandshake || hasHandshakeToken) {
+      qCritical() << "The update helper requires its manifest, parent identity, and receipt only.";
+      return s_exitArgs;
+    }
+    bool validPid = false;
+    const auto parentPid = parser.value(updateParentPidOption).toLongLong(&validPid);
+    if (!validPid || parentPid <= 1 || parser.value(updateParentStartOption).isEmpty()) {
+      qCritical() << "The update parent identity is invalid.";
+      return s_exitArgs;
+    }
+    const auto result = deskflow::gui::applyPlatformUpdate(
+        parser.value(applyUpdateOption), parentPid, parser.value(updateParentStartOption),
+        parser.value(updateReceiptOption)
+    );
+    if (!result.ok) {
+      qCritical().noquote() << result.error;
+      return s_exitFailed;
+    }
+    return s_exitSuccess;
+  }
+
+  if (hasParentPid || hasParentStart) {
+    qCritical() << "The update parent options require --apply-update.";
+    return s_exitArgs;
+  }
+  if (hasHandshake != hasHandshakeToken || (hasHandshake && !hasReceipt)) {
+    qCritical() << "The update readiness handshake requires a token and receipt.";
+    return s_exitArgs;
+  }
+  if (hasHandshake) {
+    app.setProperty("deskflowUpdateHandshakePath", parser.value(updateHandshakeOption));
+    app.setProperty("deskflowUpdateHandshakeToken", parser.value(updateHandshakeTokenOption));
+    app.setProperty("deskflowUpdateReceiptPath", parser.value(updateReceiptOption));
   }
 
   const auto shmId = QStringLiteral("%1-gui").arg(kAppId);

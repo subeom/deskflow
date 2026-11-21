@@ -43,7 +43,7 @@ std::optional<QString> deskflowBundlePath(const QString &executablePath)
       executable.fileName() != QStringLiteral("Deskflow")) {
     return std::nullopt;
   }
-  const auto contentsPath = QFileInfo(macosDirectory.absolutePath()).absolutePath();
+  const auto contentsPath = macosDirectory.absolutePath();
   if (QFileInfo(contentsPath).fileName() != QStringLiteral("Contents")) {
     return std::nullopt;
   }

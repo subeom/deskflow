@@ -10,6 +10,8 @@ if(APPLE)
   set (platform_sources
     OSXHelpers.h
     OSXHelpers.mm
+    MacUpdateInstaller.cpp
+    MacUpdateInstaller.h
     MacUpdateVerifier.cpp
     MacUpdateVerifier.h
   )
@@ -33,6 +35,8 @@ add_library(${target} STATIC
   StyleUtils.h
   TlsUtility.cpp
   TlsUtility.h
+  UpdateInstaller.cpp
+  UpdateInstaller.h
   UpdateCache.cpp
   UpdateCache.h
   UpdateIntegrity.cpp
