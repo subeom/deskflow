@@ -58,4 +58,8 @@ private Q_SLOTS:
   void controller_workThatOutlivesTheController_doesNotTouchTheSystem();
   void controller_destroyingIt_waitsForANotificationThatIsBeingHandedOver();
   void controller_aSystemThatThrows_isContainedAndReportedOnce();
+
+  // on and off: the one decision that makes the hold (a server that turned it on), and the default of the setting
+  void decision_theHoldIsMadeOnlyForAServerThatTurnedItOn();
+  void decision_aServerThatWasNotTold_makesNothing();
 };

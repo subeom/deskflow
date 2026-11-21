@@ -131,8 +131,10 @@ OSXComputer::OSXComputer(IEventQueue *events, bool isPrimary, bool enableLangSyn
       m_powerManager.disableSleep();
     }
 
-    // only a server has a pointer to hold while it is on a client
-    if (m_isPrimary && Settings::value(Settings::Core::MacHoldPointer).toBool()) {
+    // only a server has a pointer to hold while it is on a client, and only when the setting is turned on (it is off by
+    // default): when pointerHoldWanted() says no, none of the three objects below is made, and everything that
+    // OSXComputer does for the hold is behind the absence of m_pointerHold
+    if (deskflow::platform::pointerHoldWanted(m_isPrimary, Settings::value(Settings::Core::MacHoldPointer).toBool())) {
       deskflow::platform::OSXPointerHoldHooks hooks;
       hooks.tapPort = [this] { return m_eventTapPort; };
       hooks.tapRunLoop = [this] { return retainTapRunLoop(); };
@@ -1955,6 +1957,10 @@ CFRunLoopRef OSXComputer::retainTapRunLoop()
 
 void OSXComputer::publishTapRunLoop(CFRunLoopRef runLoop)
 {
+  // only the hold hands work to the tap thread: nothing is published (or retained) when the hold is off
+  if (!m_pointerHold) {
+    return;
+  }
   std::scoped_lock lock(m_tapRunLoopMutex);
   if (m_publishedTapRunLoop == nullptr && runLoop != nullptr) {
     m_publishedTapRunLoop = static_cast<CFRunLoopRef>(const_cast<void *>(CFRetain(runLoop)));
@@ -1963,6 +1969,9 @@ void OSXComputer::publishTapRunLoop(CFRunLoopRef runLoop)
 
 void OSXComputer::unpublishTapRunLoop()
 {
+  if (!m_pointerHold) {
+    return;
+  }
   std::scoped_lock lock(m_tapRunLoopMutex);
   if (m_publishedTapRunLoop != nullptr) {
     CFRelease(m_publishedTapRunLoop);

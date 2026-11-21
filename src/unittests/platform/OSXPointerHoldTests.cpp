@@ -5,6 +5,7 @@
 
 #include "OSXPointerHoldTests.h"
 
+#include "common/Settings.h"
 #include "platform/OSXPointerHold.h"
 
 #include <QStringList>
@@ -936,6 +937,30 @@ void OSXPointerHoldTests::controller_aSystemThatThrows_isContainedAndReportedOnc
   controller.onNotification(Trigger::SpaceChanged);
   QCOMPARE(system.cursor.x, kParked.x);
   QCOMPARE(system.cursor.y, kParked.y);
+}
+
+//
+// on and off
+//
+void OSXPointerHoldTests::decision_theHoldIsMadeOnlyForAServerThatTurnedItOn()
+{
+  // OSXComputer makes the system object, the controller and (when the tap runs) the source of notifications only when
+  // this says yes, and every call that it makes into the hold is behind the absence of the controller
+  QVERIFY(pointerHoldWanted(true, true));
+  QVERIFY(!pointerHoldWanted(true, false));
+  QVERIFY(!pointerHoldWanted(false, true));
+  QVERIFY(!pointerHoldWanted(false, false));
+}
+
+void OSXPointerHoldTests::decision_aServerThatWasNotTold_makesNothing()
+{
+  // the setting that nobody wrote: off, so a server that was not told to hold the pointer makes nothing of the hold
+  const auto key = Settings::Core::MacHoldPointer;
+  QVERIFY(Settings::validKeys().contains(key));
+  const bool notTold = Settings::defaultValue(key).toBool();
+  QVERIFY(!notTold);
+  QVERIFY(!pointerHoldWanted(true, notTold));
+  QVERIFY(!pointerHoldWanted(false, notTold));
 }
 
 QTEST_MAIN(OSXPointerHoldTests)

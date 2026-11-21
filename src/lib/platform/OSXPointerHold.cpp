@@ -50,6 +50,11 @@ const char *pointerHoldTriggerName(PointerHoldTrigger trigger)
   return "unknown";
 }
 
+bool pointerHoldWanted(bool isPrimary, bool settingOn)
+{
+  return isPrimary && settingOn;
+}
+
 //
 // PointerHoldPolicy
 //

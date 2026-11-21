@@ -77,7 +77,8 @@ public:
     inline static const auto Port = QStringLiteral("core/port");
     inline static const auto PreventSleep = QStringLiteral("core/preventSleep");
     // macOS server only (read nowhere else): true keeps the pointer of this Mac still while it is on a client, and
-    // holds it again when the system gives it back (default true; false is the way it was before the hold)
+    // holds it again when the system gives it back (default false: off, nothing of the hold is created; false is also
+    // the way it was before the hold)
     inline static const auto MacHoldPointer = QStringLiteral("core/macHoldPointer");
     inline static const auto ProcessMode = QStringLiteral("core/processMode");
     inline static const auto ComputerName = QStringLiteral("core/computerName");
@@ -457,6 +458,7 @@ private:
     , Gui::ShowVersionInTitle
     , Gui::IgnoreMissingKeyboardLayouts
     , Core::PreventSleep
+    , Core::MacHoldPointer
     , Core::EnableEnterCommand
     , Core::EnableExitCommand
     , Client::DynamicConnectionRetry
@@ -485,7 +487,6 @@ private:
   // When checking the default values this list contains the ones that default to true.
   inline static const QStringList m_defaultTrueValues = {
       Core::UseHooks
-    , Core::MacHoldPointer
     , Gui::CloseToTray
     , Gui::CloseReminder
     , Gui::LogExpanded

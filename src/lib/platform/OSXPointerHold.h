@@ -53,6 +53,16 @@ enum class PointerHoldTrigger
 //! The name that a trigger has in the log (stable: it is read by people and by the log filter of the GUI)
 const char *pointerHoldTriggerName(PointerHoldTrigger trigger);
 
+//! Whether a computer builds the hold of the pointer at all: a server (the primary computer: the one whose pointer goes
+//! to the clients) with \c core/macHoldPointer turned on (it is off by default)
+/*!
+It is the one place where on and off are decided, and it is asked once, in the constructor of OSXComputer, before
+anything of the hold is made.  When it says no nothing of the hold exists on that computer: no system object, no
+controller, no source of notifications (so no observer and no queue), no timer, no line in the log, and every call that
+OSXComputer makes into the hold is guarded by the absence of the controller.
+*/
+bool pointerHoldWanted(bool isPrimary, bool settingOn);
+
 //! The numbers of the policy
 struct PointerHoldTuning
 {

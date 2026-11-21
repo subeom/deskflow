@@ -73,7 +73,7 @@ This section contains general options it will begin with `[core]`
 | lastVersion   | M.m.p.t           | The version last run used for checking for updates |
 | port          | port #            | Port to use when connecting [default: 24800 |
 | preventSleep  | `true` or `false` | Prevent sleep when Deskflow is active [default: false] |
-| macHoldPointer | `true` or `false` | macOS server only. Keep the pointer of the Mac still while it is on a client, and hold it again (and log one line, at most one per 5 seconds) when the system gives it back. `false` turns the hold off [default: true] |
+| macHoldPointer | `true` or `false` | macOS server only. Keep the pointer of the Mac still while it is on a client, and hold it again when the system gives it back. **Off by default**: with `false` nothing of it is created (no notification observers, no timer) and nothing is logged. To turn it on set `macHoldPointer=true` here in `[core]` and restart the core. When on, see [macHoldPointer log lines](#macholdpointer-log-lines) [default: false] |
 | processMode   | `1` or `0`        | The mode we use to start the process Service or Desktop |
 | computerName  | string            | Name used to identify the computer [default: machine's hostname] |
 | useHooks      | `true` or `false` | If Windows uses hooks or not [default: true] |
@@ -82,6 +82,22 @@ This section contains general options it will begin with `[core]`
 | enterCommand  | command | A command to run when the computer is entered. |
 | enableExitCommand | `true` or `false` | Should the exit command be triggered when the computer is exited [defaut: false] |
 | exitCommand  | command | A command to run when the computer is exited. |
+
+#### macHoldPointer log lines
+
+Only when `macHoldPointer=true` (macOS server). Written at the warning level (the `ERROR:` form of the last line at the error
+level), so they show at the default log level; the hold lines at most one per 5 seconds (`times` counts every look that found
+something, so a skipped line shows as a jump of the counter). The GUI Log page shows the first three lines in the language of
+the GUI where there is a translation; the details in parentheses stay as the core wrote them.
+
+| Line | Meaning |
+|:-----|:--------|
+| `the pointer of this Mac moved while it is on "<client>": held it again (moved <N> px, trigger: <trigger>, times: <total>)` | The system gave the pointer back while it is on a client; it was put back. `trigger` names what found it: `event`, `timer`, `app activated` (with `app: <bundle id>`), `space changed`, `display woke`, `display slept`, `system woke`, `screen locked`, `screen unlocked`, `display reconfigured`, `tap disabled by timeout`, `tap disabled by user input` |
+| `the pointer of this Mac was shown while it is on "<client>": hid it again (trigger: <trigger>, times: <total>)` | The cursor of the Mac was shown while the pointer is on a client; it was hidden again |
+| `the event tap was off while the pointer is on "<client>": switched it on again (trigger: <trigger>, times: <total>)` | The event tap of the program was off; it was switched on again |
+| `the pointer of this Mac could not be held (<reason>); reported once` (or `ERROR: the pointer of this Mac could not be held: <where> failed (<reason>); reported once`) | An internal error was caught: the core goes on and the pointer is not held for that call. Written once, not repeated |
+
+No line is written while the pointer is on the Mac, and none when the setting is off.
 
 ### Daemon
 

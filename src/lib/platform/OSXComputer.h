@@ -364,7 +364,8 @@ private:
 
   OSXPowerManager m_powerManager;
 
-  // the hold of the pointer while it is on a client (null on a client computer and when core/macHoldPointer is off)
+  // the hold of the pointer while it is on a client.  All three are null on a client computer and, unless
+  // core/macHoldPointer is turned on (it is off by default), on a server too: see pointerHoldWanted()
   std::unique_ptr<deskflow::platform::OSXPointerHoldSystem> m_pointerHoldSystem;
   std::unique_ptr<deskflow::platform::OSXPointerHoldNotifications> m_pointerHoldNotifications;
   std::unique_ptr<deskflow::platform::PointerHoldController> m_pointerHold;
