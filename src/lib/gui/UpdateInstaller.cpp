@@ -53,7 +53,8 @@ std::unique_ptr<IUpdateInstaller> createPlatformUpdateInstaller()
 
 UpdateInstallResult applyPlatformUpdate(
     const QString &manifestPath, qint64 parentPid,
-    const QString &parentStartIdentity, const QString &receiptPath
+    const QString &parentStartIdentity, const QString &receiptPath,
+    const QString &helperToken
 )
 {
 #if defined(Q_OS_MACOS)
@@ -61,12 +62,15 @@ UpdateInstallResult applyPlatformUpdate(
   MacUpdateInstaller installer(
       executable, currentUpdateCacheRoot(), isPackageManaged(executable)
   );
-  return installer.apply(manifestPath, parentPid, parentStartIdentity, receiptPath);
+  return installer.apply(
+      manifestPath, parentPid, parentStartIdentity, receiptPath, helperToken
+  );
 #else
   Q_UNUSED(manifestPath)
   Q_UNUSED(parentPid)
   Q_UNUSED(parentStartIdentity)
   Q_UNUSED(receiptPath)
+  Q_UNUSED(helperToken)
   return {false, QStringLiteral("automatic update installation is not supported"), {}};
 #endif
 }

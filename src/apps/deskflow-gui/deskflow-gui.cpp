@@ -82,6 +82,8 @@ int main(int argc, char *argv[])
   );
   auto updateReceiptOption =
       QCommandLineOption("update-receipt", "Use the update transaction receipt", "receipt");
+  auto updateHelperTokenOption =
+      QCommandLineOption("update-helper-token", "Claim the update helper transaction", "token");
   auto updateHandshakeOption =
       QCommandLineOption("update-handshake", "Publish update relaunch readiness", "path");
   auto updateHandshakeTokenOption =
@@ -96,6 +98,7 @@ int main(int argc, char *argv[])
   parser.addOption(updateParentPidOption);
   parser.addOption(updateParentStartOption);
   parser.addOption(updateReceiptOption);
+  parser.addOption(updateHelperTokenOption);
   parser.addOption(updateHandshakeOption);
   parser.addOption(updateHandshakeTokenOption);
   parser.parse(QCoreApplication::arguments());
@@ -120,10 +123,12 @@ int main(int argc, char *argv[])
   const bool hasParentPid = parser.isSet(updateParentPidOption);
   const bool hasParentStart = parser.isSet(updateParentStartOption);
   const bool hasReceipt = parser.isSet(updateReceiptOption);
+  const bool hasHelperToken = parser.isSet(updateHelperTokenOption);
   const bool hasHandshake = parser.isSet(updateHandshakeOption);
   const bool hasHandshakeToken = parser.isSet(updateHandshakeTokenOption);
   if (applyUpdate) {
-    if (!hasParentPid || !hasParentStart || !hasReceipt || hasHandshake || hasHandshakeToken) {
+    if (!hasParentPid || !hasParentStart || !hasReceipt || !hasHelperToken ||
+        hasHandshake || hasHandshakeToken) {
       qCritical() << "The update helper requires its manifest, parent identity, and receipt only.";
       return s_exitArgs;
     }
@@ -135,7 +140,7 @@ int main(int argc, char *argv[])
     }
     const auto result = deskflow::gui::applyPlatformUpdate(
         parser.value(applyUpdateOption), parentPid, parser.value(updateParentStartOption),
-        parser.value(updateReceiptOption)
+        parser.value(updateReceiptOption), parser.value(updateHelperTokenOption)
     );
     if (!result.ok) {
       qCritical().noquote() << result.error;
@@ -144,7 +149,7 @@ int main(int argc, char *argv[])
     return s_exitSuccess;
   }
 
-  if (hasParentPid || hasParentStart) {
+  if (hasParentPid || hasParentStart || hasHelperToken) {
     qCritical() << "The update parent options require --apply-update.";
     return s_exitArgs;
   }

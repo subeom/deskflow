@@ -32,7 +32,8 @@ public:
   ) override;
   UpdateInstallResult apply(
       const QString &manifestPath, qint64 parentPid,
-      const QString &parentStartIdentity, const QString &receiptPath
+      const QString &parentStartIdentity, const QString &receiptPath,
+      const QString &helperToken
   );
 
 private:
@@ -45,5 +46,11 @@ private:
   std::unique_ptr<IUpdateApplyOperations> m_operations;
   std::unique_ptr<IUpdateVerifier> m_verifier;
 };
+
+bool isTrustedUpdateBundleOwner(qint64 effectiveUid, qint64 owner);
+bool isTrustedUpdateParentPermissions(
+    qint64 effectiveUid, qint64 owner, const QString &groupName,
+    bool groupWritable, bool worldWritable
+);
 
 } // namespace deskflow::gui

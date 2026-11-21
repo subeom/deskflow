@@ -7,6 +7,7 @@
 #include "gui/MacUpdateInstaller.h"
 
 #include "common/VersionInfo.h"
+#include "common/Settings.h"
 #include "gui/MacUpdateVerifier.h"
 
 #include <QCoreApplication>
@@ -29,6 +30,8 @@
 #include <libproc.h>
 #include <sys/proc_info.h>
 #include <sys/signal.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 #include <cerrno>
@@ -60,6 +63,7 @@ struct UpdateReceipt
   qint64 parentPid = 0;
   QString parentStartIdentity;
   qint64 helperPid = 0;
+  QString helperStartIdentity;
   QString state;
 };
 
@@ -160,6 +164,7 @@ std::optional<UpdateReceipt> readReceipt(const QString &path)
       object.value(QStringLiteral("parentPid")).toInteger(),
       object.value(QStringLiteral("parentStartIdentity")).toString(),
       object.value(QStringLiteral("helperPid")).toInteger(),
+      object.value(QStringLiteral("helperStartIdentity")).toString(),
       object.value(QStringLiteral("state")).toString(),
   };
   if (object.value(QStringLiteral("schemaVersion")).toInteger() != 1 ||
@@ -182,6 +187,7 @@ bool writeReceipt(const QString &path, const UpdateReceipt &receipt)
       {QStringLiteral("parentPid"), receipt.parentPid},
       {QStringLiteral("parentStartIdentity"), receipt.parentStartIdentity},
       {QStringLiteral("helperPid"), receipt.helperPid},
+      {QStringLiteral("helperStartIdentity"), receipt.helperStartIdentity},
       {QStringLiteral("state"), receipt.state},
   };
   QSaveFile file(path);
@@ -228,7 +234,8 @@ public:
     while (timer.elapsed() < timeoutMs) {
       const auto receipt = readReceipt(receiptPath);
       if (receipt && receipt->state == QStringLiteral("helper-ready") &&
-          receipt->helperPid == helperPid) {
+          receipt->helperPid == helperPid &&
+          receipt->helperStartIdentity == updateProcessStartIdentity(helperPid)) {
         return {true, {}, receiptPath};
       }
       QThread::msleep(50);
@@ -281,6 +288,27 @@ public:
       QThread::msleep(100);
     }
     return {false, QStringLiteral("timed out waiting for Deskflow to exit"), {}};
+  }
+
+  UpdateInstallResult createWorkspace(
+      UpdateHelperWorkspace &workspace
+  ) override
+  {
+    QTemporaryDir temporary(
+        QStringLiteral("%1/deskflow-update-apply-XXXXXX").arg(QDir::tempPath())
+    );
+    if (!temporary.isValid()) {
+      return {false, QStringLiteral("cannot create update helper workspace"), {}};
+    }
+    temporary.setAutoRemove(false);
+    workspace.rootPath = temporary.path();
+    workspace.mountPoint = QDir(workspace.rootPath).filePath(QStringLiteral("volume"));
+    if (!QDir().mkpath(workspace.mountPoint)) {
+      QDir(workspace.rootPath).removeRecursively();
+      workspace = {};
+      return {false, QStringLiteral("cannot create update mount point"), {}};
+    }
+    return {true, {}, {}};
   }
 
   UpdateInstallResult verifyDiskImage(const StagedUpdate &staged) override
@@ -436,11 +464,75 @@ public:
     return QDir(path).removeRecursively();
   }
 
+  std::optional<UpdateFileIdentity> captureIdentity(
+      const QString &path
+  ) override
+  {
+    const QFileInfo info(path);
+    if (info.isSymLink() || !info.exists()) {
+      return std::nullopt;
+    }
+    struct stat metadata {};
+    if (lstat(path.toLocal8Bit().constData(), &metadata) != 0) {
+      return std::nullopt;
+    }
+    return UpdateFileIdentity{
+        true,
+        static_cast<quint64>(metadata.st_dev),
+        static_cast<quint64>(metadata.st_ino),
+        static_cast<qint64>(metadata.st_size)
+    };
+  }
+
   MacUpdateVerifier m_verifier;
   std::unique_ptr<IUpdateCommandRunner> m_runner;
 };
 
 } // namespace
+
+bool isTrustedUpdateBundleOwner(qint64 effectiveUid, qint64 owner)
+{
+  return effectiveUid >= 0 && effectiveUid == owner;
+}
+
+bool isTrustedUpdateParentPermissions(
+    qint64 effectiveUid, qint64 owner, const QString &groupName,
+    bool groupWritable, bool worldWritable
+)
+{
+  if (worldWritable) {
+    return false;
+  }
+  if (!groupWritable) {
+    return true;
+  }
+  if (owner == effectiveUid) {
+    return true;
+  }
+  return owner == 0 &&
+         (groupName == QStringLiteral("admin") || groupName == QStringLiteral("wheel"));
+}
+
+UpdateInstallResult claimUpdateReceipt(
+    const QString &receiptPath, const QString &token, qint64 helperPid,
+    const QString &helperStartIdentity
+)
+{
+  auto receipt = readReceipt(receiptPath);
+  if (!receipt || receipt->token != token ||
+      receipt->state != QStringLiteral("awaiting-helper") || receipt->helperPid != 0 ||
+      !receipt->helperStartIdentity.isEmpty() || helperPid <= 1 ||
+      helperStartIdentity.isEmpty()) {
+    return {false, QStringLiteral("update helper receipt claim is invalid"), receiptPath};
+  }
+  receipt->helperPid = helperPid;
+  receipt->helperStartIdentity = helperStartIdentity;
+  receipt->state = QStringLiteral("helper-ready");
+  if (!writeReceipt(receiptPath, *receipt)) {
+    return {false, QStringLiteral("cannot publish update helper readiness"), receiptPath};
+  }
+  return {true, {}, receiptPath, token};
+}
 
 MacUpdateInstaller::MacUpdateInstaller(
     QString executablePath, QString cacheRoot, bool packageManaged, qint64 processId,
@@ -477,15 +569,28 @@ UpdateInstallResult MacUpdateInstaller::preflight(const StagedUpdate &staged)
   if (m_packageManaged) {
     return {false, QStringLiteral("package-managed Deskflow must be updated manually"), {}};
   }
+  if (Settings::value(Settings::Core::ProcessMode).value<Settings::ProcessMode>() ==
+      Settings::ProcessMode::Service) {
+    return {false, QStringLiteral("service-mode Deskflow must be updated manually"), {}};
+  }
   const auto bundle = deskflowBundlePath(m_executablePath);
   if (!bundle) {
     return {false, QStringLiteral("update helper is not running from Deskflow.app"), {}};
   }
   const QFileInfo bundleInfo(*bundle);
+  const auto parentInfo = QFileInfo(bundleInfo.dir().absolutePath());
+  const auto euid = static_cast<qint64>(geteuid());
   if (bundleInfo.isSymLink() || !bundleInfo.isDir() ||
       bundleInfo.absoluteFilePath().startsWith(QStringLiteral("/Volumes/")) ||
+  QDir::cleanPath(bundleInfo.absoluteFilePath()) != bundleInfo.absoluteFilePath() ||
+      !isTrustedUpdateBundleOwner(euid, bundleInfo.ownerId()) ||
       !bundleInfo.isWritable() ||
-      !QFileInfo(bundleInfo.dir().absolutePath()).isWritable() ||
+      !parentInfo.isWritable() ||
+      !isTrustedUpdateParentPermissions(
+          euid, parentInfo.ownerId(), parentInfo.group(),
+          parentInfo.permissions().testFlag(QFileDevice::WriteGroup),
+          parentInfo.permissions().testFlag(QFileDevice::WriteOther)
+      ) ||
       bundleInfo.canonicalFilePath() != bundleInfo.absoluteFilePath()) {
     return {false, QStringLiteral("Deskflow app bundle is not directly writable"), {}};
   }
@@ -541,6 +646,7 @@ UpdateInstallResult MacUpdateInstaller::start(
       m_processId,
       m_processStartIdentity,
       0,
+      {},
       QStringLiteral("awaiting-helper"),
   };
   if (!writeReceipt(receiptPath, receipt)) {
@@ -552,7 +658,8 @@ UpdateInstallResult MacUpdateInstaller::start(
       {QStringLiteral("--apply-update=%1").arg(staged.manifestPath),
        QStringLiteral("--update-parent-pid=%1").arg(m_processId),
        QStringLiteral("--update-parent-start=%1").arg(m_processStartIdentity),
-       QStringLiteral("--update-receipt=%1").arg(receiptPath)}
+       QStringLiteral("--update-receipt=%1").arg(receiptPath),
+       QStringLiteral("--update-helper-token=%1").arg(receipt.token)}
   );
   if (!launched.started) {
     receipt.state = QStringLiteral("failed");
@@ -564,10 +671,6 @@ UpdateInstallResult MacUpdateInstaller::start(
         receiptPath
     };
   }
-  receipt.helperPid = launched.processId;
-  if (!writeReceipt(receiptPath, receipt)) {
-    return {false, QStringLiteral("cannot record update helper process"), receiptPath};
-  }
   const auto ready =
       m_operations->waitForHelperReady(receiptPath, launched.processId, kHelperReadyTimeoutMs);
   if (!ready.ok) {
@@ -575,12 +678,13 @@ UpdateInstallResult MacUpdateInstaller::start(
     writeReceipt(receiptPath, receipt);
     return {false, ready.error, receiptPath};
   }
-  return {true, {}, receiptPath};
+  return {true, {}, receiptPath, receipt.token};
 }
 
 UpdateInstallResult MacUpdateInstaller::apply(
     const QString &manifestPath, qint64 parentPid,
-    const QString &parentStartIdentity, const QString &receiptPath
+    const QString &parentStartIdentity, const QString &receiptPath,
+    const QString &helperToken
 )
 {
   if (m_packageManaged) {
@@ -599,14 +703,25 @@ UpdateInstallResult MacUpdateInstaller::apply(
   if (!receipt || receipt->manifestPath != QFileInfo(manifestPath).absoluteFilePath() ||
       receipt->parentPid != parentPid ||
       receipt->parentStartIdentity != parentStartIdentity ||
-      receipt->helperPid != m_processId) {
+      receipt->token != helperToken) {
     return {false, QStringLiteral("update transaction receipt does not match"), receiptPath};
   }
 
-  receipt->state = QStringLiteral("helper-ready");
-  receipt->helperPid = m_processId;
-  if (!writeReceipt(receiptPath, *receipt)) {
-    return {false, QStringLiteral("cannot publish update helper readiness"), receiptPath};
+  if (receipt->state == QStringLiteral("awaiting-helper") &&
+      receipt->helperPid == 0 && receipt->helperStartIdentity.isEmpty()) {
+    const auto claimed =
+        claimUpdateReceipt(receiptPath, helperToken, m_processId, m_processStartIdentity);
+    if (!claimed.ok) {
+      return claimed;
+    }
+  } else if (receipt->state != QStringLiteral("helper-ready") ||
+             receipt->helperPid != m_processId ||
+             receipt->helperStartIdentity != m_processStartIdentity) {
+    return {false, QStringLiteral("update helper claim does not match"), receiptPath};
+  }
+  receipt = readReceipt(receiptPath);
+  if (!receipt) {
+    return {false, QStringLiteral("claimed update helper receipt is invalid"), receiptPath};
   }
   const auto relaunchOld = [this, &receipt, &bundle, &receiptPath] {
     receipt->state = QStringLiteral("rolled-back-pending");
@@ -631,39 +746,49 @@ UpdateInstallResult MacUpdateInstaller::apply(
     return {false, parentExited.error, receiptPath};
   }
 
-  const auto staged = UpdateCache::load(manifestPath);
-  if (!staged || !isCanonicalInside(m_cacheRoot, staged->installerPath)) {
-    receipt->state = QStringLiteral("failed");
-    writeReceipt(receiptPath, *receipt);
-    return {false, QStringLiteral("staged update is invalid"), receiptPath};
-  }
-  const auto verified = m_operations->verifyDiskImage(*staged);
-  if (!verified.ok) {
+  const auto failAfterParentExit = [this, &receipt, &receiptPath, &relaunchOld](
+                                      const QString &reason
+                                  ) {
     receipt->state = QStringLiteral("failed");
     writeReceipt(receiptPath, *receipt);
     const auto relaunched = relaunchOld();
-    return {
+    receipt->state = relaunched.ok ? QStringLiteral("rolled-back")
+                                   : QStringLiteral("failed");
+    writeReceipt(receiptPath, *receipt);
+    return UpdateInstallResult{
         false,
-        combinedFailure(verified.error, relaunched.ok ? QString() : relaunched.error),
+        combinedFailure(reason, relaunched.ok ? QString() : relaunched.error),
         receiptPath
     };
+  };
+
+  const auto staged = UpdateCache::load(manifestPath);
+  if (!staged || !isCanonicalInside(m_cacheRoot, staged->installerPath)) {
+    return failAfterParentExit(QStringLiteral("staged update is invalid"));
+  }
+  const auto verified = m_operations->verifyDiskImage(*staged);
+  if (!verified.ok) {
+    return failAfterParentExit(verified.error);
   }
 
-  QTemporaryDir temporary(
-      QStringLiteral("%1/deskflow-update-apply-XXXXXX").arg(QDir::tempPath())
-  );
-  if (!temporary.isValid()) {
-    receipt->state = QStringLiteral("failed");
-    writeReceipt(receiptPath, *receipt);
-    return {false, QStringLiteral("cannot create update helper workspace"), receiptPath};
-  }
-  const auto mountPoint = QDir(temporary.path()).filePath(QStringLiteral("volume"));
-  if (!QDir().mkpath(mountPoint)) {
-    return {false, QStringLiteral("cannot create update mount point"), receiptPath};
+  UpdateHelperWorkspace workspace;
+  const auto workspaceResult = m_operations->createWorkspace(workspace);
+  if (!workspaceResult.ok || workspace.rootPath.isEmpty() ||
+      workspace.mountPoint.isEmpty()) {
+    return failAfterParentExit(
+        workspaceResult.error.isEmpty()
+            ? QStringLiteral("cannot create update helper workspace")
+            : workspaceResult.error
+    );
   }
 
   receipt->state = QStringLiteral("applying");
-  writeReceipt(receiptPath, *receipt);
+  if (!writeReceipt(receiptPath, *receipt)) {
+    m_operations->removeRecursively(workspace.rootPath);
+    return failAfterParentExit(
+        QStringLiteral("cannot publish applying update receipt")
+    );
+  }
   const auto suffix = QUuid::createUuid().toString(QUuid::WithoutBraces);
   const auto candidate =
       QFileInfo(*bundle).dir().filePath(QStringLiteral(".Deskflow-update-new-%1.app").arg(suffix));
@@ -672,19 +797,15 @@ UpdateInstallResult MacUpdateInstaller::apply(
   const auto failedCandidate =
       QFileInfo(*bundle).dir().filePath(QStringLiteral(".Deskflow-update-failed-%1.app").arg(suffix));
 
-  const auto mounted = m_operations->mountDiskImage(staged->installerPath, mountPoint);
+  const auto mounted =
+      m_operations->mountDiskImage(staged->installerPath, workspace.mountPoint);
   if (!mounted.ok) {
-    receipt->state = QStringLiteral("failed");
-    writeReceipt(receiptPath, *receipt);
-    const auto relaunched = relaunchOld();
-    return {
-        false,
-        combinedFailure(mounted.error, relaunched.ok ? QString() : relaunched.error),
-        receiptPath
-    };
+    m_operations->removeRecursively(workspace.rootPath);
+    return failAfterParentExit(mounted.error);
   }
 
-  const auto mountedApp = QDir(mountPoint).filePath(QStringLiteral("Deskflow.app"));
+  const auto mountedApp =
+      QDir(workspace.mountPoint).filePath(QStringLiteral("Deskflow.app"));
   auto prepared = m_operations->copyApplication(mountedApp, candidate);
   if (prepared.ok) {
     prepared = m_operations->verifyApplication(candidate, staged->version);
@@ -692,33 +813,34 @@ UpdateInstallResult MacUpdateInstaller::apply(
   if (prepared.ok) {
     prepared = m_operations->removeQuarantine(candidate);
   }
-  const auto detached = m_operations->detachDiskImage(mountPoint);
+  const auto candidateIdentity =
+      prepared.ok ? m_operations->captureIdentity(candidate) : std::nullopt;
+  if (prepared.ok && !candidateIdentity) {
+    prepared = {false, QStringLiteral("cannot record candidate app identity"), {}};
+  }
+  const auto detached = m_operations->detachDiskImage(workspace.mountPoint);
   if (!prepared.ok || !detached.ok) {
     m_operations->removeRecursively(candidate);
-    receipt->state = QStringLiteral("failed");
-    writeReceipt(receiptPath, *receipt);
-    const auto relaunched = relaunchOld();
-    return {
-        false,
-        combinedFailure(
-            combinedFailure(prepared.error, detached.error),
-            relaunched.ok ? QString() : relaunched.error
-        ),
-        receiptPath
-    };
+    m_operations->removeRecursively(workspace.rootPath);
+    return failAfterParentExit(combinedFailure(prepared.error, detached.error));
+  }
+
+  const auto candidateIdentityBeforeSwap =
+      m_operations->captureIdentity(candidate);
+  if (!candidateIdentityBeforeSwap ||
+      *candidateIdentityBeforeSwap != *candidateIdentity) {
+    m_operations->removeRecursively(candidate);
+    m_operations->removeRecursively(workspace.rootPath);
+    return failAfterParentExit(
+        QStringLiteral("candidate app identity changed before replacement")
+    );
   }
 
   const auto movedOld = m_operations->rename(*bundle, backup);
   if (!movedOld.ok) {
     m_operations->removeRecursively(candidate);
-    receipt->state = QStringLiteral("failed");
-    writeReceipt(receiptPath, *receipt);
-    const auto relaunched = relaunchOld();
-    return {
-        false,
-        combinedFailure(movedOld.error, relaunched.ok ? QString() : relaunched.error),
-        receiptPath
-    };
+    m_operations->removeRecursively(workspace.rootPath);
+    return failAfterParentExit(movedOld.error);
   }
 
   const auto movedNew = m_operations->rename(candidate, *bundle);
@@ -726,6 +848,7 @@ UpdateInstallResult MacUpdateInstaller::apply(
     const auto restored = m_operations->rename(backup, *bundle);
     m_operations->removeRecursively(candidate);
     const auto relaunched = relaunchOld();
+    m_operations->removeRecursively(workspace.rootPath);
     receipt->state = restored.ok && relaunched.ok ? QStringLiteral("rolled-back")
                                                   : QStringLiteral("failed");
     writeReceipt(receiptPath, *receipt);
@@ -733,6 +856,63 @@ UpdateInstallResult MacUpdateInstaller::apply(
         false,
         combinedFailure(
             combinedFailure(movedNew.error, restored.error), relaunched.error
+        ),
+        receiptPath
+    };
+  }
+
+  const QFileInfo finalBundle(*bundle);
+  const auto finalIdentity = m_operations->captureIdentity(*bundle);
+  const auto finalVerification =
+      m_operations->verifyApplication(*bundle, staged->version);
+  if (finalBundle.isSymLink() || finalBundle.canonicalFilePath() != finalBundle.absoluteFilePath() ||
+      !finalIdentity || *finalIdentity != *candidateIdentity || !finalVerification.ok) {
+    const auto movedNewAside = m_operations->rename(*bundle, failedCandidate);
+    const auto restored = m_operations->rename(backup, *bundle);
+    const auto relaunchedOld = relaunchOld();
+    if (movedNewAside.ok && restored.ok && relaunchedOld.ok) {
+      m_operations->removeRecursively(failedCandidate);
+    }
+    m_operations->removeRecursively(workspace.rootPath);
+    receipt->state = movedNewAside.ok && restored.ok && relaunchedOld.ok
+                         ? QStringLiteral("rolled-back")
+                         : QStringLiteral("failed");
+    writeReceipt(receiptPath, *receipt);
+    return {
+        false,
+        combinedFailure(
+            combinedFailure(
+                finalVerification.ok
+                    ? QStringLiteral("final app identity did not match the verified candidate")
+                    : finalVerification.error,
+                movedNewAside.error
+            ),
+            combinedFailure(restored.error, relaunchedOld.error)
+        ),
+        receiptPath
+    };
+  }
+
+  receipt->state = QStringLiteral("installed-ready");
+  if (!writeReceipt(receiptPath, *receipt)) {
+    const auto movedNewAside = m_operations->rename(*bundle, failedCandidate);
+    const auto restored = m_operations->rename(backup, *bundle);
+    const auto relaunchedOld = relaunchOld();
+    if (movedNewAside.ok && restored.ok && relaunchedOld.ok) {
+      m_operations->removeRecursively(failedCandidate);
+    }
+    m_operations->removeRecursively(workspace.rootPath);
+    receipt->state = movedNewAside.ok && restored.ok && relaunchedOld.ok
+                         ? QStringLiteral("rolled-back")
+                         : QStringLiteral("failed");
+    writeReceipt(receiptPath, *receipt);
+    return {
+        false,
+        combinedFailure(
+            QStringLiteral("cannot publish installed-ready update receipt"),
+            combinedFailure(
+                movedNewAside.error, combinedFailure(restored.error, relaunchedOld.error)
+            )
         ),
         receiptPath
     };
@@ -747,6 +927,7 @@ UpdateInstallResult MacUpdateInstaller::apply(
     if (movedNewAside.ok && restored.ok && relaunchedOld.ok) {
       m_operations->removeRecursively(failedCandidate);
     }
+    m_operations->removeRecursively(workspace.rootPath);
     receipt->state = movedNewAside.ok && restored.ok && relaunchedOld.ok
                          ? QStringLiteral("rolled-back")
                          : QStringLiteral("failed");
@@ -765,31 +946,19 @@ UpdateInstallResult MacUpdateInstaller::apply(
 
   receipt->state = QStringLiteral("success");
   if (!writeReceipt(receiptPath, *receipt)) {
-    const auto movedNewAside = m_operations->rename(*bundle, failedCandidate);
-    const auto restored = m_operations->rename(backup, *bundle);
-    const auto relaunchedOld = relaunchOld();
-    if (movedNewAside.ok && restored.ok && relaunchedOld.ok) {
-      m_operations->removeRecursively(failedCandidate);
-    }
-    receipt->state = movedNewAside.ok && restored.ok && relaunchedOld.ok
-                         ? QStringLiteral("rolled-back")
-                         : QStringLiteral("failed");
-    writeReceipt(receiptPath, *receipt);
-    return {
-        false,
-        combinedFailure(
-            combinedFailure(
-                QStringLiteral("cannot publish successful update receipt"),
-                movedNewAside.error
-            ),
-            combinedFailure(restored.error, relaunchedOld.error)
-        ),
-        receiptPath
-    };
+    qWarning().noquote()
+        << "update candidate is running but final update receipt could not be published";
   }
-  m_operations->removeRecursively(backup);
-  m_operations->removeRecursively(QFileInfo(staged->manifestPath).absolutePath());
-  return {true, {}, receiptPath};
+  if (!m_operations->removeRecursively(backup)) {
+    qWarning().noquote() << "failed to remove old update backup after successful relaunch";
+  }
+  if (!m_operations->removeRecursively(
+          QFileInfo(staged->manifestPath).absolutePath()
+      )) {
+    qWarning().noquote() << "failed to remove consumed update stage after successful relaunch";
+  }
+  m_operations->removeRecursively(workspace.rootPath);
+  return {true, {}, receiptPath, helperToken};
 }
 
 UpdateInstallResult markUpdateReceiptState(

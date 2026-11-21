@@ -51,7 +51,7 @@ public:
       }
       if (field == QStringLiteral("CFBundleShortVersionString") ||
           field == QStringLiteral("CFBundleVersion")) {
-        return {true, false, 0, QByteArrayLiteral("2.0.6"), {}};
+        return {true, false, 0, versionOutput, {}};
       }
     }
     if (program.endsWith(QStringLiteral("/codesign")) && arguments.contains(QStringLiteral("-d"))) {
@@ -65,6 +65,7 @@ public:
 
   QList<QPair<QString, QStringList>> commands;
   QByteArray evidenceOutput = evidence();
+  QByteArray versionOutput = QByteArrayLiteral("2.0.6");
   bool fail = false;
 };
 
@@ -162,6 +163,16 @@ void UpdateVerifierTests::verifierApplication_checksVersionBundleAndNestedCore()
                                                   "H\"39b1c21df0ba75cdde058fcbb09a1ad38aef8055\""));
   }));
   QVERIFY(!verifier.verifyApplication(app, QStringLiteral("2.0.7")).ok);
+
+  auto zeroRunner = std::make_unique<EvidenceRunner>();
+  zeroRunner->versionOutput = QByteArrayLiteral("2.0.6.0");
+  MacUpdateVerifier zeroVerifier(std::move(zeroRunner));
+  QVERIFY(zeroVerifier.verifyApplication(app, QStringLiteral("2.0.6")).ok);
+
+  auto oneRunner = std::make_unique<EvidenceRunner>();
+  oneRunner->versionOutput = QByteArrayLiteral("2.0.6.1");
+  MacUpdateVerifier oneVerifier(std::move(oneRunner));
+  QVERIFY(!oneVerifier.verifyApplication(app, QStringLiteral("2.0.6")).ok);
 }
 
 void UpdateVerifierTests::verifierApplication_boundsCommandFailures()

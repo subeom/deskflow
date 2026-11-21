@@ -15,11 +15,16 @@ private Q_SLOTS:
   void launch_requiresExplicitConfirmationAndHelperReady();
   void launch_refusesPackageManagedSymlinkAndWrongExecutable();
   void launch_bindsManifestReceiptPidAndProcessStartIdentity();
+  void launch_helperSelfClaimsPidTokenAndStartIdentity();
   void apply_waitsForParentExitAndShutdownReceipt();
   void apply_reverifiesCopiesAndAtomicallySwaps();
   void apply_removesQuarantineOnlyAfterCandidateVerification();
   void apply_rollsBackForRenameLaunchAndHandshakeFailure();
-  void apply_rollsBackWhenSuccessReceiptCannotBePublished();
+  void apply_keepsCandidateWhenFinalReceiptCannotBePublished();
   void apply_keepsOldBackupWhenRollbackRelaunchFails();
+  void apply_relaunchesOldForEveryPostParentExitFailure();
+  void apply_doesNotRelaunchOldBeforeParentExit();
+  void pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermissions();
+  void apply_rejectsCandidateIdentityChangeBeforeAndAfterRename();
   void apply_rejectsMismatchedPidAndReceipt();
 };
