@@ -48,6 +48,15 @@ elseif(APPLE)
     SOURCE OSXKeyStateTests.cpp
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
   )
+  # the hold of the pointer while it is on a client: a policy, a line of the log and a controller, with fakes (no event, no
+  # cursor, no event tap)
+  create_test(
+    NAME OSXPointerHoldTests
+    DEPENDS platform
+    LIBS base arch
+    SOURCE OSXPointerHoldTests.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
+  )
   create_test(
     NAME OSXScrollSourceTests
     DEPENDS platform

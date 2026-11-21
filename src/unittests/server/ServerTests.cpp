@@ -572,6 +572,13 @@ public:
     return monitors;
   }
 
+  // the Server names the computer that has the pointer each time it moves (empty: it is on the primary computer)
+  void setRemoteComputerName(const std::string &name) override
+  {
+    remoteNames.push_back(name);
+  }
+
+  std::vector<std::string> remoteNames;
   Box shape{0, 0, 1728, 1117};
   // what the platform says the desktop is made of; nothing is what a platform that does not tell says
   std::vector<deskflow::server::MonitorRect> monitors;
@@ -3695,6 +3702,24 @@ void ServerTests::reportedScreens_areSaidAtInfoLevelWhileTheExperimentIsOn()
   rig.configureExperiment(false);
   rig.reportShape(rig.client("C"), Box{0, 0, 1280, 720});
   QCOMPARE(info.count(QStringLiteral("reports its screen")), lines);
+}
+
+void ServerTests::remoteComputerName_followsThePointerAndIsEmptyOnThePrimary()
+{
+  PointerRig rig(kPrimaryShapes[0], {{"A", {0, 0, 1920, 1080}}, {"B", {0, 0, 1280, 720}}});
+  rig.link("primary", Direction::Right, "A");
+  rig.link("A", Direction::Right, "B");
+  QVERIFY(rig.platform->remoteNames.empty());
+
+  rig.switchTo("A");
+  rig.switchTo("B");
+  rig.switchTo("primary");
+
+  // the platform of the primary computer is told who has the pointer: the macOS server writes it in one line of its log
+  QStringList names;
+  for (const auto &name : rig.platform->remoteNames)
+    names << QString::fromStdString(name);
+  QCOMPARE(names, QStringList({QStringLiteral("A"), QStringLiteral("B"), QString()}));
 }
 
 QTEST_MAIN(ServerTests)

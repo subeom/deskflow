@@ -10,6 +10,7 @@
 
 #include "deskflow/PlatformComputer.h"
 #include "platform/OSXClipboard.h"
+#include "platform/OSXPointerHold.h"
 #include "platform/OSXPowerManager.h"
 #include "platform/OSXScrollSource.h"
 
@@ -20,6 +21,7 @@
 #include <mach/mach_interface.h>
 #include <mach/mach_port.h>
 
+#include <atomic>
 #include <bitset>
 #include <map>
 #include <memory>
@@ -41,6 +43,11 @@ class OSXKeyState;
 class OSXScreenSaver;
 class IEventQueue;
 class Mutex;
+
+namespace deskflow::platform {
+class OSXPointerHoldSystem;
+class OSXPointerHoldNotifications;
+} // namespace deskflow::platform
 
 //! Implementation of IPlatformComputer for OS X
 class OSXComputer : public PlatformComputer
@@ -99,6 +106,7 @@ public:
   void setSequenceNumber(uint32_t) override;
   bool isPrimary() const override;
   std::string getSecureInputApp() const override;
+  void setRemoteComputerName(const std::string &name) override;
 
   void waitForCarbonLoop() const;
 
@@ -140,6 +148,12 @@ private:
   // Added here to allow the carbon cursor hack to be called.
   void showCursor();
   void hideCursor();
+  // the system gave the pointer back and shows the cursor: hide it again, with the hide count at one
+  void hideCursorAgain();
+
+  // while the pointer is on a client, the pointer of this Mac is held where it was parked (see OSXPointerHold.h)
+  void holdPointerOnEvent(CGEventRef event);
+  void notifyPointerHold(deskflow::platform::PointerHoldTrigger trigger);
 
   // map deskflow mouse button to mac buttons
   ButtonID mapDeskflowButtonToMac(uint16_t) const;
@@ -230,8 +244,8 @@ private:
   // true if screen is being used as a primary screen, false otherwise
   bool m_isPrimary;
 
-  // true if mouse has entered the screen
-  bool m_isOnComputer;
+  // true if mouse has entered the screen (written by the core thread, read by the tap thread)
+  std::atomic<bool> m_isOnComputer;
 
   // the display
   CGDirectDisplayID m_displayID;
@@ -267,6 +281,8 @@ private:
   std::vector<MouseButtonEventMapType> MouseButtonEventMap;
 
   bool m_cursorHidden;
+  // how many times the cursor was hidden and not shown again: showCursor() shows it that many times
+  std::atomic<int> m_hideDepth{0};
 
   // keyboard stuff
   OSXKeyState *m_keyState;
@@ -336,6 +352,11 @@ private:
   CondVar<bool> *m_carbonLoopReady;
 
   OSXPowerManager m_powerManager;
+
+  // the hold of the pointer while it is on a client (null on a client computer and when core/macHoldPointer is off)
+  std::unique_ptr<deskflow::platform::OSXPointerHoldSystem> m_pointerHoldSystem;
+  std::unique_ptr<deskflow::platform::OSXPointerHoldNotifications> m_pointerHoldNotifications;
+  std::unique_ptr<deskflow::platform::PointerHoldController> m_pointerHold;
 
   class OSXComputerImpl *m_impl;
 };

@@ -227,6 +227,9 @@ public:
   */
   std::string getSecureInputApp() const;
 
+  //! Name the computer that has the pointer while it is not on this one (see IPlatformComputer)
+  void setRemoteComputerName(const std::string &name);
+
   //@}
   //! @name accessors
   //@{

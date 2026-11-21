@@ -161,6 +161,23 @@ void SettingsTests::macAwdlOff_isOffByDefault_isKept_andItsGroupIsNotTakenAway()
   QCOMPARE(Settings::value(key).toBool(), false);
 }
 
+void SettingsTests::macHoldPointer_isOnByDefault_canBeTurnedOff_andIsAKnownKey()
+{
+  // the hold of the pointer of a Mac server while it is on a client: on, so that a program that has not been told holds
+  // it; off is the way it was before (the key is read nowhere but by a macOS server)
+  const auto key = Settings::Core::MacHoldPointer;
+  QCOMPARE(key, QStringLiteral("core/macHoldPointer"));
+  QVERIFY(Settings::validKeys().contains(key));
+  Settings::setValue(key);
+  QCOMPARE(Settings::defaultValue(key), QVariant(true));
+  QCOMPARE(Settings::value(key), QVariant(true));
+
+  Settings::setValue(key, false);
+  QCOMPARE(Settings::value(key).toBool(), false);
+  Settings::setValue(key);
+  QCOMPARE(Settings::value(key).toBool(), true);
+}
+
 void SettingsTests::monitorLayout_isEmptyByDefaultAndRoundTrips()
 {
   const auto key = Settings::Computer::MonitorLayout.arg(QStringLiteral("some-pc"));

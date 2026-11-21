@@ -39,3 +39,19 @@ create_test(
   SOURCE ServiceQuitTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+# The one line of the log of the core that the Log page translates (the hold of the pointer of a Mac server), and its
+# Korean (the .qm that is shipped: the test builds it first). On macOS the test also takes the line from the code that
+# writes it, so that the wording of the core and the sentence that is translated cannot drift apart
+create_test(
+  NAME CoreLogTextTests
+  DEPENDS gui
+  SOURCE CoreLogTextTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(CoreLogTextTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+target_compile_definitions(CoreLogTextTests PRIVATE DESKFLOW_KO_QM="${CMAKE_BINARY_DIR}/translations/deskflow_ko.qm")
+add_dependencies(CoreLogTextTests app_translations)
+if(APPLE)
+  target_link_libraries(CoreLogTextTests platform)
+endif()

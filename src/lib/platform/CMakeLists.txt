@@ -110,6 +110,10 @@ elseif(APPLE)
     OSXMediaKeySupport.m
     OSXPasteboardPeeker.h
     OSXPasteboardPeeker.m
+    OSXPointerHold.cpp
+    OSXPointerHold.h
+    OSXPointerHoldSystem.h
+    OSXPointerHoldSystem.mm
     OSXPowerManager.cpp
     OSXPowerManager.h
     OSXScreenSaver.cpp

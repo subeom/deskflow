@@ -8,6 +8,7 @@
 #include "CoreProcess.h"
 
 #include "common/ExitCodes.h"
+#include "gui/core/CoreLogText.h"
 #include "gui/core/ServiceQuit.h"
 #include "gui/ipc/CoreIpcClient.h"
 #include "gui/ipc/DaemonIpcClient.h"
@@ -386,7 +387,8 @@ void CoreProcess::handleLogLines(const QString &text)
     }
 #endif
 
-    Q_EMIT logLine(line);
+    // the one line of the hold of the pointer that a macOS server writes is shown in the language of the program
+    Q_EMIT logLine(localizeCoreLogLine(line));
   }
 }
 

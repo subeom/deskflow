@@ -139,6 +139,9 @@ public:
   std::string getSecureInputApp() const override;
   void secureInputNotification(const std::string &app) const override;
 
+  //! Name the computer that has the pointer (empty when it is on this one); only the macOS server reads it
+  void setRemoteComputerName(const std::string &name);
+
   deskflow::IStream *getStream() const override
   {
     return nullptr;

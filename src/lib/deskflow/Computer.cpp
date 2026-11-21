@@ -493,4 +493,9 @@ std::string Computer::getSecureInputApp() const
   return m_computer->getSecureInputApp();
 }
 
+void Computer::setRemoteComputerName(const std::string &name)
+{
+  m_computer->setRemoteComputerName(name);
+}
+
 } // namespace deskflow

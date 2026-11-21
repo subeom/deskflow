@@ -539,6 +539,7 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
 
     // cut over
     m_active = dst;
+    m_primaryClient->setRemoteComputerName(dst == m_primaryClient ? std::string() : getName(dst));
 
     // increment enter sequence number
     ++m_seqNum;

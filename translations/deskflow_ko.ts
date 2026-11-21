@@ -1171,6 +1171,21 @@ Any program that runs as you can then do the same, which stops or starts AirDrop
     </message>
 </context>
 <context>
+    <name>CoreLogText</name>
+    <message>
+        <source>the pointer of this Mac moved while it is on &quot;%1&quot;: held it again</source>
+        <translation>이 Mac의 포인터가 &quot;%1&quot;에 있는 동안 움직였습니다: 다시 고정했습니다</translation>
+    </message>
+    <message>
+        <source>the pointer of this Mac was shown while it is on &quot;%1&quot;: hid it again</source>
+        <translation>이 Mac의 포인터가 &quot;%1&quot;에 있는 동안 화면에 나타났습니다: 다시 숨겼습니다</translation>
+    </message>
+    <message>
+        <source>the event tap was off while the pointer is on &quot;%1&quot;: switched it on again</source>
+        <translation>&quot;%1&quot;에 포인터가 있는 동안 이벤트 탭이 꺼져 있었습니다: 다시 켰습니다</translation>
+    </message>
+</context>
+<context>
     <name>FingerprintDialog</name>
     <message>
         <source>Local Fingerprints</source>
