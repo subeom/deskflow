@@ -32,10 +32,12 @@
 #include "platform/OSXKeyState.h"
 #include "platform/OSXMediaKeySupport.h"
 #include "platform/OSXPasteboardPeeker.h"
+#include "platform/OSXPointerHoldSystem.h"
 #include "platform/OSXScreenSaver.h"
 
 #include <AppKit/NSEvent.h>
 #include <AvailabilityMacros.h>
+#include <algorithm>
 #include <IOKit/hidsystem/event_status_driver.h>
 #include <dispatch/dispatch.h>
 #include <libproc.h>
@@ -127,6 +129,19 @@ OSXComputer::OSXComputer(IEventQueue *events, bool isPrimary, bool enableLangSyn
 
     if (Settings::value(Settings::Core::PreventSleep).toBool()) {
       m_powerManager.disableSleep();
+    }
+
+    // only a server has a pointer to hold while it is on a client
+    if (m_isPrimary && Settings::value(Settings::Core::MacHoldPointer).toBool()) {
+      deskflow::platform::OSXPointerHoldHooks hooks;
+      hooks.tapPort = [this] { return m_eventTapPort; };
+      hooks.tapRunLoop = [this] { return m_eventTapRunLoop; };
+      hooks.hideAgain = [this] { hideCursorAgain(); };
+      m_pointerHoldSystem = std::make_unique<deskflow::platform::OSXPointerHoldSystem>(std::move(hooks));
+      m_pointerHold = std::make_unique<deskflow::platform::PointerHoldController>(*m_pointerHoldSystem);
+      if (NSString *bundleId = [[NSBundle mainBundle] bundleIdentifier]) {
+        m_pointerHold->setOwnBundleId([bundleId UTF8String]);
+      }
     }
 
     // only needed when running as a server.
@@ -277,6 +292,11 @@ void OSXComputer::warpCursor(int32_t x, int32_t y)
     });
     CFRunLoopWakeUp(m_eventTapRunLoop);
     return;
+  }
+
+  // the server moves the pointer on purpose: that is the place where the hold parks it (nothing when it is not parked)
+  if (m_pointerHold) {
+    m_pointerHold->repark({static_cast<double>(x), static_cast<double>(y)});
   }
 
   // move cursor without generating events
@@ -654,9 +674,14 @@ void OSXComputer::showCursor()
 
   CFRelease(propertyString);
 
-  CGError error = CGDisplayShowCursor(m_displayID);
-  if (error != kCGErrorSuccess) {
-    LOG_ERR("failed to show cursor, error=%d", error);
+  // one show for each hide that was made and not undone (at least one, as it always was): the hide count must be zero
+  const int hides = std::max(1, m_hideDepth.exchange(0));
+  for (int i = 0; i < hides; ++i) {
+    CGError error = CGDisplayShowCursor(m_displayID);
+    if (error != kCGErrorSuccess) {
+      LOG_ERR("failed to show cursor, error=%d", error);
+      break;
+    }
   }
 
   // appears to fix "mouse randomly not showing" bug
@@ -680,6 +705,8 @@ void OSXComputer::hideCursor()
   CGError error = CGDisplayHideCursor(m_displayID);
   if (error != kCGErrorSuccess) {
     LOG_ERR("failed to hide cursor, error=%d", error);
+  } else if (m_hideDepth < 16) {
+    ++m_hideDepth;
   }
 
   // appears to fix "mouse randomly not hiding" bug
@@ -687,6 +714,26 @@ void OSXComputer::hideCursor()
 
   logCursorVisibility();
 
+  m_cursorHidden = true;
+}
+
+void OSXComputer::hideCursorAgain()
+{
+  CFStringRef propertyString = CFStringCreateWithCString(nullptr, "SetsCursorInBackground", kCFStringEncodingMacRoman);
+
+  CGSSetConnectionProperty(_CGSDefaultConnection(), _CGSDefaultConnection(), propertyString, kCFBooleanTrue);
+
+  CFRelease(propertyString);
+
+  // the cursor is shown, so nothing of ours hides it any more (the system dropped it): one hide puts it back, and the
+  // hide count is one again.  The association is not touched here: the pointer is held by the caller
+  m_hideDepth = 0;
+  CGError error = CGDisplayHideCursor(m_displayID);
+  if (error != kCGErrorSuccess) {
+    LOG_ERR("failed to hide cursor again, error=%d", error);
+  } else {
+    m_hideDepth = 1;
+  }
   m_cursorHidden = true;
 }
 
@@ -741,6 +788,12 @@ void OSXComputer::enable()
       });
       dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
       dispatch_release(sem);
+      // the pointer may be given back by the system at any time while it is on a client: look at it when that may
+      // happen
+      if (m_pointerHold) {
+        m_pointerHoldNotifications = std::make_unique<deskflow::platform::OSXPointerHoldNotifications>();
+        m_pointerHold->attach(*m_pointerHoldNotifications);
+      }
     } else {
       LOG_ERR("failed to create a CFRunLoopSourceRef for the quartz event tap");
     }
@@ -751,6 +804,12 @@ void OSXComputer::enable()
 
 void OSXComputer::disable()
 {
+  // stop looking at the pointer before the cursor is shown again, so that nothing hides it again behind showCursor()
+  if (m_pointerHold) {
+    m_pointerHold->detach();
+    m_pointerHold->disarm();
+  }
+
   showCursor();
 
   // FIXME -- stop watching jump zones, stop capturing input
@@ -773,6 +832,7 @@ void OSXComputer::disable()
     CFRelease(m_eventTapPort);
     m_eventTapPort = nullptr;
   }
+  m_pointerHoldNotifications.reset();
   // FIXME -- allow system to enter power saving mode
 
   if (m_clipboardTimer != nullptr) {
@@ -793,6 +853,10 @@ void OSXComputer::disable()
 void OSXComputer::enter()
 {
   m_isOnComputer = true;
+  // the pointer is on this Mac again: it is not held any more (before the cursor is shown, so that nothing hides it)
+  if (m_pointerHold) {
+    m_pointerHold->disarm();
+  }
   showCursor();
 
   if (m_isPrimary) {
@@ -834,6 +898,12 @@ void OSXComputer::leave()
 
   // now off computer
   m_isOnComputer = false;
+
+  // park the pointer where it is: the capture above belongs to the foreground application and the core is never in the
+  // foreground, so it is looked at from now on, and held again when the system takes it back
+  if (m_isPrimary && m_pointerHold) {
+    m_pointerHold->arm();
+  }
 }
 
 bool OSXComputer::setClipboard(ClipboardID, const IClipboard *src)
@@ -1098,6 +1168,7 @@ void OSXComputer::displayReconfigurationCallback(
     if (!computer->updateComputerShape(displayID, flags)) {
       LOG_ERR("failed to update computer shape during display reconfiguration");
     }
+    computer->notifyPointerHold(deskflow::platform::PointerHoldTrigger::DisplayReconfigured);
   }
 }
 
@@ -1737,6 +1808,8 @@ CGEventRef OSXComputer::handleCGInputEvent(CGEventTapProxy proxy, CGEventType ty
     // off-computer the cursor is frozen (see leave()), so fall through to consume
     // the move below instead of returning (leaking) it to local apps.
     computer->onMouseMove(event);
+    // the deltas are on their way to the client; now see that the pointer of this Mac did not move with them
+    computer->holdPointerOnEvent(event);
     break;
   case kCGEventScrollWheel:
     computer->onMouseWheel(
@@ -1756,9 +1829,11 @@ CGEventRef OSXComputer::handleCGInputEvent(CGEventTapProxy proxy, CGEventType ty
       CGEventTapEnable(computer->m_eventTapPort, true);
       LOG_INFO("quartz event tap was disabled by timeout, re-enabling");
     }
+    computer->notifyPointerHold(deskflow::platform::PointerHoldTrigger::TapDisabledByTimeout);
     break;
   case kCGEventTapDisabledByUserInput:
     LOG_ERR("quartz event tap was disabled by user input");
+    computer->notifyPointerHold(deskflow::platform::PointerHoldTrigger::TapDisabledByUser);
     break;
   case NX_NULLEVENT:
     break;
@@ -1838,6 +1913,29 @@ char *OSXComputer::CFStringRefToUTF8String(CFStringRef aString)
   }
 
   return buffer;
+}
+
+void OSXComputer::holdPointerOnEvent(CGEventRef event)
+{
+  if (m_isOnComputer || !m_pointerHold) {
+    return;
+  }
+  const CGPoint where = CGEventGetLocation(event);
+  m_pointerHold->onPointerEvent({where.x, where.y});
+}
+
+void OSXComputer::notifyPointerHold(deskflow::platform::PointerHoldTrigger trigger)
+{
+  if (m_pointerHold) {
+    m_pointerHold->onNotification(trigger);
+  }
+}
+
+void OSXComputer::setRemoteComputerName(const std::string &name)
+{
+  if (m_pointerHold) {
+    m_pointerHold->setRemoteName(name);
+  }
 }
 
 void OSXComputer::waitForCarbonLoop() const

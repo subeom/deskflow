@@ -63,6 +63,7 @@ private Q_SLOTS:
   void clipboardOffForAComputer_aPrimaryThatDoesNotShare_doesNotEmptyTheOthers();
   void clipboardOffForAComputer_isOffForAllComputersWhenNoneIsSetOff();
   void clipboardOffForAComputer_isToldWithAnOptionThatWinsOverTheGlobalOne();
+  void remoteComputerName_followsThePointerAndIsEmptyOnThePrimary();
   void pointerPin_primaryToRemote_entersWhereItAlwaysDid_data();
   void pointerPin_primaryToRemote_entersWhereItAlwaysDid();
   void pointerPin_remoteToPrimary_leavesWhereItAlwaysDid_data();

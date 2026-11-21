@@ -221,6 +221,11 @@ void PrimaryClient::secureInputNotification(const std::string &app) const
   LOG_INFO("application \"%s\" is blocking the keyboard", app.c_str());
 }
 
+void PrimaryClient::setRemoteComputerName(const std::string &name)
+{
+  m_computer->setRemoteComputerName(name);
+}
+
 void PrimaryClient::resetOptions()
 {
   m_computer->resetOptions();

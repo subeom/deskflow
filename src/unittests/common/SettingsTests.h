@@ -26,6 +26,7 @@ private Q_SLOTS:
   void appearance_defaultsToTheNewLookAndRoundTrips();
   void experimentalMultiMonitor_isOffByDefaultAndRoundTrips();
   void macAwdlOff_isOffByDefault_isKept_andItsGroupIsNotTakenAway();
+  void macHoldPointer_isOnByDefault_canBeTurnedOff_andIsAKnownKey();
   void monitorLayout_isEmptyByDefaultAndRoundTrips();
   void connectTimeout_defaultsToTwoSecondsAndRoundTrips();
   void checkCleanComputerName();

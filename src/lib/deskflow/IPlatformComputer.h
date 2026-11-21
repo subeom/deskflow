@@ -139,6 +139,16 @@ public:
   */
   virtual std::string getSecureInputApp() const = 0;
 
+  //! Name the computer that has the pointer while it is not on this one
+  /*!
+  Called by the server whenever the pointer goes to another computer (\p name is its name) and when it comes back (an
+  empty name).  Only the macOS server reads it, for one line of its log; every other platform does nothing.
+  */
+  virtual void setRemoteComputerName(const std::string &name)
+  {
+    (void)name;
+  }
+
   //@}
   //! @name accessors
   //@{

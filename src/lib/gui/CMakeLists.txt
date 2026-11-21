@@ -42,6 +42,8 @@ add_library(${target} STATIC
   config/MonitorEditing.h
   config/ServerConfig.cpp
   config/ServerConfig.h
+  core/CoreLogText.cpp
+  core/CoreLogText.h
   core/CoreProcess.cpp
   core/CoreProcess.h
   core/ConnectionProbe.cpp
