@@ -430,19 +430,11 @@ public:
     while (timer.elapsed() < kRelaunchTimeoutMs) {
       QFile handshake(handshakePath);
       if (handshake.open(QIODevice::ReadOnly) && handshake.size() <= kMaximumReceiptBytes) {
-        QJsonParseError parseError;
-        const auto document = QJsonDocument::fromJson(handshake.readAll(), &parseError);
-        if (parseError.error == QJsonParseError::NoError && document.isObject()) {
-          const auto object = document.object();
-          if (object.value(QStringLiteral("state")).toString() ==
-                  QStringLiteral("ready") &&
-              object.value(QStringLiteral("pid")).toInteger() == processId &&
-              object.value(QStringLiteral("token")).toString() == token &&
-              (expectedVersion.isEmpty() ||
-               object.value(QStringLiteral("version")).toString() == expectedVersion)) {
-            QFile::remove(handshakePath);
-            return {true, {}, receiptPath};
-          }
+        if (isValidUpdateHandshake(
+                handshake.readAll(), processId, token, expectedVersion
+            )) {
+          QFile::remove(handshakePath);
+          return {true, {}, receiptPath};
         }
       }
       if (kill(static_cast<pid_t>(processId), 0) != 0 && errno == ESRCH) {
@@ -511,6 +503,28 @@ bool isTrustedUpdateParentPermissions(
   }
   return owner == 0 &&
          (groupName == QStringLiteral("admin") || groupName == QStringLiteral("wheel"));
+}
+
+bool isValidUpdateHandshake(
+    const QByteArray &payload, qint64 pid, const QString &token,
+    const QString &expectedVersion
+)
+{
+  if (payload.isEmpty() || payload.size() > kMaximumReceiptBytes ||
+      pid <= 1 || token.isEmpty() || expectedVersion.isEmpty()) {
+    return false;
+  }
+  QJsonParseError parseError;
+  const auto document = QJsonDocument::fromJson(payload, &parseError);
+  if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+    return false;
+  }
+  const auto object = document.object();
+  return object.value(QStringLiteral("state")).toString() ==
+             QStringLiteral("ready") &&
+         object.value(QStringLiteral("pid")).toInteger() == pid &&
+         object.value(QStringLiteral("token")).toString() == token &&
+         object.value(QStringLiteral("version")).toString() == expectedVersion;
 }
 
 UpdateInstallResult claimUpdateReceipt(
@@ -862,9 +876,9 @@ UpdateInstallResult MacUpdateInstaller::apply(
   }
 
   const QFileInfo finalBundle(*bundle);
-  const auto finalIdentity = m_operations->captureIdentity(*bundle);
   const auto finalVerification =
       m_operations->verifyApplication(*bundle, staged->version);
+  const auto finalIdentity = m_operations->captureIdentity(*bundle);
   if (finalBundle.isSymLink() || finalBundle.canonicalFilePath() != finalBundle.absoluteFilePath() ||
       !finalIdentity || *finalIdentity != *candidateIdentity || !finalVerification.ok) {
     const auto movedNewAside = m_operations->rename(*bundle, failedCandidate);

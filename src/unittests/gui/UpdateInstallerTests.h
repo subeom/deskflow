@@ -26,5 +26,7 @@ private Q_SLOTS:
   void apply_doesNotRelaunchOldBeforeParentExit();
   void pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermissions();
   void apply_rejectsCandidateIdentityChangeBeforeAndAfterRename();
+  void apply_rejectsIdentityMutationDuringFinalVerification();
   void apply_rejectsMismatchedPidAndReceipt();
+  void handshake_acceptsOnlyMatchingPidTokenAndVersion();
 };

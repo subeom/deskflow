@@ -52,5 +52,9 @@ bool isTrustedUpdateParentPermissions(
     qint64 effectiveUid, qint64 owner, const QString &groupName,
     bool groupWritable, bool worldWritable
 );
+bool isValidUpdateHandshake(
+    const QByteArray &payload, qint64 pid, const QString &token,
+    const QString &expectedVersion
+);
 
 } // namespace deskflow::gui

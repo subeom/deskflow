@@ -169,6 +169,10 @@ public:
   ) override
   {
     operations.append(QStringLiteral("verify-app"));
+    ++verificationCalls;
+    if (mutateIdentityDuringFinalVerification && verificationCalls == 2) {
+      identityInode = 999;
+    }
     return result(QStringLiteral("verify-app"));
   }
 
@@ -215,6 +219,14 @@ public:
                                 : QStringLiteral("launch-old");
     operations.append(QStringLiteral("launch:%1").arg(QFileInfo(bundlePath).fileName()));
     relaunchedBundles.append(bundlePath);
+    QFile receipt(receiptPath);
+    if (relaunchedBundles.size() == 1 && receipt.open(QIODevice::ReadOnly)) {
+      stateBeforeNewLaunch =
+          QJsonDocument::fromJson(receipt.readAll())
+              .object()
+              .value(QStringLiteral("state"))
+              .toString();
+    }
     relaunchReceipt = receiptPath;
     relaunchVersion = expectedVersion;
     if (corruptReceiptOnNewLaunch && relaunchedBundles.size() == 1) {
@@ -239,9 +251,9 @@ public:
     operations.append(QStringLiteral("identity"));
     ++identityCalls;
     if (identityMismatchAt == identityCalls) {
-      return deskflow::gui::UpdateFileIdentity{true, 1, 999, 10};
+      identityInode = 999;
     }
-    return deskflow::gui::UpdateFileIdentity{true, 1, 42, 10};
+    return deskflow::gui::UpdateFileIdentity{true, 1, identityInode, 10};
   }
 
   UpdateInstallResult result(const QString &operation)
@@ -270,9 +282,13 @@ public:
   int relaunchCount = 0;
   bool corruptReceiptOnNewLaunch = false;
   bool corruptReceiptBeforeNewLaunch = false;
+  QString stateBeforeNewLaunch;
   qint64 helperPidBeforeClaim = -1;
   int identityCalls = 0;
   int identityMismatchAt = -1;
+  int verificationCalls = 0;
+  quint64 identityInode = 42;
+  bool mutateIdentityDuringFinalVerification = false;
   QTemporaryDir workspaceDirectory;
 };
 
@@ -539,6 +555,7 @@ void UpdateInstallerTests::apply_reverifiesCopiesAndAtomicallySwaps()
           indexStartingWith(
               operations->operations, QStringLiteral("rename:Deskflow.app")
           ));
+  QCOMPARE(operations->stateBeforeNewLaunch, QStringLiteral("installed-ready"));
 }
 
 void UpdateInstallerTests::apply_removesQuarantineOnlyAfterCandidateVerification()
@@ -774,6 +791,30 @@ void UpdateInstallerTests::apply_rejectsCandidateIdentityChangeBeforeAndAfterRen
   }
 }
 
+void UpdateInstallerTests::apply_rejectsIdentityMutationDuringFinalVerification()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  Fixture fixture;
+  QVERIFY(createFixture(temporary, fixture));
+  FakeLauncher *launcher = nullptr;
+  FakeApplyOperations *parentOperations = nullptr;
+  auto parent = parentInstaller(fixture, launcher, parentOperations);
+  const auto start = parent->start(fixture.staged, true);
+  QVERIFY(start.ok);
+
+  FakeApplyOperations *operations = nullptr;
+  auto helper = helperInstaller(fixture, operations);
+  operations->mutateIdentityDuringFinalVerification = true;
+  const auto result = helper->apply(
+      fixture.manifestPath, fixture.parentPid, fixture.parentStartIdentity,
+      start.receiptPath, start.helperToken
+  );
+  QVERIFY(!result.ok);
+  QVERIFY(result.error.contains(QStringLiteral("identity")));
+  QVERIFY(operations->relaunchCount >= 1);
+}
+
 void UpdateInstallerTests::apply_rejectsMismatchedPidAndReceipt()
 {
   QTemporaryDir temporary;
@@ -793,6 +834,32 @@ void UpdateInstallerTests::apply_rejectsMismatchedPidAndReceipt()
       start.receiptPath, start.helperToken
   ).ok);
   QVERIFY(operations->operations.isEmpty());
+}
+
+void UpdateInstallerTests::handshake_acceptsOnlyMatchingPidTokenAndVersion()
+{
+  const auto json = [](qint64 pid, const QString &token, const QString &version) {
+    return QJsonDocument(QJsonObject{
+        {QStringLiteral("state"), QStringLiteral("ready")},
+        {QStringLiteral("pid"), pid},
+        {QStringLiteral("token"), token},
+        {QStringLiteral("version"), version},
+    }).toJson(QJsonDocument::Compact);
+  };
+  const auto token = QStringLiteral("one-use-token");
+  QVERIFY(deskflow::gui::isValidUpdateHandshake(
+      json(4243, token, QStringLiteral("2.0.6")), 4243, token, QStringLiteral("2.0.6")
+  ));
+  QVERIFY(!deskflow::gui::isValidUpdateHandshake(
+      json(4244, token, QStringLiteral("2.0.6")), 4243, token, QStringLiteral("2.0.6")
+  ));
+  QVERIFY(!deskflow::gui::isValidUpdateHandshake(
+      json(4243, QStringLiteral("other"), QStringLiteral("2.0.6")),
+      4243, token, QStringLiteral("2.0.6")
+  ));
+  QVERIFY(!deskflow::gui::isValidUpdateHandshake(
+      json(4243, token, QStringLiteral("2.0.5")), 4243, token, QStringLiteral("2.0.6")
+  ));
 }
 
 QTEST_MAIN(UpdateInstallerTests)
