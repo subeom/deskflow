@@ -9,6 +9,7 @@
 #include "common/Settings.h"
 #include "gui/MainWindow.h"
 #include "gui/StyleUtils.h"
+#include "gui/UpdateStatusModel.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/shell/MainShell.h"
 #include "gui/shell/StatusModel.h"
@@ -80,6 +81,15 @@ struct MainWindowTestAccess
   static StatusBar *statusBar(MainWindow &w)
   {
     return w.m_statusBar;
+  }
+  static void updateFound(MainWindow &w, const QString &version)
+  {
+    UpdateStatusSnapshot status;
+    status.phase = UpdateStatusSnapshot::Phase::ManualAvailable;
+    status.version = version;
+    status.releaseUrl =
+        QUrl(QStringLiteral("https://github.com/subeom/deskflow/releases/tag/v%1").arg(version));
+    w.m_updateStatus->setStatus(status);
   }
   static QList<QAction *> sharedActions(MainWindow &w)
   {
@@ -461,12 +471,12 @@ void TrayWindowTests::deskflowLook_anUpdateIsInTheMenuAndOnTheIcon()
   QVERIFY(!tray->builder()->actionFor(QStringLiteral("command:update")));
   QVERIFY(!tray->iconSpec().update);
 
-  Access::statusBar(*window)->updateFound(QStringLiteral("9.9.9"));
+  Access::updateFound(*window, QStringLiteral("9.9.9"));
   // the status bar says it through the event loop
   QTRY_VERIFY(tray->builder()->actionFor(QStringLiteral("command:update")));
   QCOMPARE(
       tray->builder()->actionFor(QStringLiteral("command:update"))->text(),
-      QStringLiteral("A new version v9.9.9 is available")
+      QStringLiteral("View update · v9.9.9")
   );
   QVERIFY(tray->iconSpec().update);
   QVERIFY(Access::trayIcon(*window)->toolTip().contains(QStringLiteral("update available")));
