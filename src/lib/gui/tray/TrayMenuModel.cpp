@@ -266,11 +266,16 @@ TrayMenuSpec TrayMenuModel::build(const TrayInput &input) const
 
   // the facts: an update, and the computers
   Group facts;
-  if (!input.updateVersion.isEmpty()) {
+  if (!input.updateVersion.isEmpty() || !input.updateLabel.isEmpty()) {
     auto update = commandEntry(input, TrayCommand::OpenUpdate, QStringLiteral("download-simple"));
-    update.text = input.updateLabel.isEmpty()
-                      ? tr("A new version v%1 is available").arg(input.updateVersion)
-                      : QStringLiteral("%1 · v%2").arg(input.updateLabel, input.updateVersion);
+    if (input.updateLabel.isEmpty()) {
+      update.text = tr("A new version v%1 is available").arg(input.updateVersion);
+    } else if (input.updateVersion.isEmpty()) {
+      update.text = input.updateLabel;
+    } else {
+      update.text =
+          QStringLiteral("%1 · v%2").arg(input.updateLabel, input.updateVersion);
+    }
     facts.append(update);
   }
   for (const auto &name : input.computers)

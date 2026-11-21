@@ -48,6 +48,12 @@ void UpdateStatusModelTests::states_mapToOneVisibleAction()
 
   model.setStatus(snapshot(UpdatePhase::UpToDate));
   QVERIFY(!model.view().visible);
+
+  auto missingPage = snapshot(UpdatePhase::ManualAvailable);
+  missingPage.releaseUrl.clear();
+  model.setStatus(missingPage);
+  QCOMPARE(model.view().action, UpdateAction::Retry);
+  QCOMPARE(model.view().label, UpdateStatusModel::tr("Update failed"));
 }
 
 void UpdateStatusModelTests::failedState_clearsStagedAndInstallableState()
@@ -60,6 +66,7 @@ void UpdateStatusModelTests::failedState_clearsStagedAndInstallableState()
   QCOMPARE(model.view().action, UpdateAction::Retry);
   QVERIFY(!model.view().installable);
   QVERIFY(model.view().toolTip.contains(failed.userError));
+  QVERIFY(model.view().visible);
 }
 
 void UpdateStatusModelTests::translations_useBoundedLocalizedText()

@@ -6,7 +6,26 @@
 
 #include "gui/UpdateStatusModel.h"
 
+#include <QRegularExpression>
+
 namespace deskflow::gui {
+
+namespace {
+
+bool isReleasePage(const QUrl &url)
+{
+  static const QRegularExpression path(
+      QStringLiteral(R"(^/subeom/deskflow/releases/tag/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$)")
+  );
+  return url.scheme() == QStringLiteral("https") &&
+         url.host() == QStringLiteral("github.com") &&
+         url.userInfo().isEmpty() &&
+         (url.port() == -1 || url.port() == 443) &&
+         url.query().isEmpty() && url.fragment().isEmpty() &&
+         path.match(url.path(QUrl::FullyEncoded)).hasMatch();
+}
+
+} // namespace
 
 UpdateStatusModel::UpdateStatusModel(QObject *parent) : QObject(parent)
 {
@@ -32,9 +51,15 @@ void UpdateStatusModel::setStatus(const UpdateStatusSnapshot &status)
   case Phase::ManualAvailable:
     view.visible = true;
     view.enabled = true;
-    view.label = tr("View update");
-    view.toolTip = tr("Deskflow v%1 is available").arg(status.version);
-    view.action = UpdateAction::OpenRelease;
+    if (isReleasePage(status.releaseUrl)) {
+      view.label = tr("View update");
+      view.toolTip = tr("Deskflow v%1 is available").arg(status.version);
+      view.action = UpdateAction::OpenRelease;
+    } else {
+      view.label = tr("Update failed");
+      view.toolTip = tr("The update release page is unavailable");
+      view.action = UpdateAction::Retry;
+    }
     break;
   case Phase::Staged:
     view.visible = status.installable;

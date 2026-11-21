@@ -82,6 +82,10 @@ void StatusBarTests::failedAndChecking_statesNeverLookInstallable()
   QVERIFY(update->isEnabled());
   QCOMPARE(update->toolTip(), checking.toolTip);
   QVERIFY(bar.updateVersion().isEmpty());
+  QSignalSpy requested(&bar, &StatusBar::requestUpdateAction);
+  QTest::mouseClick(update, Qt::LeftButton);
+  QCOMPARE(requested.count(), 1);
+  QCOMPARE(requested.first().at(0).value<UpdateAction>(), UpdateAction::Retry);
 }
 
 QTEST_MAIN(StatusBarTests)

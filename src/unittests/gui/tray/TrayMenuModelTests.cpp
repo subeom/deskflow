@@ -240,6 +240,11 @@ void TrayMenuModelTests::update_isARowThatOpensTheDownload_aboveTheComputers()
   QCOMPARE(staged->text, QStringLiteral("Install update · v1.28.0"));
   // with nothing to update to there is no row
   in.updateVersion.clear();
+  in.updateLabel = QStringLiteral("Update failed");
+  const auto failedSpec = mac.build(in);
+  const auto *failed = find(failedSpec, "command:update");
+  QVERIFY(failed);
+  QCOMPARE(failed->text, QStringLiteral("Update failed"));
   in.updateLabel.clear();
   QVERIFY(!find(mac.build(in), "command:update"));
   // an update with no computer is a group of its own

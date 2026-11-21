@@ -1816,6 +1816,18 @@ Additionally, check you are able to %1 the server config file: %2</source>
         <source>The previous Deskflow version was restored.</source>
         <translation>이전 Deskflow 버전이 복원되었습니다.</translation>
     </message>
+    <message>
+        <source>Update failed</source>
+        <translation>업데이트 실패</translation>
+    </message>
+    <message>
+        <source>Retry</source>
+        <translation>재시도</translation>
+    </message>
+    <message>
+        <source>The update could not be completed</source>
+        <translation>업데이트를 완료하지 못했습니다.</translation>
+    </message>
 </context>
 <context>
     <name>MonitorEditorDialog</name>
@@ -3633,6 +3645,10 @@ Enabling this setting will disable the server config GUI.</source>
     <message>
         <source>The update could not be completed</source>
         <translation>업데이트를 완료하지 못했습니다.</translation>
+    </message>
+    <message>
+        <source>The update release page is unavailable</source>
+        <translation>업데이트 릴리스 페이지를 사용할 수 없습니다.</translation>
     </message>
 </context>
 <context>

@@ -795,8 +795,24 @@ void MainWindow::handleUpdateAction(deskflow::gui::UpdateAction action)
     confirmAndInstallUpdate();
     break;
   case UpdateAction::Retry:
-    checkForUpdates();
+  {
+    QMessageBox failure(this);
+    failure.setIcon(QMessageBox::Warning);
+    failure.setWindowTitle(tr("Update failed"));
+    failure.setText(
+        m_updateStatus->view().toolTip.isEmpty()
+            ? tr("The update could not be completed")
+            : m_updateStatus->view().toolTip
+    );
+    failure.addButton(QMessageBox::Cancel);
+    auto *retry = failure.addButton(tr("Retry"), QMessageBox::AcceptRole);
+    failure.setDefaultButton(retry);
+    failure.exec();
+    if (failure.clickedButton() == retry) {
+      checkForUpdates();
+    }
     break;
+  }
   case UpdateAction::None:
     break;
   }
