@@ -36,3 +36,10 @@ create_test(
   SOURCE UpdateReleaseTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME UpdateNetworkTests
+  DEPENDS gui
+  SOURCE UpdateNetworkTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
