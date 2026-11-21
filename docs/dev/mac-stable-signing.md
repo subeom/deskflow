@@ -141,6 +141,14 @@ codesign --verify --strict \
 The second command is what macOS does with a stored requirement. Two different builds that are signed with the identity have different cdhashes
 (`codesign -dvvv`), the same designated requirement, and each satisfies the requirement of the other. A build that is signed ad hoc never does.
 
+## Updater verification
+
+The updater uses the same exact requirement at runtime. It verifies the mounted `Deskflow.app`, the GUI
+executable, and `deskflow-core` before accepting a staged update. The certificate is self-signed, so the updater
+does not require or invoke Apple Developer ID, Team Identifier, notarization, `spctl`, or the real signing
+keychain. GitHub asset sizes and `SHA256SUMS.txt` verify delivery integrity; the pinned bundle identifier and
+certificate leaf bind the app to this fork.
+
 ## The one-time re-grant
 
 The first build that is signed with the identity replaces a build that is signed ad hoc. What macOS stored for that one is a cdhash, which the new build does not

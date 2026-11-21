@@ -7,6 +7,7 @@
 #include "gui/UpdateCache.h"
 
 #include "gui/UpdateIntegrity.h"
+#include "common/UrlConstants.h"
 
 #include <QDir>
 #include <QDirIterator>
@@ -36,7 +37,6 @@ constexpr qint64 kMaximumChecksumBytes = 2LL * 1024 * 1024;
 constexpr qint64 kMaximumInstallerBytes = 512LL * 1024 * 1024;
 constexpr qint64 kMaximumStageBytes = 768LL * 1024 * 1024;
 constexpr qint64 kMaximumStageAgeSeconds = 30LL * 24 * 60 * 60;
-constexpr auto kLatestReleaseUrl = "https://api.github.com/repos/subeom/deskflow/releases/latest";
 
 struct LoadedStagedUpdate
 {
@@ -507,7 +507,7 @@ std::optional<UpdateCacheState> UpdateCache::loadState() const
       parseUtcDateTime(object.value(QStringLiteral("lastSuccessfulCheck")).toString());
   const auto hasSnapshot = !snapshotText.isEmpty() || !snapshotVersion.isEmpty();
   if (object.value(QStringLiteral("schemaVersion")).toInteger() != 1 ||
-      endpoint != QString::fromLatin1(kLatestReleaseUrl) || etag.size() > 1024 ||
+      endpoint != kUrlUpdateCheck || etag.size() > 1024 ||
       snapshotText.toUtf8().size() > kMaximumStateBytes ||
       (hasSnapshot && (snapshotText.isEmpty() || snapshotVersion.isEmpty() ||
                        !isSafeVersion(snapshotVersion))) ||
@@ -529,7 +529,7 @@ bool UpdateCache::saveState(const UpdateCacheState &state)
 {
   QString error;
   if (!ensurePrivateDirectory(m_rootPath, &error) || state.schemaVersion != 1 ||
-      state.endpoint != QString::fromLatin1(kLatestReleaseUrl) || state.etag.size() > 1024 ||
+      state.endpoint != kUrlUpdateCheck || state.etag.size() > 1024 ||
       state.sanitizedSnapshot.size() > kMaximumStateBytes ||
       ((!state.sanitizedSnapshot.isEmpty() || !state.snapshotVersion.isEmpty()) &&
        (state.sanitizedSnapshot.isEmpty() || state.snapshotVersion.isEmpty() ||

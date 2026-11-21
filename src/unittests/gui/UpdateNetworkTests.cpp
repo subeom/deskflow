@@ -6,6 +6,7 @@
 
 #include "UpdateNetworkTests.h"
 
+#include "common/UrlConstants.h"
 #include "gui/UpdateNetwork.h"
 
 using deskflow::gui::UpdateNetworkStatus;
@@ -41,6 +42,10 @@ QUrl assetRedirect(const QString &host = QStringLiteral("release-assets.githubus
 
 void UpdateNetworkTests::metadataUrl_acceptsOnlyPinnedForkEndpoint()
 {
+  QCOMPARE(
+      kUrlUpdateCheck,
+      QStringLiteral("https://api.github.com/repos/subeom/deskflow/releases/latest")
+  );
   QVERIFY(isAllowedUpdateUrl(latestUrl(), UpdateRequestKind::Metadata));
 
   const QStringList invalid{

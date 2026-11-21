@@ -355,9 +355,6 @@ QVariant Settings::defaultValue(const QString &key)
   if (key == Daemon::Elevate)
     return !Settings::isPortableMode();
 
-  if (key == Gui::UpdateCheckUrl)
-    return kUrlUpdateCheck;
-
   // The look of the application when none is chosen: its own (the one that is the same on every OS). gui/style says it
   // too (kDefaultMode), and a test keeps the two the same
   if (key == Gui::Appearance)

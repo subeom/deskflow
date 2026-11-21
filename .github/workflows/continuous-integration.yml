@@ -485,8 +485,8 @@ jobs:
         run: |
           mv $GITHUB_WORKSPACE/package-*/deskflow-* .
           rm -rf $GITHUB_WORKSPACE/package-*
-          echo "Build: ${{env.DESKFLOW_VERSION }}" > sums.txt
-          sha256sum deskflow-* >> sums.txt
+          echo "Build: ${{env.DESKFLOW_VERSION }}" > SHA256SUMS.txt
+          sha256sum deskflow-* >> SHA256SUMS.txt
           export changes=$(git log --abbrev=8 --abbrev-commit --pretty=format:" - %s(%h) by %an" continuous..HEAD)
           echo -e "## Latest Changes:\n$changes" > changelog.txt
 
@@ -509,7 +509,7 @@ jobs:
           body_path: changelog.txt
           files: |
             deskflow-*
-            sums.txt
+            SHA256SUMS.txt
 
       - name: Deploy release
         if: contains(github.ref, '/tags/v')
@@ -521,7 +521,7 @@ jobs:
           prerelease: false
           files: |
             deskflow-*
-            sums.txt
+            SHA256SUMS.txt
 
       - name: Update Homebrewtap
         shell: bash

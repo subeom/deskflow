@@ -10,6 +10,17 @@ Welcome to the Deskflow Help!
 * [Raising Issues] - What to do if you have found an issue.
 * [Security Policy] - Our policy around security related topics
 
+## Updates
+
+Direct macOS installations check the latest stable release of the `subeom/deskflow` fork. Deskflow downloads,
+verifies, and stages the exact CPU-architecture DMG, then waits for the `Install and restart` confirmation.
+It does not install an update in the background.
+
+Homebrew and other package-managed macOS installations remain manual. Windows x64/ARM64 and Linux also show
+the exact stable release page but do not execute MSI or package files. Open the
+[fork stable releases](https://github.com/subeom/deskflow/releases/latest) and use the package manager that owns
+the installation.
+
 ## Getting help online
 
 * View the [Wiki](https://github.com/deskflow/deskflow/wiki) Online resource

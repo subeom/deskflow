@@ -59,6 +59,7 @@ void SettingsTests::tlsTrustedClientsDb()
 
 void SettingsTests::checkValidSettings()
 {
+  QVERIFY(!Settings::validKeys().contains(QStringLiteral("gui/updateCheckUrl")));
   QSignalSpy spy(Settings::instance(), &Settings::settingsChanged);
   QVERIFY(spy.isValid());
 

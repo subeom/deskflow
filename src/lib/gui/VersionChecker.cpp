@@ -8,6 +8,7 @@
 #include "gui/VersionChecker.h"
 
 #include "common/VersionInfo.h"
+#include "common/UrlConstants.h"
 #include "gui/UpdateIntegrity.h"
 
 #include <QCoreApplication>
@@ -25,8 +26,6 @@
 
 namespace {
 
-constexpr auto kLatestReleaseUrl =
-    "https://api.github.com/repos/subeom/deskflow/releases/latest";
 constexpr int kMaximumRateWaitSeconds = 24 * 60 * 60;
 
 QString currentStableVersion()
@@ -219,7 +218,7 @@ void VersionChecker::requestLatest()
   options.etag = m_cachedState ? m_cachedState->etag : QString();
   const auto generation = ++m_generation;
   m_requestId = m_network->get(
-      QUrl(QString::fromLatin1(kLatestReleaseUrl)), options,
+      QUrl(kUrlUpdateCheck), options,
       [this, generation](const auto &result) {
         if (deskflow::gui::isCurrentUpdateGeneration(m_generation, generation)) {
           handleLatestResponse(result);
@@ -395,7 +394,7 @@ void VersionChecker::processReleaseJson(const QByteArray &json, const QString &e
   const auto now = QDateTime::currentDateTimeUtc();
   m_cachedState = deskflow::gui::UpdateCacheState{
       1,
-      QString::fromLatin1(kLatestReleaseUrl),
+      kUrlUpdateCheck,
       etag,
       sanitizedReleaseSnapshot(*parsed.release),
       parsed.release->version,
@@ -526,7 +525,7 @@ void VersionChecker::saveRateLimitState(int retryAfterSeconds)
 {
   auto state = m_cachedState.value_or(deskflow::gui::UpdateCacheState{
       1,
-      QString::fromLatin1(kLatestReleaseUrl),
+      kUrlUpdateCheck,
       {},
       {},
       {},

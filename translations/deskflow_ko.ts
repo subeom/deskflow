@@ -2121,8 +2121,8 @@ Additionally, check you are able to %1 the server config file: %2</source>
         <translation>업데이트 확인</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Would you like to check for updates when %1 starts?&lt;/p&gt;&lt;p&gt;Checking for updates requires an Internet connection.&lt;/p&gt;&lt;p&gt;URL: &lt;pre&gt;%2&lt;/pre&gt;&lt;/p&gt;</source>
-        <translation>&lt;p&gt;%1 시작 시 업데이트를 확인할까요?&lt;/p&gt;&lt;p&gt;업데이트 확인에는 인터넷 연결이 필요합니다.&lt;/p&gt;&lt;p&gt;URL: &lt;pre&gt;%2&lt;/pre&gt;&lt;/p&gt;</translation>
+        <source>&lt;p&gt;Would you like to check for updates when %1 starts?&lt;/p&gt;&lt;p&gt;Release checks use stable releases of subeom/deskflow on GitHub.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;%1 시작 시 업데이트를 확인할까요?&lt;/p&gt;&lt;p&gt;GitHub의 subeom/deskflow 안정 릴리스를 확인합니다.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Background service offline</source>

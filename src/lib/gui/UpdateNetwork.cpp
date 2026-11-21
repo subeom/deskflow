@@ -7,6 +7,7 @@
 #include "gui/UpdateNetwork.h"
 
 #include "common/Constants.h"
+#include "common/UrlConstants.h"
 #include "common/VersionInfo.h"
 
 #include <QDateTime>
@@ -23,7 +24,6 @@ namespace deskflow::gui {
 
 namespace {
 
-constexpr auto kLatestReleaseUrl = "https://api.github.com/repos/subeom/deskflow/releases/latest";
 constexpr qint64 kMaximumUrlBytes = 8LL * 1024;
 constexpr int kMaximumRedirects = 3;
 constexpr int kMaximumRateLimitWaitSeconds = 24 * 60 * 60;
@@ -70,7 +70,7 @@ bool isTerminalAssetHost(const QString &host)
 bool isExactLatestUrl(const QUrl &url)
 {
   return isSafeHttpsUrl(url) && url.query().isEmpty() &&
-         url.toEncoded(QUrl::FullyEncoded) == QByteArray(kLatestReleaseUrl);
+         url.toEncoded(QUrl::FullyEncoded) == kUrlUpdateCheck.toUtf8();
 }
 
 bool isExactAssetUrl(const QUrl &url)
