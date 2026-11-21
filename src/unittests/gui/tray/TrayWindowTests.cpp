@@ -59,6 +59,10 @@ struct MainWindowTestAccess
   {
     return w.maybeHideToTray();
   }
+  static bool nativeQuitShouldProceed(MainWindow &w)
+  {
+    return w.shouldQuitForNativeRequest();
+  }
   static QMenu *menuFile(MainWindow &w)
   {
     return w.m_menuFile;
@@ -498,9 +502,12 @@ void TrayWindowTests::updateApplying_blocksTrayQuitAndClose()
   QCoreApplication::processEvents();
   QVERIFY(window->isVisible());
   QVERIFY(!window->close());
+  Settings::setValue(Settings::Gui::CloseToTray, false);
+  QVERIFY(!Access::nativeQuitShouldProceed(*window));
 
   Access::setUpdateApplying(*window, false);
   QVERIFY(window->isVisible());
+  QVERIFY(Access::nativeQuitShouldProceed(*window));
 }
 
 void TrayWindowTests::deskflowLook_aClientTestsItsConnectionFromTheTray()

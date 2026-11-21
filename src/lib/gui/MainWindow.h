@@ -203,6 +203,8 @@ private:
   void handleMissingKeyboardLayouts(const QString &layouts);
   void closeEvent(QCloseEvent *event) override;
   bool maybeHideToTray();
+  bool canQuitApplication();
+  bool shouldQuitForNativeRequest();
   void secureSocket(bool secureSocket);
   void connectSlots();
   void handleLogLine(const QString &line);

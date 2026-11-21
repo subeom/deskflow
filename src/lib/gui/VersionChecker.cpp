@@ -29,12 +29,6 @@ namespace {
 
 constexpr int kMaximumRateWaitSeconds = 24 * 60 * 60;
 
-QString currentStableVersion()
-{
-  const auto parts = QString::fromLatin1(kVersion).split(QLatin1Char('.'));
-  return parts.size() < 3 ? QString() : parts.mid(0, 3).join(QLatin1Char('.'));
-}
-
 deskflow::gui::UpdateEnvironment currentUpdateEnvironment()
 {
   QString platform = QStringLiteral("unsupported");
@@ -82,6 +76,26 @@ QString updateCachePath()
       .filePath(QStringLiteral("updates"));
 }
 
+bool sameAsset(
+    const std::optional<deskflow::gui::UpdateAsset> &left,
+    const std::optional<deskflow::gui::UpdateAsset> &right
+)
+{
+  if (left.has_value() != right.has_value()) {
+    return false;
+  }
+  return !left || (left->name == right->name && left->downloadUrl == right->downloadUrl &&
+                   left->digest == right->digest && left->size == right->size);
+}
+
+bool samePlan(const deskflow::gui::UpdatePlan &left, const deskflow::gui::UpdatePlan &right)
+{
+  return left.releaseVersion == right.releaseVersion &&
+         left.tag == right.tag && left.releaseUrl == right.releaseUrl &&
+         left.mode == right.mode && sameAsset(left.installer, right.installer) &&
+         sameAsset(left.checksums, right.checksums);
+}
+
 QByteArray sanitizedReleaseSnapshot(const deskflow::gui::UpdateRelease &release)
 {
   QJsonArray assets;
@@ -113,9 +127,40 @@ QDateTime epoch()
 
 VersionChecker::VersionChecker(QObject *parent)
     : VersionChecker(
-          std::make_unique<deskflow::gui::QtUpdateNetwork>(), currentUpdateEnvironment(),
-          updateCachePath(), deskflow::gui::createPlatformUpdateVerifier(), 2'000, parent
+          std::make_unique<deskflow::gui::QtUpdateNetwork>(),
+          UpdateEnvironmentProvider([] { return currentUpdateEnvironment(); }),
+          QString::fromLatin1(kVersion), updateCachePath(),
+          deskflow::gui::createPlatformUpdateVerifier(), 2'000, parent
       )
+{
+}
+
+VersionChecker::VersionChecker(
+    std::unique_ptr<deskflow::gui::IUpdateNetwork> network,
+    UpdateEnvironmentProvider environmentProvider, QString cacheRoot,
+    std::unique_ptr<deskflow::gui::IUpdateVerifier> verifier, int retryDelayMs, QObject *parent
+)
+    : VersionChecker(
+          std::move(network), std::move(environmentProvider),
+          QString::fromLatin1(kVersion), std::move(cacheRoot),
+          std::move(verifier), retryDelayMs, parent
+      )
+{
+}
+
+VersionChecker::VersionChecker(
+    std::unique_ptr<deskflow::gui::IUpdateNetwork> network,
+    UpdateEnvironmentProvider environmentProvider, QString runningVersion,
+    QString cacheRoot, std::unique_ptr<deskflow::gui::IUpdateVerifier> verifier,
+    int retryDelayMs, QObject *parent
+)
+    : QObject(parent),
+      m_network(std::move(network)),
+      m_environmentProvider(std::move(environmentProvider)),
+      m_runningVersion(std::move(runningVersion)),
+      m_cache(std::make_unique<deskflow::gui::UpdateCache>(std::move(cacheRoot))),
+      m_verifier(std::move(verifier)),
+      m_retryDelayMs(retryDelayMs)
 {
 }
 
@@ -124,12 +169,27 @@ VersionChecker::VersionChecker(
     deskflow::gui::UpdateEnvironment environment, QString cacheRoot,
     std::unique_ptr<deskflow::gui::IUpdateVerifier> verifier, int retryDelayMs, QObject *parent
 )
-    : QObject(parent),
-      m_network(std::move(network)),
-      m_environment(std::move(environment)),
-      m_cache(std::make_unique<deskflow::gui::UpdateCache>(std::move(cacheRoot))),
-      m_verifier(std::move(verifier)),
-      m_retryDelayMs(retryDelayMs)
+    : VersionChecker(
+          std::move(network),
+          UpdateEnvironmentProvider([environment] { return environment; }),
+          QString::fromLatin1(kVersion), std::move(cacheRoot),
+          std::move(verifier), retryDelayMs, parent
+      )
+{
+}
+
+VersionChecker::VersionChecker(
+    std::unique_ptr<deskflow::gui::IUpdateNetwork> network,
+    deskflow::gui::UpdateEnvironment environment, QString runningVersion,
+    QString cacheRoot, std::unique_ptr<deskflow::gui::IUpdateVerifier> verifier,
+    int retryDelayMs, QObject *parent
+)
+    : VersionChecker(
+          std::move(network),
+          UpdateEnvironmentProvider([environment] { return environment; }),
+          std::move(runningVersion), std::move(cacheRoot),
+          std::move(verifier), retryDelayMs, parent
+      )
 {
 }
 
@@ -143,12 +203,24 @@ void VersionChecker::checkLatest(UpdateCheckReason)
   if (m_checking) {
     return;
   }
+  m_staged.reset();
+  m_plan.reset();
+  m_sums.reset();
+  m_release.reset();
+  if (!refreshEnvironment()) {
+    return;
+  }
   if (!m_environment.supported) {
     setStatus({UpdateStatusSnapshot::Phase::Idle, {}, {}, {}, false});
     return;
   }
 
-  if (!m_cache->cleanup(currentStableVersion())) {
+  const auto stableVersion = deskflow::gui::normalizeUpdateVersion(m_runningVersion);
+  if (!stableVersion) {
+    failCheck(QStringLiteral("the running Deskflow version is invalid"));
+    return;
+  }
+  if (!m_cache->cleanup(*stableVersion)) {
     failCheck(QStringLiteral("the update cache could not be safely cleaned"));
     return;
   }
@@ -165,9 +237,6 @@ void VersionChecker::checkLatest(UpdateCheckReason)
   m_checking = true;
   m_metadataAttempt = 0;
   m_checksumAttempt = 0;
-  m_staged.reset();
-  m_plan.reset();
-  m_sums.reset();
   setStatus({UpdateStatusSnapshot::Phase::CheckingRelease, {}, {}, {}, false});
   requestLatest();
 }
@@ -182,6 +251,7 @@ void VersionChecker::cancel()
   m_plan.reset();
   m_sums.reset();
   m_staged.reset();
+  m_release.reset();
   m_checking = false;
   setStatus({UpdateStatusSnapshot::Phase::Idle, {}, {}, {}, false});
 }
@@ -225,22 +295,33 @@ void VersionChecker::requestLatest()
 
 void VersionChecker::requestChecksums()
 {
+  if (!refreshAutomaticPlan()) {
+    return;
+  }
   if (!m_plan || !m_plan->checksums) {
     failCheck(QStringLiteral("the update checksum plan is missing"));
     return;
   }
 
+  const auto requestedPlan = *m_plan;
   deskflow::gui::UpdateNetworkOptions options;
-  options.maximumBytes = m_plan->checksums->size;
+  options.maximumBytes = requestedPlan.checksums->size;
   options.timeoutMs = 30'000;
   options.maximumTotalMs = 30'000;
   options.kind = deskflow::gui::UpdateRequestKind::Checksum;
+  setStatus(
+      {UpdateStatusSnapshot::Phase::DownloadingChecksums,
+       requestedPlan.releaseVersion,
+       requestedPlan.releaseUrl,
+       {},
+       false}
+  );
   const auto generation = ++m_generation;
   m_requestId = m_network->get(
-      m_plan->checksums->downloadUrl, options,
-      [this, generation](const auto &result) {
+      requestedPlan.checksums->downloadUrl, options,
+      [this, generation, requestedPlan](const auto &result) {
         if (deskflow::gui::isCurrentUpdateGeneration(m_generation, generation)) {
-          handleChecksumsResponse(result);
+          handleChecksumsResponse(result, requestedPlan);
         }
       }
   );
@@ -251,22 +332,33 @@ void VersionChecker::requestChecksums()
 
 void VersionChecker::requestInstaller()
 {
+  if (!refreshAutomaticPlan()) {
+    return;
+  }
   if (!m_plan || !m_plan->installer) {
     failCheck(QStringLiteral("the update installer plan is missing"));
     return;
   }
 
+  const auto requestedPlan = *m_plan;
   deskflow::gui::UpdateNetworkOptions options;
-  options.maximumBytes = m_plan->installer->size;
+  options.maximumBytes = requestedPlan.installer->size;
   options.timeoutMs = 30'000;
   options.maximumTotalMs = 5 * 60'000;
   options.kind = deskflow::gui::UpdateRequestKind::Installer;
+  setStatus(
+      {UpdateStatusSnapshot::Phase::DownloadingInstaller,
+       requestedPlan.releaseVersion,
+       requestedPlan.releaseUrl,
+       {},
+       false}
+  );
   const auto generation = ++m_generation;
   m_requestId = m_network->get(
-      m_plan->installer->downloadUrl, options,
-      [this, generation](const auto &result) {
+      requestedPlan.installer->downloadUrl, options,
+      [this, generation, requestedPlan](const auto &result) {
         if (deskflow::gui::isCurrentUpdateGeneration(m_generation, generation)) {
-          handleInstallerResponse(result);
+          handleInstallerResponse(result, requestedPlan);
         }
       }
   );
@@ -310,9 +402,20 @@ void VersionChecker::handleLatestResponse(const deskflow::gui::UpdateNetworkResu
   processReleaseJson(result.data, result.etag);
 }
 
-void VersionChecker::handleChecksumsResponse(const deskflow::gui::UpdateNetworkResult &result)
+void VersionChecker::handleChecksumsResponse(
+    const deskflow::gui::UpdateNetworkResult &result,
+    const deskflow::gui::UpdatePlan &requestedPlan
+)
 {
   m_requestId = 0;
+  if (!refreshAutomaticPlan()) {
+    return;
+  }
+  if (!samePlan(*m_plan, requestedPlan)) {
+    m_sums.reset();
+    requestChecksums();
+    return;
+  }
   if (handleRetryableFailure(result, deskflow::gui::UpdateRequestKind::Checksum, m_checksumAttempt)) {
     scheduleChecksumRetry();
     return;
@@ -336,19 +439,23 @@ void VersionChecker::handleChecksumsResponse(const deskflow::gui::UpdateNetworkR
     return;
   }
   m_sums = result.data;
-  setStatus(
-      {UpdateStatusSnapshot::Phase::DownloadingInstaller,
-       m_plan->releaseVersion,
-       m_plan->releaseUrl,
-       {},
-       false}
-  );
   requestInstaller();
 }
 
-void VersionChecker::handleInstallerResponse(const deskflow::gui::UpdateNetworkResult &result)
+void VersionChecker::handleInstallerResponse(
+    const deskflow::gui::UpdateNetworkResult &result,
+    const deskflow::gui::UpdatePlan &requestedPlan
+)
 {
   m_requestId = 0;
+  if (!refreshAutomaticPlan()) {
+    return;
+  }
+  if (!samePlan(*m_plan, requestedPlan)) {
+    m_sums.reset();
+    requestChecksums();
+    return;
+  }
   if (result.status != deskflow::gui::UpdateNetworkStatus::Success) {
     failCheck(
         result.error.isEmpty() ? QStringLiteral("the update installer download failed")
@@ -399,49 +506,83 @@ void VersionChecker::processReleaseJson(const QByteArray &json, const QString &e
     return;
   }
 
-  if (!deskflow::gui::isNewerUpdateVersion(QString::fromLatin1(kVersion), parsed.release->version)) {
-    setStatus({UpdateStatusSnapshot::Phase::UpToDate, {}, parsed.release->pageUrl, {}, false});
-    finishCheck();
+  m_release = *parsed.release;
+  if (!refreshAutomaticPlan()) {
     return;
   }
 
-  const auto plan = deskflow::gui::planUpdate(*parsed.release, m_environment);
-  if (!plan) {
-    failCheck(QStringLiteral("no verified update asset exists for this platform and architecture"));
-    return;
-  }
-  if (plan->mode == deskflow::gui::UpdateInstallMode::Manual) {
-    setStatus(
-        {UpdateStatusSnapshot::Phase::ManualAvailable,
-         plan->releaseVersion,
-         plan->releaseUrl,
-         {},
-         false}
-    );
-    Q_EMIT manualUpdateAvailable(plan->releaseUrl, plan->releaseVersion);
-    Q_EMIT updateFound(plan->releaseVersion);
-    finishCheck();
-    return;
-  }
-  if (!m_verifier || !plan->installer || !plan->checksums) {
-    failCheck(QStringLiteral("automatic macOS update verification is unavailable"));
-    return;
-  }
-
-  m_plan = *plan;
-  if (const auto cached = m_cache->find(*plan)) {
+  if (const auto cached = m_cache->find(*m_plan)) {
     publishStagedUpdate(*cached);
     return;
   }
 
+  requestChecksums();
+}
+
+bool VersionChecker::refreshEnvironment()
+{
+  if (!m_environmentProvider) {
+    failCheck(QStringLiteral("the update environment provider is unavailable"));
+    return false;
+  }
+  m_environment = m_environmentProvider();
+  return true;
+}
+
+bool VersionChecker::refreshAutomaticPlan()
+{
+  if (!m_release) {
+    failCheck(QStringLiteral("the update release is missing"));
+    return false;
+  }
+  if (!refreshEnvironment()) {
+    return false;
+  }
+
+  const auto stableVersion = deskflow::gui::normalizeUpdateVersion(m_runningVersion);
+  if (!stableVersion) {
+    failCheck(QStringLiteral("the running Deskflow version is invalid"));
+    return false;
+  }
+  if (!deskflow::gui::isNewerUpdateVersion(*stableVersion, m_release->version)) {
+    setStatus(
+        {UpdateStatusSnapshot::Phase::UpToDate, {}, m_release->pageUrl, {}, false}
+    );
+    finishCheck();
+    return false;
+  }
+
+  const auto plan = deskflow::gui::planUpdate(*m_release, m_environment);
+  if (!plan || plan->mode == deskflow::gui::UpdateInstallMode::Manual) {
+    publishManualUpdate();
+    return false;
+  }
+  if (!m_verifier || !plan->installer || !plan->checksums) {
+    failCheck(QStringLiteral("automatic macOS update verification is unavailable"));
+    return false;
+  }
+  m_plan = *plan;
+  return true;
+}
+
+void VersionChecker::publishManualUpdate()
+{
+  if (!m_release) {
+    failCheck(QStringLiteral("the update release is missing"));
+    return;
+  }
+  const auto release = *m_release;
+  m_plan.reset();
   setStatus(
-      {UpdateStatusSnapshot::Phase::DownloadingChecksums,
-       plan->releaseVersion,
-       plan->releaseUrl,
+      {UpdateStatusSnapshot::Phase::ManualAvailable,
+       release.version,
+       release.pageUrl,
        {},
        false}
   );
-  requestChecksums();
+  Q_EMIT manualUpdateAvailable(release.pageUrl, release.version);
+  Q_EMIT updateFound(release.version);
+  finishCheck();
 }
 
 void VersionChecker::publishStagedUpdate(const deskflow::gui::StagedUpdate &staged)
@@ -548,12 +689,15 @@ void VersionChecker::finishCheck()
   m_checking = false;
   m_plan.reset();
   m_sums.reset();
+  m_release.reset();
 }
 
 void VersionChecker::failCheck(const QString &error)
 {
-  const auto releaseUrl = m_plan ? m_plan->releaseUrl : QUrl();
-  const auto version = m_plan ? m_plan->releaseVersion : QString();
+  const auto releaseUrl =
+      m_plan ? m_plan->releaseUrl : (m_release ? m_release->pageUrl : QUrl());
+  const auto version =
+      m_plan ? m_plan->releaseVersion : (m_release ? m_release->version : QString());
   setStatus({UpdateStatusSnapshot::Phase::Failed, version, releaseUrl, error, false});
   m_staged.reset();
   Q_EMIT updateError(error);

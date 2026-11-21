@@ -935,6 +935,9 @@ void UpdateInstallerTests::pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermiss
   QVERIFY(!deskflow::gui::isTrustedUpdateParentPermissions(
       501, 501, QStringLiteral("staff"), false, true
   ));
+  QVERIFY(!deskflow::gui::isTrustedUpdateParentPermissions(
+      501, 502, QStringLiteral("staff"), false, false
+  ));
 
   deskflow::gui::MacUpdateInstallEvidence evidence;
   evidence.supported = true;
@@ -1046,6 +1049,9 @@ void UpdateInstallerTests::handshake_acceptsOnlyMatchingPidTokenAndVersion()
   QVERIFY(deskflow::gui::isValidUpdateHandshake(
       json(4243, token, QStringLiteral("2.0.6")), 4243, token, QStringLiteral("2.0.6")
   ));
+  QVERIFY(deskflow::gui::isValidUpdateHandshake(
+      json(4243, token, QStringLiteral("2.0.6.0")), 4243, token, QStringLiteral("2.0.6")
+  ));
   QVERIFY(!deskflow::gui::isValidUpdateHandshake(
       json(4244, token, QStringLiteral("2.0.6")), 4243, token, QStringLiteral("2.0.6")
   ));
@@ -1055,6 +1061,9 @@ void UpdateInstallerTests::handshake_acceptsOnlyMatchingPidTokenAndVersion()
   ));
   QVERIFY(!deskflow::gui::isValidUpdateHandshake(
       json(4243, token, QStringLiteral("2.0.5")), 4243, token, QStringLiteral("2.0.6")
+  ));
+  QVERIFY(!deskflow::gui::isValidUpdateHandshake(
+      json(4243, token, QStringLiteral("2.0.6.1")), 4243, token, QStringLiteral("2.0.6")
   ));
 }
 

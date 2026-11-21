@@ -58,10 +58,15 @@ bool isSafeFileName(const QString &name)
 
 bool isSafeVersion(const QString &version)
 {
-  static const QRegularExpression pattern(
-      QStringLiteral(R"(^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$)")
-  );
-  return pattern.match(version).hasMatch() && !version.startsWith(QLatin1Char('v'));
+  return normalizeUpdateVersion(version).has_value();
+}
+
+bool snapshotMatchesVersion(const QByteArray &snapshot, const QString &version)
+{
+  const auto normalizedVersion = normalizeUpdateVersion(version);
+  const auto parsed = parseGitHubRelease(snapshot);
+  return normalizedVersion && parsed.release &&
+         parsed.release->version == *normalizedVersion;
 }
 
 bool isSafeStageId(const QString &stageId)
@@ -240,11 +245,16 @@ std::optional<LoadedStagedUpdate> loadManifest(const QString &manifestPath, bool
   const auto createdAt =
       parseUtcDateTime(object.value(QStringLiteral("createdAtUtc")).toString());
 
+  const auto normalizedVersion = normalizeUpdateVersion(version);
   const auto expectedReleaseUrl =
-      QStringLiteral("https://github.com/subeom/deskflow/releases/tag/v%1").arg(version);
+      normalizedVersion
+          ? QStringLiteral("https://github.com/subeom/deskflow/releases/tag/v%1")
+                .arg(*normalizedVersion)
+          : QString();
   if (object.value(QStringLiteral("schemaVersion")).toInteger() != 1 ||
-      repository != QStringLiteral("subeom/deskflow") || !isSafeVersion(version) ||
-      tag != QStringLiteral("v%1").arg(version) || releaseUrl != expectedReleaseUrl ||
+      repository != QStringLiteral("subeom/deskflow") || !normalizedVersion ||
+      tag != QStringLiteral("v%1").arg(*normalizedVersion) ||
+      releaseUrl != expectedReleaseUrl ||
       !isSafeStageId(stageId) || !isSafeFileName(installerName) ||
       checksumName != QStringLiteral("SHA256SUMS.txt") || !isValidSha256Digest(installerDigest) ||
       !isValidSha256Digest(checksumDigest) || installerSize <= 0 || checksumSize <= 0 ||
@@ -368,8 +378,16 @@ UpdateStageResult UpdateCache::stage(
     const std::optional<QByteArray> &checksums
 )
 {
-  if (!plan.installer || !plan.checksums || !checksums ||
+  const auto normalizedVersion = normalizeUpdateVersion(plan.releaseVersion);
+  const auto expectedReleaseUrl =
+      normalizedVersion
+          ? QStringLiteral("https://github.com/subeom/deskflow/releases/tag/v%1")
+                .arg(*normalizedVersion)
+          : QString();
+  if (!plan.installer || !plan.checksums || !checksums || !normalizedVersion ||
       plan.mode != UpdateInstallMode::AutomaticMac || !isSafeVersion(plan.releaseVersion) ||
+      plan.tag != QStringLiteral("v%1").arg(*normalizedVersion) ||
+      plan.releaseUrl.toEncoded(QUrl::FullyEncoded) != expectedReleaseUrl.toUtf8() ||
       !isSafeFileName(plan.installer->name) || plan.checksums->name != QStringLiteral("SHA256SUMS.txt")) {
     return {false, {}, QStringLiteral("invalid update plan")};
   }
@@ -510,7 +528,8 @@ std::optional<UpdateCacheState> UpdateCache::loadState() const
       endpoint != kUrlUpdateCheck || etag.size() > 1024 ||
       snapshotText.toUtf8().size() > kMaximumStateBytes ||
       (hasSnapshot && (snapshotText.isEmpty() || snapshotVersion.isEmpty() ||
-                       !isSafeVersion(snapshotVersion))) ||
+                       !isSafeVersion(snapshotVersion) ||
+                       !snapshotMatchesVersion(snapshotText.toUtf8(), snapshotVersion))) ||
       !retryAt.isValid() || !lastCheck.isValid()) {
     return std::nullopt;
   }
@@ -533,7 +552,8 @@ bool UpdateCache::saveState(const UpdateCacheState &state)
       state.sanitizedSnapshot.size() > kMaximumStateBytes ||
       ((!state.sanitizedSnapshot.isEmpty() || !state.snapshotVersion.isEmpty()) &&
        (state.sanitizedSnapshot.isEmpty() || state.snapshotVersion.isEmpty() ||
-        !isSafeVersion(state.snapshotVersion))) ||
+        !isSafeVersion(state.snapshotVersion) ||
+        !snapshotMatchesVersion(state.sanitizedSnapshot, state.snapshotVersion))) ||
       !state.retryAt.isValid() || !state.lastSuccessfulCheck.isValid()) {
     return false;
   }

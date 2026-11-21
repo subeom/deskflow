@@ -17,6 +17,10 @@ private Q_SLOTS:
   void checkLatest_rateLimitPersistsRetryAndMakesNoImmediateRetry();
   void checkLatest_timeoutMakesOnlyOneMetadataRetry();
   void checkLatest_manualPlatformsNeverDownload();
+  void checkLatest_rejectsInvalidRunningVersionWithoutRequest();
+  void checkLatest_refreshesEnvironmentForEveryCheck();
+  void checkLatest_rechecksEnvironmentBeforeChecksumRequest();
+  void checkLatest_rechecksEnvironmentBeforeAndAfterInstallerRequest();
   void checkLatest_directMacDownloadsChecksumsThenDmgThenVerifies();
   void checkLatest_cancelInvalidatesLateNetworkCallbacks();
   void checkLatest_discardsWrongIntegrityAndPlatformVerification();

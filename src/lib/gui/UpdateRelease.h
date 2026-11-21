@@ -72,6 +72,8 @@ struct UpdateChecksumResult
 
 UpdateReleaseParseResult parseGitHubRelease(const QByteArray &json);
 std::optional<UpdatePlan> planUpdate(const UpdateRelease &release, const UpdateEnvironment &environment);
+std::optional<QString> normalizeUpdateVersion(const QString &version);
+std::optional<QString> versionFromUpdateTag(const QString &tag);
 bool isNewerUpdateVersion(const QString &current, const QString &candidate);
 bool isValidSha256Digest(const QString &digest);
 UpdateChecksumResult parseChecksumManifest(const QByteArray &payload, const QString &expectedAssetName);

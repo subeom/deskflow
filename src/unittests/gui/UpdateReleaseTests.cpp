@@ -163,6 +163,43 @@ void UpdateReleaseTests::latestStableRelease_rejectsMissingOrInvalidDigest()
   QVERIFY(!parseGitHubRelease(releaseJson(zeroSize)).release);
 }
 
+void UpdateReleaseTests::version_normalizationAcceptsOnlyStableShapes()
+{
+  QCOMPARE(
+      deskflow::gui::normalizeUpdateVersion(QStringLiteral("2.0.5")),
+      std::optional<QString>{QStringLiteral("2.0.5")}
+  );
+  QCOMPARE(
+      deskflow::gui::normalizeUpdateVersion(QStringLiteral("2.0.5.0")),
+      std::optional<QString>{QStringLiteral("2.0.5")}
+  );
+  for (const auto rejected : {
+           QStringLiteral("2.0.5.1"),
+           QStringLiteral("2.0.5.10"),
+           QStringLiteral("2.0.5.00"),
+           QStringLiteral("2.0.5.0.0"),
+           QStringLiteral("2.0.5-rc1"),
+           QStringLiteral("02.0.5"),
+           QStringLiteral("v2.0.5")}) {
+    QVERIFY(!deskflow::gui::normalizeUpdateVersion(rejected));
+  }
+
+  QCOMPARE(
+      deskflow::gui::versionFromUpdateTag(QStringLiteral("v2.0.5")),
+      std::optional<QString>{QStringLiteral("2.0.5")}
+  );
+  for (const auto rejected : {
+           QStringLiteral("2.0.5"),
+           QStringLiteral("V2.0.5"),
+           QStringLiteral("v2.0.5.0"),
+           QStringLiteral("v2.0.5.1"),
+           QStringLiteral("v02.0.5"),
+           QStringLiteral("v2.0.5-rc1")}) {
+    QVERIFY(!deskflow::gui::versionFromUpdateTag(rejected));
+    QVERIFY(!parseGitHubRelease(releaseJson(automaticAssets(), rejected)).release);
+  }
+}
+
 void UpdateReleaseTests::updatePlan_selectsExactArchitectureAndNeverFallbacks()
 {
   auto assets = automaticAssets();
@@ -219,6 +256,16 @@ void UpdateReleaseTests::updatePlan_keepsWindowsLinuxAndPackageManagedMacManual(
   }
 
   QVERIFY(!planUpdate(*parsed.release, {QStringLiteral("freebsd"), QStringLiteral("x86_64"), false, false}));
+
+  auto invalidVersion = *parsed.release;
+  invalidVersion.version = QStringLiteral("2.0.6.1");
+  QVERIFY(!planUpdate(invalidVersion, directMac(QStringLiteral("arm64"))));
+
+  auto mismatchedTag = *parsed.release;
+  mismatchedTag.tag = QStringLiteral("v2.0.7");
+  mismatchedTag.pageUrl =
+      QUrl(QStringLiteral("https://github.com/subeom/deskflow/releases/tag/v2.0.7"));
+  QVERIFY(!planUpdate(mismatchedTag, directMac(QStringLiteral("arm64"))));
 }
 
 void UpdateReleaseTests::updatePlan_serviceUnknownAndUnverifiedCICandidatesStayManual()
@@ -270,10 +317,13 @@ void UpdateReleaseTests::updatePlan_serviceUnknownAndUnverifiedCICandidatesStayM
 void UpdateReleaseTests::versionComparison_rejectsPrereleaseAndNeverDowngrades()
 {
   QVERIFY(deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5"), QStringLiteral("2.0.6")));
-  QVERIFY(deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5.2"), QStringLiteral("2.0.6")));
+  QVERIFY(deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5.0"), QStringLiteral("2.0.6")));
   QVERIFY(deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.9.9"), QStringLiteral("3.0.0")));
   QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.6"), QStringLiteral("2.0.6")));
-  QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5.2"), QStringLiteral("2.0.5")));
+  QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5.2"), QStringLiteral("2.0.6")));
+  QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5.10"), QStringLiteral("2.0.6")));
+  QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5.00"), QStringLiteral("2.0.6")));
+  QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5.0.0"), QStringLiteral("2.0.6")));
   QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.1.0"), QStringLiteral("2.0.99")));
   QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5"), QStringLiteral("2.0.6-rc1")));
   QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("v2.0.5"), QStringLiteral("2.0.6")));

@@ -16,6 +16,7 @@ private Q_SLOTS:
   void latestStableRelease_rejectsDraftPrereleaseAndWrongRepository();
   void latestStableRelease_rejectsDuplicateUnsafeOrMismatchedAssets();
   void latestStableRelease_rejectsMissingOrInvalidDigest();
+  void version_normalizationAcceptsOnlyStableShapes();
   void updatePlan_selectsExactArchitectureAndNeverFallbacks();
   void updatePlan_keepsWindowsLinuxAndPackageManagedMacManual();
   void updatePlan_serviceUnknownAndUnverifiedCICandidatesStayManual();

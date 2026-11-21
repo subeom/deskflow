@@ -30,6 +30,7 @@
 #include "gui/Messages.h"
 #include "gui/TlsUtility.h"
 #include "gui/UpdateInstaller.h"
+#include "gui/UpdateRelease.h"
 #include "gui/UpdateShutdown.h"
 #include "gui/UpdateStatusModel.h"
 #include "gui/awdl/AwdlController.h"
@@ -218,7 +219,7 @@ MainWindow::MainWindow()
 
 #ifdef Q_OS_MACOS
   // Route native quits (Cmd+Q / Apple menu Quit / Dock "Quit") to the usual close-to-tray decision instead.
-  installQuitHandler([this] { return !maybeHideToTray(); });
+  installQuitHandler([this] { return shouldQuitForNativeRequest(); });
 #endif
 }
 MainWindow::~MainWindow()
@@ -731,16 +732,17 @@ void MainWindow::publishUpdateHandshake()
     return;
   }
 
-  const auto versionParts = QString::fromLatin1(kVersion).split(QLatin1Char('.'));
-  const auto stableVersion =
-      versionParts.size() >= 3 ? versionParts.mid(0, 3).join(QLatin1Char('.'))
-                               : QString::fromLatin1(kVersion);
+  const auto stableVersion = deskflow::gui::normalizeUpdateVersion(QString::fromLatin1(kVersion));
+  if (!stableVersion) {
+    qWarning() << "refusing to publish an invalid Deskflow version in the update handshake";
+    return;
+  }
   QSaveFile handshakeFile(handshake);
   const auto handshakeJson = QJsonDocument(QJsonObject{
       {QStringLiteral("state"), QStringLiteral("ready")},
       {QStringLiteral("pid"), QCoreApplication::applicationPid()},
       {QStringLiteral("token"), token},
-      {QStringLiteral("version"), stableVersion},
+      {QStringLiteral("version"), *stableVersion},
   }).toJson(QJsonDocument::Compact);
   if (!handshakeFile.open(QIODevice::WriteOnly) ||
       handshakeFile.write(handshakeJson) != handshakeJson.size() ||
@@ -764,12 +766,12 @@ void MainWindow::publishUpdateHandshake()
       state == QStringLiteral("rolled-back-pending")) {
     UpdateStatusSnapshot rollback;
     rollback.phase = UpdateStatusSnapshot::Phase::Failed;
-    rollback.version = stableVersion;
+    rollback.version = *stableVersion;
     rollback.userError = tr("The previous Deskflow version was restored.");
     m_updateStatus->setStatus(rollback);
   } else if (state == QStringLiteral("success")) {
     m_updateStatus->setStatus(
-        {UpdateStatusSnapshot::Phase::UpToDate, stableVersion, {}, {}, false}
+        {UpdateStatusSnapshot::Phase::UpToDate, *stableVersion, {}, {}, false}
     );
   }
 }
@@ -1815,12 +1817,25 @@ bool MainWindow::maybeHideToTray()
   return true;
 }
 
+bool MainWindow::shouldQuitForNativeRequest()
+{
+  return canQuitApplication() && !maybeHideToTray();
+}
+
+bool MainWindow::canQuitApplication()
+{
+  if (!m_updateApplying || m_updateExitAuthorized) {
+    return true;
+  }
+  qWarning() << "cannot quit while an update helper is active";
+  showAndActivate();
+  return false;
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-  if (m_updateApplying && !m_updateExitAuthorized) {
-    qWarning() << "cannot quit while an update helper is active";
+  if (!canQuitApplication()) {
     event->ignore();
-    showAndActivate();
     return;
   }
   if (event->spontaneous() && maybeHideToTray()) {

@@ -12,6 +12,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 #include <QTimeZone>
 
@@ -28,8 +31,6 @@ using deskflow::gui::UpdatePlan;
 
 namespace {
 
-constexpr auto kInstallerName = "deskflow-2.0.6-macos-arm64.dmg";
-
 QString digest(const QByteArray &data)
 {
   return QStringLiteral("sha256:%1").arg(
@@ -42,43 +43,96 @@ QByteArray installerPayload()
   return QByteArrayLiteral("synthetic signed DMG bytes");
 }
 
-QByteArray checksumPayload(const QByteArray &installer)
+QString installerName(const QString &version)
 {
-  return QStringLiteral("%1  %2\n").arg(digest(installer).mid(7), QString::fromLatin1(kInstallerName)).toUtf8();
+  return QStringLiteral("deskflow-%1-macos-arm64.dmg").arg(version);
 }
 
-UpdatePlan plan(const QByteArray &installer = installerPayload())
+QByteArray checksumPayload(
+    const QByteArray &installer, const QString &version = QStringLiteral("2.0.6")
+)
 {
-  const auto sums = checksumPayload(installer);
+  return QStringLiteral("%1  %2\n").arg(digest(installer).mid(7), installerName(version)).toUtf8();
+}
+
+UpdatePlan planForVersion(
+    const QString &version, const QByteArray &installer = installerPayload()
+)
+{
+  const auto tag = QStringLiteral("v%1").arg(version);
+  const auto sums = checksumPayload(installer, version);
   return {
-      QStringLiteral("2.0.6"),
-      QStringLiteral("v2.0.6"),
-      QUrl(QStringLiteral("https://github.com/subeom/deskflow/releases/tag/v2.0.6")),
+      version,
+      tag,
+      QUrl(QStringLiteral("https://github.com/subeom/deskflow/releases/tag/%1").arg(tag)),
       UpdateInstallMode::AutomaticMac,
       deskflow::gui::UpdateAsset{
-          QString::fromLatin1(kInstallerName),
-          QUrl(QStringLiteral("https://github.com/subeom/deskflow/releases/download/v2.0.6/"
-                              "deskflow-2.0.6-macos-arm64.dmg")),
+          installerName(version),
+          QUrl(
+              QStringLiteral("https://github.com/subeom/deskflow/releases/download/%1/%2")
+                  .arg(tag, installerName(version))
+          ),
           digest(installer),
           installer.size()
       },
       deskflow::gui::UpdateAsset{
           QStringLiteral("SHA256SUMS.txt"),
-          QUrl(QStringLiteral("https://github.com/subeom/deskflow/releases/download/v2.0.6/SHA256SUMS.txt")),
+          QUrl(
+              QStringLiteral(
+                  "https://github.com/subeom/deskflow/releases/download/%1/SHA256SUMS.txt"
+              ).arg(tag)
+          ),
           digest(sums),
           sums.size()
       }
   };
 }
 
-std::optional<deskflow::gui::StagedUpdate>
-stage(UpdateCache &cache, const QByteArray &installer = installerPayload())
+UpdatePlan plan(const QByteArray &installer = installerPayload())
 {
-  const auto result = cache.stage(plan(installer), installer, checksumPayload(installer));
+  return planForVersion(QStringLiteral("2.0.6"), installer);
+}
+
+QByteArray releaseSnapshot(const QString &version)
+{
+  const auto selectedPlan = planForVersion(version);
+  QJsonArray assets;
+  for (const auto &asset :
+       {selectedPlan.installer.value(), selectedPlan.checksums.value()}) {
+    assets.append(QJsonObject{
+        {QStringLiteral("name"), asset.name},
+        {QStringLiteral("browser_download_url"),
+         QString::fromUtf8(asset.downloadUrl.toEncoded(QUrl::FullyEncoded))},
+        {QStringLiteral("size"), asset.size},
+        {QStringLiteral("digest"), asset.digest},
+    });
+  }
+  return QJsonDocument(QJsonObject{
+      {QStringLiteral("draft"), false},
+      {QStringLiteral("prerelease"), false},
+      {QStringLiteral("tag_name"), selectedPlan.tag},
+      {QStringLiteral("html_url"),
+       QString::fromUtf8(selectedPlan.releaseUrl.toEncoded(QUrl::FullyEncoded))},
+      {QStringLiteral("assets"), assets},
+  }).toJson(QJsonDocument::Compact);
+}
+
+std::optional<deskflow::gui::StagedUpdate>
+stageVersion(UpdateCache &cache, const QString &version, const QByteArray &installer = installerPayload())
+{
+  const auto result = cache.stage(
+      planForVersion(version, installer), installer, checksumPayload(installer, version)
+  );
   if (!result.ok) {
     return std::nullopt;
   }
   return result.staged;
+}
+
+std::optional<deskflow::gui::StagedUpdate>
+stage(UpdateCache &cache, const QByteArray &installer = installerPayload())
+{
+  return stageVersion(cache, QStringLiteral("2.0.6"), installer);
 }
 
 bool writeFile(const QString &path, const QByteArray &contents)
@@ -238,8 +292,8 @@ void UpdateCacheTests::state_roundTripsEtagSnapshotAndRateLimitWithoutRawBody()
       1,
       QStringLiteral("https://api.github.com/repos/subeom/deskflow/releases/latest"),
       QStringLiteral("\"release-etag\""),
-      QByteArrayLiteral(R"({"tag_name":"v2.0.6","draft":false,"prerelease":false})"),
-      QStringLiteral("2.0.6"),
+      releaseSnapshot(QStringLiteral("2.0.6")),
+      QStringLiteral("2.0.6.0"),
       QDateTime::fromSecsSinceEpoch(2'000'000'000, QTimeZone::UTC),
       QDateTime::fromSecsSinceEpoch(1'900'000'000, QTimeZone::UTC)
   };
@@ -251,6 +305,10 @@ void UpdateCacheTests::state_roundTripsEtagSnapshotAndRateLimitWithoutRawBody()
   QCOMPARE(loaded->snapshotVersion, state.snapshotVersion);
   QCOMPARE(loaded->retryAt, state.retryAt);
   QCOMPARE(loaded->lastSuccessfulCheck, state.lastSuccessfulCheck);
+
+  auto mismatched = state;
+  mismatched.snapshotVersion = QStringLiteral("2.0.7");
+  QVERIFY(!cache.saveState(mismatched));
 }
 
 void UpdateCacheTests::cleanup_removesExpiredInvalidIncomingAndOlderStages()
@@ -259,8 +317,10 @@ void UpdateCacheTests::cleanup_removesExpiredInvalidIncomingAndOlderStages()
   QVERIFY(temporary.isValid());
   const auto root = QDir(temporary.path()).filePath(QStringLiteral("updates"));
   UpdateCache cache(root);
-  const auto staged = stage(cache);
-  QVERIFY(staged);
+  const auto older = stage(cache);
+  const auto newest = stageVersion(cache, QStringLiteral("2.0.7"));
+  QVERIFY(older);
+  QVERIFY(newest);
 
   QVERIFY(QDir().mkpath(QDir(root).filePath(QStringLiteral(".incoming-dead"))));
   QVERIFY(QDir().mkpath(QDir(root).filePath(QStringLiteral("stages/invalid"))));
@@ -270,10 +330,11 @@ void UpdateCacheTests::cleanup_removesExpiredInvalidIncomingAndOlderStages()
   QVERIFY(cache.cleanup(QStringLiteral("2.0.5")));
   QVERIFY(!QDir(QDir(root).filePath(QStringLiteral(".incoming-dead"))).exists());
   QVERIFY(!QDir(QDir(root).filePath(QStringLiteral("stages/invalid"))).exists());
-  QVERIFY(UpdateCache::load(staged->manifestPath));
+  QVERIFY(!UpdateCache::load(older->manifestPath));
+  QVERIFY(UpdateCache::load(newest->manifestPath));
 
-  QVERIFY(cache.cleanup(QStringLiteral("2.0.6")));
-  QVERIFY(!UpdateCache::load(staged->manifestPath));
+  QVERIFY(cache.cleanup(QStringLiteral("2.0.7.0")));
+  QVERIFY(!UpdateCache::load(newest->manifestPath));
 }
 
 QTEST_MAIN(UpdateCacheTests)

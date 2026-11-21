@@ -32,17 +32,17 @@ struct ParsedVersion
   quint64 patch = 0;
 };
 
-std::optional<ParsedVersion> parseVersion(const QString &value, bool allowBuildComponent = false)
+std::optional<ParsedVersion> parseVersion(const QString &value, bool allowZeroBuildComponent = false)
 {
   static const QRegularExpression stablePattern(
       QStringLiteral(R"(^((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))$)")
   );
-  static const QRegularExpression currentPattern(
+  static const QRegularExpression zeroBuildPattern(
       QStringLiteral(
-          R"(^((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))(?:\.(?:0|[1-9][0-9]*))?$)"
+          R"(^((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))(?:\.0)?$)"
       )
   );
-  const auto match = (allowBuildComponent ? currentPattern : stablePattern).match(value);
+  const auto match = (allowZeroBuildComponent ? zeroBuildPattern : stablePattern).match(value);
   if (!match.hasMatch()) {
     return std::nullopt;
   }
@@ -59,6 +59,16 @@ std::optional<ParsedVersion> parseVersion(const QString &value, bool allowBuildC
     return std::nullopt;
   }
   return parsed;
+}
+
+QString normalizedVersion(const ParsedVersion &version)
+{
+  return QStringLiteral("%1.%2.%3")
+      .arg(
+          QString::number(version.major),
+          QString::number(version.minor),
+          QString::number(version.patch)
+      );
 }
 
 bool isSafeAssetName(const QString &name)
@@ -85,11 +95,6 @@ std::optional<UpdateAsset> findAsset(const UpdateRelease &release, const QString
     }
   }
   return std::nullopt;
-}
-
-bool isSupportedStableTag(const QString &tag)
-{
-  return tag.startsWith(QLatin1Char('v')) && parseVersion(tag.mid(1)).has_value();
 }
 
 bool checksumPayloadIsAscii(const QByteArray &payload)
@@ -132,7 +137,8 @@ UpdateReleaseParseResult parseGitHubRelease(const QByteArray &json)
   }
 
   const auto tag = tagValue.toString();
-  if (!isSupportedStableTag(tag)) {
+  const auto stableVersion = versionFromUpdateTag(tag);
+  if (!stableVersion) {
     return {{}, QStringLiteral("invalid stable release tag")};
   }
   const auto expectedPage = QStringLiteral("https://github.com/subeom/deskflow/releases/tag/%1").arg(tag);
@@ -176,7 +182,7 @@ UpdateReleaseParseResult parseGitHubRelease(const QByteArray &json)
   return {
       UpdateRelease{
           tag,
-          tag.mid(1),
+          *stableVersion,
           QUrl(expectedPage),
           std::move(assets),
       },
@@ -187,6 +193,14 @@ UpdateReleaseParseResult parseGitHubRelease(const QByteArray &json)
 std::optional<UpdatePlan> planUpdate(const UpdateRelease &release, const UpdateEnvironment &environment)
 {
   if (!environment.supported) {
+    return std::nullopt;
+  }
+  const auto releaseVersion = normalizeUpdateVersion(release.version);
+  const auto tagVersion = versionFromUpdateTag(release.tag);
+  const auto expectedReleasePage =
+      QStringLiteral("https://github.com/subeom/deskflow/releases/tag/%1").arg(release.tag);
+  if (!releaseVersion || !tagVersion || *releaseVersion != *tagVersion ||
+      release.pageUrl.toEncoded(QUrl::FullyEncoded) != expectedReleasePage.toUtf8()) {
     return std::nullopt;
   }
   const auto platform = environment.platform.toLower();
@@ -234,10 +248,25 @@ std::optional<UpdatePlan> planUpdate(const UpdateRelease &release, const UpdateE
   return plan;
 }
 
+std::optional<QString> normalizeUpdateVersion(const QString &version)
+{
+  const auto parsed = parseVersion(version, true);
+  return parsed ? std::optional<QString>{normalizedVersion(*parsed)} : std::nullopt;
+}
+
+std::optional<QString> versionFromUpdateTag(const QString &tag)
+{
+  if (!tag.startsWith(QLatin1Char('v'))) {
+    return std::nullopt;
+  }
+  const auto parsed = parseVersion(tag.mid(1));
+  return parsed ? std::optional<QString>{normalizedVersion(*parsed)} : std::nullopt;
+}
+
 bool isNewerUpdateVersion(const QString &current, const QString &candidate)
 {
   const auto currentVersion = parseVersion(current, true);
-  const auto candidateVersion = parseVersion(candidate);
+  const auto candidateVersion = parseVersion(candidate, true);
   if (!currentVersion || !candidateVersion) {
     return false;
   }

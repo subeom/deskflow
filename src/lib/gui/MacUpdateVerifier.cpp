@@ -5,11 +5,11 @@
  */
 
 #include "gui/MacUpdateVerifier.h"
+#include "gui/UpdateRelease.h"
 
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
-#include <QRegularExpression>
 #include <QTemporaryDir>
 
 namespace deskflow::gui {
@@ -140,11 +140,9 @@ UpdateVerifierResult parseMacUpdateSignatureEvidence(const QByteArray &codesignE
 
 bool isMacUpdateBundleVersion(const QString &expected, const QString &bundle)
 {
-  static const QRegularExpression stable(
-      QStringLiteral(R"(^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$)")
-  );
-  return stable.match(expected).hasMatch() &&
-         (bundle == expected || bundle == expected + QStringLiteral(".0"));
+  const auto normalizedExpected = normalizeUpdateVersion(expected);
+  const auto normalizedBundle = normalizeUpdateVersion(bundle);
+  return normalizedExpected && normalizedBundle && *normalizedExpected == *normalizedBundle;
 }
 
 std::unique_ptr<IUpdateCommandRunner> createUpdateCommandRunner()
@@ -162,6 +160,9 @@ MacUpdateVerifier::MacUpdateVerifier(std::unique_ptr<IUpdateCommandRunner> runne
 
 UpdateVerifierResult MacUpdateVerifier::verify(const StagedUpdate &staged)
 {
+  if (!normalizeUpdateVersion(staged.version)) {
+    return {false, QStringLiteral("staged update has an invalid version")};
+  }
   const QFileInfo dmg(staged.installerPath);
   if (dmg.isSymLink() || !dmg.isFile() ||
       dmg.suffix().compare(QStringLiteral("dmg"), Qt::CaseInsensitive) != 0) {

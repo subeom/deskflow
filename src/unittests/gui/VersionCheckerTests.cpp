@@ -34,6 +34,7 @@ using deskflow::gui::UpdateVerifierResult;
 namespace {
 
 constexpr auto kInstallerName = "deskflow-2.0.6-macos-arm64.dmg";
+constexpr auto kRunningVersion = "2.0.5";
 
 QString digest(const QByteArray &payload)
 {
@@ -172,7 +173,8 @@ void VersionCheckerTests::checkLatest_deduplicatesInFlightAndUsesPinnedEndpoint(
   auto network = std::make_unique<FakeUpdateNetwork>();
   auto *fakeNetwork = network.get();
   VersionChecker checker(
-      std::move(network), directMac(), QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::move(network), directMac(), QString::fromLatin1(kRunningVersion),
+      QDir(temporary.path()).filePath(QStringLiteral("updates")),
       std::make_unique<FakeUpdateVerifier>(true), 0
   );
   checker.checkLatest();
@@ -207,7 +209,8 @@ void VersionCheckerTests::checkLatest_upToDateUsesOnlyBoundedCachedSnapshotOn304
   auto network = std::make_unique<FakeUpdateNetwork>();
   auto *fakeNetwork = network.get();
   VersionChecker checker(
-      std::move(network), directMac(), root, std::make_unique<FakeUpdateVerifier>(true), 0
+      std::move(network), directMac(), QString::fromLatin1(kRunningVersion), root,
+      std::make_unique<FakeUpdateVerifier>(true), 0
   );
   checker.checkLatest();
   QCOMPARE(fakeNetwork->calls.first().options.etag, state.etag);
@@ -227,7 +230,8 @@ void VersionCheckerTests::checkLatest_rateLimitPersistsRetryAndMakesNoImmediateR
   auto network = std::make_unique<FakeUpdateNetwork>();
   auto *fakeNetwork = network.get();
   VersionChecker checker(
-      std::move(network), directMac(), root, std::make_unique<FakeUpdateVerifier>(true), 0
+      std::move(network), directMac(), QString::fromLatin1(kRunningVersion), root,
+      std::make_unique<FakeUpdateVerifier>(true), 0
   );
   checker.checkLatest();
   fakeNetwork->complete(
@@ -250,7 +254,8 @@ void VersionCheckerTests::checkLatest_timeoutMakesOnlyOneMetadataRetry()
   auto network = std::make_unique<FakeUpdateNetwork>();
   auto *fakeNetwork = network.get();
   VersionChecker checker(
-      std::move(network), directMac(), QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::move(network), directMac(), QString::fromLatin1(kRunningVersion),
+      QDir(temporary.path()).filePath(QStringLiteral("updates")),
       std::make_unique<FakeUpdateVerifier>(true), 0
   );
   checker.checkLatest();
@@ -280,7 +285,8 @@ void VersionCheckerTests::checkLatest_manualPlatformsNeverDownload()
     auto network = std::make_unique<FakeUpdateNetwork>();
     auto *fakeNetwork = network.get();
     VersionChecker checker(
-        std::move(network), environment, QDir(temporary.path()).filePath(QStringLiteral("updates")),
+        std::move(network), environment, QString::fromLatin1(kRunningVersion),
+        QDir(temporary.path()).filePath(QStringLiteral("updates")),
         std::make_unique<FakeUpdateVerifier>(true), 0
     );
     checker.checkLatest();
@@ -296,13 +302,126 @@ void VersionCheckerTests::checkLatest_manualPlatformsNeverDownload()
   auto network = std::make_unique<FakeUpdateNetwork>();
   auto *fakeNetwork = network.get();
   VersionChecker checker(
-      std::move(network), uncertain, QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::move(network), uncertain, QString::fromLatin1(kRunningVersion),
+      QDir(temporary.path()).filePath(QStringLiteral("updates")),
       std::make_unique<FakeUpdateVerifier>(true), 0
   );
   checker.checkLatest();
   fakeNetwork->complete(0, success(releaseJson()));
   QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::ManualAvailable);
   QCOMPARE(fakeNetwork->calls.size(), 1);
+}
+
+void VersionCheckerTests::checkLatest_rejectsInvalidRunningVersionWithoutRequest()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  auto network = std::make_unique<FakeUpdateNetwork>();
+  auto *fakeNetwork = network.get();
+  VersionChecker checker(
+      std::move(network), directMac(), QStringLiteral("2.0.5.17"),
+      QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::make_unique<FakeUpdateVerifier>(true), 0
+  );
+
+  checker.checkLatest();
+  QVERIFY(fakeNetwork->calls.isEmpty());
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::Failed);
+}
+
+void VersionCheckerTests::checkLatest_refreshesEnvironmentForEveryCheck()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  auto environment = directMac();
+  environment.supported = false;
+  auto network = std::make_unique<FakeUpdateNetwork>();
+  auto *fakeNetwork = network.get();
+  VersionChecker checker(
+      std::move(network), [&environment] { return environment; },
+      QString::fromLatin1(kRunningVersion),
+      QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::make_unique<FakeUpdateVerifier>(true), 0
+  );
+
+  checker.checkLatest();
+  QVERIFY(fakeNetwork->calls.isEmpty());
+  environment = directMac();
+  checker.checkLatest();
+  QCOMPARE(fakeNetwork->calls.size(), 1);
+  fakeNetwork->complete(0, success(releaseJson()));
+  fakeNetwork->complete(1, success(checksumPayload()));
+  fakeNetwork->complete(2, success(installerPayload()));
+  QVERIFY(checker.staged());
+
+  environment.supported = false;
+  checker.checkLatest();
+  QCOMPARE(fakeNetwork->calls.size(), 3);
+  QVERIFY(!checker.staged());
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::Idle);
+}
+
+void VersionCheckerTests::checkLatest_rechecksEnvironmentBeforeChecksumRequest()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  auto environment = directMac();
+  auto network = std::make_unique<FakeUpdateNetwork>();
+  auto *fakeNetwork = network.get();
+  VersionChecker checker(
+      std::move(network), [&environment] { return environment; },
+      QString::fromLatin1(kRunningVersion),
+      QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::make_unique<FakeUpdateVerifier>(true), 0
+  );
+
+  checker.checkLatest();
+  environment.packageManaged = true;
+  fakeNetwork->complete(0, success(releaseJson()));
+
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::ManualAvailable);
+  QCOMPARE(
+      checker.status().releaseUrl,
+      QUrl(QStringLiteral("https://github.com/subeom/deskflow/releases/tag/v2.0.6"))
+  );
+  QCOMPARE(fakeNetwork->calls.size(), 1);
+}
+
+void VersionCheckerTests::checkLatest_rechecksEnvironmentBeforeAndAfterInstallerRequest()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  auto environment = directMac();
+  auto network = std::make_unique<FakeUpdateNetwork>();
+  auto *fakeNetwork = network.get();
+  VersionChecker checker(
+      std::move(network), [&environment] { return environment; },
+      QString::fromLatin1(kRunningVersion),
+      QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::make_unique<FakeUpdateVerifier>(true), 0
+  );
+
+  checker.checkLatest();
+  fakeNetwork->complete(0, success(releaseJson()));
+  QCOMPARE(fakeNetwork->calls.size(), 2);
+  environment.serviceMode = true;
+  fakeNetwork->complete(1, success(checksumPayload()));
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::ManualAvailable);
+  QCOMPARE(fakeNetwork->calls.size(), 2);
+
+  environment.serviceMode = false;
+  checker.checkLatest();
+  fakeNetwork->complete(2, success(releaseJson()));
+  fakeNetwork->complete(3, success(checksumPayload()));
+  QCOMPARE(fakeNetwork->calls.size(), 5);
+  environment.supported = false;
+  fakeNetwork->complete(4, success(installerPayload()));
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::ManualAvailable);
+  QCOMPARE(
+      checker.status().releaseUrl,
+      QUrl(QStringLiteral("https://github.com/subeom/deskflow/releases/tag/v2.0.6"))
+  );
+  QVERIFY(!checker.staged());
 }
 
 void VersionCheckerTests::checkLatest_unsupportedEnvironmentDoesNotRequest()
@@ -314,7 +433,8 @@ void VersionCheckerTests::checkLatest_unsupportedEnvironmentDoesNotRequest()
   auto network = std::make_unique<FakeUpdateNetwork>();
   auto *fakeNetwork = network.get();
   VersionChecker checker(
-      std::move(network), environment, QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::move(network), environment, QString::fromLatin1(kRunningVersion),
+      QDir(temporary.path()).filePath(QStringLiteral("updates")),
       std::make_unique<FakeUpdateVerifier>(true), 0
   );
   checker.checkLatest();
@@ -332,7 +452,8 @@ void VersionCheckerTests::checkLatest_directMacDownloadsChecksumsThenDmgThenVeri
   auto verifier = std::make_unique<FakeUpdateVerifier>(true);
   auto *fakeVerifier = verifier.get();
   VersionChecker checker(
-      std::move(network), directMac(), QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::move(network), directMac(), QString::fromLatin1(kRunningVersion),
+      QDir(temporary.path()).filePath(QStringLiteral("updates")),
       std::move(verifier), 0
   );
   checker.checkLatest();
@@ -355,7 +476,8 @@ void VersionCheckerTests::checkLatest_cancelInvalidatesLateNetworkCallbacks()
   auto network = std::make_unique<FakeUpdateNetwork>();
   auto *fakeNetwork = network.get();
   VersionChecker checker(
-      std::move(network), directMac(), QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::move(network), directMac(), QString::fromLatin1(kRunningVersion),
+      QDir(temporary.path()).filePath(QStringLiteral("updates")),
       std::make_unique<FakeUpdateVerifier>(true), 0
   );
   checker.checkLatest();
@@ -374,7 +496,8 @@ void VersionCheckerTests::checkLatest_discardsWrongIntegrityAndPlatformVerificat
   auto *fakeNetwork = network.get();
   auto verifier = std::make_unique<FakeUpdateVerifier>(false);
   VersionChecker checker(
-      std::move(network), directMac(), QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::move(network), directMac(), QString::fromLatin1(kRunningVersion),
+      QDir(temporary.path()).filePath(QStringLiteral("updates")),
       std::move(verifier), 0
   );
   checker.checkLatest();
@@ -395,6 +518,7 @@ void VersionCheckerTests::checkLatest_missingExactArchitectureNeverFallsBack()
   auto *fakeNetwork = network.get();
   VersionChecker checker(
       std::move(network), directMac(QStringLiteral("x86_64")),
+      QString::fromLatin1(kRunningVersion),
       QDir(temporary.path()).filePath(QStringLiteral("updates")),
       std::make_unique<FakeUpdateVerifier>(true), 0
   );
@@ -421,7 +545,8 @@ void VersionCheckerTests::checkLatest_reusesOnlyAReverifiedStage()
   auto verifier = std::make_unique<FakeUpdateVerifier>(true);
   auto *fakeVerifier = verifier.get();
   VersionChecker checker(
-      std::move(network), directMac(), root, std::move(verifier), 0
+      std::move(network), directMac(), QString::fromLatin1(kRunningVersion), root,
+      std::move(verifier), 0
   );
   checker.checkLatest();
   fakeNetwork->complete(0, success(releaseJson()));

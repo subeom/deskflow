@@ -15,6 +15,7 @@
 #include <QObject>
 #include <QUrl>
 
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -55,12 +56,32 @@ class VersionChecker : public QObject
 {
   Q_OBJECT
 public:
+  using UpdateEnvironmentProvider = std::function<deskflow::gui::UpdateEnvironment()>;
+
   explicit VersionChecker(QObject *parent = nullptr);
+  VersionChecker(
+      std::unique_ptr<deskflow::gui::IUpdateNetwork> network,
+      UpdateEnvironmentProvider environmentProvider, QString cacheRoot,
+      std::unique_ptr<deskflow::gui::IUpdateVerifier> verifier, int retryDelayMs = 0,
+      QObject *parent = nullptr
+  );
+  VersionChecker(
+      std::unique_ptr<deskflow::gui::IUpdateNetwork> network,
+      UpdateEnvironmentProvider environmentProvider, QString runningVersion,
+      QString cacheRoot, std::unique_ptr<deskflow::gui::IUpdateVerifier> verifier,
+      int retryDelayMs = 0, QObject *parent = nullptr
+  );
   VersionChecker(
       std::unique_ptr<deskflow::gui::IUpdateNetwork> network,
       deskflow::gui::UpdateEnvironment environment, QString cacheRoot,
       std::unique_ptr<deskflow::gui::IUpdateVerifier> verifier, int retryDelayMs = 0,
       QObject *parent = nullptr
+  );
+  VersionChecker(
+      std::unique_ptr<deskflow::gui::IUpdateNetwork> network,
+      deskflow::gui::UpdateEnvironment environment, QString runningVersion,
+      QString cacheRoot, std::unique_ptr<deskflow::gui::IUpdateVerifier> verifier,
+      int retryDelayMs = 0, QObject *parent = nullptr
   );
   ~VersionChecker() override;
 
@@ -82,10 +103,19 @@ private:
   void requestChecksums();
   void requestInstaller();
   void handleLatestResponse(const deskflow::gui::UpdateNetworkResult &result);
-  void handleChecksumsResponse(const deskflow::gui::UpdateNetworkResult &result);
-  void handleInstallerResponse(const deskflow::gui::UpdateNetworkResult &result);
+  void handleChecksumsResponse(
+      const deskflow::gui::UpdateNetworkResult &result,
+      const deskflow::gui::UpdatePlan &requestedPlan
+  );
+  void handleInstallerResponse(
+      const deskflow::gui::UpdateNetworkResult &result,
+      const deskflow::gui::UpdatePlan &requestedPlan
+  );
   void processReleaseJson(const QByteArray &json, const QString &etag);
   void publishStagedUpdate(const deskflow::gui::StagedUpdate &staged);
+  bool refreshEnvironment();
+  bool refreshAutomaticPlan();
+  void publishManualUpdate();
   void scheduleMetadataRetry();
   void scheduleChecksumRetry();
   bool handleRetryableFailure(
@@ -98,11 +128,14 @@ private:
   void failCheck(const QString &error);
 
   std::unique_ptr<deskflow::gui::IUpdateNetwork> m_network;
+  UpdateEnvironmentProvider m_environmentProvider;
   deskflow::gui::UpdateEnvironment m_environment;
+  QString m_runningVersion;
   std::unique_ptr<deskflow::gui::UpdateCache> m_cache;
   std::unique_ptr<deskflow::gui::IUpdateVerifier> m_verifier;
   UpdateStatusSnapshot m_status;
   std::optional<deskflow::gui::UpdateCacheState> m_cachedState;
+  std::optional<deskflow::gui::UpdateRelease> m_release;
   std::optional<deskflow::gui::UpdatePlan> m_plan;
   std::optional<deskflow::gui::StagedUpdate> m_staged;
   std::optional<QByteArray> m_sums;

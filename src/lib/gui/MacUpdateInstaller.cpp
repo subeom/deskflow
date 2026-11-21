@@ -9,6 +9,7 @@
 #include "common/VersionInfo.h"
 #include "common/Settings.h"
 #include "gui/MacUpdateVerifier.h"
+#include "gui/UpdateRelease.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -51,8 +52,7 @@ constexpr int kRelaunchTimeoutMs = 30'000;
 
 QString currentStableVersion()
 {
-  const auto parts = QString::fromLatin1(kVersion).split(QLatin1Char('.'));
-  return parts.size() < 3 ? QString() : parts.mid(0, 3).join(QLatin1Char('.'));
+  return normalizeUpdateVersion(QString::fromLatin1(kVersion)).value_or(QString());
 }
 
 struct UpdateReceipt
@@ -509,7 +509,7 @@ bool isTrustedUpdateParentPermissions(
   if (worldWritable) {
     return false;
   }
-  if (!groupWritable) {
+  if (!groupWritable && owner == effectiveUid) {
     return true;
   }
   return owner == 0 &&
@@ -531,11 +531,14 @@ bool isValidUpdateHandshake(
     return false;
   }
   const auto object = document.object();
+  const auto version =
+      normalizeUpdateVersion(object.value(QStringLiteral("version")).toString());
+  const auto normalizedExpected = normalizeUpdateVersion(expectedVersion);
   return object.value(QStringLiteral("state")).toString() ==
              QStringLiteral("ready") &&
          object.value(QStringLiteral("pid")).toInteger() == pid &&
          object.value(QStringLiteral("token")).toString() == token &&
-         object.value(QStringLiteral("version")).toString() == expectedVersion;
+         version && normalizedExpected && *version == *normalizedExpected;
 }
 
 UpdateInstallResult claimUpdateReceipt(
