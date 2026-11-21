@@ -7,7 +7,7 @@
 
 #include <cstdint>
 #include <functional>
-#include <mutex>
+#include <memory>
 #include <string>
 
 // The hold of the pointer of a Mac server while the pointer is on a client.
@@ -167,6 +167,9 @@ std::string pointerHoldLogApp(
 );
 
 //! The calls into the system (a fake in the tests, OSXPointerHoldSystem in the program)
+/*!
+A call may throw: the controller catches it (the worst that may happen is that the pointer is not held).
+*/
 class IPointerHoldSystem
 {
 public:
@@ -188,7 +191,7 @@ public:
   //! Monotonic seconds
   virtual double now() = 0;
   virtual void log(const std::string &line) = 0;
-  //! Runs \p work on the thread of the event tap (at once on a fake)
+  //! Runs \p work on the thread of the event tap (at once on a fake).  \p work can run after the caller is gone
   virtual void runOnTapThread(std::function<void()> work) = 0;
   //! Calls \p tick every \p intervalSeconds on the thread of the event tap, until \c stopTimer()
   virtual void startTimer(double intervalSeconds, std::function<void()> tick) = 0;
@@ -201,16 +204,29 @@ class IPointerHoldNotifications
 public:
   using Callback = std::function<void(PointerHoldTrigger, const std::string &app)>;
   virtual ~IPointerHoldNotifications() = default;
-  //! \p callback can be called from any thread
+  //! \p callback can be called from any thread, until \c stop(); it must not throw (a source contains what it does)
   virtual void start(Callback callback) = 0;
+  /*!
+  When it returns the callback is not running, will not be called again, and is released.  Called from the callback it
+  only silences it (the callback cannot wait for itself)
+  */
   virtual void stop() = 0;
 };
+
+//! What the controller shares with the work that it hands to the system (private: in OSXPointerHold.cpp)
+struct PointerHoldState;
 
 //! The policy, the system and the lock between the threads that look at the pointer
 /*!
 The pointer is looked at from the tap thread (mouse events, the timer), and notifications are moved to that thread; the
 core thread arms and disarms in leave() and enter().  All the state is under one mutex, and everything that touches the
 system runs under it, so two looks never run at once.
+
+What the controller hands to the system (a notification, the work posted to the tap thread, a tick of the timer) can run
+after the controller is gone: it holds the shared state of the controller (\c PointerHoldState) by value and never the
+controller, and the destructor takes the system away from that state and waits for the callers that are using it.
+Nothing throws out of the controller: a failure is caught and reported once (the worst that may happen is that the
+pointer is not held), because an exception that leaves a callback of the system aborts the program.
 */
 class PointerHoldController
 {
@@ -222,35 +238,29 @@ public:
   PointerHoldController &operator=(const PointerHoldController &) = delete;
 
   //! The pointer left this computer: park it where it is, and start the timer
-  void arm();
+  void arm() noexcept;
   //! The pointer is on this computer again: stop the timer
-  void disarm();
+  void disarm() noexcept;
   //! The server moved the pointer on purpose
-  void repark(PointerHoldPoint where);
+  void repark(PointerHoldPoint where) noexcept;
   //! The name of the client that has the pointer, for the log
-  void setRemoteName(const std::string &name);
+  void setRemoteName(const std::string &name) noexcept;
   //! Bundle id of this program, so that the log names the front application when it is this one
-  void setOwnBundleId(const std::string &id);
-  //! Listens to \p notifications until \c detach()
-  void attach(IPointerHoldNotifications &notifications);
-  void detach();
+  void setOwnBundleId(const std::string &id) noexcept;
+  //! Listens to \p notifications until \c detach().  \p notifications must outlive the attachment
+  void attach(IPointerHoldNotifications &notifications) noexcept;
+  void detach() noexcept;
 
   //! A mouse event with this place: cheap when it is the parked place, otherwise the live place is looked at
-  void onPointerEvent(PointerHoldPoint eventLocation);
+  void onPointerEvent(PointerHoldPoint eventLocation) noexcept;
   //! A notification that the system may have taken the pointer back (or the tap was disabled)
-  void onNotification(PointerHoldTrigger trigger, const std::string &app = {});
+  void onNotification(PointerHoldTrigger trigger, const std::string &app = {}) noexcept;
 
-  bool armed() const;
-  uint64_t detections() const;
+  bool armed() const noexcept;
+  uint64_t detections() const noexcept;
 
 private:
-  void look(PointerHoldTrigger trigger, const std::string &app);
-
-  IPointerHoldSystem &m_system;
-  mutable std::mutex m_mutex;
-  PointerHoldPolicy m_policy;
-  std::string m_remoteName;
-  std::string m_ownBundleId;
+  std::shared_ptr<PointerHoldState> m_state;
   IPointerHoldNotifications *m_notifications = nullptr;
 };
 

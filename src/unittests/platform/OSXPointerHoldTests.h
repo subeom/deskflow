@@ -53,4 +53,9 @@ private Q_SLOTS:
   void controller_theServerMovingThePointer_isNotAMovement();
   void controller_detaching_stopsTheNotifications();
   void controller_destroyingIt_stopsTheTimerAndTheSource();
+
+  // lifetime: what the system still runs after the controller is gone, and what the system throws
+  void controller_workThatOutlivesTheController_doesNotTouchTheSystem();
+  void controller_destroyingIt_waitsForANotificationThatIsBeingHandedOver();
+  void controller_aSystemThatThrows_isContainedAndReportedOnce();
 };

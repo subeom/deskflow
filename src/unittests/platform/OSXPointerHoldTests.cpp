@@ -10,9 +10,13 @@
 #include <QStringList>
 #include <QTest>
 
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <functional>
+#include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace deskflow::platform;
@@ -161,6 +165,54 @@ public:
     if (callback) {
       callback(trigger, app);
     }
+  }
+};
+
+// A system whose calls can be made to throw, as a system call that fails in an unforeseen way does
+class ThrowingSystem : public FakeSystem
+{
+public:
+  bool throwOnCursor = false;
+  bool throwOnWarp = false;
+  bool throwOnPost = false;
+
+  PointerHoldPoint cursorPosition() override
+  {
+    if (throwOnCursor) {
+      throw std::runtime_error("the cursor cannot be read");
+    }
+    return FakeSystem::cursorPosition();
+  }
+  void warp(PointerHoldPoint where) override
+  {
+    if (throwOnWarp) {
+      throw std::runtime_error("the warp failed");
+    }
+    FakeSystem::warp(where);
+  }
+  void runOnTapThread(std::function<void()> work) override
+  {
+    if (throwOnPost) {
+      throw std::runtime_error("the work cannot be posted");
+    }
+    FakeSystem::runOnTapThread(std::move(work));
+  }
+};
+
+// A system that holds on to the work that is handed to the tap thread until it is let go
+class GatedSystem : public FakeSystem
+{
+public:
+  std::atomic<bool> entered{false};
+  std::atomic<bool> release{false};
+
+  void runOnTapThread(std::function<void()> work) override
+  {
+    entered = true;
+    for (int i = 0; i < 4000 && !release.load(); ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    FakeSystem::runOnTapThread(std::move(work));
   }
 };
 
@@ -774,6 +826,116 @@ void OSXPointerHoldTests::controller_destroyingIt_stopsTheTimerAndTheSource()
   QCOMPARE(notifications.stopped, 1);
   QVERIFY(!system.tick);
   QVERIFY(system.timersStopped >= 1);
+}
+
+//
+// lifetime
+//
+void OSXPointerHoldTests::controller_workThatOutlivesTheController_doesNotTouchTheSystem()
+{
+  // what was handed to the tap thread (a notification, a tick of the timer) can run after the controller is gone: the
+  // system that is still there must not be called, and nothing of the controller may be read
+  FakeSystem system;
+  system.runInline = false;
+  FakeNotifications notifications;
+  std::function<void()> tick;
+  {
+    PointerHoldController controller(system);
+    controller.attach(notifications);
+    controller.arm();
+    tick = system.tick;
+    QVERIFY(bool(tick));
+    system.cursor = {300.0, 300.0};
+    notifications.fire(Trigger::AppActivated, "com.example.app");
+    controller.onNotification(Trigger::SpaceChanged);
+    QCOMPARE(int(system.posted.size()), 2);
+  }
+  const auto calls = system.calls;
+  const auto lines = system.lines;
+  const int reads = system.cursorReads;
+
+  system.drain();
+  tick();
+  tick();
+
+  QCOMPARE(system.calls, calls);
+  QCOMPARE(system.lines, lines);
+  QCOMPARE(system.cursorReads, reads);
+}
+
+void OSXPointerHoldTests::controller_destroyingIt_waitsForANotificationThatIsBeingHandedOver()
+{
+  // a notification is being handed to the tap thread (the system is in use) on one thread while the controller is
+  // destroyed on another: the controller must not be gone before the system is let go of
+  GatedSystem system;
+  auto controller = std::make_unique<PointerHoldController>(system);
+  controller->arm();
+  std::atomic<bool> destroyed{false};
+
+  std::thread notifier([&] { controller->onNotification(Trigger::SpaceChanged); });
+  QTRY_VERIFY_WITH_TIMEOUT(system.entered.load(), 5000);
+
+  std::thread destroyer([&] {
+    controller.reset();
+    destroyed = true;
+  });
+  QTest::qWait(150);
+  const bool destroyedTooEarly = destroyed.load();
+  system.release = true;
+  destroyer.join();
+  notifier.join();
+  QVERIFY(!destroyedTooEarly);
+  QVERIFY(destroyed.load());
+}
+
+void OSXPointerHoldTests::controller_aSystemThatThrows_isContainedAndReportedOnce()
+{
+  // an exception that leaves a callback of the system (the tap, the timer, a notification) aborts the process: the
+  // worst that may happen is that the pointer is not held, and one line says so
+  ThrowingSystem system;
+  system.throwOnCursor = true;
+  PointerHoldController controller(system);
+
+  // the cursor cannot be read: nothing is parked, nothing throws
+  controller.arm();
+  controller.onPointerEvent({1.0, 1.0});
+  controller.onNotification(Trigger::AppActivated);
+  controller.disarm();
+  controller.repark({2.0, 2.0});
+  controller.setRemoteName("client");
+  QVERIFY(!controller.armed());
+  QCOMPARE(int(system.lines.size()), 1);
+  QVERIFY(system.lines.first().contains(QStringLiteral("could not be held")));
+
+  // the next stay works when the system does
+  system.throwOnCursor = false;
+  controller.arm();
+  QVERIFY(controller.armed());
+  QVERIFY(bool(system.tick));
+
+  // a warp that fails: the tick, the event and the notification all come back, and the line is not written again
+  system.throwOnWarp = true;
+  system.cursor = {300.0, 300.0};
+  for (int i = 0; i < 3; ++i) {
+    system.tick();
+    controller.onPointerEvent({300.0, 300.0});
+    controller.onNotification(Trigger::SpaceChanged);
+  }
+  QVERIFY(controller.armed());
+  QCOMPARE(int(system.lines.size()), 1);
+
+  // a post that fails
+  system.throwOnPost = true;
+  controller.onNotification(Trigger::DisplayWoke);
+  QCOMPARE(int(system.lines.size()), 1);
+
+  // and when the system works again the hold works again
+  system.throwOnWarp = false;
+  system.throwOnPost = false;
+  system.cursor = {300.0, 300.0};
+  controller.onNotification(Trigger::SpaceChanged);
+  QCOMPARE(system.cursor.x, kParked.x);
+  QCOMPARE(system.cursor.y, kParked.y);
 }
 
 QTEST_MAIN(OSXPointerHoldTests)

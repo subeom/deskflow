@@ -25,6 +25,7 @@
 #include <bitset>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -154,6 +155,11 @@ private:
   // while the pointer is on a client, the pointer of this Mac is held where it was parked (see OSXPointerHold.h)
   void holdPointerOnEvent(CGEventRef event);
   void notifyPointerHold(deskflow::platform::PointerHoldTrigger trigger);
+  // the run loop of the tap thread for a thread that is not the tap thread, retained (the caller releases it), or null
+  // when the tap thread does not run.  m_eventTapRunLoop is only for the thread that starts and stops the tap
+  CFRunLoopRef retainTapRunLoop();
+  void publishTapRunLoop(CFRunLoopRef runLoop);
+  void unpublishTapRunLoop();
 
   // map deskflow mouse button to mac buttons
   ButtonID mapDeskflowButtonToMac(uint16_t) const;
@@ -280,7 +286,8 @@ private:
   using MouseButtonEventMapType = std::map<uint16_t, CGEventType>;
   std::vector<MouseButtonEventMapType> MouseButtonEventMap;
 
-  bool m_cursorHidden;
+  // written by the core thread (hideCursor, showCursor) and by the tap thread (hideCursorAgain), read by the tap
+  std::atomic<bool> m_cursorHidden;
   // how many times the cursor was hidden and not shown again: showCursor() shows it that many times
   std::atomic<int> m_hideDepth{0};
 
@@ -336,6 +343,10 @@ private:
   CFRunLoopSourceRef m_eventTapRLSR;
   std::thread m_eventTapThread;
   CFRunLoopRef m_eventTapRunLoop = nullptr;
+  // the same run loop, retained, for the threads that hand work to the tap thread (a notification of the system, a
+  // display reconfiguration): the tap thread can end at any moment, and a run loop that is not retained ends with it
+  std::mutex m_tapRunLoopMutex;
+  CFRunLoopRef m_publishedTapRunLoop = nullptr;
 
   // for double click coalescing.
   double m_lastClickTime;

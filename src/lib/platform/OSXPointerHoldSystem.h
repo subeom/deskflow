@@ -21,7 +21,8 @@ struct OSXPointerHoldHooks
 {
   //! The event tap (null when there is none)
   std::function<CFMachPortRef()> tapPort;
-  //! The run loop of the tap thread (null when the thread does not run)
+  //! The run loop of the tap thread, with a retain that the caller releases (null when the thread does not run): the
+  //! thread can end at any moment, and a run loop that is not retained is gone with it
   std::function<CFRunLoopRef()> tapRunLoop;
   //! Hides the cursor again and keeps the hide count at one
   std::function<void()> hideAgain;
@@ -54,6 +55,8 @@ public:
   void stopTimer() override;
 
 private:
+  void stopTimerLocked();
+
   OSXPointerHoldHooks m_hooks;
   std::mutex m_timerMutex;
   CFRunLoopTimerRef m_timer = nullptr;
@@ -63,6 +66,12 @@ private:
 /*!
 Workspace notifications (the application that is active, the space, the displays, the Mac waking) and the distributed
 notifications of the lock screen.  They are delivered on a queue of their own and handed to the callback.
+
+The center posts a notification on the thread of the poster, and the poster waits until the observer of a queue has run
+(the main thread waits for the observers of the activation of an application), so an observer is short, takes no lock
+that a caller of the program can hold, and never throws.  An observer block holds the state that it needs by value
+(\c Shared), never a pointer to this object or to a local of the function that made it: it can run after both are gone.
+\c stop() silences the callback first, then removes the observers, then waits until a callback that is running is done.
 */
 class OSXPointerHoldNotifications final : public IPointerHoldNotifications
 {
@@ -70,11 +79,15 @@ public:
   OSXPointerHoldNotifications();
   ~OSXPointerHoldNotifications() override;
 
+  //! Listens again with \p callback (what was started before is stopped); it is called on a queue of its own
   void start(Callback callback) override;
+  //! From any thread, one call at a time; from the callback it only silences the callback (see
+  //! IPointerHoldNotifications)
   void stop() override;
 
 private:
   struct Impl;
+  static void stopLocked(Impl &impl);
   std::unique_ptr<Impl> m_impl;
 };
 

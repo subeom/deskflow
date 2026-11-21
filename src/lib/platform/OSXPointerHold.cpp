@@ -6,6 +6,9 @@
 #include "platform/OSXPointerHold.h"
 
 #include <cmath>
+#include <condition_variable>
+#include <exception>
+#include <mutex>
 #include <utility>
 
 namespace deskflow::platform {
@@ -210,9 +213,188 @@ std::string pointerHoldLogApp(
 // PointerHoldController
 //
 
+// What the controller shares with the work that it hands to the system: a notification, the work posted to the tap
+// thread, a tick of the timer.  That work can run after the controller is gone, so it holds this by value and never the
+// controller (a pointer to the controller dangles, and its destroyed mutex throws when it is locked: that was the crash
+// of 2.0.4).  It lives as long as the last of them.
+//
+// Two mutexes, never held together by one thread in the order gate -> mutex:
+//  - \c mutex is the lock of the policy, and of every call into the system that is not a hand-over; it is held across
+//    system calls, so nothing that a notification of the system waits for may take it,
+//  - \c gate guards the pointer to the system and the count of the hand-overs; it is held for a moment, never across a
+//    call.  A notification of the system is posted by a thread that waits for it (the center runs the observers of a
+//    queue and the poster waits until they are done): it takes the gate and nothing else.
+struct PointerHoldState
+{
+  PointerHoldState(IPointerHoldSystem &s, PointerHoldTuning tuning) : policy(tuning), system(&s)
+  {
+    // do nothing
+  }
+
+  std::mutex mutex;
+  PointerHoldPolicy policy;
+  std::string remoteName;
+  std::string ownBundleId;
+  bool failureReported = false;
+
+  std::mutex gate;
+  std::condition_variable idle;
+  IPointerHoldSystem *system; //!< null when the controller is gone
+  int handingOver = 0;        //!< the callers that use the system without \c mutex
+};
+
+namespace {
+
+using State = std::shared_ptr<PointerHoldState>;
+
+IPointerHoldSystem *systemOf(PointerHoldState &state)
+{
+  std::scoped_lock lock(state.gate);
+  return state.system;
+}
+
+// The reason of the exception that is being handled (call it from a catch block)
+std::string currentExceptionText() noexcept
+{
+  try {
+    throw;
+  } catch (const std::exception &e) {
+    try {
+      return e.what();
+    } catch (...) {
+      return "an error";
+    }
+  } catch (...) {
+    return "an unknown error";
+  }
+}
+
+// Something threw inside a call of the controller.  The call is given up (the pointer is not held for it) and one line
+// says so, once: nothing may leave the controller, because the callers are callbacks of the system, and an exception
+// that leaves one of those aborts the program.  Call it from a catch block, with no lock held
+void report(PointerHoldState &state) noexcept
+{
+  try {
+    const auto what = currentExceptionText();
+    std::scoped_lock lock(state.mutex);
+    if (state.failureReported) {
+      return;
+    }
+    state.failureReported = true;
+    if (auto *system = systemOf(state)) {
+      system->log("the pointer of this Mac could not be held (" + what + "); reported once");
+    }
+  } catch (...) {
+    // nothing more can be done
+  }
+}
+
+void look(PointerHoldState &state, PointerHoldTrigger trigger, const std::string &app)
+{
+  std::scoped_lock lock(state.mutex);
+  auto *system = systemOf(state);
+  if (system == nullptr || !state.policy.armed()) {
+    return;
+  }
+
+  PointerHoldObservation observation;
+  observation.trigger = trigger;
+  observation.now = system->now();
+  // the live place: the place of an event can be old (it was queued before the pointer was held again)
+  observation.cursor = system->cursorPosition();
+  if (trigger == PointerHoldTrigger::Event && state.policy.isParked(observation.cursor)) {
+    return;
+  }
+  observation.tapEnabled = system->tapEnabled();
+  observation.cursorShown = system->cursorShown();
+
+  const auto decision = state.policy.observe(observation);
+
+  if (decision.reenableTap) {
+    system->enableTap();
+  }
+  if (decision.reassociate) {
+    system->prepareWarp();
+    system->dissociate();
+  }
+  if (decision.warp) {
+    system->warp(decision.target);
+  }
+  if (decision.rehide) {
+    system->hideAgain();
+  }
+  if (decision.log) {
+    const auto front = system->frontApplication();
+    const auto activeApp = pointerHoldLogApp(trigger, app, front, state.ownBundleId);
+    system->log(formatPointerHoldLog(decision, state.remoteName, activeApp));
+  }
+}
+
+void lookContained(const State &state, PointerHoldTrigger trigger, const std::string &app) noexcept
+{
+  try {
+    look(*state, trigger, app);
+  } catch (...) {
+    report(*state);
+  }
+}
+
+// Counts the caller as one that uses the system without the mutex until it is done, so that the destructor of the
+// controller waits for it
+class HandOver
+{
+public:
+  explicit HandOver(PointerHoldState &state) : m_state(state)
+  {
+    std::scoped_lock lock(m_state.gate);
+    m_system = m_state.system;
+    if (m_system != nullptr) {
+      ++m_state.handingOver;
+    }
+  }
+  ~HandOver()
+  {
+    if (m_system == nullptr) {
+      return;
+    }
+    try {
+      std::scoped_lock lock(m_state.gate);
+      --m_state.handingOver;
+      m_state.idle.notify_all();
+    } catch (...) {
+      // the gate cannot be locked: nothing more can be done
+    }
+  }
+  HandOver(const HandOver &) = delete;
+  HandOver &operator=(const HandOver &) = delete;
+
+  //! The system, or null when the controller is gone
+  IPointerHoldSystem *system() const
+  {
+    return m_system;
+  }
+
+private:
+  PointerHoldState &m_state;
+  IPointerHoldSystem *m_system = nullptr;
+};
+
+void handOver(const State &state, PointerHoldTrigger trigger, const std::string &app) noexcept
+{
+  try {
+    HandOver use(*state);
+    if (use.system() != nullptr) {
+      use.system()->runOnTapThread([state, trigger, app] { lookContained(state, trigger, app); });
+    }
+  } catch (...) {
+    report(*state);
+  }
+}
+
+} // namespace
+
 PointerHoldController::PointerHoldController(IPointerHoldSystem &system, PointerHoldTuning tuning)
-    : m_system(system),
-      m_policy(tuning)
+    : m_state(std::make_shared<PointerHoldState>(system, tuning))
 {
   // do nothing
 }
@@ -220,120 +402,152 @@ PointerHoldController::PointerHoldController(IPointerHoldSystem &system, Pointer
 PointerHoldController::~PointerHoldController()
 {
   detach();
-  m_system.stopTimer();
-}
-
-void PointerHoldController::arm()
-{
-  std::scoped_lock lock(m_mutex);
-  m_policy.arm(m_system.cursorPosition());
-  m_system.startTimer(m_policy.tuning().timerInterval, [this] { look(PointerHoldTrigger::Timer, {}); });
-}
-
-void PointerHoldController::disarm()
-{
-  std::scoped_lock lock(m_mutex);
-  m_policy.disarm();
-  m_system.stopTimer();
-}
-
-void PointerHoldController::repark(PointerHoldPoint where)
-{
-  std::scoped_lock lock(m_mutex);
-  m_policy.repark(where);
-}
-
-void PointerHoldController::setRemoteName(const std::string &name)
-{
-  std::scoped_lock lock(m_mutex);
-  m_remoteName = name;
-}
-
-void PointerHoldController::setOwnBundleId(const std::string &id)
-{
-  std::scoped_lock lock(m_mutex);
-  m_ownBundleId = id;
-}
-
-void PointerHoldController::attach(IPointerHoldNotifications &notifications)
-{
-  detach();
-  m_notifications = &notifications;
-  notifications.start([this](PointerHoldTrigger trigger, const std::string &app) { onNotification(trigger, app); });
-}
-
-void PointerHoldController::detach()
-{
-  if (m_notifications != nullptr) {
-    m_notifications->stop();
-    m_notifications = nullptr;
+  try {
+    // from here nothing that the system still runs for us touches it: the work that is queued, the tick that is in
+    // flight, a notification that is being handed over.  The system is gone after this, the state lives on
+    if (auto *system = systemOf(*m_state)) {
+      std::scoped_lock lock(m_state->mutex);
+      try {
+        system->stopTimer();
+      } catch (...) {
+        // the timer is gone with the system, and a tick that is left finds no system
+      }
+    }
+    {
+      std::unique_lock lock(m_state->gate);
+      m_state->system = nullptr;
+      m_state->idle.wait(lock, [this] { return m_state->handingOver == 0; });
+    }
+    // a look that was running when the system was taken away is finished when the mutex is free
+    std::scoped_lock lock(m_state->mutex);
+  } catch (...) {
+    // the program is going away: nothing more can be done
   }
 }
 
-void PointerHoldController::onPointerEvent(PointerHoldPoint eventLocation)
+void PointerHoldController::arm() noexcept
 {
-  {
-    std::scoped_lock lock(m_mutex);
-    if (!m_policy.armed() || m_policy.isParked(eventLocation)) {
+  try {
+    std::scoped_lock lock(m_state->mutex);
+    auto *system = systemOf(*m_state);
+    if (system == nullptr) {
       return;
     }
+    m_state->policy.arm(system->cursorPosition());
+    system->startTimer(m_state->policy.tuning().timerInterval, [state = m_state] {
+      lookContained(state, PointerHoldTrigger::Timer, {});
+    });
+  } catch (...) {
+    report(*m_state);
   }
-  look(PointerHoldTrigger::Event, {});
 }
 
-void PointerHoldController::onNotification(PointerHoldTrigger trigger, const std::string &app)
+void PointerHoldController::disarm() noexcept
 {
-  m_system.runOnTapThread([this, trigger, app] { look(trigger, app); });
+  try {
+    std::scoped_lock lock(m_state->mutex);
+    m_state->policy.disarm();
+    if (auto *system = systemOf(*m_state)) {
+      system->stopTimer();
+    }
+  } catch (...) {
+    report(*m_state);
+  }
 }
 
-bool PointerHoldController::armed() const
+void PointerHoldController::repark(PointerHoldPoint where) noexcept
 {
-  std::scoped_lock lock(m_mutex);
-  return m_policy.armed();
+  try {
+    std::scoped_lock lock(m_state->mutex);
+    m_state->policy.repark(where);
+  } catch (...) {
+    report(*m_state);
+  }
 }
 
-uint64_t PointerHoldController::detections() const
+void PointerHoldController::setRemoteName(const std::string &name) noexcept
 {
-  std::scoped_lock lock(m_mutex);
-  return m_policy.detections();
+  try {
+    std::scoped_lock lock(m_state->mutex);
+    m_state->remoteName = name;
+  } catch (...) {
+    report(*m_state);
+  }
 }
 
-void PointerHoldController::look(PointerHoldTrigger trigger, const std::string &app)
+void PointerHoldController::setOwnBundleId(const std::string &id) noexcept
 {
-  std::scoped_lock lock(m_mutex);
-  if (!m_policy.armed()) {
-    return;
+  try {
+    std::scoped_lock lock(m_state->mutex);
+    m_state->ownBundleId = id;
+  } catch (...) {
+    report(*m_state);
   }
+}
 
-  PointerHoldObservation observation;
-  observation.trigger = trigger;
-  observation.now = m_system.now();
-  // the live place: the place of an event can be old (it was queued before the pointer was held again)
-  observation.cursor = m_system.cursorPosition();
-  if (trigger == PointerHoldTrigger::Event && m_policy.isParked(observation.cursor)) {
-    return;
+void PointerHoldController::attach(IPointerHoldNotifications &notifications) noexcept
+{
+  try {
+    detach();
+    m_notifications = &notifications;
+    notifications.start([state = m_state](PointerHoldTrigger trigger, const std::string &app) {
+      handOver(state, trigger, app);
+    });
+  } catch (...) {
+    report(*m_state);
   }
-  observation.tapEnabled = m_system.tapEnabled();
-  observation.cursorShown = m_system.cursorShown();
+}
 
-  const auto decision = m_policy.observe(observation);
+void PointerHoldController::detach() noexcept
+{
+  try {
+    if (m_notifications != nullptr) {
+      m_notifications->stop();
+      m_notifications = nullptr;
+    }
+  } catch (...) {
+    m_notifications = nullptr;
+    report(*m_state);
+  }
+}
 
-  if (decision.reenableTap) {
-    m_system.enableTap();
+void PointerHoldController::onPointerEvent(PointerHoldPoint eventLocation) noexcept
+{
+  try {
+    {
+      std::scoped_lock lock(m_state->mutex);
+      if (!m_state->policy.armed() || m_state->policy.isParked(eventLocation)) {
+        return;
+      }
+    }
+    lookContained(m_state, PointerHoldTrigger::Event, {});
+  } catch (...) {
+    report(*m_state);
   }
-  if (decision.reassociate) {
-    m_system.prepareWarp();
-    m_system.dissociate();
+}
+
+void PointerHoldController::onNotification(PointerHoldTrigger trigger, const std::string &app) noexcept
+{
+  handOver(m_state, trigger, app);
+}
+
+bool PointerHoldController::armed() const noexcept
+{
+  try {
+    std::scoped_lock lock(m_state->mutex);
+    return m_state->policy.armed();
+  } catch (...) {
+    return false;
   }
-  if (decision.warp) {
-    m_system.warp(decision.target);
-  }
-  if (decision.rehide) {
-    m_system.hideAgain();
-  }
-  if (decision.log) {
-    const auto front = m_system.frontApplication();
-    m_system.log(formatPointerHoldLog(decision, m_remoteName, pointerHoldLogApp(trigger, app, front, m_ownBundleId)));
+}
+
+uint64_t PointerHoldController::detections() const noexcept
+{
+  try {
+    std::scoped_lock lock(m_state->mutex);
+    return m_state->policy.detections();
+  } catch (...) {
+    return 0;
   }
 }
 

@@ -135,7 +135,7 @@ OSXComputer::OSXComputer(IEventQueue *events, bool isPrimary, bool enableLangSyn
     if (m_isPrimary && Settings::value(Settings::Core::MacHoldPointer).toBool()) {
       deskflow::platform::OSXPointerHoldHooks hooks;
       hooks.tapPort = [this] { return m_eventTapPort; };
-      hooks.tapRunLoop = [this] { return m_eventTapRunLoop; };
+      hooks.tapRunLoop = [this] { return retainTapRunLoop(); };
       hooks.hideAgain = [this] { hideCursorAgain(); };
       m_pointerHoldSystem = std::make_unique<deskflow::platform::OSXPointerHoldSystem>(std::move(hooks));
       m_pointerHold = std::make_unique<deskflow::platform::PointerHoldController>(*m_pointerHoldSystem);
@@ -202,6 +202,10 @@ OSXComputer::OSXComputer(IEventQueue *events, bool isPrimary, bool enableLangSyn
 
 OSXComputer::~OSXComputer()
 {
+  // the callback of the displays posts to the hold of the pointer (on the thread that the system chooses): it goes
+  // first, before anything that it uses is taken down
+  CGDisplayRemoveReconfigurationCallback(displayReconfigurationCallback, this);
+
   disable();
 
   m_events->adoptBuffer(nullptr);
@@ -229,8 +233,6 @@ OSXComputer::~OSXComputer()
   m_events->removeHandler(EventTypes::OsxComputerConfirmSleep, getEventTarget());
 
   RemoveEventHandler(m_switchEventHandlerRef);
-
-  CGDisplayRemoveReconfigurationCallback(displayReconfigurationCallback, this);
 
   delete m_keyState;
   delete m_screensaver;
@@ -780,19 +782,30 @@ void OSXComputer::enable()
       auto sem = dispatch_semaphore_create(0);
       m_eventTapThread = std::thread([this, sem]() {
         m_eventTapRunLoop = CFRunLoopGetCurrent();
+        publishTapRunLoop(m_eventTapRunLoop);
         CFRunLoopAddSource(m_eventTapRunLoop, m_eventTapRLSR, kCFRunLoopDefaultMode);
         dispatch_semaphore_signal(sem);
         CFRunLoopRun();
+        unpublishTapRunLoop();
         CFRunLoopRemoveSource(CFRunLoopGetCurrent(), m_eventTapRLSR, kCFRunLoopDefaultMode);
         m_eventTapRunLoop = nullptr;
       });
       dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
       dispatch_release(sem);
       // the pointer may be given back by the system at any time while it is on a client: look at it when that may
-      // happen
+      // happen.  Whatever goes wrong here, the pointer is only not held: the core must go on
       if (m_pointerHold) {
-        m_pointerHoldNotifications = std::make_unique<deskflow::platform::OSXPointerHoldNotifications>();
-        m_pointerHold->attach(*m_pointerHoldNotifications);
+        try {
+          // the old source goes only after the controller let go of it
+          m_pointerHold->detach();
+          m_pointerHoldNotifications.reset();
+          m_pointerHoldNotifications = std::make_unique<deskflow::platform::OSXPointerHoldNotifications>();
+          m_pointerHold->attach(*m_pointerHoldNotifications);
+        } catch (const std::exception &e) {
+          LOG_WARN("the pointer hold does not listen to the notifications of the system: %s", e.what());
+        } catch (...) {
+          LOG_WARN("the pointer hold does not listen to the notifications of the system");
+        }
       }
     } else {
       LOG_ERR("failed to create a CFRunLoopSourceRef for the quartz event tap");
@@ -820,6 +833,7 @@ void OSXComputer::disable()
   if (m_eventTapThread.joinable()) {
     m_eventTapThread.join();
   }
+  unpublishTapRunLoop();
 
   if (m_eventTapRLSR) {
     CFRelease(m_eventTapRLSR);
@@ -1928,6 +1942,31 @@ void OSXComputer::notifyPointerHold(deskflow::platform::PointerHoldTrigger trigg
 {
   if (m_pointerHold) {
     m_pointerHold->onNotification(trigger);
+  }
+}
+
+CFRunLoopRef OSXComputer::retainTapRunLoop()
+{
+  std::scoped_lock lock(m_tapRunLoopMutex);
+  return m_publishedTapRunLoop != nullptr
+             ? static_cast<CFRunLoopRef>(const_cast<void *>(CFRetain(m_publishedTapRunLoop)))
+             : nullptr;
+}
+
+void OSXComputer::publishTapRunLoop(CFRunLoopRef runLoop)
+{
+  std::scoped_lock lock(m_tapRunLoopMutex);
+  if (m_publishedTapRunLoop == nullptr && runLoop != nullptr) {
+    m_publishedTapRunLoop = static_cast<CFRunLoopRef>(const_cast<void *>(CFRetain(runLoop)));
+  }
+}
+
+void OSXComputer::unpublishTapRunLoop()
+{
+  std::scoped_lock lock(m_tapRunLoopMutex);
+  if (m_publishedTapRunLoop != nullptr) {
+    CFRelease(m_publishedTapRunLoop);
+    m_publishedTapRunLoop = nullptr;
   }
 }
 

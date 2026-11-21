@@ -57,6 +57,16 @@ elseif(APPLE)
     SOURCE OSXPointerHoldTests.cpp
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
   )
+  # the real observers of the notification center of NSWorkspace of the test process, with synthetic notifications that
+  # are posted to that center only (the distributed center is system wide and is never posted to)
+  create_test(
+    NAME OSXPointerHoldNotificationsTests
+    DEPENDS platform
+    LIBS base arch
+    SOURCE OSXPointerHoldNotificationsTests.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/platform"
+  )
+  target_sources(OSXPointerHoldNotificationsTests PRIVATE OSXPointerHoldTestSupport.h OSXPointerHoldTestSupport.mm)
   create_test(
     NAME OSXScrollSourceTests
     DEPENDS platform
