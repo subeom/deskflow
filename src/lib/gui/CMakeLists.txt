@@ -31,6 +31,8 @@ add_library(${target} STATIC
   StyleUtils.h
   TlsUtility.cpp
   TlsUtility.h
+  UpdateRelease.cpp
+  UpdateRelease.h
   VersionChecker.cpp
   VersionChecker.h
   config/ComputerConfig.h
@@ -380,4 +382,5 @@ target_link_libraries(${target}
     server
     Qt6::Widgets
     Qt6::Svg
+    Qt6::Network
 )
