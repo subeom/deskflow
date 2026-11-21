@@ -183,6 +183,12 @@ public:
       QFile::remove(shutdownReceipt);
       QDir().mkpath(shutdownReceipt);
     }
+    if (mutateParentBeforeRename && !parentPathToMutate.isEmpty()) {
+      QFile::setPermissions(
+          parentPathToMutate,
+          QFileInfo(parentPathToMutate).permissions() | QFileDevice::WriteOther
+      );
+    }
     return result(QStringLiteral("quarantine"));
   }
 
@@ -282,6 +288,8 @@ public:
   int relaunchCount = 0;
   bool corruptReceiptOnNewLaunch = false;
   bool corruptReceiptBeforeNewLaunch = false;
+  bool mutateParentBeforeRename = false;
+  QString parentPathToMutate;
   QString stateBeforeNewLaunch;
   qint64 helperPidBeforeClaim = -1;
   int identityCalls = 0;
@@ -744,6 +752,61 @@ void UpdateInstallerTests::apply_doesNotRelaunchOldBeforeParentExit()
   QCOMPARE(operations->relaunchCount, 0);
 }
 
+void UpdateInstallerTests::apply_revalidatesBundleParentAfterParentExit()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  Fixture fixture;
+  QVERIFY(createFixture(temporary, fixture));
+  FakeLauncher *launcher = nullptr;
+  FakeApplyOperations *parentOperations = nullptr;
+  auto parent = parentInstaller(fixture, launcher, parentOperations);
+  const auto start = parent->start(fixture.staged, true);
+  QVERIFY(start.ok);
+
+  QVERIFY(QFile::setPermissions(
+      temporary.path(),
+      QFileInfo(temporary.path()).permissions() | QFileDevice::WriteOther
+  ));
+  FakeApplyOperations *operations = nullptr;
+  auto helper = helperInstaller(fixture, operations);
+  const auto result = helper->apply(
+      fixture.manifestPath, fixture.parentPid, fixture.parentStartIdentity,
+      start.receiptPath, start.helperToken
+  );
+  QVERIFY(!result.ok);
+  QVERIFY(result.error.contains(QStringLiteral("bundle")));
+  QVERIFY(operations->relaunchCount >= 1);
+}
+
+void UpdateInstallerTests::apply_rechecksParentPermissionsImmediatelyBeforeRename()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  Fixture fixture;
+  QVERIFY(createFixture(temporary, fixture));
+  FakeLauncher *launcher = nullptr;
+  FakeApplyOperations *parentOperations = nullptr;
+  auto parent = parentInstaller(fixture, launcher, parentOperations);
+  const auto start = parent->start(fixture.staged, true);
+  QVERIFY(start.ok);
+
+  FakeApplyOperations *operations = nullptr;
+  auto helper = helperInstaller(fixture, operations);
+  operations->mutateParentBeforeRename = true;
+  operations->parentPathToMutate = temporary.path();
+  const auto result = helper->apply(
+      fixture.manifestPath, fixture.parentPid, fixture.parentStartIdentity,
+      start.receiptPath, start.helperToken
+  );
+  QVERIFY(!result.ok);
+  QVERIFY(result.error.contains(QStringLiteral("bundle")));
+  QVERIFY(operations->operations.filter(
+      QRegularExpression(QStringLiteral("^rename:"))
+  ).isEmpty());
+  QVERIFY(operations->relaunchCount >= 1);
+}
+
 void UpdateInstallerTests::pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermissions()
 {
   QVERIFY(deskflow::gui::isTrustedUpdateBundleOwner(501, 501));
@@ -756,7 +819,7 @@ void UpdateInstallerTests::pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermiss
   ));
   QVERIFY(deskflow::gui::isTrustedUpdateParentPermissions(
       501, 501, QStringLiteral("staff"), true, false
-  ));
+  ) == false);
   QVERIFY(!deskflow::gui::isTrustedUpdateParentPermissions(
       501, 0, QStringLiteral("staff"), true, false
   ));

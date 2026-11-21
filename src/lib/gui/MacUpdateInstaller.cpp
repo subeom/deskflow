@@ -498,9 +498,6 @@ bool isTrustedUpdateParentPermissions(
   if (!groupWritable) {
     return true;
   }
-  if (owner == effectiveUid) {
-    return true;
-  }
   return owner == 0 &&
          (groupName == QStringLiteral("admin") || groupName == QStringLiteral("wheel"));
 }
@@ -776,6 +773,23 @@ UpdateInstallResult MacUpdateInstaller::apply(
     };
   };
 
+  const QFileInfo liveBundleInfo(*bundle);
+  const QFileInfo liveParentInfo(liveBundleInfo.dir().absolutePath());
+  if (liveBundleInfo.isSymLink() || !liveBundleInfo.isDir() ||
+      liveBundleInfo.absoluteFilePath().startsWith(QStringLiteral("/Volumes/")) ||
+      !isTrustedUpdateBundleOwner(geteuid(), liveBundleInfo.ownerId()) ||
+      !liveParentInfo.isWritable() ||
+      !isTrustedUpdateParentPermissions(
+          geteuid(), liveParentInfo.ownerId(), liveParentInfo.group(),
+          liveParentInfo.permissions().testFlag(QFileDevice::WriteGroup),
+          liveParentInfo.permissions().testFlag(QFileDevice::WriteOther)
+      ) ||
+      liveBundleInfo.canonicalFilePath() != liveBundleInfo.absoluteFilePath()) {
+    return failAfterParentExit(
+        QStringLiteral("Deskflow app bundle changed or is no longer trusted after shutdown")
+    );
+  }
+
   const auto staged = UpdateCache::load(manifestPath);
   if (!staged || !isCanonicalInside(m_cacheRoot, staged->installerPath)) {
     return failAfterParentExit(QStringLiteral("staged update is invalid"));
@@ -847,6 +861,23 @@ UpdateInstallResult MacUpdateInstaller::apply(
     m_operations->removeRecursively(workspace.rootPath);
     return failAfterParentExit(
         QStringLiteral("candidate app identity changed before replacement")
+    );
+  }
+
+  const QFileInfo bundleBeforeSwap(*bundle);
+  const QFileInfo parentBeforeSwap(bundleBeforeSwap.dir().absolutePath());
+  if (bundleBeforeSwap.isSymLink() || !bundleBeforeSwap.isDir() ||
+      !isTrustedUpdateBundleOwner(geteuid(), bundleBeforeSwap.ownerId()) ||
+      !isTrustedUpdateParentPermissions(
+          geteuid(), parentBeforeSwap.ownerId(), parentBeforeSwap.group(),
+          parentBeforeSwap.permissions().testFlag(QFileDevice::WriteGroup),
+          parentBeforeSwap.permissions().testFlag(QFileDevice::WriteOther)
+      ) ||
+      bundleBeforeSwap.canonicalFilePath() != bundleBeforeSwap.absoluteFilePath()) {
+    m_operations->removeRecursively(candidate);
+    m_operations->removeRecursively(workspace.rootPath);
+    return failAfterParentExit(
+        QStringLiteral("Deskflow app bundle became unsafe before replacement")
     );
   }
 

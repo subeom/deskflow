@@ -24,6 +24,8 @@ private Q_SLOTS:
   void apply_keepsOldBackupWhenRollbackRelaunchFails();
   void apply_relaunchesOldForEveryPostParentExitFailure();
   void apply_doesNotRelaunchOldBeforeParentExit();
+  void apply_revalidatesBundleParentAfterParentExit();
+  void apply_rechecksParentPermissionsImmediatelyBeforeRename();
   void pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermissions();
   void apply_rejectsCandidateIdentityChangeBeforeAndAfterRename();
   void apply_rejectsIdentityMutationDuringFinalVerification();
