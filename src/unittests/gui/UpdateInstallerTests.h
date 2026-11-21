@@ -31,6 +31,7 @@ private Q_SLOTS:
   void apply_revalidatesBundleParentAfterParentExit();
   void apply_rechecksParentPermissionsImmediatelyBeforeRename();
   void pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermissions();
+  void aclPolicy_requiresSuccessfulEmptyAclRead();
   void apply_rejectsCandidateIdentityChangeBeforeAndAfterRename();
   void apply_rejectsIdentityMutationDuringFinalVerification();
   void apply_rejectsMismatchedPidAndReceipt();

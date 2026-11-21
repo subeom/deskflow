@@ -173,6 +173,8 @@ void UpdateReleaseTests::version_normalizationAcceptsOnlyStableShapes()
       deskflow::gui::normalizeUpdateVersion(QStringLiteral("2.0.5.0")),
       std::optional<QString>{QStringLiteral("2.0.5")}
   );
+  QVERIFY(!deskflow::gui::normalizeUpdateVersion(QStringLiteral("2.0.6\n")));
+  QVERIFY(!deskflow::gui::normalizeUpdateVersion(QStringLiteral("2.0.6.0\r\n")));
   for (const auto rejected : {
            QStringLiteral("2.0.5.1"),
            QStringLiteral("2.0.5.10"),
@@ -180,7 +182,12 @@ void UpdateReleaseTests::version_normalizationAcceptsOnlyStableShapes()
            QStringLiteral("2.0.5.0.0"),
            QStringLiteral("2.0.5-rc1"),
            QStringLiteral("02.0.5"),
-           QStringLiteral("v2.0.5")}) {
+           QStringLiteral("v2.0.5"),
+           QStringLiteral("2.0.5\n"),
+           QStringLiteral("2.0.5 "),
+           QStringLiteral("2.0.5.0\n"),
+           QStringLiteral("2.0.5.0\r\n"),
+           QStringLiteral("2.0.5\r")}) {
     QVERIFY(!deskflow::gui::normalizeUpdateVersion(rejected));
   }
 
@@ -188,13 +195,17 @@ void UpdateReleaseTests::version_normalizationAcceptsOnlyStableShapes()
       deskflow::gui::versionFromUpdateTag(QStringLiteral("v2.0.5")),
       std::optional<QString>{QStringLiteral("2.0.5")}
   );
+  QVERIFY(!deskflow::gui::versionFromUpdateTag(QStringLiteral("v2.0.6\n")));
   for (const auto rejected : {
            QStringLiteral("2.0.5"),
            QStringLiteral("V2.0.5"),
            QStringLiteral("v2.0.5.0"),
            QStringLiteral("v2.0.5.1"),
            QStringLiteral("v02.0.5"),
-           QStringLiteral("v2.0.5-rc1")}) {
+           QStringLiteral("v2.0.5-rc1"),
+           QStringLiteral("v2.0.5\n"),
+           QStringLiteral("v2.0.5\r\n"),
+           QStringLiteral("v2.0.5 ")}) {
     QVERIFY(!deskflow::gui::versionFromUpdateTag(rejected));
     QVERIFY(!parseGitHubRelease(releaseJson(automaticAssets(), rejected)).release);
   }

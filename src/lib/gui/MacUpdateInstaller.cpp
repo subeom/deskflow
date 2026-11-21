@@ -566,7 +566,7 @@ MacUpdateInstaller::MacUpdateInstaller(
     QString executablePath, QString cacheRoot, bool packageManaged, qint64 processId,
     QString processStartIdentity, std::unique_ptr<IUpdateProcessLauncher> launcher,
     std::unique_ptr<IUpdateApplyOperations> operations,
-    std::unique_ptr<IUpdateVerifier> verifier
+    std::unique_ptr<IUpdateVerifier> verifier, MacUpdateAclReader aclReader
 )
     : m_executablePath(std::move(executablePath)),
       m_cacheRoot(QDir::cleanPath(QFileInfo(cacheRoot).absoluteFilePath())),
@@ -579,7 +579,8 @@ MacUpdateInstaller::MacUpdateInstaller(
       ),
       m_launcher(std::move(launcher)),
       m_operations(std::move(operations)),
-      m_verifier(std::move(verifier))
+      m_verifier(std::move(verifier)),
+      m_aclReader(std::move(aclReader))
 {
   if (!m_launcher) {
     m_launcher = std::make_unique<QProcessUpdateLauncher>();
@@ -605,7 +606,8 @@ UpdateInstallResult MacUpdateInstaller::preflight(const StagedUpdate &staged)
       m_executablePath,
       m_packageManaged,
       Settings::value(Settings::Core::ProcessMode).value<Settings::ProcessMode>() ==
-          Settings::ProcessMode::Service
+          Settings::ProcessMode::Service,
+      m_aclReader
   );
   if (!isMacUpdateInstallEligible(evidence) || evidence.bundlePath.isEmpty()) {
     return {false, QStringLiteral("Deskflow app bundle is not eligible for automatic update"), {}};

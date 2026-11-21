@@ -35,15 +35,16 @@ struct ParsedVersion
 std::optional<ParsedVersion> parseVersion(const QString &value, bool allowZeroBuildComponent = false)
 {
   static const QRegularExpression stablePattern(
-      QStringLiteral(R"(^((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))$)")
+      QStringLiteral(R"(^((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))\z)")
   );
   static const QRegularExpression zeroBuildPattern(
       QStringLiteral(
-          R"(^((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))(?:\.0)?$)"
+          R"(^((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))(?:\.0)?\z)"
       )
   );
   const auto match = (allowZeroBuildComponent ? zeroBuildPattern : stablePattern).match(value);
-  if (!match.hasMatch()) {
+  if (!match.hasMatch() || match.capturedStart(0) != 0 ||
+      match.capturedLength(0) != value.size()) {
     return std::nullopt;
   }
 

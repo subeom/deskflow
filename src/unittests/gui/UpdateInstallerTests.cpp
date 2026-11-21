@@ -20,6 +20,7 @@
 #include <QTemporaryDir>
 
 #include <algorithm>
+#include <cerrno>
 #include <memory>
 
 using deskflow::gui::IUpdateApplyOperations;
@@ -384,7 +385,10 @@ std::unique_ptr<MacUpdateInstaller> parentInstaller(
   return std::make_unique<MacUpdateInstaller>(
       fixture.executable, fixture.cacheRoot, false, fixture.parentPid,
       fixture.parentStartIdentity, std::move(launcherOwner), std::move(operationsOwner),
-      std::move(verifier)
+      std::move(verifier),
+      [](const QString &) {
+        return deskflow::gui::MacUpdateAclResult{true, 0, false, true, 0};
+      }
   );
 }
 
@@ -397,7 +401,10 @@ std::unique_ptr<MacUpdateInstaller> helperInstaller(
   return std::make_unique<MacUpdateInstaller>(
       fixture.executable, fixture.cacheRoot, false, 4243, QStringLiteral("helper-start"),
       std::make_unique<FakeLauncher>(), std::move(operationsOwner),
-      std::make_unique<FakeVerifier>()
+      std::make_unique<FakeVerifier>(),
+      [](const QString &) {
+        return deskflow::gui::MacUpdateAclResult{true, 0, false, true, 0};
+      }
   );
 }
 
@@ -947,7 +954,9 @@ void UpdateInstallerTests::pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermiss
   evidence.mountedVolume = false;
   evidence.packageManaged = false;
   evidence.appOwnedByEffectiveUser = true;
-  evidence.parentTrusted = true;
+  evidence.parentTrusted = deskflow::gui::isTrustedUpdateParentPermissions(
+      501, 0, QStringLiteral("admin"), true, false
+  );
   evidence.bundleWritable = true;
   evidence.parentWritable = true;
   evidence.aclTrustProven = true;
@@ -962,6 +971,55 @@ void UpdateInstallerTests::pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermiss
   evidence.appOwnedByEffectiveUser = true;
   evidence.desktopMode = false;
   QVERIFY(!deskflow::gui::isMacUpdateInstallEligible(evidence));
+}
+
+void UpdateInstallerTests::aclPolicy_requiresSuccessfulEmptyAclRead()
+{
+  using deskflow::gui::MacUpdateAclResult;
+  using deskflow::gui::isMacUpdateAclTrustProven;
+
+  for (const auto error :
+       {ENOENT, ENOTSUP, EOPNOTSUPP, EINVAL, EACCES, EPERM, EIO}) {
+    QVERIFY(!isMacUpdateAclTrustProven(
+        MacUpdateAclResult{false, -1, false, false, error}
+    ));
+  }
+  QVERIFY(!isMacUpdateAclTrustProven(
+      MacUpdateAclResult{true, -1, false, true, EIO}
+  ));
+  QVERIFY(!isMacUpdateAclTrustProven(
+      MacUpdateAclResult{true, 0, true, true, 0}
+  ));
+  QVERIFY(!isMacUpdateAclTrustProven(
+      MacUpdateAclResult{true, 0, false, false, EIO}
+  ));
+  QVERIFY(isMacUpdateAclTrustProven(
+      MacUpdateAclResult{true, 0, false, true, 0}
+  ));
+
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  Fixture fixture;
+  QVERIFY(createFixture(temporary, fixture));
+  for (const auto error :
+       {ENOENT, ENOTSUP, EOPNOTSUPP, EINVAL, EACCES, EPERM, EIO}) {
+    const auto evidence = deskflow::gui::evaluateMacUpdateInstall(
+        fixture.executable, false, false,
+        [error](const QString &) {
+          return MacUpdateAclResult{false, -1, false, false, error};
+        }
+    );
+    QVERIFY(!evidence.aclTrustProven);
+    QVERIFY(!deskflow::gui::isMacUpdateInstallEligible(evidence));
+  }
+  const auto proven = deskflow::gui::evaluateMacUpdateInstall(
+      fixture.executable, false, false,
+      [](const QString &) {
+        return MacUpdateAclResult{true, 0, false, true, 0};
+      }
+  );
+  QVERIFY(proven.aclTrustProven);
+  QVERIFY(deskflow::gui::isMacUpdateInstallEligible(proven));
 }
 
 void UpdateInstallerTests::apply_rejectsCandidateIdentityChangeBeforeAndAfterRename()

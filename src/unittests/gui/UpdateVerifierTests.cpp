@@ -47,7 +47,7 @@ public:
     if (program.endsWith(QStringLiteral("/plutil"))) {
       const auto &field = arguments.at(1);
       if (field == QStringLiteral("CFBundleIdentifier")) {
-        return {true, false, 0, QByteArrayLiteral("org.deskflow.deskflow"), {}};
+        return {true, false, 0, identifierOutput, {}};
       }
       if (field == QStringLiteral("CFBundleShortVersionString") ||
           field == QStringLiteral("CFBundleVersion")) {
@@ -65,6 +65,7 @@ public:
 
   QList<QPair<QString, QStringList>> commands;
   QByteArray evidenceOutput = evidence();
+  QByteArray identifierOutput = QByteArrayLiteral("org.deskflow.deskflow");
   QByteArray versionOutput = QByteArrayLiteral("2.0.6");
   bool fail = false;
 };
@@ -145,6 +146,78 @@ void UpdateVerifierTests::bundleVersion_acceptsStableOrZeroFourthComponentOnly()
   QVERIFY(!deskflow::gui::isMacUpdateBundleVersion(
       QStringLiteral("2.0.5-rc1"), QStringLiteral("2.0.5.0")
   ));
+}
+
+void UpdateVerifierTests::verifierApplication_acceptsOnlyOnePlutilIdentifierTerminator()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  QString app;
+  QVERIFY(appFixture(temporary, app));
+
+  for (const auto output : {
+           QByteArrayLiteral("org.deskflow.deskflow"),
+           QByteArrayLiteral("org.deskflow.deskflow\n"),
+           QByteArrayLiteral("org.deskflow.deskflow\r\n")}) {
+    auto runner = std::make_unique<EvidenceRunner>();
+    runner->identifierOutput = output;
+    MacUpdateVerifier verifier(std::move(runner));
+    QVERIFY2(verifier.verifyApplication(app, QStringLiteral("2.0.6")).ok, output.constData());
+  }
+
+  for (const auto output : {
+           QByteArrayLiteral(" org.deskflow.deskflow"),
+           QByteArrayLiteral("org.deskflow.deskflow "),
+           QByteArrayLiteral("org.deskflow.deskflow\n\n"),
+           QByteArrayLiteral("org.deskflow.deskflow\r")}) {
+    auto runner = std::make_unique<EvidenceRunner>();
+    runner->identifierOutput = output;
+    MacUpdateVerifier verifier(std::move(runner));
+    QVERIFY2(!verifier.verifyApplication(app, QStringLiteral("2.0.6")).ok, output.constData());
+  }
+}
+
+void UpdateVerifierTests::verifierApplication_acceptsOnlyOnePlutilTerminator()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  QString app;
+  QVERIFY(appFixture(temporary, app));
+
+  for (const auto output : {
+           QByteArrayLiteral("2.0.6"),
+           QByteArrayLiteral("2.0.6\n"),
+           QByteArrayLiteral("2.0.6\r\n"),
+           QByteArrayLiteral("2.0.6.0\n"),
+           QByteArrayLiteral("2.0.6.0\r\n")}) {
+    auto runner = std::make_unique<EvidenceRunner>();
+    runner->versionOutput = output;
+    MacUpdateVerifier verifier(std::move(runner));
+    QVERIFY2(
+        verifier.verifyApplication(app, QStringLiteral("2.0.6")).ok,
+        output.constData()
+    );
+  }
+
+  auto nulTerminated = QByteArrayLiteral("2.0.6");
+  nulTerminated.append('\0');
+  for (const auto output : {
+           QByteArrayLiteral(" 2.0.6"),
+           QByteArrayLiteral("2.0.6 "),
+           QByteArrayLiteral("\t2.0.6"),
+           QByteArrayLiteral("2.0.6\t"),
+           QByteArrayLiteral("2.0.6\n\n"),
+           QByteArrayLiteral("2.0.6\r"),
+           QByteArrayLiteral("2.0.6.1"),
+           nulTerminated}) {
+    auto runner = std::make_unique<EvidenceRunner>();
+    runner->versionOutput = output;
+    MacUpdateVerifier verifier(std::move(runner));
+    QVERIFY2(
+        !verifier.verifyApplication(app, QStringLiteral("2.0.6")).ok,
+        output.constData()
+    );
+  }
 }
 
 void UpdateVerifierTests::verifierApplication_checksVersionBundleAndNestedCore()

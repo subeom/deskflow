@@ -11,6 +11,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -46,6 +47,17 @@ struct UpdateFileIdentity
 
   bool operator==(const UpdateFileIdentity &) const = default;
 };
+
+struct MacUpdateAclResult
+{
+  bool readSucceeded = false;
+  int entryResult = -1;
+  bool hasEntries = false;
+  bool releaseSucceeded = false;
+  int errorNumber = 0;
+};
+
+using MacUpdateAclReader = std::function<MacUpdateAclResult(const QString &)>;
 
 struct MacUpdateInstallEvidence
 {
@@ -150,8 +162,10 @@ UpdateInstallResult claimUpdateReceipt(
     const QString &helperStartIdentity
 );
 MacUpdateInstallEvidence evaluateMacUpdateInstall(
-    const QString &executablePath, bool packageManaged, bool serviceMode
+    const QString &executablePath, bool packageManaged, bool serviceMode,
+    MacUpdateAclReader aclReader = {}
 );
+bool isMacUpdateAclTrustProven(const MacUpdateAclResult &result);
 bool isMacUpdateInstallEligible(const MacUpdateInstallEvidence &evidence);
 
 } // namespace deskflow::gui

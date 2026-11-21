@@ -16,6 +16,8 @@ private Q_SLOTS:
   void signatureEvidence_rejectsWrongBundleWrongLeafAdHocAndDeveloperId();
   void signatureEvidence_rejectsNotarizationOnlyAndMissingCore();
   void bundleVersion_acceptsStableOrZeroFourthComponentOnly();
+  void verifierApplication_acceptsOnlyOnePlutilIdentifierTerminator();
+  void verifierApplication_acceptsOnlyOnePlutilTerminator();
   void verifierApplication_checksVersionBundleAndNestedCore();
   void verifierApplication_boundsCommandFailures();
 };

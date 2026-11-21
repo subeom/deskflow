@@ -23,7 +23,8 @@ public:
       qint64 processId = 0, QString processStartIdentity = {},
       std::unique_ptr<IUpdateProcessLauncher> launcher = {},
       std::unique_ptr<IUpdateApplyOperations> operations = {},
-      std::unique_ptr<IUpdateVerifier> verifier = {}
+      std::unique_ptr<IUpdateVerifier> verifier = {},
+      MacUpdateAclReader aclReader = {}
   );
 
   UpdateInstallResult preflight(const StagedUpdate &staged) override;
@@ -45,6 +46,7 @@ private:
   std::unique_ptr<IUpdateProcessLauncher> m_launcher;
   std::unique_ptr<IUpdateApplyOperations> m_operations;
   std::unique_ptr<IUpdateVerifier> m_verifier;
+  MacUpdateAclReader m_aclReader;
 };
 
 bool isTrustedUpdateBundleOwner(qint64 effectiveUid, qint64 owner);

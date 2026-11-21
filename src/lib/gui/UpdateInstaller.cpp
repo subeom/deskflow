@@ -60,14 +60,14 @@ std::optional<QString> deskflowBundlePath(const QString &executablePath)
   return bundlePath;
 }
 
-bool aclTrustIsProven(const QString &path)
+MacUpdateAclResult readMacUpdateAcl(const QString &path)
 {
   if (!QFileInfo::exists(path)) {
-    return false;
+    return {false, -1, false, false, ENOENT};
   }
   acl_t acl = acl_get_file(path.toLocal8Bit().constData(), ACL_TYPE_EXTENDED);
   if (acl == nullptr) {
-    return errno == ENOENT || errno == ENOTSUP || errno == EINVAL;
+    return {false, -1, false, false, errno};
   }
   bool hasEntries = false;
   acl_entry_t entry = nullptr;
@@ -76,21 +76,33 @@ bool aclTrustIsProven(const QString &path)
     hasEntries = true;
     result = acl_get_entry(acl, ACL_NEXT_ENTRY, &entry);
   }
-  acl_free(acl);
-  return !hasEntries && result != -1;
+  const auto parseError = result == -1 ? errno : 0;
+  const auto released = acl_free(acl) == 0;
+  const auto releaseError = released ? 0 : errno;
+  return {true, result, hasEntries, released, parseError != 0 ? parseError : releaseError};
 }
+
 #endif
 
 } // namespace
 
+bool isMacUpdateAclTrustProven(const MacUpdateAclResult &result)
+{
+  return result.readSucceeded && result.entryResult == 0 &&
+         !result.hasEntries && result.releaseSucceeded &&
+         result.errorNumber == 0;
+}
+
 MacUpdateInstallEvidence evaluateMacUpdateInstall(
-    const QString &executablePath, bool packageManaged, bool serviceMode
+    const QString &executablePath, bool packageManaged, bool serviceMode,
+    MacUpdateAclReader aclReader
 )
 {
 #if !defined(Q_OS_MACOS)
   Q_UNUSED(executablePath)
   Q_UNUSED(packageManaged)
   Q_UNUSED(serviceMode)
+  Q_UNUSED(aclReader)
   return {};
 #else
   MacUpdateInstallEvidence evidence;
@@ -129,9 +141,12 @@ MacUpdateInstallEvidence evaluateMacUpdateInstall(
   );
   evidence.bundleWritable = bundle.isWritable();
   evidence.parentWritable = parent.isWritable();
+  const auto readAcl = [&aclReader](const QString &path) {
+    return aclReader ? aclReader(path) : readMacUpdateAcl(path);
+  };
   evidence.aclTrustProven =
-      aclTrustIsProven(bundle.absoluteFilePath()) &&
-      aclTrustIsProven(parent.absoluteFilePath());
+      isMacUpdateAclTrustProven(readAcl(bundle.absoluteFilePath())) &&
+      isMacUpdateAclTrustProven(readAcl(parent.absoluteFilePath()));
   return evidence;
 #endif
 }

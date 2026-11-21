@@ -54,6 +54,17 @@ QByteArray commandOutput(const UpdateCommandResult &result)
   return (result.standardOutput + QByteArrayLiteral("\n") + result.standardError).trimmed();
 }
 
+QString plistValueOutput(const UpdateCommandResult &result)
+{
+  auto output = result.standardOutput;
+  if (output.endsWith(QByteArrayLiteral("\r\n"))) {
+    output.chop(2);
+  } else if (output.endsWith('\n')) {
+    output.chop(1);
+  }
+  return QString::fromUtf8(output);
+}
+
 bool isInside(const QString &path, const QString &root)
 {
   const auto canonicalPath = QFileInfo(path).canonicalFilePath();
@@ -290,7 +301,7 @@ UpdateVerifierResult MacUpdateVerifier::verifyApplication(
         QStringLiteral("reading update bundle identifier"), bundleIdentifier
     );
   }
-  if (QString::fromUtf8(commandOutput(bundleIdentifier)) !=
+  if (plistValueOutput(bundleIdentifier) !=
       QString::fromLatin1(kBundleIdentifier)) {
     return {false, QStringLiteral("update bundle identifier is unexpected")};
   }
@@ -301,7 +312,7 @@ UpdateVerifierResult MacUpdateVerifier::verifyApplication(
       const auto version = readPlist(field);
       if (!updateCommandSucceeded(version) ||
           !isMacUpdateBundleVersion(
-              expectedVersion, QString::fromUtf8(commandOutput(version))
+              expectedVersion, plistValueOutput(version)
           )) {
         if (!updateCommandSucceeded(version)) {
           return updateCommandFailure(QStringLiteral("reading update app version"), version);
