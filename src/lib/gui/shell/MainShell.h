@@ -11,6 +11,8 @@
 #include <QObject>
 #include <QString>
 
+#include "gui/UpdateStatusModel.h"
+
 class NavRail;
 class QComboBox;
 class QLabel;
@@ -140,6 +142,7 @@ public:
   void setFingerprintVisible(bool visible);
   //! The version that can be updated to; none when it is empty
   void setUpdateVersion(const QString &version);
+  void setUpdateStatus(const deskflow::gui::UpdateStatusView &status);
   void setLogShown(bool shown);
 
   //! The page of the stack that an entry of the sidebar shows (a page that is not the home page: later work)
@@ -186,7 +189,7 @@ private:
   Mode m_mode = Mode::None;
   QList<ComputerEntry> m_computers;
   bool m_encryption = true;
-  QString m_updateVersion;
+  deskflow::gui::UpdateStatusView m_updateStatus;
 
   deskflow::gui::style::BackdropWidget *m_backdrop = nullptr;
   SidebarShell *m_sidebar = nullptr;

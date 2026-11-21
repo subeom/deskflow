@@ -9,6 +9,7 @@
 #include <QStatusBar>
 
 #include "common/Enums.h"
+#include "gui/UpdateStatusModel.h"
 
 class QPushButton;
 class QLabel;
@@ -33,6 +34,7 @@ public:
   void setSecurityLevel(const QString &securityLevel);
   void setBtnFingerprintVisible(bool visible);
   void updateFound(const QString &version);
+  void setUpdateStatus(const deskflow::gui::UpdateStatusView &status);
 
   //! What the bar says, for a second view of the same state (the main window of the new look): the sentence, the
   //! encryption, the fingerprint button and the version that can be updated to
@@ -50,6 +52,7 @@ Q_SIGNALS:
   void requestUpdateVersion();
   //! Something that the getters above return changed (it may come several times for one change of state)
   void changed();
+  void requestUpdateAction(deskflow::gui::UpdateAction action);
 
 protected:
   void changeEvent(QEvent *e) override;
@@ -65,6 +68,7 @@ private:
   bool m_headless = false;
   QString m_securityLevel;
   QString m_updateVersion;
+  deskflow::gui::UpdateStatusView m_updateStatus;
   int m_connectionInterval = -1;
   QTimer *m_retryTimer = nullptr;
 };

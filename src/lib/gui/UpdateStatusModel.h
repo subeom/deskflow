@@ -20,6 +20,12 @@ enum class UpdateAction
   Retry
 };
 
+} // namespace deskflow::gui
+
+Q_DECLARE_METATYPE(deskflow::gui::UpdateAction)
+
+namespace deskflow::gui {
+
 struct UpdateStatusView
 {
   QString version;
@@ -40,6 +46,7 @@ public:
   explicit UpdateStatusModel(QObject *parent = nullptr);
 
   void setStatus(const UpdateStatusSnapshot &status);
+  void retranslate();
   const UpdateStatusView &view() const;
   const UpdateStatusSnapshot &status() const;
 

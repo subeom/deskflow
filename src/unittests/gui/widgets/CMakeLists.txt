@@ -48,3 +48,12 @@ create_test(
   SOURCE LogDockTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME StatusBarTests
+  DEPENDS gui
+  LIBS server ${gui_server_libs}
+  SOURCE StatusBarTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+target_include_directories(StatusBarTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")

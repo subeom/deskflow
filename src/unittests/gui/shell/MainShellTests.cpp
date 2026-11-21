@@ -8,6 +8,7 @@
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
 #include "gui/MainWindow.h"
+#include "gui/UpdateStatusModel.h"
 #include "gui/chrome/WindowChrome.h"
 #include "gui/chrome/WindowHeader.h"
 #include "gui/core/CoreProcess.h"
@@ -102,6 +103,10 @@ struct MainWindowTestAccess
   static StatusBar *statusBar(MainWindow &w)
   {
     return w.m_statusBar;
+  }
+  static void updateStatus(MainWindow &w, const UpdateStatusSnapshot &status)
+  {
+    w.m_updateStatus->setStatus(status);
   }
   static LogDock *logDock(MainWindow &w)
   {
@@ -445,6 +450,30 @@ void MainShellTests::deskflowLook_theHeroSaysTheStateOfTheCoreAndTheStatusBar()
       shell->hero()->headline() == QStringLiteral("Not sharing"),
       qPrintable(shell->hero()->headline() + QStringLiteral(" / model: ") + shell->status()->view().headline)
   );
+}
+
+void MainShellTests::deskflowLook_theExistingUpdateActionUsesTheSharedState()
+{
+  auto window = makeWindow(true);
+  auto *shell = Access::shell(*window);
+  showWindow(*window);
+
+  deskflow::gui::UpdateStatusView status;
+  status.version = QStringLiteral("2.0.6");
+  status.label = QStringLiteral("Install update");
+  status.visible = true;
+  status.enabled = true;
+  status.installable = true;
+  status.action = deskflow::gui::UpdateAction::ConfirmInstall;
+  UpdateStatusSnapshot snapshot;
+  snapshot.phase = UpdateStatusSnapshot::Phase::Staged;
+  snapshot.version = status.version;
+  snapshot.installable = true;
+  Access::updateStatus(*window, snapshot);
+
+  auto *update = shell->rail()->item(QStringLiteral("update"));
+  QTRY_VERIFY(update->isVisibleTo(shell->rail()));
+  QCOMPARE(update->text(), QStringLiteral("Install update · v2.0.6"));
 }
 
 void MainShellTests::deskflowLook_theClientConnectionKeepsItsControlsWorking_andHasPlacesForMore()

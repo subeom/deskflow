@@ -91,6 +91,8 @@ Q_SIGNALS:
   void tunnelSaved();
   //! The list of the servers that were typed in the address field was cleared (the field has the list again)
   void serverHistoryCleared();
+  //! The person asked for an update check without waiting for application startup
+  void checkForUpdatesRequested();
   //! The person asked to go to another page of the settings (the id of the page)
   void pageRequested(const QString &id);
 

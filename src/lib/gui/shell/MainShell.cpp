@@ -410,7 +410,7 @@ void MainShell::retranslate()
   rail->setItemText(QLatin1String(kAboutId), withoutDots(m_texts.about));
   rail->setItemText(QLatin1String(kFingerprintId), m_texts.fingerprint);
   setEncryptionEnabled(m_encryption);
-  setUpdateVersion(m_updateVersion);
+  setUpdateStatus(m_updateStatus);
 
   m_modeControl->setSegmentText(0, tr("Share this computer"));
   m_modeControl->setSegmentText(1, tr("Use another computer"));
@@ -547,12 +547,24 @@ void MainShell::setFingerprintVisible(bool visible)
 
 void MainShell::setUpdateVersion(const QString &version)
 {
-  m_updateVersion = version;
-  m_sidebar->rail()->setItemVisible(QLatin1String(kUpdateId), !version.isEmpty());
-  if (!version.isEmpty())
-    m_sidebar->rail()->setItemText(
-        QLatin1String(kUpdateId), QStringLiteral("%1 · v%2").arg(m_texts.updateAvailable, version)
-    );
+  deskflow::gui::UpdateStatusView status;
+  status.version = version;
+  status.label = m_texts.updateAvailable;
+  status.visible = !version.isEmpty();
+  status.enabled = status.visible;
+  status.action = deskflow::gui::UpdateAction::OpenRelease;
+  setUpdateStatus(status);
+}
+
+void MainShell::setUpdateStatus(const deskflow::gui::UpdateStatusView &status)
+{
+  m_updateStatus = status;
+  auto text = status.label;
+  if (!status.version.isEmpty()) {
+    text = QStringLiteral("%1 · v%2").arg(text, status.version);
+  }
+  m_sidebar->rail()->setItemVisible(QLatin1String(kUpdateId), status.visible);
+  m_sidebar->rail()->setItemText(QLatin1String(kUpdateId), text);
 }
 
 void MainShell::setLogShown(bool shown)

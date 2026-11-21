@@ -94,3 +94,10 @@ if(APPLE)
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
   )
 endif()
+
+create_test(
+  NAME UpdateShutdownTests
+  DEPENDS gui
+  SOURCE UpdateShutdownTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)

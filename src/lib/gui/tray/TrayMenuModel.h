@@ -92,6 +92,8 @@ struct TrayInput
   QStringList computers;
   //! The version that can be updated to, empty if there is none
   QString updateVersion;
+  //! The shared updater action label; empty keeps the historical update row wording
+  QString updateLabel;
   //! The window is on the screen: the menu offers to hide it, and does not offer to show it
   bool windowShown = false;
   QString appName;

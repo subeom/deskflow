@@ -233,8 +233,14 @@ void TrayMenuModelTests::update_isARowThatOpensTheDownload_aboveTheComputers()
   QCOMPARE(update->text, QStringLiteral("A new version v1.28.0 is available"));
   QVERIFY(update->enabled);
   QVERIFY(spec.entries.indexOf(*update) < spec.entries.indexOf(*find(spec, "computer:Desk-PC")));
+  in.updateLabel = QStringLiteral("Install update");
+  const auto stagedSpec = mac.build(in);
+  const auto *staged = find(stagedSpec, "command:update");
+  QVERIFY(staged);
+  QCOMPARE(staged->text, QStringLiteral("Install update · v1.28.0"));
   // with nothing to update to there is no row
   in.updateVersion.clear();
+  in.updateLabel.clear();
   QVERIFY(!find(mac.build(in), "command:update"));
   // an update with no computer is a group of its own
   auto stopped = makeInput(ProcessState::Stopped, ConnectionState::Disconnected);

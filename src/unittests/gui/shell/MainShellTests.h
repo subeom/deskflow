@@ -22,6 +22,7 @@ private Q_SLOTS:
   void deskflowLook_hasTheShell_hidesTheStatusBar_andCanBeResizedFrom720();
   void deskflowLook_theModeIsOneChoiceInTheControlAndInTheRadioButtons();
   void deskflowLook_theHeroSaysTheStateOfTheCoreAndTheStatusBar();
+  void deskflowLook_theExistingUpdateActionUsesTheSharedState();
   void deskflowLook_theClientConnectionKeepsItsControlsWorking_andHasPlacesForMore();
   void deskflowLook_theComputersAreThoseOfTheConfig_andTheConnectedOnesSayConnected();
   void deskflowLook_theSidebarIsRemembered_andANarrowWindowDoesNotChangeIt();

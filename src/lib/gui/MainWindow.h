@@ -43,6 +43,10 @@ class StatusBar;
 
 namespace deskflow::gui {
 class MainShell;
+class IUpdateInstaller;
+class UpdateShutdown;
+class UpdateStatusModel;
+enum class UpdateAction;
 }
 
 namespace deskflow::gui::settings {
@@ -150,6 +154,13 @@ private:
   void clearSettings();
   void openAboutDialog();
   void openGetNewVersionUrl() const;
+  void checkForUpdates();
+  void handleUpdateAction(deskflow::gui::UpdateAction action);
+  void confirmAndInstallUpdate();
+  void updateShutdownCompleted();
+  void updateShutdownFailed(const QString &message);
+  void refreshUpdateStatus();
+  void publishUpdateHandshake();
   void openSettings();
   void startCore();
   void stopCore();
@@ -268,6 +279,11 @@ private:
   inline static const auto m_nameRegEx = QRegularExpression(QStringLiteral("^[\\w\\-_\\.]{0,255}$"));
 
   VersionChecker m_versionChecker;
+  deskflow::gui::UpdateStatusModel *m_updateStatus = nullptr;
+  std::unique_ptr<deskflow::gui::IUpdateInstaller> m_updateInstaller;
+  deskflow::gui::UpdateShutdown *m_updateShutdown = nullptr;
+  QString m_updateReceiptPath;
+  bool m_updateApplying = false;
   bool m_secureSocket = false;
   bool m_saveOnExit = true;
   bool m_clientErrorVisible = false;

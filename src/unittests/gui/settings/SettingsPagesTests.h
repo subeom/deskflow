@@ -18,6 +18,7 @@ private Q_SLOTS:
   void cleanup();
 
   void effects_everyBoundSettingSaysWhatItNeeds();
+  void pages_updateCard_keepsStartupChoiceAndOffersOneManualCheck();
   void pages_theWindowFrameIsChosenWithOneSwitch_whichSaysTheFrameOfTheNewLook();
   void pages_theAppearanceCard_isTheWayBackToTheLookOfTheSystem_andTheWayForward();
   void effects_theSettingsThatTheCoreReadsNeedARestart();

@@ -386,6 +386,14 @@ SettingsPage *SettingsPages::buildGeneral()
   auto *program = page->addCard(tx(QT_TRANSLATE_NOOP("SettingsPages", "Updates and power")));
   addSwitch(page, m_binder, program, Settings::Gui::AutoUpdateCheck, sd("Check for updates on startup"))
       ->setObjectName(QStringLiteral("cbAutoUpdate"));
+  auto *checkRow =
+      page->addRow(program, tx(QT_TRANSLATE_NOOP("SettingsPages", "Manual update check")));
+  auto *checkNow = new QPushButton;
+  const auto checkNowText = tx(QT_TRANSLATE_NOOP("SettingsPages", "Check now"));
+  page->follow([checkNow, checkNowText] { checkNow->setText(checkNowText()); });
+  checkNow->setObjectName(QStringLiteral("btnCheckForUpdates"));
+  checkRow->addControl(checkNow);
+  connect(checkNow, &QPushButton::clicked, this, &SettingsPages::checkForUpdatesRequested);
   addSwitch(page, m_binder, program, Settings::Core::PreventSleep, sd("Prevent this computer from going to sleep"))
       ->setObjectName(QStringLiteral("cbPreventSleep"));
 

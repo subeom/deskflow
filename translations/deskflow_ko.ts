@@ -420,7 +420,7 @@ p, li { white-space: pre-wrap; }
         <translation>AirDrop 및 Handoff</translation>
     </message>
     <message>
-        <source>Turn off AirDrop and Handoff's wireless link while sharing</source>
+        <source>Turn off AirDrop and Handoff&apos;s wireless link while sharing</source>
         <translation>공유하는 동안 AirDrop과 Handoff의 무선 링크 끄기</translation>
     </message>
     <message>
@@ -564,12 +564,12 @@ p, li { white-space: pre-wrap; }
         <translation>암호 없이 허용할까요?</translation>
     </message>
     <message>
-        <source>Deskflow asks for the administrator password once and adds one small file, /etc/sudoers.d/deskflow-awdl. The file lets your account run only "ifconfig awdl0 down" and "ifconfig awdl0 up" as root without a password.
+        <source>Deskflow asks for the administrator password once and adds one small file, /etc/sudoers.d/deskflow-awdl. The file lets your account run only &quot;ifconfig awdl0 down&quot; and &quot;ifconfig awdl0 up&quot; as root without a password.
 
-Any program that runs as you can then do the same, which stops or starts AirDrop and Handoff. You can remove it here with "Remove permission", or by deleting the file.</source>
-        <translation>Deskflow가 관리자 암호를 한 번 요청하고 작은 파일 하나(/etc/sudoers.d/deskflow-awdl)를 추가합니다. 이 파일은 사용자 계정이 "ifconfig awdl0 down"과 "ifconfig awdl0 up"만 암호 없이 루트 권한으로 실행하게 합니다.
+Any program that runs as you can then do the same, which stops or starts AirDrop and Handoff. You can remove it here with &quot;Remove permission&quot;, or by deleting the file.</source>
+        <translation>Deskflow가 관리자 암호를 한 번 요청하고 작은 파일 하나(/etc/sudoers.d/deskflow-awdl)를 추가합니다. 이 파일은 사용자 계정이 &quot;ifconfig awdl0 down&quot;과 &quot;ifconfig awdl0 up&quot;만 암호 없이 루트 권한으로 실행하게 합니다.
 
-그러면 사용자 권한으로 실행되는 모든 프로그램이 같은 일을 할 수 있으며, 이는 AirDrop과 Handoff를 중지하거나 시작합니다. 여기서 "권한 제거"로 제거하거나 파일을 직접 삭제하면 됩니다.</translation>
+그러면 사용자 권한으로 실행되는 모든 프로그램이 같은 일을 할 수 있으며, 이는 AirDrop과 Handoff를 중지하거나 시작합니다. 여기서 &quot;권한 제거&quot;로 제거하거나 파일을 직접 삭제하면 됩니다.</translation>
     </message>
     <message>
         <source>Deskflow adds the file /etc/sudoers.d/deskflow-awdl, so that your account can turn the wireless link (AWDL) off and on without a password.</source>
@@ -600,7 +600,7 @@ Any program that runs as you can then do the same, which stops or starts AirDrop
     </message>
     <message>
         <source>Scroll Modifiers</source>
-        <translation>스크롤 제어자</translation>
+        <translation type="vanished">스크롤 제어자</translation>
     </message>
     <message>
         <source>Invert</source>
@@ -1706,7 +1706,7 @@ Valid names:
     </message>
     <message>
         <source>&lt;html&gt;Hostname or IP address of the server computer.&lt;br/&gt;May contain a comma seperated list.&lt;/html&gt;</source>
-        <translation>&lt;html&gt;서버 컴퓨터의 호스트 이름 또는 IP 주소입니다.&lt;br/&gt;목록 요소는 쉼표로 구분됩니다.&lt;/html&gt;</translation>
+        <translation type="vanished">&lt;html&gt;서버 컴퓨터의 호스트 이름 또는 IP 주소입니다.&lt;br/&gt;목록 요소는 쉼표로 구분됩니다.&lt;/html&gt;</translation>
     </message>
     <message>
         <source>read</source>
@@ -1791,6 +1791,30 @@ Additionally, check you are able to %1 the server config file: %2</source>
     <message>
         <source>Reported by the computer</source>
         <translation>컴퓨터가 알려 줌</translation>
+    </message>
+    <message>
+        <source>Install Deskflow update</source>
+        <translation>Deskflow 업데이트 설치</translation>
+    </message>
+    <message>
+        <source>Install Deskflow v%1?</source>
+        <translation>Deskflow v%1을(를) 설치할까요?</translation>
+    </message>
+    <message>
+        <source>Deskflow will stop sharing, replace the app, and restart.</source>
+        <translation>공유를 중지하고 앱을 교체한 후 다시 시작합니다.</translation>
+    </message>
+    <message>
+        <source>Install and restart</source>
+        <translation>설치 후 다시 시작</translation>
+    </message>
+    <message>
+        <source>The update helper could not start.</source>
+        <translation>업데이트 도우미를 시작하지 못했습니다.</translation>
+    </message>
+    <message>
+        <source>The previous Deskflow version was restored.</source>
+        <translation>이전 Deskflow 버전이 복원되었습니다.</translation>
     </message>
 </context>
 <context>
@@ -2609,6 +2633,10 @@ Enabling this setting will disable the server config GUI.</source>
         <source>Remove all settings</source>
         <translation>모든 설정 삭제</translation>
     </message>
+    <message>
+        <source>Check now</source>
+        <translation>지금 확인</translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialogButtonBox</name>
@@ -2826,6 +2854,14 @@ Enabling this setting will disable the server config GUI.</source>
     <message>
         <source>Clears every setting and starts the application again.</source>
         <translation>모든 설정을 지우고 프로그램을 재시작합니다.</translation>
+    </message>
+    <message>
+        <source>Manual update check</source>
+        <translation>업데이트 수동 확인</translation>
+    </message>
+    <message>
+        <source>Check now</source>
+        <translation>지금 확인</translation>
     </message>
 </context>
 <context>
@@ -3562,6 +3598,41 @@ Enabling this setting will disable the server config GUI.</source>
     <message>
         <source>The credentials could not be removed: %1</source>
         <translation>자격 증명을 삭제할 수 없습니다: %1</translation>
+    </message>
+</context>
+<context>
+    <name>deskflow::gui::UpdateStatusModel</name>
+    <message>
+        <source>Checking for updates...</source>
+        <translation>업데이트 확인 중...</translation>
+    </message>
+    <message>
+        <source>View update</source>
+        <translation>업데이트 보기</translation>
+    </message>
+    <message>
+        <source>Deskflow v%1 is available</source>
+        <translation>Deskflow v%1 사용 가능</translation>
+    </message>
+    <message>
+        <source>Install update</source>
+        <translation>업데이트 설치</translation>
+    </message>
+    <message>
+        <source>Update v%1 is verified and ready to install</source>
+        <translation>업데이트 v%1 확인 및 설치 준비 완료</translation>
+    </message>
+    <message>
+        <source>Installing update...</source>
+        <translation>업데이트 설치 중...</translation>
+    </message>
+    <message>
+        <source>Update failed</source>
+        <translation>업데이트 실패</translation>
+    </message>
+    <message>
+        <source>The update could not be completed</source>
+        <translation>업데이트를 완료하지 못했습니다.</translation>
     </message>
 </context>
 <context>

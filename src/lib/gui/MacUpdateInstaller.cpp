@@ -245,6 +245,11 @@ public:
     timer.start();
     while (timer.elapsed() < timeoutMs) {
       const auto receipt = readReceipt(receiptPath);
+      if (receipt &&
+          (receipt->state == QStringLiteral("failed") ||
+           receipt->state == QStringLiteral("cancelled"))) {
+        return {false, QStringLiteral("update transaction was cancelled"), receiptPath};
+      }
       if (receipt && receipt->state == QStringLiteral("shutdown-complete") &&
           receipt->parentPid == parentPid &&
           receipt->parentStartIdentity == startIdentity) {
@@ -603,6 +608,11 @@ UpdateInstallResult MacUpdateInstaller::apply(
   if (!writeReceipt(receiptPath, *receipt)) {
     return {false, QStringLiteral("cannot publish update helper readiness"), receiptPath};
   }
+  const auto relaunchOld = [this, &receipt, &bundle, &receiptPath] {
+    receipt->state = QStringLiteral("rolled-back-pending");
+    writeReceipt(receiptPath, *receipt);
+    return m_operations->relaunchAndWait(*bundle, receiptPath, currentStableVersion());
+  };
 
   const auto stopped = m_operations->waitForShutdown(
       receiptPath, parentPid, parentStartIdentity, kShutdownTimeoutMs
@@ -631,8 +641,7 @@ UpdateInstallResult MacUpdateInstaller::apply(
   if (!verified.ok) {
     receipt->state = QStringLiteral("failed");
     writeReceipt(receiptPath, *receipt);
-    const auto relaunched =
-        m_operations->relaunchAndWait(*bundle, receiptPath, currentStableVersion());
+    const auto relaunched = relaunchOld();
     return {
         false,
         combinedFailure(verified.error, relaunched.ok ? QString() : relaunched.error),
@@ -667,8 +676,7 @@ UpdateInstallResult MacUpdateInstaller::apply(
   if (!mounted.ok) {
     receipt->state = QStringLiteral("failed");
     writeReceipt(receiptPath, *receipt);
-    const auto relaunched =
-        m_operations->relaunchAndWait(*bundle, receiptPath, currentStableVersion());
+    const auto relaunched = relaunchOld();
     return {
         false,
         combinedFailure(mounted.error, relaunched.ok ? QString() : relaunched.error),
@@ -689,8 +697,7 @@ UpdateInstallResult MacUpdateInstaller::apply(
     m_operations->removeRecursively(candidate);
     receipt->state = QStringLiteral("failed");
     writeReceipt(receiptPath, *receipt);
-    const auto relaunched =
-        m_operations->relaunchAndWait(*bundle, receiptPath, currentStableVersion());
+    const auto relaunched = relaunchOld();
     return {
         false,
         combinedFailure(
@@ -706,8 +713,7 @@ UpdateInstallResult MacUpdateInstaller::apply(
     m_operations->removeRecursively(candidate);
     receipt->state = QStringLiteral("failed");
     writeReceipt(receiptPath, *receipt);
-    const auto relaunched =
-        m_operations->relaunchAndWait(*bundle, receiptPath, currentStableVersion());
+    const auto relaunched = relaunchOld();
     return {
         false,
         combinedFailure(movedOld.error, relaunched.ok ? QString() : relaunched.error),
@@ -719,8 +725,7 @@ UpdateInstallResult MacUpdateInstaller::apply(
   if (!movedNew.ok) {
     const auto restored = m_operations->rename(backup, *bundle);
     m_operations->removeRecursively(candidate);
-    const auto relaunched =
-        m_operations->relaunchAndWait(*bundle, receiptPath, currentStableVersion());
+    const auto relaunched = relaunchOld();
     receipt->state = restored.ok && relaunched.ok ? QStringLiteral("rolled-back")
                                                   : QStringLiteral("failed");
     writeReceipt(receiptPath, *receipt);
@@ -738,8 +743,7 @@ UpdateInstallResult MacUpdateInstaller::apply(
   if (!newLaunch.ok) {
     const auto movedNewAside = m_operations->rename(*bundle, failedCandidate);
     const auto restored = m_operations->rename(backup, *bundle);
-    const auto relaunchedOld =
-        m_operations->relaunchAndWait(*bundle, receiptPath, currentStableVersion());
+    const auto relaunchedOld = relaunchOld();
     if (movedNewAside.ok && restored.ok && relaunchedOld.ok) {
       m_operations->removeRecursively(failedCandidate);
     }
@@ -763,8 +767,7 @@ UpdateInstallResult MacUpdateInstaller::apply(
   if (!writeReceipt(receiptPath, *receipt)) {
     const auto movedNewAside = m_operations->rename(*bundle, failedCandidate);
     const auto restored = m_operations->rename(backup, *bundle);
-    const auto relaunchedOld =
-        m_operations->relaunchAndWait(*bundle, receiptPath, currentStableVersion());
+    const auto relaunchedOld = relaunchOld();
     if (movedNewAside.ok && restored.ok && relaunchedOld.ok) {
       m_operations->removeRecursively(failedCandidate);
     }

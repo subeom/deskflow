@@ -42,13 +42,20 @@ StatusBar::StatusBar(QWidget *parent)
   insertPermanentWidget(2, m_lblStatus, 1);
 
   m_btnUpdate->setVisible(false);
+  m_btnUpdate->setObjectName(QStringLiteral("updateButton"));
   m_btnUpdate->setFlat(true);
   m_btnUpdate->setLayoutDirection(Qt::RightToLeft);
   m_btnUpdate->setIcon(QIcon::fromTheme(QStringLiteral("software-updates-release")));
   m_btnUpdate->setFixedHeight(btnHeight);
   m_btnUpdate->setIconSize(iconSize);
   insertPermanentWidget(3, m_btnUpdate);
-  connect(m_btnUpdate, &QPushButton::clicked, this, &StatusBar::requestUpdateVersion);
+  connect(m_btnUpdate, &QPushButton::clicked, this, [this] {
+    if (m_updateStatus.action != deskflow::gui::UpdateAction::None) {
+      Q_EMIT requestUpdateAction(m_updateStatus.action);
+    } else {
+      Q_EMIT requestUpdateVersion();
+    }
+  });
 
   m_retryTimer->setInterval(1000);
   m_retryTimer->setSingleShot(false);
@@ -187,9 +194,29 @@ void StatusBar::setBtnFingerprintVisible(bool visible)
 
 void StatusBar::updateFound(const QString &version)
 {
-  m_btnUpdate->setVisible(true);
-  m_btnUpdate->setToolTip(tr("A new version v%1 is available").arg(version));
-  m_updateVersion = version;
+  deskflow::gui::UpdateStatusView status;
+  status.version = version;
+  status.label = tr("Update available");
+  status.toolTip = tr("A new version v%1 is available").arg(version);
+  status.visible = true;
+  status.enabled = true;
+  status.action = deskflow::gui::UpdateAction::OpenRelease;
+  setUpdateStatus(status);
+}
+
+void StatusBar::setUpdateStatus(const deskflow::gui::UpdateStatusView &status)
+{
+  if (m_updateStatus == status) {
+    return;
+  }
+  m_updateStatus = status;
+  m_updateVersion = status.installable || status.action == deskflow::gui::UpdateAction::OpenRelease
+                        ? status.version
+                        : QString();
+  m_btnUpdate->setVisible(status.visible);
+  m_btnUpdate->setEnabled(status.enabled);
+  m_btnUpdate->setText(status.label);
+  m_btnUpdate->setToolTip(status.toolTip);
   Q_EMIT changed();
 }
 
@@ -239,7 +266,9 @@ void StatusBar::changeEvent(QEvent *e)
 void StatusBar::updateText()
 {
   m_btnFingerprint->setToolTip(tr("View local fingerprint"));
-  m_btnUpdate->setText(tr("Update available"));
+  if (m_updateStatus.label.isEmpty()) {
+    m_btnUpdate->setText(tr("Update available"));
+  }
   setSecurityLevel(m_securityLevel);
 }
 

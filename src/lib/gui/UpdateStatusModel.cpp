@@ -70,6 +70,14 @@ void UpdateStatusModel::setStatus(const UpdateStatusSnapshot &status)
   Q_EMIT changed();
 }
 
+void UpdateStatusModel::retranslate()
+{
+  const auto status = m_status;
+  m_status = {};
+  m_view = {};
+  setStatus(status);
+}
+
 const UpdateStatusView &UpdateStatusModel::view() const
 {
   return m_view;

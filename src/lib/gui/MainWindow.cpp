@@ -29,6 +29,9 @@
 #include "common/VersionInfo.h"
 #include "gui/Messages.h"
 #include "gui/TlsUtility.h"
+#include "gui/UpdateInstaller.h"
+#include "gui/UpdateShutdown.h"
+#include "gui/UpdateStatusModel.h"
 #include "gui/awdl/AwdlController.h"
 #include "gui/awdl/AwdlPlatform.h"
 #include "gui/awdl/AwdlSetup.h"
@@ -71,6 +74,8 @@
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QFileDialog>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QMenu>
@@ -83,8 +88,10 @@
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QScreen>
+#include <QSaveFile>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QStandardPaths>
 #include <QStackedLayout>
 #include <QVersionNumber>
 
@@ -104,6 +111,9 @@ MainWindow::MainWindow()
       m_daemonIpcClient{new ipc::DaemonIpcClient(this)},
       m_logDock{new LogDock(this)},
       m_statusBar{new StatusBar(this)},
+      m_updateStatus{new deskflow::gui::UpdateStatusModel(this)},
+      m_updateInstaller{deskflow::gui::createPlatformUpdateInstaller()},
+      m_updateShutdown{new deskflow::gui::UpdateShutdown(15'000, 10'000, this)},
       m_menuFile{new QMenu(this)},
       m_menuEdit{new QMenu(this)},
       m_menuView{new QMenu(this)},
@@ -406,8 +416,26 @@ void MainWindow::connectSlots()
   connect(m_logDock->toggleViewAction(), &QAction::toggled, this, &MainWindow::toggleLogVisible);
 
   connect(m_statusBar, &StatusBar::requestShowMyFingerprints, this, &MainWindow::showMyFingerprint);
-  connect(m_statusBar, &StatusBar::requestUpdateVersion, this, &MainWindow::openGetNewVersionUrl);
-  connect(&m_versionChecker, &VersionChecker::updateFound, m_statusBar, &StatusBar::updateFound);
+  connect(
+      &m_versionChecker, &VersionChecker::statusChanged, m_updateStatus,
+      &deskflow::gui::UpdateStatusModel::setStatus, Qt::UniqueConnection
+  );
+  connect(
+      m_updateStatus, &deskflow::gui::UpdateStatusModel::changed, this,
+      &MainWindow::refreshUpdateStatus, Qt::UniqueConnection
+  );
+  connect(
+      m_statusBar, &StatusBar::requestUpdateAction, this, &MainWindow::handleUpdateAction,
+      Qt::UniqueConnection
+  );
+  connect(
+      m_updateShutdown, &deskflow::gui::UpdateShutdown::completed, this,
+      &MainWindow::updateShutdownCompleted, Qt::UniqueConnection
+  );
+  connect(
+      m_updateShutdown, &deskflow::gui::UpdateShutdown::failed, this,
+      &MainWindow::updateShutdownFailed, Qt::UniqueConnection
+  );
 
   connect(m_guiDupeChecker, &QLocalServer::newConnection, this, &MainWindow::showAndActivate);
 
@@ -652,7 +680,227 @@ void MainWindow::openAboutDialog()
 
 void MainWindow::openGetNewVersionUrl() const
 {
-  QDesktopServices::openUrl(QUrl(kUrlDownload));
+  const auto url = m_updateStatus->status().releaseUrl;
+  static const QRegularExpression releasePage(
+      QStringLiteral(R"(^/subeom/deskflow/releases/tag/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$)")
+  );
+  if (url.scheme() != QStringLiteral("https") ||
+      url.host() != QStringLiteral("github.com") ||
+      !url.userInfo().isEmpty() || (url.port() != -1 && url.port() != 443) ||
+      !url.query().isEmpty() || !url.fragment().isEmpty() ||
+      !releasePage.match(url.path(QUrl::FullyEncoded)).hasMatch()) {
+    qWarning() << "refusing to open an invalid update release URL";
+    return;
+  }
+  QDesktopServices::openUrl(url);
+}
+
+void MainWindow::checkForUpdates()
+{
+  if (m_updateApplying) {
+    return;
+  }
+  m_versionChecker.checkLatest(UpdateCheckReason::Manual);
+}
+
+void MainWindow::publishUpdateHandshake()
+{
+  const auto handshake = qApp->property("deskflowUpdateHandshakePath").toString();
+  const auto token = qApp->property("deskflowUpdateHandshakeToken").toString();
+  const auto receiptPath = qApp->property("deskflowUpdateReceiptPath").toString();
+  if (handshake.isEmpty() && token.isEmpty() && receiptPath.isEmpty()) {
+    return;
+  }
+
+  static const QRegularExpression safeToken(QStringLiteral(R"(^[A-Za-z0-9-]{1,128}$)"));
+  const auto transactions = QFileInfo(
+      QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation))
+          .filePath(QStringLiteral("updates/transactions"))
+  );
+  const auto handshakeInfo = QFileInfo(handshake);
+  const auto receiptInfo = QFileInfo(receiptPath);
+  if (!safeToken.match(token).hasMatch() ||
+      handshakeInfo.fileName().startsWith(QStringLiteral("handshake-")) == false ||
+      handshakeInfo.suffix() != QStringLiteral("json") ||
+      handshakeInfo.isSymLink() || QFileInfo::exists(handshake) ||
+      receiptInfo.isSymLink() || !receiptInfo.isFile() ||
+      transactions.canonicalFilePath() != receiptInfo.absolutePath() ||
+      transactions.canonicalFilePath() != handshakeInfo.absolutePath()) {
+    qWarning() << "refusing to publish an invalid update handshake";
+    return;
+  }
+
+  const auto versionParts = QString::fromLatin1(kVersion).split(QLatin1Char('.'));
+  const auto stableVersion =
+      versionParts.size() >= 3 ? versionParts.mid(0, 3).join(QLatin1Char('.'))
+                               : QString::fromLatin1(kVersion);
+  QSaveFile handshakeFile(handshake);
+  const auto handshakeJson = QJsonDocument(QJsonObject{
+      {QStringLiteral("state"), QStringLiteral("ready")},
+      {QStringLiteral("pid"), QCoreApplication::applicationPid()},
+      {QStringLiteral("token"), token},
+      {QStringLiteral("version"), stableVersion},
+  }).toJson(QJsonDocument::Compact);
+  if (!handshakeFile.open(QIODevice::WriteOnly) ||
+      handshakeFile.write(handshakeJson) != handshakeJson.size() ||
+      !handshakeFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner) ||
+      !handshakeFile.commit()) {
+    qWarning() << "failed to publish update relaunch readiness";
+    return;
+  }
+
+  QFile receipt(receiptPath);
+  if (!receipt.open(QIODevice::ReadOnly) || receipt.size() > 16 * 1024) {
+    return;
+  }
+  QJsonParseError parseError;
+  const auto document = QJsonDocument::fromJson(receipt.readAll(), &parseError);
+  if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+    return;
+  }
+  const auto state = document.object().value(QStringLiteral("state")).toString();
+  if (state == QStringLiteral("rolled-back") ||
+      state == QStringLiteral("rolled-back-pending")) {
+    UpdateStatusSnapshot rollback;
+    rollback.phase = UpdateStatusSnapshot::Phase::Failed;
+    rollback.version = stableVersion;
+    rollback.userError = tr("The previous Deskflow version was restored.");
+    m_updateStatus->setStatus(rollback);
+  } else if (state == QStringLiteral("success")) {
+    m_updateStatus->setStatus(
+        {UpdateStatusSnapshot::Phase::UpToDate, stableVersion, {}, {}, false}
+    );
+  }
+}
+
+void MainWindow::refreshUpdateStatus()
+{
+  const auto &view = m_updateStatus->view();
+  m_statusBar->setUpdateStatus(view);
+  if (m_shell) {
+    m_shell->setUpdateStatus(view);
+    scheduleShellRefresh();
+  }
+  updateTray();
+}
+
+void MainWindow::handleUpdateAction(deskflow::gui::UpdateAction action)
+{
+  using deskflow::gui::UpdateAction;
+  switch (action) {
+  case UpdateAction::OpenRelease:
+    openGetNewVersionUrl();
+    break;
+  case UpdateAction::ConfirmInstall:
+    confirmAndInstallUpdate();
+    break;
+  case UpdateAction::Retry:
+    checkForUpdates();
+    break;
+  case UpdateAction::None:
+    break;
+  }
+}
+
+void MainWindow::confirmAndInstallUpdate()
+{
+  if (m_updateApplying || !m_updateInstaller || !m_versionChecker.staged()) {
+    return;
+  }
+  const auto &staged = *m_versionChecker.staged();
+
+  QMessageBox confirmation(this);
+  confirmation.setIcon(QMessageBox::Question);
+  confirmation.setWindowTitle(tr("Install Deskflow update"));
+  confirmation.setText(tr("Install Deskflow v%1?").arg(staged.version));
+  confirmation.setInformativeText(
+      tr("Deskflow will stop sharing, replace the app, and restart.")
+  );
+  confirmation.addButton(QMessageBox::Cancel);
+  const auto *install =
+      confirmation.addButton(tr("Install and restart"), QMessageBox::AcceptRole);
+  confirmation.setDefaultButton(QMessageBox::Cancel);
+  confirmation.exec();
+  if (confirmation.clickedButton() != install) {
+    return;
+  }
+
+  const auto started = m_updateInstaller->start(staged, true);
+  if (!started.ok) {
+    updateShutdownFailed(
+        started.error.isEmpty() ? tr("The update helper could not start.") : started.error
+    );
+    return;
+  }
+  m_updateReceiptPath = started.receiptPath;
+  m_updateApplying = true;
+  Settings::setValue(
+      Settings::Gui::AutoStartCore,
+      m_coreProcess.processState() == ProcessState::Started ||
+          m_coreProcess.processState() == ProcessState::Starting ||
+          m_coreProcess.processState() == ProcessState::RetryPending
+  );
+  Settings::save();
+
+  UpdateStatusSnapshot applying = m_updateStatus->status();
+  applying.phase = UpdateStatusSnapshot::Phase::Applying;
+  applying.installable = false;
+  applying.userError.clear();
+  m_updateStatus->setStatus(applying);
+
+  deskflow::gui::UpdateShutdownTargets targets;
+  targets.stopCore = [this] { m_coreProcess.stop(); };
+  targets.coreStopped = [this] {
+    return m_coreProcess.processState() == ProcessState::Stopped;
+  };
+  targets.restoreCore = [this] { startCore(); };
+  targets.stopTunnel = [this] {
+    if (m_tunnelController != nullptr) {
+      m_tunnelController->shutdown();
+    }
+  };
+  targets.tunnelStopped = [this] {
+    return m_tunnelController == nullptr ||
+           m_tunnelController->status().state == deskflow::tunnel::TunnelState::Idle;
+  };
+  targets.restoreTunnel = [this] {
+    if (m_tunnelController != nullptr && m_tunnelController->isRequired()) {
+      m_tunnelController->acquire();
+    }
+  };
+  targets.markReceipt = [](const QString &path, const QString &state) {
+#if defined(Q_OS_MACOS)
+    return deskflow::gui::markUpdateReceiptState(path, state);
+#else
+    Q_UNUSED(path)
+    Q_UNUSED(state)
+    return deskflow::gui::UpdateInstallResult{
+        false, QStringLiteral("automatic updates are unavailable"), {}
+    };
+#endif
+  };
+  m_updateShutdown->begin(targets, m_updateReceiptPath);
+}
+
+void MainWindow::updateShutdownCompleted()
+{
+  if (!m_updateApplying) {
+    return;
+  }
+  Settings::save();
+  qInfo() << "update shutdown complete, leaving the old GUI for the detached helper";
+  QApplication::quit();
+}
+
+void MainWindow::updateShutdownFailed(const QString &message)
+{
+  m_updateApplying = false;
+  qWarning().noquote() << "update installation cancelled:" << message.left(240);
+  auto status = m_updateStatus->status();
+  status.phase = UpdateStatusSnapshot::Phase::Failed;
+  status.installable = false;
+  status.userError = message.left(240);
+  m_updateStatus->setStatus(status);
 }
 
 void MainWindow::openSettings()
@@ -668,6 +916,10 @@ void MainWindow::openSettings()
   auto dialog = SettingsDialog(this, m_serverConfig);
 
   connect(&dialog, &SettingsDialog::requestRemoveAllSettings, this, &MainWindow::clearSettings, Qt::UniqueConnection);
+  connect(
+      &dialog, &SettingsDialog::checkForUpdatesRequested, this, &MainWindow::checkForUpdates,
+      Qt::UniqueConnection
+  );
   if (dialog.exec() == QDialog::Accepted) {
     Settings::save();
     disconnect(&dialog, &SettingsDialog::requestRemoveAllSettings, nullptr, nullptr);
@@ -875,6 +1127,7 @@ void MainWindow::open()
   if (Settings::value(Settings::Gui::AutoStartCore).toBool()) {
     startCore();
   }
+  publishUpdateHandshake();
 }
 
 void MainWindow::createMenuBar()
@@ -1023,7 +1276,7 @@ void MainWindow::trayCommand(deskflow::gui::tray::TrayCommand command)
     openSettings();
     break;
   case TrayCommand::OpenUpdate:
-    openGetNewVersionUrl();
+    handleUpdateAction(m_updateStatus->view().action);
     break;
   case TrayCommand::Quit:
     close();
@@ -1055,7 +1308,11 @@ void MainWindow::updateTray()
     input.computers = m_connectedClients;
   else if (isClient && input.connection == ConnectionState::Connected && input.process == ProcessState::Started)
     input.computers = {Settings::textValue(Settings::Client::RemoteHost)};
-  input.updateVersion = m_statusBar->updateVersion();
+  const auto update = m_updateStatus->view();
+  if (update.visible && update.action != deskflow::gui::UpdateAction::None) {
+    input.updateVersion = update.version;
+    input.updateLabel = update.label;
+  }
   // the window is shown when the menu does not offer to show it (the action of the window that does is hidden then)
   input.windowShown = !m_actionRestore->isVisible();
   input.appName = kAppName;
@@ -1108,6 +1365,12 @@ void MainWindow::setupTunnel()
     ui->verticalLayout->insertWidget(ui->verticalLayout->indexOf(ui->widgetModeOptions) + 1, m_tunnelStatus);
   }
   connect(m_tunnelStatus, &TunnelStatusWidget::usedChanged, this, &MainWindow::tunnelUsedChanged);
+  connect(
+      m_tunnelController, &deskflow::tunnel::TunnelController::statusChanged, this,
+      [this](const deskflow::tunnel::TunnelStatus &) {
+        m_updateShutdown->tunnelStateChanged();
+      }
+  );
 
   // the log: what the tunnel does and what cloudflared writes (already without the token)
   connect(m_tunnelController, &deskflow::tunnel::TunnelController::logLine, this, [](const QString &line) {
@@ -1630,6 +1893,7 @@ void MainWindow::coreProcessStateChanged(ProcessState state)
     m_actionStopCore->setEnabled(false);
   }
   updateModeControlLabels();
+  m_updateShutdown->coreStateChanged();
 }
 
 void MainWindow::coreConnectionStateChanged(ConnectionState state)
@@ -1695,6 +1959,7 @@ void MainWindow::changeEvent(QEvent *e)
     setTrayIcon();
   } else if (e->type() == QEvent::LanguageChange) {
     ui->retranslateUi(this);
+    m_updateStatus->retranslate();
     updateModeControlLabels();
     updateNetworkInfo();
     updateStatus();
@@ -2173,6 +2438,10 @@ void MainWindow::setupShell()
       m_settingsPages, &deskflow::gui::settings::SettingsPages::removeAllSettingsRequested, this,
       &MainWindow::clearSettings
   );
+  connect(
+      m_settingsPages, &deskflow::gui::settings::SettingsPages::checkForUpdatesRequested, this,
+      &MainWindow::checkForUpdates, Qt::UniqueConnection
+  );
   // the page of the client: the Cloudflare Tunnel that it saved is what the window says from now on, and the list of
   // the servers that it cleared is what the address field has
   connect(m_settingsPages, &deskflow::gui::settings::SettingsPages::tunnelSaved, this, [this] {
@@ -2391,7 +2660,7 @@ void MainWindow::refreshShell()
       m_statusBar->securityIconVisible(), m_statusBar->isEncrypted(), m_statusBar->securityText()
   );
   m_shell->setFingerprintVisible(m_statusBar->fingerprintVisible());
-  m_shell->setUpdateVersion(m_statusBar->updateVersion());
+  m_shell->setUpdateStatus(m_updateStatus->view());
   m_shell->setEncryptionEnabled(TlsUtility::isEnabled());
   // the tray says the sentence of the status and the update as well
   updateTray();
@@ -2432,7 +2701,7 @@ void MainWindow::shellEntryActivated(const QString &id)
   else if (id == QLatin1String("fingerprint"))
     showMyFingerprint();
   else if (id == QLatin1String("update"))
-    openGetNewVersionUrl();
+    handleUpdateAction(m_updateStatus->view().action);
 }
 
 void MainWindow::autoShowLogOnError(const QString &line)

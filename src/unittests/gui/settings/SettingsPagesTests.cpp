@@ -189,6 +189,17 @@ void SettingsPagesTests::effects_everyBoundSettingSaysWhatItNeeds()
   QVERIFY(!effectOf(QStringLiteral("computer_x/name")).has_value());
 }
 
+void SettingsPagesTests::pages_updateCard_keepsStartupChoiceAndOffersOneManualCheck()
+{
+  SettingsPages pages;
+  QVERIFY(must<ToggleSwitch>(pages, "cbAutoUpdate"));
+  auto *button = must<QPushButton>(pages, "btnCheckForUpdates");
+  QCOMPARE(button->text(), QStringLiteral("Check now"));
+  QSignalSpy requested(&pages, &SettingsPages::checkForUpdatesRequested);
+  QTest::mouseClick(button, Qt::LeftButton);
+  QCOMPARE(requested.count(), 1);
+}
+
 void SettingsPagesTests::pages_theWindowFrameIsChosenWithOneSwitch_whichSaysTheFrameOfTheNewLook()
 {
   SettingsPages pages;

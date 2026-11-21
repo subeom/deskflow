@@ -47,6 +47,8 @@ add_library(${target} STATIC
   UpdateRelease.h
   UpdateStatusModel.cpp
   UpdateStatusModel.h
+  UpdateShutdown.cpp
+  UpdateShutdown.h
   UpdateVerifier.cpp
   UpdateVerifier.h
   VersionChecker.cpp
