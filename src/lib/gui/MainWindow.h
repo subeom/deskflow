@@ -342,6 +342,7 @@ private:
   QLabel *m_tunnelPathLine = nullptr;
   InlineHint *m_tunnelStatusLine = nullptr;
   deskflow::tunnel::ServerLink m_tunnelServerLink = deskflow::tunnel::ServerLink::Unknown;
+  deskflow::tunnel::ServerLinkTracker m_tunnelLinkTracker;
 
   // Network monitoring
   NetworkMonitor *m_networkMonitor = nullptr;

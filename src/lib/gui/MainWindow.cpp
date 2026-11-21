@@ -1183,6 +1183,14 @@ void MainWindow::updateTunnelShell()
     return;
   const bool used = m_tunnelStatus->isTunnelUsed();
   const auto status = m_tunnelController->status();
+  // a tunnel that stopped or failed has not reached the server: a later connection is not a reconnect
+  if (status.state == deskflow::tunnel::TunnelState::Idle || status.state == deskflow::tunnel::TunnelState::Failed) {
+    m_tunnelLinkTracker.reset();
+    if (m_tunnelServerLink == deskflow::tunnel::ServerLink::Reconnecting) {
+      m_tunnelServerLink = deskflow::tunnel::ServerLink::Unknown;
+      m_tunnelStatus->setServerLink(m_tunnelServerLink);
+    }
+  }
   const auto statusText = used ? m_tunnelStatus->statusText() : QString();
 
   // the menu of the tray
@@ -1197,9 +1205,8 @@ void MainWindow::updateTunnelShell()
   m_tunnelStatusLine->setText(m_tunnelStatus->statusText());
   m_tunnelStatusLine->setToolTip(m_tunnelStatus->statusText());
   // a tunnel that failed, or that listens and has a failure to tell, is the colour of a problem
-  m_tunnelStatusLine->setDanger(
-      status.state == deskflow::tunnel::TunnelState::Failed || status.failure != deskflow::tunnel::TunnelFailure::None
-  );
+  // (unless the server was reached before and the failure is one of the path that passes: the client is reconnecting)
+  m_tunnelStatusLine->setDanger(deskflow::tunnel::tunnelStatusIsProblem(status, m_tunnelServerLink));
   section->addressStack()->setCurrentIndex(used ? 1 : 0);
   if (used && section->statusLineCount() == 0)
     section->addStatusLine(m_tunnelStatusLine);
@@ -1224,14 +1231,17 @@ void MainWindow::updateTunnelServerLink(ConnectionState state)
     return;
   }
 
+  using deskflow::tunnel::ServerObservation;
   if (state == ConnectionState::Connected) {
     m_tunnelController->notifyServerConnected();
-    m_tunnelServerLink = ServerLink::Connected;
-  } else if (state == ConnectionState::Connecting) {
-    m_tunnelServerLink = ServerLink::Connecting;
-  } else {
-    m_tunnelServerLink = ServerLink::Unknown;
   }
+  const auto observation = state == ConnectionState::Connected    ? ServerObservation::Connected
+                           : state == ConnectionState::Connecting ? ServerObservation::Connecting
+                                                                  : ServerObservation::Disconnected;
+  const auto running = m_coreProcess.processState() == ProcessState::Started ||
+                       m_coreProcess.processState() == ProcessState::Starting ||
+                       m_coreProcess.processState() == ProcessState::RetryPending;
+  m_tunnelServerLink = m_tunnelLinkTracker.update(observation, running);
   m_tunnelStatus->setServerLink(m_tunnelServerLink);
   // the chip of the new look says the link too (the line of the status may not have changed)
   if (m_tunnelHolder != nullptr)

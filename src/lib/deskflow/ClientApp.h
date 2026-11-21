@@ -80,11 +80,15 @@ public:
 
   /**
    * @brief retryTime
-   * @return next retry time based on number of current retries
+   * @return next retry time based on number of current retries. With the Cloudflare Tunnel in use it follows
+   * deskflow::tunnel::reconnectSeconds; a direct link is unchanged.
    */
   double retryTime() const;
 
 private:
+  //! the retry time of a direct link
+  double directRetryTime() const;
+
   ISocketFactory *getSocketFactory() const;
   NetworkAddress &getCurrentServerAddress();
   void tryNextServer();
@@ -96,4 +100,6 @@ private:
   size_t m_currentServerIndex = 0;
   size_t m_lastServerAddressIndex = 0;
   uint m_retryCount = 0;
+  //! retries scheduled since the last connection that was made (the hello was answered); only the tunnel reads it
+  uint m_reconnectAttempts = 0;
 };

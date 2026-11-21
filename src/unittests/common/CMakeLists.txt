@@ -44,3 +44,10 @@ create_test(
   SOURCE TunnelAddressTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/common"
 )
+
+create_test(
+  NAME TunnelReconnectTests
+  DEPENDS common
+  SOURCE TunnelReconnectTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/common"
+)

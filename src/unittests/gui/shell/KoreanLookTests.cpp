@@ -344,7 +344,8 @@ void KoreanLookTests::tunnelTexts_everyFailureAndStateAsksForNothingThatIsNotTra
       status.localPort = 24811;
       status.exitCode = 3;
       status.restartInSeconds = 4;
-      for (const auto link : {ServerLink::Unknown, ServerLink::Connecting, ServerLink::Connected}) {
+      for (const auto link :
+           {ServerLink::Unknown, ServerLink::Connecting, ServerLink::Connected, ServerLink::Reconnecting}) {
         tunnelStatusLine(status, link);
         // the chip beside the state of sharing says it in a few words
         tunnelChip(status, link);

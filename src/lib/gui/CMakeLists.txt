@@ -302,6 +302,8 @@ target_sources(${target} PRIVATE
   tunnel/OrphanRecord.h
   tunnel/OutputLineSplitter.cpp
   tunnel/OutputLineSplitter.h
+  tunnel/RepeatCollapser.cpp
+  tunnel/RepeatCollapser.h
   tunnel/ProcessInspector.h
   tunnel/QtPortProber.cpp
   tunnel/QtPortProber.h

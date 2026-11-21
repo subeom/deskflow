@@ -36,6 +36,8 @@ add_library(common STATIC
   QSettingsProxy.h
   TunnelAddress.cpp
   TunnelAddress.h
+  TunnelReconnect.cpp
+  TunnelReconnect.h
   UrlConstants.h
   ${CMAKE_CURRENT_BINARY_DIR}/Constants.h
   ${CMAKE_CURRENT_BINARY_DIR}/VersionInfo.h

@@ -96,6 +96,134 @@ void TunnelStatusWidgetTests::theStatusLine_keepsThePortAndTheServerApart()
   QVERIFY(tunnelStatusLine(listening, ServerLink::Connecting).contains(failureText(TunnelFailure::HandshakeRejected)));
 }
 
+// The server was reached through this tunnel and is not now: that is most often the tunnel of the server making its
+// connections to Cloudflare again (seconds), and not a mistake in the settings. The line says that the client is
+// reconnecting, and does not tell a person to look at the Access policy.
+void TunnelStatusWidgetTests::theStatusLine_saysReconnectingAfterAServerThatWasReached()
+{
+  TunnelStatus listening;
+  listening.state = TunnelState::Listening;
+  QCOMPARE(
+      tunnelStatusLine(listening, ServerLink::Reconnecting),
+      QStringLiteral("Tunnel: listening (local port open) | Server: reconnecting")
+  );
+
+  for (const auto failure :
+       {TunnelFailure::HandshakeRejected, TunnelFailure::ConnectFailed, TunnelFailure::EdgeUnreachable,
+        TunnelFailure::HostUnresolvable}) {
+    listening.failure = failure;
+    const auto line = tunnelStatusLine(listening, ServerLink::Reconnecting);
+    QCOMPARE(
+        line, QStringLiteral(
+                  "Tunnel: listening (local port open) | Server: reconnecting, the path through Cloudflare is not "
+                  "available now"
+              )
+    );
+    QVERIFY(!line.contains(failureText(failure)));
+    // the same failure while the server was never reached is still told as it is
+    QVERIFY(tunnelStatusLine(listening, ServerLink::Connecting).contains(failureText(failure)));
+  }
+
+  // a failure that is not about the path stays as it is
+  listening.failure = TunnelFailure::LoginRequired;
+  QVERIFY(tunnelStatusLine(listening, ServerLink::Reconnecting).contains(failureText(TunnelFailure::LoginRequired)));
+
+  // a tunnel that does not listen says what it says
+  for (const auto state :
+       {TunnelState::Idle, TunnelState::Starting, TunnelState::Stopping, TunnelState::Backoff, TunnelState::Failed}) {
+    TunnelStatus status;
+    status.state = state;
+    QCOMPARE(tunnelStatusLine(status, ServerLink::Reconnecting), status.text());
+  }
+}
+
+void TunnelStatusWidgetTests::aPathProblem_isTransient_aMistakeIsNot_data()
+{
+  QTest::addColumn<int>("failure");
+  QTest::addColumn<bool>("transient");
+  QTest::newRow("none") << int(TunnelFailure::None) << false;
+  QTest::newRow("handshake refused") << int(TunnelFailure::HandshakeRejected) << true;
+  QTest::newRow("could not connect") << int(TunnelFailure::ConnectFailed) << true;
+  QTest::newRow("edge unreachable") << int(TunnelFailure::EdgeUnreachable) << true;
+  QTest::newRow("host does not resolve") << int(TunnelFailure::HostUnresolvable) << true;
+  QTest::newRow("login asked for") << int(TunnelFailure::LoginRequired) << false;
+  QTest::newRow("no credentials") << int(TunnelFailure::CredentialsMissing) << false;
+  QTest::newRow("tls required") << int(TunnelFailure::TlsRequired) << false;
+  QTest::newRow("invalid hostname") << int(TunnelFailure::InvalidHostname) << false;
+  QTest::newRow("cloudflared missing") << int(TunnelFailure::CloudflaredMissing) << false;
+  QTest::newRow("port busy") << int(TunnelFailure::PortBusy) << false;
+  QTest::newRow("process exited") << int(TunnelFailure::ProcessExited) << false;
+  QTest::newRow("start timed out") << int(TunnelFailure::StartTimedOut) << false;
+  QTest::newRow("settings changed") << int(TunnelFailure::SettingsChanged) << false;
+}
+
+void TunnelStatusWidgetTests::aPathProblem_isTransient_aMistakeIsNot()
+{
+  QFETCH(int, failure);
+  QFETCH(bool, transient);
+  QCOMPARE(isTransientPathFailure(TunnelFailure(failure)), transient);
+}
+
+// the colour of the line and of the chip: a problem, unless it is one that passes and the server was reached before
+void TunnelStatusWidgetTests::theColourOfAProblem_followsWhetherTheServerWasReached()
+{
+  TunnelStatus status;
+  status.state = TunnelState::Listening;
+  for (const auto link :
+       {ServerLink::Unknown, ServerLink::Connecting, ServerLink::Connected, ServerLink::Reconnecting}) {
+    status.failure = TunnelFailure::None;
+    QVERIFY(!tunnelStatusIsProblem(status, link));
+  }
+
+  status.failure = TunnelFailure::HandshakeRejected;
+  QVERIFY(tunnelStatusIsProblem(status, ServerLink::Unknown));
+  QVERIFY(tunnelStatusIsProblem(status, ServerLink::Connecting));
+  QVERIFY(tunnelStatusIsProblem(status, ServerLink::Connected));
+  QVERIFY(!tunnelStatusIsProblem(status, ServerLink::Reconnecting));
+
+  status.failure = TunnelFailure::LoginRequired;
+  QVERIFY(tunnelStatusIsProblem(status, ServerLink::Reconnecting));
+
+  // a tunnel that failed is a problem, with or without a link
+  status.state = TunnelState::Failed;
+  status.failure = TunnelFailure::HandshakeRejected;
+  QVERIFY(tunnelStatusIsProblem(status, ServerLink::Reconnecting));
+  status.failure = TunnelFailure::None;
+  QVERIFY(tunnelStatusIsProblem(status, ServerLink::Unknown));
+
+  // one that waits to be started again is not a problem of the server link
+  status.state = TunnelState::Backoff;
+  QVERIFY(!tunnelStatusIsProblem(status, ServerLink::Reconnecting));
+}
+
+// The window gives the tracker what the core says; the tracker says how the link is.
+void TunnelStatusWidgetTests::theServerLinkTracker_remembersThatTheServerWasReached()
+{
+  ServerLinkTracker tracker;
+  using Observation = ServerObservation;
+
+  // before the server was reached: connecting is connecting, and nothing is "again"
+  QCOMPARE(tracker.update(Observation::Disconnected, true), ServerLink::Unknown);
+  QCOMPARE(tracker.update(Observation::Connecting, true), ServerLink::Connecting);
+  QCOMPARE(tracker.update(Observation::Disconnected, true), ServerLink::Unknown);
+  QCOMPARE(tracker.update(Observation::Connected, true), ServerLink::Connected);
+
+  // after it: every state that is not connected is a reconnect
+  QCOMPARE(tracker.update(Observation::Disconnected, true), ServerLink::Reconnecting);
+  QCOMPARE(tracker.update(Observation::Connecting, true), ServerLink::Reconnecting);
+  QCOMPARE(tracker.update(Observation::Disconnected, true), ServerLink::Reconnecting);
+  QCOMPARE(tracker.update(Observation::Connected, true), ServerLink::Connected);
+
+  // the core that is stopped is not reconnecting: the memory is gone with it
+  QCOMPARE(tracker.update(Observation::Disconnected, false), ServerLink::Unknown);
+  QCOMPARE(tracker.update(Observation::Connecting, true), ServerLink::Connecting);
+
+  // and a tunnel that stopped forgets as well
+  QCOMPARE(tracker.update(Observation::Connected, true), ServerLink::Connected);
+  tracker.reset();
+  QCOMPARE(tracker.update(Observation::Disconnected, true), ServerLink::Unknown);
+}
+
 void TunnelStatusWidgetTests::whileTheTunnelIsOff_theWidgetIsHiddenAndWritesNothing()
 {
   ControllerRig rig(m_dir);

@@ -28,6 +28,11 @@ private Q_SLOTS:
   void parseArgs_tunnelOnAndNotUsable_doesNotGoToTheSavedAddress();
   void parseArgs_tunnelOffOrAbsent_isTheSavedAddressWhateverElseTheTunnelKeysHold();
 
+  void retryTime_directLink_isOneSecondWhateverTheNumberOfTries();
+  void retryTime_tunnelUsed_firstRetryIsQuickThenOneSecondThenEases();
+  void retryTime_tunnelUsed_aConnectedSessionStartsTheCountAgain();
+  void retryTime_tunnelOnButNotUsable_isTheDirectOne();
+
   void connect_firstAddressRefuses_triesTheSecondAtOnceAfterTheRetryDelay();
   void connect_firstAddressNeverGreets_triesTheSecondAfterTheTimeLimitAndTheRetryDelay();
   void connect_afterAFullRoundOfFailures_startsAgainWithTheFirstAddress();

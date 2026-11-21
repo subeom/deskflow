@@ -24,8 +24,12 @@ TunnelChipSpec tunnelChip(const deskflow::tunnel::TunnelStatus &status, ServerLi
     return {QCoreApplication::translate("TunnelChip", "Tunnel: starting"), Kind::Info};
   case TunnelState::Listening:
     // the tunnel listens and what goes through it fails (the edge refuses, the login is asked for)
+    if (link == ServerLink::Reconnecting && deskflow::tunnel::isTransientPathFailure(status.failure))
+      return {QCoreApplication::translate("TunnelChip", "Tunnel: reconnecting"), Kind::Info};
     if (status.failure != TunnelFailure::None)
       return {QCoreApplication::translate("TunnelChip", "Tunnel: problem"), Kind::Warning};
+    if (link == ServerLink::Reconnecting)
+      return {QCoreApplication::translate("TunnelChip", "Tunnel: reconnecting"), Kind::Info};
     if (link == ServerLink::Connected)
       return {QCoreApplication::translate("TunnelChip", "Tunnel: connected"), Kind::Success};
     if (link == ServerLink::Connecting)

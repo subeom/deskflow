@@ -19,6 +19,7 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QThread>
 #include <QTimer>
 
@@ -189,6 +190,7 @@ bool TunnelSupervisor::start(const TunnelRequest &request)
   m_request = request;
   m_portRetried = false;
   m_portRetryPending = false;
+  m_repeats.reset();
   const auto now = advanceClock();
   m_machine.setTarget(request.hostname, request.preferredPort);
 
@@ -338,6 +340,9 @@ void TunnelSupervisor::tick()
 
 void TunnelSupervisor::notifyServerConnected()
 {
+  if (const auto summary = m_repeats.flush(advanceClock()); !summary.isEmpty()) {
+    Q_EMIT logLine(summary);
+  }
   execute(m_machine.serverConnected(advanceClock()));
   publish();
 }
@@ -460,12 +465,26 @@ void TunnelSupervisor::onOutputLine(const QString &line)
 {
   // the line is made safe first, and only the safe line is read, logged and shown
   const auto event = parseCloudflaredLine(m_redactor.redact(line));
-  if (!event.message.isEmpty()) {
-    Q_EMIT logLine(event.message);
-  }
+  const auto now = advanceClock();
   if (event.kind == LogEventKind::OriginFailed) {
+    // every one is counted and read; the log has the first and, once in a while, how many more there were
+    static const QRegularExpression time(QStringLiteral("\\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z?"));
+    const auto shown = m_repeats.feed(QString(event.message).remove(time).simplified(), now);
+    if (!shown.summary.isEmpty()) {
+      Q_EMIT logLine(shown.summary);
+    }
+    if (shown.show && !event.message.isEmpty()) {
+      Q_EMIT logLine(event.message);
+    }
     ++m_originFailures;
     m_lastOriginFailure = event.problem;
+  } else {
+    if (const auto summary = m_repeats.flush(now); !summary.isEmpty()) {
+      Q_EMIT logLine(summary);
+    }
+    if (!event.message.isEmpty()) {
+      Q_EMIT logLine(event.message);
+    }
   }
   if (event.kind == LogEventKind::BindFailed && !m_portRetried && m_process != nullptr &&
       (m_machine.status().state == TunnelState::Starting || m_machine.status().state == TunnelState::Listening)) {
@@ -478,7 +497,7 @@ void TunnelSupervisor::onOutputLine(const QString &line)
     publish();
     return;
   }
-  execute(m_machine.logEvent(event, advanceClock()));
+  execute(m_machine.logEvent(event, now));
   publish();
 }
 

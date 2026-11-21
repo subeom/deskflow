@@ -206,6 +206,16 @@ void TunnelShellTests::tunnelChip_isAFewWordsAndSaysHowTheTunnelIs_data()
   // a tunnel that listens and has a problem to tell is not the colour of one that works, whatever the core says
   row("a problem while it listens", TunnelState::Listening, TunnelFailure::HandshakeRejected, ServerLink::Connected,
       "Tunnel: problem", Kind::Warning);
+  // the server was reached through the tunnel and is not now: a connection that is made again, not a mistake of the
+  // settings (and what is wrong with the path is a thing that passes)
+  row("reconnecting", TunnelState::Listening, TunnelFailure::None, ServerLink::Reconnecting, "Tunnel: reconnecting",
+      Kind::Info);
+  row("reconnecting, the edge refuses", TunnelState::Listening, TunnelFailure::HandshakeRejected,
+      ServerLink::Reconnecting, "Tunnel: reconnecting", Kind::Info);
+  row("a login asked for is a problem even then", TunnelState::Listening, TunnelFailure::LoginRequired,
+      ServerLink::Reconnecting, "Tunnel: problem", Kind::Warning);
+  row("a failed tunnel is not reconnecting", TunnelState::Failed, TunnelFailure::EdgeUnreachable,
+      ServerLink::Reconnecting, "Tunnel: failed", Kind::Danger);
   row("stopping", TunnelState::Stopping, TunnelFailure::None, ServerLink::Unknown, "Tunnel: stopping", Kind::Neutral);
   row("a pause before it is started again", TunnelState::Backoff, TunnelFailure::ProcessExited, ServerLink::Unknown,
       "Tunnel: restarting", Kind::Warning);
