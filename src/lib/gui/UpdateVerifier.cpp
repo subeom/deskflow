@@ -6,11 +6,19 @@
 
 #include "gui/UpdateVerifier.h"
 
+#if defined(Q_OS_MACOS)
+#include "gui/MacUpdateVerifier.h"
+#endif
+
 namespace deskflow::gui {
 
 std::unique_ptr<IUpdateVerifier> createPlatformUpdateVerifier()
 {
+#if defined(Q_OS_MACOS)
+  return std::make_unique<MacUpdateVerifier>();
+#else
   return {};
+#endif
 }
 
 } // namespace deskflow::gui

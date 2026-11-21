@@ -71,3 +71,19 @@ create_test(
   SOURCE UpdateStatusModelTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+if(APPLE)
+  create_test(
+    NAME UpdateVerifierTests
+    DEPENDS gui
+    SOURCE UpdateVerifierTests.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+  )
+
+  create_test(
+    NAME MacUpdateIntegrationTests
+    DEPENDS gui
+    SOURCE MacUpdateIntegrationTests.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+  )
+endif()
