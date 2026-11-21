@@ -24,6 +24,10 @@ private Q_SLOTS:
   void apply_keepsOldBackupWhenRollbackRelaunchFails();
   void apply_relaunchesOldForEveryPostParentExitFailure();
   void apply_doesNotRelaunchOldBeforeParentExit();
+  void apply_shutdownFailureWithExitedParentRelaunchesOld();
+  void apply_shutdownFailureWithReusedPidRelaunchesOld();
+  void apply_processExitPidReuseContinuesSafely();
+  void apply_missingReceiptWithExitedParentRelaunchesOld();
   void apply_revalidatesBundleParentAfterParentExit();
   void apply_rechecksParentPermissionsImmediatelyBeforeRename();
   void pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermissions();

@@ -201,7 +201,8 @@ std::optional<UpdatePlan> planUpdate(const UpdateRelease &release, const UpdateE
   plan.releaseUrl = release.pageUrl;
 
   if (platform == QStringLiteral("windows") || platform == QStringLiteral("linux") || environment.packageManaged ||
-      environment.serviceMode || !environment.destinationWritable) {
+      environment.serviceMode || !environment.destinationWritable ||
+      !environment.automaticInstallEligible) {
     plan.mode = UpdateInstallMode::Manual;
     return plan;
   }

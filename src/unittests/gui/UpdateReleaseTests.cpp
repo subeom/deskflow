@@ -258,6 +258,13 @@ void UpdateReleaseTests::updatePlan_serviceUnknownAndUnverifiedCICandidatesStayM
   QCOMPARE(ciPlan->mode, UpdateInstallMode::Manual);
   QVERIFY(!ciPlan->installer);
   QVERIFY(!ciPlan->checksums);
+
+  auto uncertain = directMac(QStringLiteral("arm64"));
+  uncertain.automaticInstallEligible = false;
+  const auto uncertainPlan = planUpdate(*parsed.release, uncertain);
+  QVERIFY(uncertainPlan);
+  QCOMPARE(uncertainPlan->mode, UpdateInstallMode::Manual);
+  QVERIFY(!uncertainPlan->installer);
 }
 
 void UpdateReleaseTests::versionComparison_rejectsPrereleaseAndNeverDowngrades()

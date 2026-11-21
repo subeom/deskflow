@@ -45,6 +45,7 @@ struct UpdateEnvironment
   bool destinationWritable = false;
   bool serviceMode = false;
   bool supported = true;
+  bool automaticInstallEligible = true;
 };
 
 struct UpdatePlan

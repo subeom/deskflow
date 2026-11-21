@@ -288,6 +288,21 @@ void VersionCheckerTests::checkLatest_manualPlatformsNeverDownload()
     QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::ManualAvailable);
     QCOMPARE(fakeNetwork->calls.size(), 1);
   }
+
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  auto uncertain = directMac();
+  uncertain.automaticInstallEligible = false;
+  auto network = std::make_unique<FakeUpdateNetwork>();
+  auto *fakeNetwork = network.get();
+  VersionChecker checker(
+      std::move(network), uncertain, QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::make_unique<FakeUpdateVerifier>(true), 0
+  );
+  checker.checkLatest();
+  fakeNetwork->complete(0, success(releaseJson()));
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::ManualAvailable);
+  QCOMPARE(fakeNetwork->calls.size(), 1);
 }
 
 void VersionCheckerTests::checkLatest_unsupportedEnvironmentDoesNotRequest()

@@ -277,17 +277,31 @@ public:
     QElapsedTimer timer;
     timer.start();
     while (timer.elapsed() < timeoutMs) {
-      const auto identity = updateProcessStartIdentity(processId);
-      if (identity.isEmpty()) {
-        if (kill(static_cast<pid_t>(processId), 0) != 0 && errno == ESRCH) {
-          return {true, {}, {}};
-        }
-      } else if (identity != startIdentity) {
-        return {false, QStringLiteral("the update parent PID was reused"), {}};
+      if (parentState(processId, startIdentity) != UpdateParentState::Running) {
+        return {true, {}, {}};
       }
       QThread::msleep(100);
     }
     return {false, QStringLiteral("timed out waiting for Deskflow to exit"), {}};
+  }
+
+  UpdateParentState parentState(
+      qint64 processId, const QString &startIdentity
+  ) override
+  {
+    if (processId <= 1 || processId > std::numeric_limits<pid_t>::max()) {
+      return UpdateParentState::OriginalExited;
+    }
+    const auto identity = updateProcessStartIdentity(processId);
+    if (!identity.isEmpty()) {
+      return identity == startIdentity
+                 ? UpdateParentState::Running
+                 : UpdateParentState::PidReused;
+    }
+    if (kill(static_cast<pid_t>(processId), 0) != 0 && errno == ESRCH) {
+      return UpdateParentState::OriginalExited;
+    }
+    return UpdateParentState::Running;
   }
 
   UpdateInstallResult createWorkspace(
@@ -584,11 +598,20 @@ UpdateInstallResult MacUpdateInstaller::preflight(const StagedUpdate &staged)
       Settings::ProcessMode::Service) {
     return {false, QStringLiteral("service-mode Deskflow must be updated manually"), {}};
   }
-  const auto bundle = deskflowBundlePath(m_executablePath);
-  if (!bundle) {
+  const auto evidence = evaluateMacUpdateInstall(
+      m_executablePath,
+      m_packageManaged,
+      Settings::value(Settings::Core::ProcessMode).value<Settings::ProcessMode>() ==
+          Settings::ProcessMode::Service
+  );
+  if (!isMacUpdateInstallEligible(evidence) || evidence.bundlePath.isEmpty()) {
+    return {false, QStringLiteral("Deskflow app bundle is not eligible for automatic update"), {}};
+  }
+  const QString bundle = evidence.bundlePath;
+  if (bundle.isEmpty()) {
     return {false, QStringLiteral("update helper is not running from Deskflow.app"), {}};
   }
-  const QFileInfo bundleInfo(*bundle);
+  const QFileInfo bundleInfo(bundle);
   const auto parentInfo = QFileInfo(bundleInfo.dir().absolutePath());
   const auto euid = static_cast<qint64>(geteuid());
   if (bundleInfo.isSymLink() || !bundleInfo.isDir() ||
@@ -707,7 +730,10 @@ UpdateInstallResult MacUpdateInstaller::apply(
     return {false, QStringLiteral("invalid update helper process"), receiptPath};
   }
   if (!isCanonicalInside(m_cacheRoot, manifestPath) ||
-      !isCanonicalInside(m_cacheRoot, receiptPath)) {
+      !isCanonicalInside(
+          m_cacheRoot, QFileInfo(receiptPath).absolutePath()
+      ) ||
+      QFileInfo(receiptPath).suffix() != QStringLiteral("json")) {
     return {false, QStringLiteral("update transaction is outside the cache"), receiptPath};
   }
   auto receipt = readReceipt(receiptPath);
@@ -715,6 +741,22 @@ UpdateInstallResult MacUpdateInstaller::apply(
       receipt->parentPid != parentPid ||
       receipt->parentStartIdentity != parentStartIdentity ||
       receipt->token != helperToken) {
+    const auto parentState =
+        m_operations->parentState(parentPid, parentStartIdentity);
+    if (parentState != UpdateParentState::Running) {
+      const auto relaunched =
+          m_operations->relaunchAndWait(*bundle, receiptPath, currentStableVersion());
+      return {
+          false,
+          relaunched.ok
+              ? QStringLiteral("update receipt was lost after the original process exited")
+              : combinedFailure(
+                    QStringLiteral("update receipt was lost after the original process exited"),
+                    relaunched.error
+                ),
+          receiptPath
+      };
+    }
     return {false, QStringLiteral("update transaction receipt does not match"), receiptPath};
   }
 
@@ -744,6 +786,21 @@ UpdateInstallResult MacUpdateInstaller::apply(
       receiptPath, parentPid, parentStartIdentity, kShutdownTimeoutMs
   );
   if (!stopped.ok) {
+    const auto parentState =
+        m_operations->parentState(parentPid, parentStartIdentity);
+    if (parentState != UpdateParentState::Running) {
+      receipt->state = QStringLiteral("failed");
+      writeReceipt(receiptPath, *receipt);
+      const auto relaunched = relaunchOld();
+      receipt->state =
+          relaunched.ok ? QStringLiteral("rolled-back") : QStringLiteral("failed");
+      writeReceipt(receiptPath, *receipt);
+      return {
+          false,
+          combinedFailure(stopped.error, relaunched.ok ? QString() : relaunched.error),
+          receiptPath
+      };
+    }
     receipt->state = QStringLiteral("failed");
     writeReceipt(receiptPath, *receipt);
     return {false, stopped.error, receiptPath};
@@ -752,9 +809,15 @@ UpdateInstallResult MacUpdateInstaller::apply(
       parentPid, parentStartIdentity, kShutdownTimeoutMs
   );
   if (!parentExited.ok) {
+    if (m_operations->parentState(parentPid, parentStartIdentity) !=
+      UpdateParentState::Running) {
+    // Original exit (including PID reuse) is sufficient; do not wait on or kill the replacement PID.
+    // Continue with the transaction because shutdown-complete was already recorded.
+    } else {
     receipt->state = QStringLiteral("failed");
     writeReceipt(receiptPath, *receipt);
     return {false, parentExited.error, receiptPath};
+    }
   }
 
   const auto failAfterParentExit = [this, &receipt, &receiptPath, &relaunchOld](

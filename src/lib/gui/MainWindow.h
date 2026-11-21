@@ -284,6 +284,7 @@ private:
   deskflow::gui::UpdateShutdown *m_updateShutdown = nullptr;
   QString m_updateReceiptPath;
   bool m_updateApplying = false;
+  bool m_updateExitAuthorized = false;
   bool m_secureSocket = false;
   bool m_saveOnExit = true;
   bool m_clientErrorVisible = false;

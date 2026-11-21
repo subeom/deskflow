@@ -118,6 +118,13 @@ public:
     return result(QStringLiteral("shutdown"));
   }
 
+  deskflow::gui::UpdateParentState parentState(
+      qint64, const QString &
+  ) override
+  {
+    return observedParentState;
+  }
+
   UpdateInstallResult waitForProcessExit(
       qint64 processId, const QString &startIdentity, int timeoutMs
   ) override
@@ -289,6 +296,8 @@ public:
   bool corruptReceiptOnNewLaunch = false;
   bool corruptReceiptBeforeNewLaunch = false;
   bool mutateParentBeforeRename = false;
+  deskflow::gui::UpdateParentState observedParentState =
+      deskflow::gui::UpdateParentState::Running;
   QString parentPathToMutate;
   QString stateBeforeNewLaunch;
   qint64 helperPidBeforeClaim = -1;
@@ -752,6 +761,106 @@ void UpdateInstallerTests::apply_doesNotRelaunchOldBeforeParentExit()
   QCOMPARE(operations->relaunchCount, 0);
 }
 
+void UpdateInstallerTests::apply_shutdownFailureWithExitedParentRelaunchesOld()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  Fixture fixture;
+  QVERIFY(createFixture(temporary, fixture));
+  FakeLauncher *launcher = nullptr;
+  FakeApplyOperations *parentOperations = nullptr;
+  auto parent = parentInstaller(fixture, launcher, parentOperations);
+  const auto start = parent->start(fixture.staged, true);
+  QVERIFY(start.ok);
+
+  FakeApplyOperations *operations = nullptr;
+  auto helper = helperInstaller(fixture, operations);
+  operations->failures.insert(QStringLiteral("shutdown"));
+  operations->observedParentState =
+      deskflow::gui::UpdateParentState::OriginalExited;
+  const auto result = helper->apply(
+      fixture.manifestPath, fixture.parentPid, fixture.parentStartIdentity,
+      start.receiptPath, start.helperToken
+  );
+  QVERIFY(!result.ok);
+  QCOMPARE(operations->relaunchCount, 1);
+  QVERIFY(!operations->operations.contains(QStringLiteral("verify-dmg")));
+}
+
+void UpdateInstallerTests::apply_shutdownFailureWithReusedPidRelaunchesOld()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  Fixture fixture;
+  QVERIFY(createFixture(temporary, fixture));
+  FakeLauncher *launcher = nullptr;
+  FakeApplyOperations *parentOperations = nullptr;
+  auto parent = parentInstaller(fixture, launcher, parentOperations);
+  const auto start = parent->start(fixture.staged, true);
+  QVERIFY(start.ok);
+
+  FakeApplyOperations *operations = nullptr;
+  auto helper = helperInstaller(fixture, operations);
+  operations->failures.insert(QStringLiteral("shutdown"));
+  operations->observedParentState =
+      deskflow::gui::UpdateParentState::PidReused;
+  QVERIFY(!helper->apply(
+      fixture.manifestPath, fixture.parentPid, fixture.parentStartIdentity,
+      start.receiptPath, start.helperToken
+  ).ok);
+  QCOMPARE(operations->relaunchCount, 1);
+}
+
+void UpdateInstallerTests::apply_processExitPidReuseContinuesSafely()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  Fixture fixture;
+  QVERIFY(createFixture(temporary, fixture));
+  FakeLauncher *launcher = nullptr;
+  FakeApplyOperations *parentOperations = nullptr;
+  auto parent = parentInstaller(fixture, launcher, parentOperations);
+  const auto start = parent->start(fixture.staged, true);
+  QVERIFY(start.ok);
+
+  FakeApplyOperations *operations = nullptr;
+  auto helper = helperInstaller(fixture, operations);
+  operations->failures.insert(QStringLiteral("parent-exit"));
+  operations->observedParentState =
+      deskflow::gui::UpdateParentState::PidReused;
+  const auto result = helper->apply(
+      fixture.manifestPath, fixture.parentPid, fixture.parentStartIdentity,
+      start.receiptPath, start.helperToken
+  );
+  QVERIFY(result.ok);
+  QCOMPARE(operations->relaunchCount, 1);
+}
+
+void UpdateInstallerTests::apply_missingReceiptWithExitedParentRelaunchesOld()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  Fixture fixture;
+  QVERIFY(createFixture(temporary, fixture));
+  FakeLauncher *launcher = nullptr;
+  FakeApplyOperations *parentOperations = nullptr;
+  auto parent = parentInstaller(fixture, launcher, parentOperations);
+  const auto start = parent->start(fixture.staged, true);
+  QVERIFY(start.ok);
+  QVERIFY(QFile::remove(start.receiptPath));
+
+  FakeApplyOperations *operations = nullptr;
+  auto helper = helperInstaller(fixture, operations);
+  operations->observedParentState =
+      deskflow::gui::UpdateParentState::OriginalExited;
+  const auto result = helper->apply(
+      fixture.manifestPath, fixture.parentPid, fixture.parentStartIdentity,
+      start.receiptPath, start.helperToken
+  );
+  QVERIFY(!result.ok);
+  QCOMPARE(operations->relaunchCount, 1);
+}
+
 void UpdateInstallerTests::apply_revalidatesBundleParentAfterParentExit()
 {
   QTemporaryDir temporary;
@@ -826,6 +935,30 @@ void UpdateInstallerTests::pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermiss
   QVERIFY(!deskflow::gui::isTrustedUpdateParentPermissions(
       501, 501, QStringLiteral("staff"), false, true
   ));
+
+  deskflow::gui::MacUpdateInstallEvidence evidence;
+  evidence.supported = true;
+  evidence.desktopMode = true;
+  evidence.directApp = true;
+  evidence.canonicalPath = true;
+  evidence.mountedVolume = false;
+  evidence.packageManaged = false;
+  evidence.appOwnedByEffectiveUser = true;
+  evidence.parentTrusted = true;
+  evidence.bundleWritable = true;
+  evidence.parentWritable = true;
+  evidence.aclTrustProven = true;
+  evidence.architectureSupported = true;
+  QVERIFY(deskflow::gui::isMacUpdateInstallEligible(evidence));
+
+  evidence.aclTrustProven = false;
+  QVERIFY(!deskflow::gui::isMacUpdateInstallEligible(evidence));
+  evidence.aclTrustProven = true;
+  evidence.appOwnedByEffectiveUser = false;
+  QVERIFY(!deskflow::gui::isMacUpdateInstallEligible(evidence));
+  evidence.appOwnedByEffectiveUser = true;
+  evidence.desktopMode = false;
+  QVERIFY(!deskflow::gui::isMacUpdateInstallEligible(evidence));
 }
 
 void UpdateInstallerTests::apply_rejectsCandidateIdentityChangeBeforeAndAfterRename()

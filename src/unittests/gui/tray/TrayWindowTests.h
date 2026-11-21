@@ -31,6 +31,7 @@ private Q_SLOTS:
   void deskflowLook_trayHasRowsOfItsOwn_theActionsOfTheWindowAreNotInIt();
   void deskflowLook_chosenRowsDoWhatTheMenuAlwaysDid();
   void deskflowLook_anUpdateIsInTheMenuAndOnTheIcon();
+  void updateApplying_blocksTrayQuitAndClose();
   void deskflowLook_aClientTestsItsConnectionFromTheTray();
   void deskflowLook_menuBarHasASharingMenuWithEveryRowAndDimsTheOnesThatDoNotApply();
   void deskflowLook_menuBarOfAClientCanTestTheConnection();

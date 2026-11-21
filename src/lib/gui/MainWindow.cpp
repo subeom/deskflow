@@ -723,7 +723,8 @@ void MainWindow::publishUpdateHandshake()
       handshakeInfo.fileName().startsWith(QStringLiteral("handshake-")) == false ||
       handshakeInfo.suffix() != QStringLiteral("json") ||
       handshakeInfo.isSymLink() || QFileInfo::exists(handshake) ||
-      receiptInfo.isSymLink() || !receiptInfo.isFile() ||
+      receiptInfo.isSymLink() ||
+      (receiptInfo.exists() && !receiptInfo.isFile()) ||
       transactions.canonicalFilePath() != receiptInfo.absolutePath() ||
       transactions.canonicalFilePath() != handshakeInfo.absolutePath()) {
     qWarning() << "refusing to publish an invalid update handshake";
@@ -850,6 +851,7 @@ void MainWindow::confirmAndInstallUpdate()
   }
   m_updateReceiptPath = started.receiptPath;
   m_updateApplying = true;
+  m_updateExitAuthorized = false;
   Settings::setValue(
       Settings::Gui::AutoStartCore,
       m_coreProcess.processState() == ProcessState::Started ||
@@ -905,12 +907,15 @@ void MainWindow::updateShutdownCompleted()
   }
   Settings::save();
   qInfo() << "update shutdown complete, leaving the old GUI for the detached helper";
+  m_updateExitAuthorized = true;
+  m_saveOnExit = false;
   QApplication::quit();
 }
 
 void MainWindow::updateShutdownFailed(const QString &message)
 {
   m_updateApplying = false;
+  m_updateExitAuthorized = false;
   qWarning().noquote() << "update installation cancelled:" << message.left(240);
   auto status = m_updateStatus->status();
   status.phase = UpdateStatusSnapshot::Phase::Failed;
@@ -1812,6 +1817,12 @@ bool MainWindow::maybeHideToTray()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+  if (m_updateApplying && !m_updateExitAuthorized) {
+    qWarning() << "cannot quit while an update helper is active";
+    event->ignore();
+    showAndActivate();
+    return;
+  }
   if (event->spontaneous() && maybeHideToTray()) {
     event->ignore();
     return;

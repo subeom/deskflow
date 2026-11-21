@@ -11,12 +11,12 @@
 #include "common/UrlConstants.h"
 #include "common/Settings.h"
 #include "gui/UpdateIntegrity.h"
+#include "gui/UpdateInstaller.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
-#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -33,25 +33,6 @@ QString currentStableVersion()
 {
   const auto parts = QString::fromLatin1(kVersion).split(QLatin1Char('.'));
   return parts.size() < 3 ? QString() : parts.mid(0, 3).join(QLatin1Char('.'));
-}
-
-std::optional<QString> deskflowBundlePath(const QString &executablePath)
-{
-  const QFileInfo executable(executablePath);
-  const auto macosDirectory = QFileInfo(executable.absolutePath());
-  if (macosDirectory.fileName() != QStringLiteral("MacOS") ||
-      executable.fileName() != QStringLiteral("Deskflow")) {
-    return std::nullopt;
-  }
-  const auto contentsPath = macosDirectory.absolutePath();
-  if (QFileInfo(contentsPath).fileName() != QStringLiteral("Contents")) {
-    return std::nullopt;
-  }
-  const auto bundlePath = QFileInfo(contentsPath).absolutePath();
-  if (QFileInfo(bundlePath).fileName() != QStringLiteral("Deskflow.app")) {
-    return std::nullopt;
-  }
-  return bundlePath;
 }
 
 deskflow::gui::UpdateEnvironment currentUpdateEnvironment()
@@ -71,32 +52,27 @@ deskflow::gui::UpdateEnvironment currentUpdateEnvironment()
 
   bool packageManaged = false;
   bool destinationWritable = false;
-#if defined(Q_OS_MACOS)
-  const auto executablePath = QCoreApplication::applicationFilePath();
-  const auto bundlePath = deskflowBundlePath(executablePath);
-  if (bundlePath) {
-    const QFileInfo bundle(*bundlePath);
-    const auto canonical = bundle.canonicalFilePath();
-    const auto lexical = bundle.absoluteFilePath();
-    packageManaged =
-        bundle.isSymLink() || canonical.contains(QStringLiteral("/Caskroom/deskflow/")) ||
-        canonical.contains(QStringLiteral("/Cellar/")) ||
-        lexical.contains(QStringLiteral("/Caskroom/deskflow/")) ||
-        QFileInfo::exists(QStringLiteral("/opt/homebrew/Caskroom/deskflow")) ||
-        QFileInfo::exists(QStringLiteral("/usr/local/Caskroom/deskflow")) ||
-        lexical.startsWith(QStringLiteral("/opt/local/")) ||
-        lexical.startsWith(QStringLiteral("/Volumes/"));
-    destinationWritable =
-        !packageManaged && bundle.exists() && !bundle.isSymLink() &&
-        QFileInfo(bundle.dir().absolutePath()).isWritable() && bundle.isWritable();
-  }
-#endif
+  bool automaticInstallEligible = false;
   const auto serviceMode =
       Settings::value(Settings::Core::ProcessMode).value<Settings::ProcessMode>() ==
       Settings::ProcessMode::Service;
+#if defined(Q_OS_MACOS)
+  const auto executablePath = QCoreApplication::applicationFilePath();
+  const bool packageOwned =
+      QFileInfo::exists(QStringLiteral("/opt/homebrew/Caskroom/deskflow")) ||
+      QFileInfo::exists(QStringLiteral("/usr/local/Caskroom/deskflow"));
+  const auto evidence =
+      deskflow::gui::evaluateMacUpdateInstall(
+          executablePath, packageOwned, serviceMode
+      );
+  packageManaged = evidence.packageManaged;
+  destinationWritable = evidence.bundleWritable && evidence.parentWritable;
+  automaticInstallEligible =
+      deskflow::gui::isMacUpdateInstallEligible(evidence);
+#endif
   return {
       platform, QSysInfo::currentCpuArchitecture(), packageManaged, destinationWritable,
-      serviceMode, supported
+      serviceMode, supported, automaticInstallEligible
   };
 }
 

@@ -10,9 +10,14 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QSysInfo>
+
+#include <cerrno>
 
 #if defined(Q_OS_MACOS)
 #include "gui/MacUpdateInstaller.h"
+#include <sys/acl.h>
+#include <unistd.h>
 #endif
 
 namespace deskflow::gui {
@@ -35,9 +40,111 @@ bool isPackageManaged(const QString &executablePath)
          QFileInfo::exists(QStringLiteral("/opt/homebrew/Caskroom/deskflow")) ||
          QFileInfo::exists(QStringLiteral("/usr/local/Caskroom/deskflow"));
 }
+
+std::optional<QString> deskflowBundlePath(const QString &executablePath)
+{
+  const QFileInfo executable(executablePath);
+  const auto macosDirectory = QFileInfo(executable.absolutePath());
+  if (macosDirectory.fileName() != QStringLiteral("MacOS") ||
+      executable.fileName() != QStringLiteral("Deskflow")) {
+    return std::nullopt;
+  }
+  const auto contentsPath = macosDirectory.absolutePath();
+  if (QFileInfo(contentsPath).fileName() != QStringLiteral("Contents")) {
+    return std::nullopt;
+  }
+  const auto bundlePath = QFileInfo(contentsPath).absolutePath();
+  if (QFileInfo(bundlePath).fileName() != QStringLiteral("Deskflow.app")) {
+    return std::nullopt;
+  }
+  return bundlePath;
+}
+
+bool aclTrustIsProven(const QString &path)
+{
+  if (!QFileInfo::exists(path)) {
+    return false;
+  }
+  acl_t acl = acl_get_file(path.toLocal8Bit().constData(), ACL_TYPE_EXTENDED);
+  if (acl == nullptr) {
+    return errno == ENOENT || errno == ENOTSUP || errno == EINVAL;
+  }
+  bool hasEntries = false;
+  acl_entry_t entry = nullptr;
+  int result = acl_get_entry(acl, ACL_FIRST_ENTRY, &entry);
+  while (result == 1) {
+    hasEntries = true;
+    result = acl_get_entry(acl, ACL_NEXT_ENTRY, &entry);
+  }
+  acl_free(acl);
+  return !hasEntries && result != -1;
+}
 #endif
 
 } // namespace
+
+MacUpdateInstallEvidence evaluateMacUpdateInstall(
+    const QString &executablePath, bool packageManaged, bool serviceMode
+)
+{
+#if !defined(Q_OS_MACOS)
+  Q_UNUSED(executablePath)
+  Q_UNUSED(packageManaged)
+  Q_UNUSED(serviceMode)
+  return {};
+#else
+  MacUpdateInstallEvidence evidence;
+  evidence.supported = true;
+  evidence.desktopMode = !serviceMode;
+  const auto architecture = QSysInfo::currentCpuArchitecture().toLower();
+  evidence.architectureSupported =
+      architecture == QStringLiteral("arm64") ||
+      architecture == QStringLiteral("aarch64") ||
+      architecture == QStringLiteral("x86_64") ||
+      architecture == QStringLiteral("amd64");
+
+  const auto bundlePath = deskflowBundlePath(executablePath);
+  if (!bundlePath) {
+    return evidence;
+  }
+  const QFileInfo bundle(*bundlePath);
+  const QFileInfo parent(bundle.dir().absolutePath());
+  evidence.bundlePath = bundle.absoluteFilePath();
+  evidence.packageManaged =
+      packageManaged || bundle.isSymLink() ||
+      bundle.canonicalFilePath().contains(QStringLiteral("/Caskroom/deskflow/")) ||
+      bundle.canonicalFilePath().contains(QStringLiteral("/Cellar/")) ||
+      bundle.absoluteFilePath().startsWith(QStringLiteral("/opt/local/"));
+  evidence.directApp = bundle.exists() && !bundle.isSymLink() && bundle.isDir();
+  evidence.canonicalPath =
+      bundle.canonicalFilePath() == bundle.absoluteFilePath() &&
+      QDir::cleanPath(bundle.absoluteFilePath()) == bundle.absoluteFilePath();
+  evidence.mountedVolume = bundle.absoluteFilePath().startsWith(QStringLiteral("/Volumes/"));
+  evidence.appOwnedByEffectiveUser =
+      bundle.ownerId() == static_cast<quint32>(geteuid());
+  evidence.parentTrusted = isTrustedUpdateParentPermissions(
+      geteuid(), parent.ownerId(), parent.group(),
+      parent.permissions().testFlag(QFileDevice::WriteGroup),
+      parent.permissions().testFlag(QFileDevice::WriteOther)
+  );
+  evidence.bundleWritable = bundle.isWritable();
+  evidence.parentWritable = parent.isWritable();
+  evidence.aclTrustProven =
+      aclTrustIsProven(bundle.absoluteFilePath()) &&
+      aclTrustIsProven(parent.absoluteFilePath());
+  return evidence;
+#endif
+}
+
+bool isMacUpdateInstallEligible(const MacUpdateInstallEvidence &evidence)
+{
+  return evidence.supported && evidence.desktopMode && evidence.directApp &&
+         evidence.canonicalPath && !evidence.mountedVolume &&
+         !evidence.packageManaged && evidence.appOwnedByEffectiveUser &&
+         evidence.parentTrusted && evidence.bundleWritable &&
+         evidence.parentWritable && evidence.aclTrustProven &&
+         evidence.architectureSupported;
+}
 
 std::unique_ptr<IUpdateInstaller> createPlatformUpdateInstaller()
 {

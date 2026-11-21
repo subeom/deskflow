@@ -82,6 +82,11 @@ struct MainWindowTestAccess
   {
     return w.m_statusBar;
   }
+  static void setUpdateApplying(MainWindow &w, bool applying)
+  {
+    w.m_updateApplying = applying;
+    w.m_updateExitAuthorized = false;
+  }
   static void updateFound(MainWindow &w, const QString &version)
   {
     UpdateStatusSnapshot status;
@@ -480,6 +485,22 @@ void TrayWindowTests::deskflowLook_anUpdateIsInTheMenuAndOnTheIcon()
   );
   QVERIFY(tray->iconSpec().update);
   QVERIFY(Access::trayIcon(*window)->toolTip().contains(QStringLiteral("update available")));
+}
+
+void TrayWindowTests::updateApplying_blocksTrayQuitAndClose()
+{
+  auto window = makeWindow(Settings::CoreMode::Server, true);
+  Access::showAndActivate(*window);
+  QVERIFY(QTest::qWaitForWindowExposed(window.get()));
+  Access::setUpdateApplying(*window, true);
+
+  Access::sharedActions(*window).at(5)->trigger();
+  QCoreApplication::processEvents();
+  QVERIFY(window->isVisible());
+  QVERIFY(!window->close());
+
+  Access::setUpdateApplying(*window, false);
+  QVERIFY(window->isVisible());
 }
 
 void TrayWindowTests::deskflowLook_aClientTestsItsConnectionFromTheTray()

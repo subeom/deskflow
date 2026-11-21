@@ -30,6 +30,13 @@ struct UpdateHelperWorkspace
   QString mountPoint;
 };
 
+enum class UpdateParentState
+{
+  Running,
+  OriginalExited,
+  PidReused
+};
+
 struct UpdateFileIdentity
 {
   bool ok = false;
@@ -38,6 +45,23 @@ struct UpdateFileIdentity
   qint64 size = 0;
 
   bool operator==(const UpdateFileIdentity &) const = default;
+};
+
+struct MacUpdateInstallEvidence
+{
+  bool supported = false;
+  bool desktopMode = false;
+  bool directApp = false;
+  bool canonicalPath = false;
+  bool mountedVolume = false;
+  bool packageManaged = false;
+  bool appOwnedByEffectiveUser = false;
+  bool parentTrusted = false;
+  bool bundleWritable = false;
+  bool parentWritable = false;
+  bool aclTrustProven = false;
+  bool architectureSupported = false;
+  QString bundlePath;
 };
 
 struct UpdateHelperLaunchResult
@@ -70,6 +94,9 @@ public:
   ) = 0;
   virtual UpdateInstallResult waitForProcessExit(
       qint64 processId, const QString &startIdentity, int timeoutMs
+  ) = 0;
+  virtual UpdateParentState parentState(
+      qint64 processId, const QString &startIdentity
   ) = 0;
   virtual UpdateInstallResult createWorkspace(
       UpdateHelperWorkspace &workspace
@@ -122,5 +149,9 @@ UpdateInstallResult claimUpdateReceipt(
     const QString &receiptPath, const QString &token, qint64 helperPid,
     const QString &helperStartIdentity
 );
+MacUpdateInstallEvidence evaluateMacUpdateInstall(
+    const QString &executablePath, bool packageManaged, bool serviceMode
+);
+bool isMacUpdateInstallEligible(const MacUpdateInstallEvidence &evidence);
 
 } // namespace deskflow::gui
