@@ -32,12 +32,17 @@ struct ParsedVersion
   quint64 patch = 0;
 };
 
-std::optional<ParsedVersion> parseVersion(const QString &value)
+std::optional<ParsedVersion> parseVersion(const QString &value, bool allowBuildComponent = false)
 {
-  static const QRegularExpression pattern(
+  static const QRegularExpression stablePattern(
       QStringLiteral(R"(^((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))$)")
   );
-  const auto match = pattern.match(value);
+  static const QRegularExpression currentPattern(
+      QStringLiteral(
+          R"(^((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))\.((?:0|[1-9][0-9]*))(?:\.(?:0|[1-9][0-9]*))?$)"
+      )
+  );
+  const auto match = (allowBuildComponent ? currentPattern : stablePattern).match(value);
   if (!match.hasMatch()) {
     return std::nullopt;
   }
@@ -225,7 +230,7 @@ std::optional<UpdatePlan> planUpdate(const UpdateRelease &release, const UpdateE
 
 bool isNewerUpdateVersion(const QString &current, const QString &candidate)
 {
-  const auto currentVersion = parseVersion(current);
+  const auto currentVersion = parseVersion(current, true);
   const auto candidateVersion = parseVersion(candidate);
   if (!currentVersion || !candidateVersion) {
     return false;

@@ -39,6 +39,10 @@ add_library(${target} STATIC
   UpdateNetwork.h
   UpdateRelease.cpp
   UpdateRelease.h
+  UpdateStatusModel.cpp
+  UpdateStatusModel.h
+  UpdateVerifier.cpp
+  UpdateVerifier.h
   VersionChecker.cpp
   VersionChecker.h
   config/ComputerConfig.h

@@ -217,8 +217,10 @@ void UpdateReleaseTests::updatePlan_keepsWindowsLinuxAndPackageManagedMacManual(
 void UpdateReleaseTests::versionComparison_rejectsPrereleaseAndNeverDowngrades()
 {
   QVERIFY(deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5"), QStringLiteral("2.0.6")));
+  QVERIFY(deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5.2"), QStringLiteral("2.0.6")));
   QVERIFY(deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.9.9"), QStringLiteral("3.0.0")));
   QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.6"), QStringLiteral("2.0.6")));
+  QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5.2"), QStringLiteral("2.0.5")));
   QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.1.0"), QStringLiteral("2.0.99")));
   QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("2.0.5"), QStringLiteral("2.0.6-rc1")));
   QVERIFY(!deskflow::gui::isNewerUpdateVersion(QStringLiteral("v2.0.5"), QStringLiteral("2.0.6")));
