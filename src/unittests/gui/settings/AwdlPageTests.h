@@ -33,6 +33,16 @@ private Q_SLOTS:
   void card_readsTheStateWhenThePageIsShown();
   void banner_isHiddenUntilTheHint_saysTheNumbers_andItsButtonAsks();
   void banner_whileTheDialogIsOpen_hasItsButtonOff();
+  // the permission to change the link with no password
+  void permissionRow_hasItsTextsAndButtons_andTheTextsSaySheDoesNotAskTwice();
+  void permissionRow_followsTheController_data();
+  void permissionRow_followsTheController();
+  void allowButton_asksTheQuestionFirst_andTheDialogOpensOnlyOnYes();
+  void theQuestion_saysWhatIsAdded_whatItAllows_whoElseCanDoIt_andHowToRemoveIt();
+  void allowButton_withNoAnswerOffscreen_isNoAndOpensNothing();
+  void removeButton_opensTheDialogAtOnce();
+  void permissionRow_saysWhatCameOfTheLastThing();
+  void permissionRow_isAbsentWhereThereIsNoAwdl();
   void korean_everyTextOfTheOptionIsTranslated();
 
 private:

@@ -7,6 +7,7 @@
 #pragma once
 
 #include "AwdlModel.h"
+#include "AwdlPermission.h"
 
 #include <QString>
 
@@ -30,6 +31,21 @@ QString bannerText(const BurstStats &stats);
 
 //! The sentence that the dialog of the password of the system shows (osascript puts its own words around it)
 QString prompt(Direction direction);
+
+//! What the permission to change the link with no password is, as a sentence: Allowed, Not allowed (with what the
+//! program does then), or Unknown. \p filePresent adds that the file of the program is there when sudo does not use it
+QString permissionText(PermissionState state, bool filePresent);
+
+//! What came of the last thing that was asked for: a sentence, or nothing for None
+QString permissionNoteText(PermissionNote note);
+
+//! The question that is asked before the dialog of the password opens for the permission, in plain words: the title,
+//! and what is added, what it lets the account do, who else can do it, and how to remove it
+QString confirmAllowTitle();
+QString confirmAllowText();
+
+//! The sentence that the dialog of the password of the system shows for adding and for removing the file
+QString permissionPrompt(PermissionAction action);
 
 //! Milliseconds as a person reads them: one decimal under 10 ms, none above
 QString formatMs(double milliseconds);

@@ -50,7 +50,10 @@ enum class AdminResult
   //! The person closed the dialog of the password
   Cancelled,
   //! The password was wrong, the system said no, or the command could not be started
-  Failed
+  Failed,
+  //! Nothing was started: the program would not run the command (the name of the account cannot be used in the file of
+  //! the permission, see AwdlPermission.h)
+  Refused
 };
 
 inline constexpr auto kInterface = "awdl0";

@@ -20,6 +20,7 @@ AwdlController *makeController(IAwdlSystem *system, QObject *parent)
   AwdlController::Options options;
   options.optionOn = [] { return Settings::value(Settings::Network::MacAwdlOff).toBool(); };
   options.prompt = [](Direction direction) { return prompt(direction); };
+  options.permissionPrompt = [](PermissionAction action) { return permissionPrompt(action); };
   options.supported = platformSupported();
   auto *controller = new AwdlController(system, options, parent);
 

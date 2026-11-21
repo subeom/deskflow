@@ -42,4 +42,21 @@ private Q_SLOTS:
   void refresh_looksAtTheRouteAndSendsNothing();
   void summary_saysWhatTheStatusLineSays();
   void aBurstThatComesAfterTheStop_saysNothing();
+
+  // the permission to change the link with no password
+  void thePermission_isLookedAtBeforeEveryChange_andTheChangeWaitsForTheAnswer();
+  void withThePermission_thePasswordIsNeverAsked_whoeverMakesTheChange();
+  void withThePermission_theStartOfTheCoreAsksNothing_andOnceIsStillOnce();
+  void aPermissionThatIsMissingAfterAll_fallsBackToTheDialogOnce_andIsRememberedAsMissing();
+  void aCommandThatFailsItself_isNotAskedAgainInADialog();
+  void aPermissionThatIsNotKnown_isTheDialog();
+  void allowWithoutPassword_asksOnceWithItsSentence_andLooksAgain();
+  void allowAndRemove_saySoWhenTheyDidNotHappen_data();
+  void allowAndRemove_saySoWhenTheyDidNotHappen();
+  void removePermission_asksOnceWithItsSentence_andLooksAgain();
+  void thePermission_isLookedAtWhenThePageIsShown_atMostOnceInAWhile();
+  void thePolicyAsksNothing_whileTheDialogOfThePermissionIsOpen();
+  void theButtonsOfThePermission_runNothingOffAMac_andNeverAskTwice();
+  void aSilentAnswer_thatNobodyAskedFor_saysNothing();
+  void theAdminDialogIsOnlyForTheFallback_neverTheFirstChoiceWithAPermission();
 };

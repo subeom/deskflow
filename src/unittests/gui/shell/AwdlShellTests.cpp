@@ -15,6 +15,7 @@
 #include "gui/awdl/AwdlTexts.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/settings/AwdlBanner.h"
+#include "gui/settings/AwdlCard.h"
 #include "gui/settings/SettingsPages.h"
 #include "gui/shell/MainShell.h"
 #include "gui/style/DeskflowStyle.h"
@@ -57,6 +58,7 @@ namespace {
 using Access = MainWindowTestAccess;
 using namespace deskflow::awdl;
 using namespace awdltest;
+using deskflow::awdl::permissionPrompt;
 using deskflow::awdl::prompt;
 using deskflow::core::ConnectionState;
 using deskflow::core::ProcessState;
@@ -129,6 +131,7 @@ void AwdlShellTests::init()
 
 void AwdlShellTests::cleanup()
 {
+  deskflow::gui::settings::AwdlCard::s_confirmForTest = nullptr;
   s_systemForTest = nullptr;
   s_supportedForTest.reset();
   s_fake = nullptr;
@@ -336,6 +339,85 @@ void AwdlShellTests::oldLook_theControllerRuns_andThereIsNoBanner()
   QCOMPARE(s_fake->reads, 1);
   s_fake->answerRead(LinkState::Up);
   QCOMPARE(s_fake->downs(), 1);
+}
+
+void AwdlShellTests::withThePermission_theStartOfSharingAndTheBanner_askNoPassword()
+{
+  Settings::setValue(Settings::Network::MacAwdlOff, true);
+  auto window = makeWindow();
+  showWindow(*window);
+  // sudo says that the command needs no password
+  s_fake->listing = deskflow::awdl::Listing::NoPassword;
+  s_fake->filePresent = true;
+
+  Access::states(*window, ProcessState::Starting, ConnectionState::Disconnected);
+  s_fake->answerRead(deskflow::awdl::LinkState::Up);
+  // the start of sharing changes the link with sudo -n: no dialog of the password
+  QCOMPARE(s_fake->silentChanges, (QList<deskflow::awdl::Direction>{deskflow::awdl::Direction::Down}));
+  QCOMPARE(s_fake->changes.size(), 0);
+  s_fake->answerSilent(deskflow::awdl::SudoResult::Done);
+  Access::states(*window, ProcessState::Started, ConnectionState::Listening);
+
+  // AirDrop turned it on again and the latency shows the spikes: the banner, and its button changes the link with no
+  // dialog
+  s_fake->answerRead(deskflow::awdl::LinkState::Up);
+  auto *measure = button(*window, "btnAwdlMeasure");
+  QVERIFY(measure);
+  measure->click();
+  s_fake->answerRoute(routeOf(LinkKind::WiFi));
+  s_fake->answerMeasured(stutter());
+  auto *banner = Access::shell(*window)->awdlBanner();
+  QVERIFY(banner->isVisible());
+  banner->button()->click();
+  QCOMPARE(s_fake->silentChanges.size(), 2);
+  QCOMPARE(s_fake->changes.size(), 0);
+  QVERIFY(!banner->button()->isEnabled());
+  s_fake->answerSilent(deskflow::awdl::SudoResult::Done);
+  s_fake->answerRead(deskflow::awdl::LinkState::Down);
+  QVERIFY(!banner->isVisible());
+  QVERIFY(banner->button()->isEnabled());
+}
+
+void AwdlShellTests::withoutThePermission_theWindowAsksForThePasswordAsBefore()
+{
+  Settings::setValue(Settings::Network::MacAwdlOff, true);
+  auto window = makeWindow();
+  // the default answer of the fake: sudo says that a password is needed
+  Access::states(*window, ProcessState::Starting, ConnectionState::Disconnected);
+  s_fake->answerRead(deskflow::awdl::LinkState::Up);
+  QCOMPARE(s_fake->silentChanges.size(), 0);
+  QCOMPARE(s_fake->changes.size(), 1);
+  QCOMPARE(s_fake->changes.first().second, prompt(deskflow::awdl::Direction::Down));
+}
+
+void AwdlShellTests::thePermissionButtons_ofTheWindow_askTheQuestion_thenShowTheDialogWithTheSentencesOfTheProgram()
+{
+  auto window = makeWindow();
+  auto *allow = button(*window, "btnAwdlAllow");
+  auto *remove = button(*window, "btnAwdlRemovePermission");
+  QVERIFY(allow && remove);
+
+  // the window gives its controller the sentences of the dialogs (the program's own, in its language): not an empty
+  // dialog
+  int questions = 0;
+  deskflow::gui::settings::AwdlCard::s_confirmForTest = [&](const QString &, const QString &) {
+    ++questions;
+    return true;
+  };
+  QVERIFY(allow->isEnabled());
+  allow->click();
+  QCOMPARE(questions, 1);
+  QCOMPARE(s_fake->installs, (QStringList{permissionPrompt(deskflow::awdl::PermissionAction::Allow)}));
+  QVERIFY(!s_fake->installs.first().isEmpty());
+  s_fake->listing = deskflow::awdl::Listing::NoPassword;
+  s_fake->filePresent = true;
+  s_fake->answerPermissionSet(deskflow::awdl::AdminResult::Done);
+
+  QVERIFY(remove->isEnabled());
+  remove->click();
+  QCOMPARE(questions, 1);
+  QCOMPARE(s_fake->removals, (QStringList{permissionPrompt(deskflow::awdl::PermissionAction::Remove)}));
+  QVERIFY(!s_fake->removals.first().isEmpty());
 }
 
 QTEST_MAIN(AwdlShellTests)

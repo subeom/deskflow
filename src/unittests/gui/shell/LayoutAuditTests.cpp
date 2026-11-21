@@ -16,6 +16,7 @@
 #include "gui/chrome/WindowChrome.h"
 #include "gui/core/CoreProcess.h"
 #include "gui/settings/AwdlBanner.h"
+#include "gui/settings/AwdlCard.h"
 #include "gui/settings/SettingsPages.h"
 #include "gui/shell/MainShell.h"
 #include "gui/style/DeskflowStyle.h"
@@ -29,6 +30,8 @@
 #include <QPixmapCache>
 #include <QPushButton>
 #include <QScopeGuard>
+#include <QScrollArea>
+#include <QScrollBar>
 
 #include <memory>
 
@@ -200,6 +203,7 @@ void LayoutAuditTests::cleanup()
   deskflow::gui::chrome::WindowChrome::s_titleBarInset = nullptr;
   deskflow::awdl::s_systemForTest = nullptr;
   deskflow::awdl::s_supportedForTest.reset();
+  deskflow::gui::settings::AwdlCard::s_confirmForTest = nullptr;
   TextSize::uninstall();
   qunsetenv("DESKFLOW_WINDOW_FRAME");
   QApplication::setStyle(QStringLiteral("Fusion"));
@@ -457,6 +461,18 @@ void LayoutAuditTests::windowFits_whileTheAwdlHintIsShown()
   fake->answerRoute(awdltest::routeOf(deskflow::awdl::LinkKind::WiFi));
   fake->answerMeasured(hint ? awdltest::burstOf({{4, 139.5}, {5, 64.0}, {22, 48.0}, {23, 25.5}}) : awdltest::clean());
   QCOMPARE(shell->awdlBanner()->isVisible(), hint);
+
+  // the row of the permission in its longest state: the file of the program is there and sudo does not use it (the
+  // longest sentence), and the last thing that was asked for was refused (the longest note)
+  fake->filePresent = true;
+  deskflow::gui::settings::AwdlCard::s_confirmForTest = [](const QString &, const QString &) { return true; };
+  auto *allow = window->findChild<QPushButton *>(QStringLiteral("btnAwdlAllow"));
+  auto *remove = window->findChild<QPushButton *>(QStringLiteral("btnAwdlRemovePermission"));
+  QVERIFY(allow && remove);
+  QVERIFY(allow->isEnabled());
+  allow->click();
+  fake->answerPermissionSet(deskflow::awdl::AdminResult::Refused);
+  QVERIFY(remove->isEnabled());
   // the layout settles from the event loop: the window gives itself the minimum size that the banner asks for (on a Mac
   // the test says it itself, see emulateMacMinimumSize)
   QTest::qWait(30);
@@ -484,6 +500,16 @@ void LayoutAuditTests::windowFits_whileTheAwdlHintIsShown()
       QCOMPARE(shell->awdlBanner()->isVisible(), hint);
       for (const auto &line : layoutaudit::audit(*window)) {
         found << QStringLiteral("%1x%2 %3: %4").arg(window->width()).arg(window->height()).arg(page, line);
+      }
+      // the audit lets what scrolls be as large as it needs: a row of the card that is wider than the page would make
+      // the page scroll sideways, which is not seen as a violation of the rules above
+      for (const auto *area : window->findChildren<QScrollArea *>()) {
+        if (area->isVisible() && area->horizontalScrollBar()->maximum() > 0)
+          found << QStringLiteral("%1x%2 %3: %4 scrolls sideways by %5 px")
+                       .arg(window->width())
+                       .arg(window->height())
+                       .arg(page, layoutaudit::nameOf(area))
+                       .arg(area->horizontalScrollBar()->maximum());
       }
     }
   }

@@ -27,6 +27,16 @@ private Q_SLOTS:
   void measure_aRouteThatMayNotBeMeasured_runsNothing();
   void createSystem_isNoneOffscreen_theFakeOfATest_andTheSeamsSayWhereTheOptionIs();
 
+  // the permission to change the link with no password (stand-ins for sudo and osascript, never the real ones)
+  void theDefaultProgramsOfThePermission_areThoseOfTheSystem();
+  void checkPermission_asksSudoForTheLongListing_withNoInput_andSaysWhatItSaid();
+  void checkPermission_saysWhetherTheFileIsThere_andAProgramThatIsNotThere_isNotKnown();
+  void changeLinkSilently_givesTheArgumentsOfTheLine_andSaysWhoFailed();
+  void installPermission_runsTheScriptInTheDialog_forTheAccountOfTheProcess();
+  void installPermission_forAnAccountThatCannotBeUsed_startsNothing();
+  void removePermission_runsTheRemoveScriptInTheDialog();
+  void currentAccountName_isTheOneOfTheUserOfTheProcess();
+
 private:
   QString script(const QString &name, const QString &body) const;
   QString recorded(const QString &name) const;

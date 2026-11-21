@@ -292,6 +292,8 @@ target_sources(${target} PRIVATE
   awdl/AwdlController.h
   awdl/AwdlModel.cpp
   awdl/AwdlModel.h
+  awdl/AwdlPermission.cpp
+  awdl/AwdlPermission.h
   awdl/AwdlPlatform.cpp
   awdl/AwdlPlatform.h
   awdl/AwdlSetup.cpp

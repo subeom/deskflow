@@ -24,3 +24,10 @@ create_test(
   SOURCE MacAwdlSystemTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME AwdlPermissionTests
+  DEPENDS gui
+  SOURCE AwdlPermissionTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
