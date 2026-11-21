@@ -414,6 +414,105 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
+    <name>AwdlTexts</name>
+    <message>
+        <source>AirDrop and Handoff</source>
+        <translation>AirDrop 및 Handoff</translation>
+    </message>
+    <message>
+        <source>Turn off AirDrop and Handoff's wireless link while sharing</source>
+        <translation>공유하는 동안 AirDrop과 Handoff의 무선 링크 끄기</translation>
+    </message>
+    <message>
+        <source>Needed only if the mouse stutters while sharing over Wi-Fi. While the link is off, AirDrop, Handoff, Universal Control and AirPlay to this Mac do not work. Deskflow asks for the administrator password once each time sharing starts.</source>
+        <translation>Wi-Fi로 공유하는 동안 마우스가 끊길 때만 필요합니다. 링크가 꺼져 있는 동안에는 AirDrop, Handoff, Universal Control, 이 Mac으로의 AirPlay가 동작하지 않습니다. 공유를 시작할 때마다 한 번 관리자 암호를 요청합니다.</translation>
+    </message>
+    <message>
+        <source>State of the wireless link</source>
+        <translation>무선 링크 상태</translation>
+    </message>
+    <message>
+        <source>Change the wireless link now</source>
+        <translation>무선 링크 지금 변경</translation>
+    </message>
+    <message>
+        <source>Asks for the administrator password. The link comes back by itself after a restart of the Mac, and when AirDrop or Handoff use it.</source>
+        <translation>관리자 암호를 요청합니다. Mac을 다시 시작하거나 AirDrop 또는 Handoff가 사용하면 링크가 저절로 다시 켜집니다.</translation>
+    </message>
+    <message>
+        <source>Measuring...</source>
+        <translation>측정 중...</translation>
+    </message>
+    <message>
+        <source>Measure now</source>
+        <translation>지금 측정</translation>
+    </message>
+    <message>
+        <source>Turn off now</source>
+        <translation>지금 끄기</translation>
+    </message>
+    <message>
+        <source>Turn back on</source>
+        <translation>다시 켜기</translation>
+    </message>
+    <message>
+        <source>Not available on this Mac.</source>
+        <translation>이 Mac에서는 사용할 수 없습니다.</translation>
+    </message>
+    <message>
+        <source>Not read yet.</source>
+        <translation>아직 읽지 않았습니다.</translation>
+    </message>
+    <message>
+        <source>Off. AirDrop and Handoff cannot use it until it is turned back on.</source>
+        <translation>꺼짐. 다시 켤 때까지 AirDrop과 Handoff가 사용할 수 없습니다.</translation>
+    </message>
+    <message>
+        <source>On. This computer is on a wired network, so the wireless link does not matter.</source>
+        <translation>켜짐. 이 컴퓨터는 유선 네트워크에 연결되어 있어 무선 링크는 영향이 없습니다.</translation>
+    </message>
+    <message>
+        <source>On. The connection of this computer is not Wi-Fi, so the delay is not measured.</source>
+        <translation>켜짐. 이 컴퓨터의 연결이 Wi-Fi가 아니어서 지연 시간을 측정하지 않습니다.</translation>
+    </message>
+    <message>
+        <source>On. The delay to the router has not been measured yet.</source>
+        <translation>켜짐. 공유기까지의 지연 시간을 아직 측정하지 않았습니다.</translation>
+    </message>
+    <message>
+        <source>On. The router did not answer enough probes to tell.</source>
+        <translation>켜짐. 공유기가 응답한 측정 횟수가 부족해 판단할 수 없습니다.</translation>
+    </message>
+    <message>
+        <source>On, no latency problem seen.</source>
+        <translation>켜짐, 지연 시간 문제는 보이지 않습니다.</translation>
+    </message>
+    <message>
+        <source>On, and the delay to the router has spikes: the mouse can stutter.</source>
+        <translation>켜짐, 공유기까지의 지연 시간이 튀어 마우스가 끊길 수 있습니다.</translation>
+    </message>
+    <message>
+        <source>Last measurement: median %1 ms, worst %2 ms.</source>
+        <translation>마지막 측정: 중앙값 %1 ms, 최대 %2 ms.</translation>
+    </message>
+    <message>
+        <source>The wireless link of AirDrop and Handoff is on and the delay to the router has spikes: the mouse can stutter.</source>
+        <translation>AirDrop과 Handoff의 무선 링크가 켜져 있고 공유기까지의 지연 시간이 튀어 마우스가 끊길 수 있습니다.</translation>
+    </message>
+    <message>
+        <source>The wireless link of AirDrop and Handoff is on and the delay to the router has spikes (median %1 ms, worst %2 ms): the mouse can stutter.</source>
+        <translation>AirDrop과 Handoff의 무선 링크가 켜져 있고 공유기까지의 지연 시간이 튑니다(중앙값 %1 ms, 최대 %2 ms). 마우스가 끊길 수 있습니다.</translation>
+    </message>
+    <message>
+        <source>Deskflow turns off the wireless link (AWDL) of AirDrop and Handoff, so that the mouse does not stutter while sharing. AirDrop, Handoff and Universal Control stop until it is turned back on.</source>
+        <translation>Deskflow가 공유 중 마우스가 끊기지 않도록 AirDrop과 Handoff의 무선 링크(AWDL)를 끕니다. 다시 켤 때까지 AirDrop, Handoff, Universal Control이 중지됩니다.</translation>
+    </message>
+    <message>
+        <source>Deskflow turns the wireless link (AWDL) of AirDrop and Handoff back on.</source>
+        <translation>Deskflow가 AirDrop과 Handoff의 무선 링크(AWDL)를 다시 켭니다.</translation>
+    </message>
+</context>
+<context>
     <name>ClientConfigDialog</name>
     <message>
         <source>Client Configuration</source>
@@ -3442,6 +3541,13 @@ Enabling this setting will disable the server config GUI.</source>
     <message>
         <source>The core is restarted shortly (not more than once in 10 seconds).</source>
         <translation>곧 코어를 재시작합니다(10초에 한 번 이하).</translation>
+    </message>
+</context>
+<context>
+    <name>deskflow::gui::settings::AwdlBanner</name>
+    <message>
+        <source>Turn off</source>
+        <translation>끄기</translation>
     </message>
 </context>
 <context>

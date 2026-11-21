@@ -140,6 +140,27 @@ void SettingsTests::experimentalMultiMonitor_isOffByDefaultAndRoundTrips()
   QCOMPARE(Settings::value(key).toBool(), false);
 }
 
+void SettingsTests::macAwdlOff_isOffByDefault_isKept_andItsGroupIsNotTakenAway()
+{
+  // the option that turns off the wireless link of AirDrop while sharing (macOS): off, so that a program that has not
+  // been told nothing changes
+  const auto key = Settings::Network::MacAwdlOff;
+  QCOMPARE(key, QStringLiteral("network/macAwdlOff"));
+  QVERIFY(Settings::validKeys().contains(key));
+  Settings::setValue(key);
+  QCOMPARE(Settings::defaultValue(key), QVariant(false));
+  QCOMPARE(Settings::value(key), QVariant(false));
+
+  Settings::setValue(key, true);
+  QCOMPARE(Settings::value(key).toBool(), true);
+  // the group is one that the program knows: it is not taken away with the groups of computers that are not there
+  // (saving the configuration of the server does it)
+  Settings::removeUnknownComputers({});
+  QCOMPARE(Settings::value(key).toBool(), true);
+  Settings::setValue(key);
+  QCOMPARE(Settings::value(key).toBool(), false);
+}
+
 void SettingsTests::monitorLayout_isEmptyByDefaultAndRoundTrips()
 {
   const auto key = Settings::Computer::MonitorLayout.arg(QStringLiteral("some-pc"));
@@ -336,6 +357,8 @@ void SettingsTests::keys_aChoiceOfTheNewLookIsKeptWhenTheProgramIsStartedAgain_d
   QTest::newRow("clipboard of text only") << Settings::Server::ClipboardTextOnly << QVariant(true);
   QTest::newRow("the monitors are arranged") << Settings::Server::ExperimentalMultiMonitor << QVariant(true);
   QTest::newRow("a connect timeout") << Settings::Client::ConnectTimeout << QVariant(7.5);
+  QTest::newRow("the wireless link of AirDrop is turned off while sharing")
+      << Settings::Network::MacAwdlOff << QVariant(true);
 }
 
 void SettingsTests::keys_aChoiceOfTheNewLookIsKeptWhenTheProgramIsStartedAgain()

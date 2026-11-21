@@ -33,6 +33,7 @@ class BackdropWidget;
 }
 
 namespace settings {
+class AwdlBanner;
 class RestartBanner;
 }
 
@@ -109,6 +110,9 @@ public:
   //! minimumWindowWidth() is it at the size of text now
   static constexpr int kMinimumWindowWidth = 720;
   static int minimumWindowWidth();
+  //! The width that the window really has at the least (the screen can ask for less than minimumWindowWidth()): the
+  //! line above the pages that wraps asks the window for the height that it has there
+  void setLeastWindowWidth(int width);
 
   MainShell(const MainShellParts &parts, QObject *parent = nullptr);
 
@@ -163,6 +167,9 @@ public:
 
   //! The line above every page that asks for the sharing to be restarted
   settings::RestartBanner *restartBanner() const;
+  //! The line above every page that says that the wireless link of AirDrop can make the mouse stutter (macOS: it is
+  //! hidden until the window shows it, and elsewhere it never is)
+  settings::AwdlBanner *awdlBanner() const;
 
   //! The header of the window (the frame of the new look, see WindowChrome): it is the first thing in the window, above
   //! the sidebar and the page, on the same backdrop
@@ -193,6 +200,8 @@ private:
   QHash<QString, QString> m_subPageParent;
   QString m_subPage;
   settings::RestartBanner *m_restartBanner = nullptr;
+  settings::AwdlBanner *m_awdlBanner = nullptr;
+  int m_leastWindowWidth = 0;
   QStackedWidget *m_modePages = nullptr;
   SettingCard *m_computersCard = nullptr;
   SettingCard *m_noModeCard = nullptr;

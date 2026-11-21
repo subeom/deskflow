@@ -161,6 +161,10 @@ add_library(${target} STATIC
   style/TextSizeModel.cpp
   style/TextSizeModel.h
   style/phosphor.qrc
+  settings/AwdlBanner.cpp
+  settings/AwdlBanner.h
+  settings/AwdlCard.cpp
+  settings/AwdlCard.h
   settings/RestartBanner.cpp
   settings/RestartBanner.h
   settings/SettingEffects.cpp
@@ -280,6 +284,23 @@ add_library(${target} STATIC
   widgets/ToggleSwitch.h
   widgets/SettingsDialogButtonBox.cpp
   widgets/SettingsDialogButtonBox.h
+)
+
+# the option that turns off the wireless link of AirDrop while sharing (macOS only at run time, the code builds everywhere)
+target_sources(${target} PRIVATE
+  awdl/AwdlController.cpp
+  awdl/AwdlController.h
+  awdl/AwdlModel.cpp
+  awdl/AwdlModel.h
+  awdl/AwdlPlatform.cpp
+  awdl/AwdlPlatform.h
+  awdl/AwdlSetup.cpp
+  awdl/AwdlSetup.h
+  awdl/AwdlTexts.cpp
+  awdl/AwdlTexts.h
+  awdl/IAwdlSystem.h
+  awdl/MacAwdlSystem.cpp
+  awdl/MacAwdlSystem.h
 )
 
 # the Cloudflare Tunnel: the logic, without a window and without a process of its own

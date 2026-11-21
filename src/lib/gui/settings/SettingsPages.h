@@ -18,8 +18,13 @@
 class QComboBox;
 class QWidget;
 
+namespace deskflow::awdl {
+class AwdlController;
+}
+
 namespace deskflow::gui::settings {
 
+class AwdlCard;
 class SettingsBinder;
 class SettingsPage;
 
@@ -66,6 +71,9 @@ public:
   SettingsBinder *binder() const;
   //! The group of the Cloudflare Tunnel of the page of the client; null until the page is first shown
   TunnelSettingsGroup *tunnelGroup() const;
+  //! The controller of the option that turns off the wireless link of AirDrop (macOS) that the card of the Network page
+  //! shows and asks; not owned, null: none. A computer that is not a Mac has no card, and this does nothing there
+  void setAwdlController(deskflow::awdl::AwdlController *controller);
 
   //! The id of the page that "Preferences" opens
   static QString generalId();
@@ -99,6 +107,7 @@ private:
   SettingsBinder *m_binder = nullptr;
   TunnelSettingsDependencies m_tunnel;
   QPointer<TunnelSettingsGroup> m_tunnelGroup;
+  AwdlCard *m_awdlCard = nullptr;
   QList<Entry> m_entries;
 };
 

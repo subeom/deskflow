@@ -163,6 +163,64 @@ This section contains options used by the application logging it will begin with
 | toFile   | `true` or `false` | When true the log will be written to the value of the `file` option |
 | guiDebug | `true` or `false` | When true the log will show the Gui's internal debug messages |
 
+### Network
+
+This section begins with `[network]`. It is for macOS only and for this fork only: Windows and Linux do not read it, show
+nothing of it and run nothing.
+
+|Option      |   Valid Values    |Description|
+|:-----------|:-----------------:|:-----------|
+| macAwdlOff | `true` or `false` | When true the wireless link of AirDrop and Handoff (`awdl0`) is turned off while the core runs [default: false] |
+
+#### Turning off the wireless link of AirDrop while sharing (macOS)
+
+AirDrop, Handoff, Universal Control and AirPlay to the Mac use an extra wireless link, AWDL (the interface `awdl0`). While
+the link is in use the Wi-Fi radio hops to another channel now and then, and on some networks the pointer then stutters.
+On the Mac that this was measured on, the round trip to the router (one probe every 0.2 s) was 3.9 ms on average and 7.4
+ms at the worst with `awdl0` down, and 9.2 ms on average and 139 ms at the worst, with 18 of 149 probes above 20 ms, while
+`awdl0` was up and in use. With `awdl0` up and not in use it was 3.8 ms on average and 6.7 ms at the worst: the link being
+up is not the problem, its use is.
+
+The option is for the case that the mouse stutters while sharing over Wi-Fi, and for nothing else. Where it is not
+needed it is not there to be used: it is off by default, and with it off the application does nothing of what follows.
+
+With the option on (the switch *Turn off AirDrop and Handoff's wireless link while sharing* on the page *Network*, or
+`macAwdlOff=true`):
+
+- when the core starts, server or client, the application reads the state of the link (`/sbin/ifconfig awdl0`, no
+  privilege). If it is up, the dialog of macOS for the password of an administrator is shown once for that run of the
+  core, and the link is turned off with the one constant command `/sbin/ifconfig awdl0 down`. If the password is not
+  given, or the command fails, one line goes to the log and the dialog is not shown again by itself in that run.
+- while the core runs the state is read again every few seconds (no privilege). When the link is up the application also
+  measures, once a minute, the round trip to the gateway of the default route (a burst of 40 probes, 0.2 s apart, with
+  `/sbin/ping`, which needs no privilege), only when that connection is Wi-Fi: on a wire it says so and sends nothing.
+  Probes go to the gateway of the default route, an address of the local network, and to nothing else.
+- if the link is up and the round trip has the spikes of AWDL (at least three probes above the larger of 20 ms and five
+  times the median, or two spikes about 3 to 4 seconds apart), a line above the pages says that the mouse can stutter,
+  with the median and the worst round trip, and a button *Turn off* that asks for the password. The dialog is never shown
+  again by itself.
+- when the core stops or the application quits nothing is turned on again: that would ask for the password again. The
+  link comes back by itself after a restart of the Mac, and whenever AirDrop or Handoff use it.
+
+The card *AirDrop and Handoff* of the page *Network* says the state of the link with the numbers of the last measurement
+(*On, no latency problem seen*, *On, and the delay to the router has spikes*, *Off* and so on) and has the buttons
+*Measure now*, *Turn off now* and *Turn back on*, which work whether or not the option is on. The window of the system
+look has no card: the option works there too (the log has its lines, which begin with `awdl:`), and it is set in the file.
+
+What it breaks while the link is off: AirDrop, Handoff, Universal Control and AirPlay to this Mac. Nothing of the
+program on Windows, Linux or on the other computers changes, and nothing is sent over the network: there is no change of
+the protocol.
+
+The application never runs as root. The only privileged action is that constant command (`down`, or `up` for *Turn back
+on*), run through `/usr/bin/osascript` with `do shell script ... with administrator privileges` and a fixed sentence for the
+dialog; no text of a person is in it. The dialog of the system asks for the password, and whether Touch ID is offered is up
+to macOS.
+
+To see the effect by hand, run `ping -c 100 -i 0.2 <router>` before and after (the address of the router is the gateway
+of `route -n get default`), and look at the average and the highest time. Other ways to use the link less, with no
+privilege: AirDrop set to receive from no one, Handoff off, AirPlay Receiver off and Universal Control off (System
+Settings; the names vary with the version of macOS), and a wired connection, which has no such problem.
+
 ### Security
 
 This section contains options used by the application security it will begin with `[security]`

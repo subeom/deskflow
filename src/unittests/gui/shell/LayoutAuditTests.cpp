@@ -8,10 +8,14 @@
 #include "../FontEnvironment.h"
 #include "../KoreanTranslator.h"
 #include "../LayoutAudit.h"
+#include "../awdl/AwdlSamples.h"
+#include "../awdl/FakeAwdlSystem.h"
 #include "common/Settings.h"
 #include "gui/MainWindow.h"
+#include "gui/awdl/AwdlPlatform.h"
 #include "gui/chrome/WindowChrome.h"
 #include "gui/core/CoreProcess.h"
+#include "gui/settings/AwdlBanner.h"
 #include "gui/settings/SettingsPages.h"
 #include "gui/shell/MainShell.h"
 #include "gui/style/DeskflowStyle.h"
@@ -23,6 +27,7 @@
 #include <QApplication>
 #include <QLabel>
 #include <QPixmapCache>
+#include <QPushButton>
 #include <QScopeGuard>
 
 #include <memory>
@@ -193,6 +198,8 @@ void LayoutAuditTests::cleanup()
     s_translator = nullptr;
   }
   deskflow::gui::chrome::WindowChrome::s_titleBarInset = nullptr;
+  deskflow::awdl::s_systemForTest = nullptr;
+  deskflow::awdl::s_supportedForTest.reset();
   TextSize::uninstall();
   qunsetenv("DESKFLOW_WINDOW_FRAME");
   QApplication::setStyle(QStringLiteral("Fusion"));
@@ -202,7 +209,8 @@ void LayoutAuditTests::cleanup()
   for (const auto &key :
        {Settings::Core::CoreMode, Settings::Core::ComputerName, Settings::Security::TlsEnabled,
         Settings::Gui::ShownServerFirstStartMessage, Settings::Gui::ShownFirstConnectedMessage,
-        Settings::Gui::WindowGeometry, Settings::Gui::ShellWindowGeometry, Settings::Gui::TextSize})
+        Settings::Gui::WindowGeometry, Settings::Gui::ShellWindowGeometry, Settings::Gui::TextSize,
+        Settings::Network::MacAwdlOff})
     Settings::setValue(key);
 }
 
@@ -373,6 +381,120 @@ void LayoutAuditTests::theAuditSeesWhatItIsMadeToSee()
   narrow->setGeometry(10, 60, 20, 10);
   narrow->show();
   QVERIFY2(layoutaudit::audit(root).join(QStringLiteral("\n")).contains(QLatin1String("squeezed: ")), "squeezed");
+}
+
+void LayoutAuditTests::windowFits_whileTheAwdlHintIsShown_data()
+{
+  QTest::addColumn<int>("pixels");
+  QTest::addColumn<bool>("windowsFont");
+  QTest::addColumn<bool>("korean");
+  QTest::addColumn<int>("percent");
+  QTest::addColumn<bool>("hint");
+
+  // the same window with the option on and a link that is up, with the hint and without it: what the banner adds is the
+  // difference
+  for (const bool hint : {true, false}) {
+    for (const bool windowsFont : {false, true}) {
+      for (const bool korean : {false, true}) {
+        for (const int percent : {90, 100, 130, 150}) {
+          QTest::addRow(
+              "%s %s %s %d %%", hint ? "hint" : "no hint", windowsFont ? "Windows 14 px" : "Mac 13 px",
+              korean ? "ko" : "en", percent
+          ) << (windowsFont ? 14 : 13)
+            << windowsFont << korean << percent << hint;
+        }
+      }
+    }
+  }
+}
+
+void LayoutAuditTests::windowFits_whileTheAwdlHintIsShown()
+{
+  QFETCH(int, pixels);
+  QFETCH(bool, windowsFont);
+  QFETCH(bool, korean);
+  QFETCH(int, percent);
+  QFETCH(bool, hint);
+
+  if (korean) {
+    s_translator = new koreantest::RecordingTranslator;
+    QVERIFY2(s_translator->loadShipped(), qPrintable(koreantest::shippedQm()));
+    QVERIFY(QCoreApplication::installTranslator(s_translator));
+  }
+  // a Mac as far as the window knows, with the system of a test: no program is run
+  static FakeAwdlSystem *fake = nullptr;
+  fake = nullptr;
+  deskflow::awdl::s_supportedForTest = true;
+  deskflow::awdl::s_systemForTest = [](QObject *parent) -> deskflow::awdl::IAwdlSystem * {
+    fake = new FakeAwdlSystem(parent);
+    return fake;
+  };
+  Settings::setValue(Settings::Network::MacAwdlOff, true);
+
+  writeComputers();
+  FakeSystem system;
+  system.pixels = pixels;
+  system.platform = windowsFont ? TextPlatform::Windows : TextPlatform::Mac;
+  system.language = korean ? QStringLiteral("ko") : QStringLiteral("en");
+  auto window = makeWindow(system, percent, Settings::CoreMode::Server);
+  auto *shell = Access::shell(*window);
+  QVERIFY(shell);
+  QVERIFY(fake);
+#ifdef Q_OS_MACOS
+  layoutaudit::emulateMacTitleBar(*window, kTitleBar);
+#endif
+  window->show();
+  QVERIFY(QTest::qWaitForWindowExposed(window.get()));
+  Access::states(*window, deskflow::core::ProcessState::Started, deskflow::core::ConnectionState::Listening);
+  sayFourAddresses(*window);
+
+  // the person said no to the dialog of the password, and the link that is up has the spikes of AirDrop
+  fake->answerRead(deskflow::awdl::LinkState::Up);
+  fake->answerLink(deskflow::awdl::AdminResult::Cancelled);
+  auto *measure = window->findChild<QPushButton *>(QStringLiteral("btnAwdlMeasure"));
+  QVERIFY(measure);
+  measure->click();
+  fake->answerRoute(awdltest::routeOf(deskflow::awdl::LinkKind::WiFi));
+  fake->answerMeasured(hint ? awdltest::burstOf({{4, 139.5}, {5, 64.0}, {22, 48.0}, {23, 25.5}}) : awdltest::clean());
+  QCOMPARE(shell->awdlBanner()->isVisible(), hint);
+  // the layout settles from the event loop: the window gives itself the minimum size that the banner asks for (on a Mac
+  // the test says it itself, see emulateMacMinimumSize)
+  QTest::qWait(30);
+#ifdef Q_OS_MACOS
+  // what the content asks for depends on the width that it has (text wraps): the layout of a window that has no fixed
+  // minimum works it out at the least width, as the person who makes the window narrow makes it do
+  for (int i = 0; i < 3; ++i) {
+    window->resize(window->minimumWidth(), window->height());
+    QTest::qWait(30);
+    layoutaudit::emulateMacMinimumSize(*window, kTitleBar);
+  }
+#endif
+
+  const auto least = window->minimumSize();
+  const QList<QSize> sizes{
+      least, QSize(qMax(least.width(), 900), least.height()), QSize(1000, qMax(least.height(), 760))
+  };
+  QStringList found;
+  for (const auto &size : sizes) {
+    window->resize(size);
+    QTest::qWait(20);
+    for (const auto &page : pagesOf(shell)) {
+      shell->showPage(page);
+      QTest::qWait(20);
+      QCOMPARE(shell->awdlBanner()->isVisible(), hint);
+      for (const auto &line : layoutaudit::audit(*window)) {
+        found << QStringLiteral("%1x%2 %3: %4").arg(window->width()).arg(window->height()).arg(page, line);
+      }
+    }
+  }
+  found.removeDuplicates();
+  QVERIFY2(
+      found.isEmpty(), qPrintable(QStringLiteral("%1 violations (least size %2x%3):\n  %4")
+                                      .arg(found.size())
+                                      .arg(least.width())
+                                      .arg(least.height())
+                                      .arg(found.mid(0, 40).join(QStringLiteral("\n  "))))
+  );
 }
 
 QTEST_MAIN(LayoutAuditTests)
