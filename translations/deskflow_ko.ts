@@ -424,8 +424,8 @@ p, li { white-space: pre-wrap; }
         <translation>공유하는 동안 AirDrop과 Handoff의 무선 링크 끄기</translation>
     </message>
     <message>
-        <source>Needed only if the mouse stutters while sharing over Wi-Fi. While the link is off, AirDrop, Handoff, Universal Control and AirPlay to this Mac do not work. Deskflow asks for the administrator password once each time sharing starts.</source>
-        <translation>Wi-Fi로 공유하는 동안 마우스가 끊길 때만 필요합니다. 링크가 꺼져 있는 동안에는 AirDrop, Handoff, Universal Control, 이 Mac으로의 AirPlay가 동작하지 않습니다. 공유를 시작할 때마다 한 번 관리자 암호를 요청합니다.</translation>
+        <source>Needed only if the mouse stutters while sharing over Wi-Fi. While the link is off, AirDrop, Handoff, Universal Control and AirPlay to this Mac do not work. Deskflow asks for the administrator password once each time sharing starts, or never if you allow it without a password below.</source>
+        <translation>Wi-Fi로 공유하는 동안 마우스가 끊길 때만 필요합니다. 링크가 꺼져 있는 동안에는 AirDrop, Handoff, Universal Control, 이 Mac으로의 AirPlay가 동작하지 않습니다. 공유를 시작할 때마다 한 번 관리자 암호를 요청하며, 아래에서 암호 없이 허용하면 요청하지 않습니다.</translation>
     </message>
     <message>
         <source>State of the wireless link</source>
@@ -436,8 +436,8 @@ p, li { white-space: pre-wrap; }
         <translation>무선 링크 지금 변경</translation>
     </message>
     <message>
-        <source>Asks for the administrator password. The link comes back by itself after a restart of the Mac, and when AirDrop or Handoff use it.</source>
-        <translation>관리자 암호를 요청합니다. Mac을 다시 시작하거나 AirDrop 또는 Handoff가 사용하면 링크가 저절로 다시 켜집니다.</translation>
+        <source>Asks for the administrator password, unless it is allowed without a password below. The link comes back by itself after a restart of the Mac, and when AirDrop or Handoff use it.</source>
+        <translation>관리자 암호를 요청하며, 아래에서 암호 없이 허용하면 요청하지 않습니다. Mac을 다시 시작하거나 AirDrop 또는 Handoff가 사용하면 링크가 저절로 다시 켜집니다.</translation>
     </message>
     <message>
         <source>Measuring...</source>
@@ -510,6 +510,82 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Deskflow turns the wireless link (AWDL) of AirDrop and Handoff back on.</source>
         <translation>Deskflow가 AirDrop과 Handoff의 무선 링크(AWDL)를 다시 켭니다.</translation>
+    </message>
+    <message>
+        <source>Change without a password</source>
+        <translation>암호 없이 변경</translation>
+    </message>
+    <message>
+        <source>Allow without password...</source>
+        <translation>암호 없이 허용...</translation>
+    </message>
+    <message>
+        <source>Remove permission</source>
+        <translation>권한 제거</translation>
+    </message>
+    <message>
+        <source>Allowed. Deskflow turns the link off and on without asking for a password.</source>
+        <translation>허용됨. Deskflow가 암호를 묻지 않고 링크를 끄고 켭니다.</translation>
+    </message>
+    <message>
+        <source>Not allowed. The file /etc/sudoers.d/deskflow-awdl is there, but sudo does not use it for this. Deskflow asks for the administrator password.</source>
+        <translation>허용되지 않음. /etc/sudoers.d/deskflow-awdl 파일이 있지만 sudo가 이 용도로 사용하지 않습니다. Deskflow가 관리자 암호를 요청합니다.</translation>
+    </message>
+    <message>
+        <source>Not allowed. Deskflow asks for the administrator password.</source>
+        <translation>허용되지 않음. Deskflow가 관리자 암호를 요청합니다.</translation>
+    </message>
+    <message>
+        <source>Unknown. Deskflow asks for the administrator password.</source>
+        <translation>알 수 없음. Deskflow가 관리자 암호를 요청합니다.</translation>
+    </message>
+    <message>
+        <source>The file was added.</source>
+        <translation>파일을 추가했습니다.</translation>
+    </message>
+    <message>
+        <source>The file was removed.</source>
+        <translation>파일을 제거했습니다.</translation>
+    </message>
+    <message>
+        <source>The password was not given. Nothing was changed.</source>
+        <translation>암호를 입력하지 않았습니다. 아무것도 바뀌지 않았습니다.</translation>
+    </message>
+    <message>
+        <source>It did not work. Nothing was changed.</source>
+        <translation>실행되지 않았습니다. 아무것도 바뀌지 않았습니다.</translation>
+    </message>
+    <message>
+        <source>The name of this account cannot be used in the file, so nothing was changed.</source>
+        <translation>이 계정 이름은 파일에 쓸 수 없어서 아무것도 바뀌지 않았습니다.</translation>
+    </message>
+    <message>
+        <source>Allow without a password?</source>
+        <translation>암호 없이 허용할까요?</translation>
+    </message>
+    <message>
+        <source>Deskflow asks for the administrator password once and adds one small file, /etc/sudoers.d/deskflow-awdl. The file lets your account run only "ifconfig awdl0 down" and "ifconfig awdl0 up" as root without a password.
+
+Any program that runs as you can then do the same, which stops or starts AirDrop and Handoff. You can remove it here with "Remove permission", or by deleting the file.</source>
+        <translation>Deskflow가 관리자 암호를 한 번 요청하고 작은 파일 하나(/etc/sudoers.d/deskflow-awdl)를 추가합니다. 이 파일은 사용자 계정이 "ifconfig awdl0 down"과 "ifconfig awdl0 up"만 암호 없이 루트 권한으로 실행하게 합니다.
+
+그러면 사용자 권한으로 실행되는 모든 프로그램이 같은 일을 할 수 있으며, 이는 AirDrop과 Handoff를 중지하거나 시작합니다. 여기서 "권한 제거"로 제거하거나 파일을 직접 삭제하면 됩니다.</translation>
+    </message>
+    <message>
+        <source>Deskflow adds the file /etc/sudoers.d/deskflow-awdl, so that your account can turn the wireless link (AWDL) off and on without a password.</source>
+        <translation>Deskflow가 /etc/sudoers.d/deskflow-awdl 파일을 추가합니다. 이 계정이 암호 없이 무선 링크(AWDL)를 끄고 켤 수 있게 하기 위해서입니다.</translation>
+    </message>
+    <message>
+        <source>Deskflow removes the file /etc/sudoers.d/deskflow-awdl.</source>
+        <translation>Deskflow가 /etc/sudoers.d/deskflow-awdl 파일을 제거합니다.</translation>
+    </message>
+    <message>
+        <source>Continue</source>
+        <translation>계속</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>취소</translation>
     </message>
 </context>
 <context>

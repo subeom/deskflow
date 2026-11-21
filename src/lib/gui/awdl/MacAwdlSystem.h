@@ -29,8 +29,13 @@ namespace deskflow::awdl {
  * allowed). A burst is only made for the route that canProbe() says yes to, and the only address in its arguments is
  * that gateway.
  *
+ * The permission to change the link with no password (AwdlPermission.h) is read with `/usr/bin/sudo -n -ll`, which asks
+ * for nothing and changes nothing, and used with `/usr/bin/sudo -n /sbin/ifconfig awdl0 down|up`; it is added and
+ * removed with the same dialog of the administrator as the change itself. sudo is started with a list of arguments,
+ * with no input, and never through a shell.
+ *
  * The programs are named in the constructor so that a test of this class runs stand-ins for them; the program gives the
- * default, which is the system's own (kIfconfigPath, kOsascriptPath).
+ * default, which is the system's own (kIfconfigPath, kOsascriptPath, kSudoPath).
  */
 class MacAwdlSystem : public IAwdlSystem
 {
@@ -43,8 +48,14 @@ public:
     QString osascript = QLatin1String(kOsascriptPath);
     QString route = QLatin1String(kRoutePath);
     QString ping = QLatin1String(kPingPath);
+    QString sudo = QLatin1String(kSudoPath);
+    //! The file of the permission: only whether it is there is read (it is for root alone to read)
+    QString sudoersFile = QLatin1String(kSudoersFile);
     //! What kind of connection a device is (by default what Qt says of the interface of that name)
     std::function<LinkKind(const QString &)> kindOf;
+    //! The name of the account that runs the program, for the line of the permission (by default what the OS says of
+    //! the user ID of this process: it is never typed by anyone)
+    std::function<QString()> accountName;
   };
 
   explicit MacAwdlSystem(QObject *parent = nullptr);
@@ -55,17 +66,27 @@ public:
   void setLink(Direction direction, const QString &prompt) override;
   void findRoute() override;
   void measure(const Route &route) override;
+  void checkPermission() override;
+  void changeLinkSilently(Direction direction) override;
+  void installPermission(const QString &prompt) override;
+  void removePermission(const QString &prompt) override;
 
   //! What Qt says of the interface that has the name: Wi-Fi, a wire, or another kind
   static LinkKind kindOfInterface(const QString &name);
+  //! The name of the account of this process, from the user ID (empty where there is none)
+  static QString currentAccountName();
 
   //! How long the reading of the state may take before it is ended (the state is then not known)
   static constexpr int kReadTimeoutMs = 5000;
 
 private:
+  void runAdmin(const QStringList &arguments, bool permission);
+
   Programs m_programs;
   QPointer<QProcess> m_read;
   QPointer<QProcess> m_admin;
+  QPointer<QProcess> m_listing;
+  QPointer<QProcess> m_silent;
   QPointer<QProcess> m_route;
   QPointer<QProcess> m_ping;
 };

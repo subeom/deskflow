@@ -16,6 +16,8 @@ using namespace deskflow::awdl;
 using namespace awdltest;
 
 Q_DECLARE_METATYPE(LinkState)
+Q_DECLARE_METATYPE(PermissionNote)
+Q_DECLARE_METATYPE(AdminResult)
 
 namespace {
 
@@ -31,6 +33,9 @@ struct Rig
     options.optionOn = [this] { return option; };
     options.prompt = [](Direction direction) {
       return direction == Direction::Down ? QStringLiteral("turn it off") : QStringLiteral("turn it on");
+    };
+    options.permissionPrompt = [](PermissionAction action) {
+      return action == PermissionAction::Allow ? QStringLiteral("add the file") : QStringLiteral("remove the file");
     };
     options.pollMs = 15;
     options.burstEveryMs = 80;
@@ -79,6 +84,8 @@ void AwdlControllerTests::optionOff_runsNothingAtAll()
   QVERIFY(!rig.controller->hintVisible());
   rig.controller->setCoreRunning(false);
   QCOMPARE(rig.system->reads, 0);
+  // not even sudo is asked what it thinks
+  QCOMPARE(rig.system->permissionChecks, 0);
 }
 
 void AwdlControllerTests::notAMac_runsNothingAtAll_notEvenTheButtons()
@@ -89,8 +96,14 @@ void AwdlControllerTests::notAMac_runsNothingAtAll_notEvenTheButtons()
   rig.controller->optionChanged();
   rig.controller->turnOffNow();
   rig.controller->turnBackOn();
+  rig.controller->allowWithoutPassword();
+  rig.controller->removePermission();
   rig.controller->measureNow();
   QTest::qWait(60);
+  QCOMPARE(rig.system->permissionChecks, 0);
+  QVERIFY(rig.system->installs.isEmpty());
+  QVERIFY(rig.system->removals.isEmpty());
+  QVERIFY(rig.system->silentChanges.isEmpty());
   QCOMPARE(rig.system->reads, 0);
   QCOMPARE(rig.system->routeLookups, 0);
   QCOMPARE(rig.system->measures.size(), 0);
@@ -636,6 +649,365 @@ void AwdlControllerTests::aBurstThatComesAfterTheStop_saysNothing()
   rig.system->answerMeasured(stutter());
   QVERIFY(!rig.controller->hintVisible());
   QCOMPARE(rig.system->changes.size(), 1);
+}
+
+namespace {
+
+// the sentences of the dialogs of the permission, as the rig gives them
+const auto kAllowSentence = QStringLiteral("add the file");
+const auto kRemoveSentence = QStringLiteral("remove the file");
+
+struct PermissionRig : Rig
+{
+  explicit PermissionRig(Listing listing = Listing::NoPassword, bool filePresent = true) : Rig(true, true)
+  {
+    system->listing = listing;
+    system->filePresent = filePresent;
+  }
+};
+
+} // namespace
+
+void AwdlControllerTests::thePermission_isLookedAtBeforeEveryChange_andTheChangeWaitsForTheAnswer()
+{
+  Rig rig;
+  rig.system->answerPermissionAtOnce = false;
+  rig.controller->turnOffNow();
+  QCOMPARE(rig.system->permissionChecks, 1);
+  // nothing is changed, with or without a dialog, until sudo has said what it thinks; the buttons are busy meanwhile
+  QCOMPARE(rig.system->changes.size(), 0);
+  QCOMPARE(rig.system->silentChanges.size(), 0);
+  QVERIFY(rig.controller->isAsking());
+  // a second press meanwhile does nothing
+  rig.controller->turnOffNow();
+  rig.controller->turnBackOn();
+  QCOMPARE(rig.system->permissionChecks, 1);
+
+  rig.system->answerPermission(Listing::PasswordNeeded, false);
+  QCOMPARE(rig.controller->permission(), PermissionState::NotAllowed);
+  QCOMPARE(rig.system->changes.size(), 1);
+  QCOMPARE(rig.system->changes.first().first, Direction::Down);
+  QCOMPARE(rig.system->silentChanges.size(), 0);
+  // and the next change looks again: a file that was added or removed by hand is not taken for what it was
+  rig.system->answerLink(AdminResult::Cancelled);
+  rig.controller->turnOffNow();
+  QCOMPARE(rig.system->permissionChecks, 2);
+}
+
+void AwdlControllerTests::withThePermission_thePasswordIsNeverAsked_whoeverMakesTheChange()
+{
+  PermissionRig rig;
+  QSignalSpy log(rig.controller, &AwdlController::logLine);
+  // the button of the settings, and the button of the banner (it is the same call), and the way back
+  rig.controller->turnOffNow();
+  QCOMPARE(rig.controller->permission(), PermissionState::Allowed);
+  QCOMPARE(rig.system->silentChanges, (QList<Direction>{Direction::Down}));
+  QCOMPARE(rig.system->changes.size(), 0);
+  QVERIFY(rig.controller->isAsking());
+  const auto reads = rig.system->reads;
+  rig.system->answerSilent(SudoResult::Done);
+  QVERIFY(!rig.controller->isAsking());
+  // the state that the system says is the state, not the result of the command
+  QCOMPARE(rig.system->reads, reads + 1);
+  QVERIFY(log.last().first().toString().contains(QStringLiteral("turned off (no password)")));
+
+  rig.controller->turnBackOn();
+  QCOMPARE(rig.system->silentChanges, (QList<Direction>{Direction::Down, Direction::Up}));
+  QCOMPARE(rig.system->changes.size(), 0);
+  rig.system->answerSilent(SudoResult::Done);
+  QVERIFY(log.last().first().toString().contains(QStringLiteral("turned on (no password)")));
+  // the person turned it on: it is not taken back in this run, with the permission as without it
+  rig.controller->setCoreRunning(true);
+  rig.system->answerRead(LinkState::Up);
+  QCOMPARE(rig.system->silentChanges.size(), 2);
+  QCOMPARE(rig.system->changes.size(), 0);
+}
+
+void AwdlControllerTests::withThePermission_theStartOfTheCoreAsksNothing_andOnceIsStillOnce()
+{
+  PermissionRig rig;
+  rig.controller->setCoreRunning(true);
+  rig.system->answerRead(LinkState::Up);
+  // the start of the core makes the change by itself, with no dialog
+  QCOMPARE(rig.system->silentChanges, (QList<Direction>{Direction::Down}));
+  QCOMPARE(rig.system->changes.size(), 0);
+  rig.system->answerSilent(SudoResult::Done);
+  rig.system->answerRead(LinkState::Down);
+  QVERIFY(!rig.controller->hintVisible());
+
+  // AirDrop turns the link on again: it is the same run, so the program does not turn it off again by itself (that is
+  // the person's button), whether the change would need a password or not
+  rig.system->answerRead(LinkState::Up);
+  rig.system->answerRead(LinkState::Up);
+  QCOMPARE(rig.system->silentChanges.size(), 1);
+  QCOMPARE(rig.system->changes.size(), 0);
+  // a new run asks (silently) once more
+  rig.controller->setCoreRunning(false);
+  rig.controller->setCoreRunning(true);
+  rig.system->answerRead(LinkState::Up);
+  QCOMPARE(rig.system->silentChanges.size(), 2);
+  QCOMPARE(rig.system->changes.size(), 0);
+}
+
+void AwdlControllerTests::aPermissionThatIsMissingAfterAll_fallsBackToTheDialogOnce_andIsRememberedAsMissing()
+{
+  // sudo -ll says that the command needs no password, and sudo -n says that it does (the file was removed in between,
+  // or another rule decides): the listing did not tell the truth
+  PermissionRig rig;
+  QSignalSpy changed(rig.controller, &AwdlController::permissionChanged);
+  QSignalSpy log(rig.controller, &AwdlController::logLine);
+  rig.controller->turnOffNow();
+  QCOMPARE(rig.system->silentChanges.size(), 1);
+  QCOMPARE(rig.system->changes.size(), 0);
+
+  rig.system->answerSilent(SudoResult::PermissionMissing);
+  // the dialog follows, once, with the sentence of the program, for the same direction
+  QCOMPARE(rig.system->changes.size(), 1);
+  QCOMPARE(rig.system->changes.first().first, Direction::Down);
+  QCOMPARE(rig.system->changes.first().second, QStringLiteral("turn it off"));
+  QVERIFY(rig.controller->isAsking());
+  QCOMPARE(rig.controller->permission(), PermissionState::NotAllowed);
+  QVERIFY(changed.count() >= 1);
+  bool said = false;
+  for (const auto &entry : log)
+    said = said || entry.first().toString().contains(QStringLiteral("the permission is missing"));
+  QVERIFY(said);
+
+  rig.system->answerLink(AdminResult::Cancelled);
+  QVERIFY(!rig.controller->isAsking());
+
+  // from now on the listing is not believed: the dialog at once, however often, until the file is added again
+  rig.controller->turnOffNow();
+  QCOMPARE(rig.system->silentChanges.size(), 1);
+  QCOMPARE(rig.system->changes.size(), 2);
+  rig.system->answerLink(AdminResult::Done);
+
+  rig.controller->allowWithoutPassword();
+  rig.system->answerPermissionSet(AdminResult::Done);
+  QCOMPARE(rig.controller->permission(), PermissionState::Allowed);
+  rig.controller->turnOffNow();
+  QCOMPARE(rig.system->silentChanges.size(), 2);
+  QCOMPARE(rig.system->changes.size(), 2);
+  // and a silent change that works clears it too
+  rig.system->answerSilent(SudoResult::Done);
+}
+
+void AwdlControllerTests::aCommandThatFailsItself_isNotAskedAgainInADialog()
+{
+  PermissionRig rig;
+  QSignalSpy log(rig.controller, &AwdlController::logLine);
+  rig.controller->turnOffNow();
+  rig.system->answerSilent(SudoResult::Failed);
+  // ifconfig said no: a dialog would fail the same, and the permission is as it was
+  QCOMPARE(rig.system->changes.size(), 0);
+  QCOMPARE(rig.controller->permission(), PermissionState::Allowed);
+  QVERIFY(!rig.controller->isAsking());
+  QVERIFY(log.last().first().toString().contains(QStringLiteral("could not change the wireless link")));
+}
+
+void AwdlControllerTests::aPermissionThatIsNotKnown_isTheDialog()
+{
+  {
+    // sudo said nothing that can be read
+    PermissionRig rig(Listing::Unknown, true);
+    rig.controller->turnOffNow();
+    QCOMPARE(rig.controller->permission(), PermissionState::Unknown);
+    QCOMPARE(rig.system->silentChanges.size(), 0);
+    QCOMPARE(rig.system->changes.size(), 1);
+  }
+  {
+    // an old sudo lists only the command: the file of the program decides
+    PermissionRig rig(Listing::PathOnly, true);
+    rig.controller->turnOffNow();
+    QCOMPARE(rig.controller->permission(), PermissionState::Allowed);
+    QCOMPARE(rig.system->silentChanges.size(), 1);
+  }
+  {
+    PermissionRig rig(Listing::PathOnly, false);
+    rig.controller->turnOffNow();
+    QCOMPARE(rig.controller->permission(), PermissionState::Unknown);
+    QCOMPARE(rig.system->silentChanges.size(), 0);
+    QCOMPARE(rig.system->changes.size(), 1);
+  }
+}
+
+void AwdlControllerTests::allowWithoutPassword_asksOnceWithItsSentence_andLooksAgain()
+{
+  Rig rig;
+  QSignalSpy changed(rig.controller, &AwdlController::permissionChanged);
+  QSignalSpy asking(rig.controller, &AwdlController::askingChanged);
+  QCOMPARE(rig.controller->permission(), PermissionState::Unknown);
+
+  rig.controller->allowWithoutPassword();
+  QCOMPARE(rig.system->installs, (QStringList{kAllowSentence}));
+  QVERIFY(rig.controller->isAsking());
+  // one dialog at a time: nothing else that asks for a password goes on meanwhile
+  rig.controller->allowWithoutPassword();
+  rig.controller->removePermission();
+  rig.controller->turnOffNow();
+  rig.controller->turnBackOn();
+  QCOMPARE(rig.system->installs.size(), 1);
+  QCOMPARE(rig.system->removals.size(), 0);
+  QCOMPARE(rig.system->changes.size(), 0);
+  QCOMPARE(rig.system->permissionChecks, 0);
+
+  // what sudo says after the file was added is what the state is
+  rig.system->listing = Listing::NoPassword;
+  rig.system->filePresent = true;
+  rig.system->answerPermissionSet(AdminResult::Done);
+  QVERIFY(!rig.controller->isAsking());
+  QCOMPARE(rig.system->permissionChecks, 1);
+  QCOMPARE(rig.controller->permission(), PermissionState::Allowed);
+  QVERIFY(rig.controller->permissionFilePresent());
+  QCOMPARE(rig.controller->permissionNote(), PermissionNote::Added);
+  QVERIFY(changed.count() >= 1);
+  QCOMPARE(asking.count(), 2);
+}
+
+void AwdlControllerTests::allowAndRemove_saySoWhenTheyDidNotHappen_data()
+{
+  QTest::addColumn<bool>("adding");
+  QTest::addColumn<AdminResult>("result");
+  QTest::addColumn<PermissionNote>("note");
+
+  QTest::newRow("allow, cancelled") << true << AdminResult::Cancelled << PermissionNote::Cancelled;
+  QTest::newRow("allow, failed") << true << AdminResult::Failed << PermissionNote::Failed;
+  QTest::newRow("allow, refused (the name of the account)") << true << AdminResult::Refused << PermissionNote::Refused;
+  QTest::newRow("remove, cancelled") << false << AdminResult::Cancelled << PermissionNote::Cancelled;
+  QTest::newRow("remove, failed") << false << AdminResult::Failed << PermissionNote::Failed;
+  QTest::newRow("allow, done") << true << AdminResult::Done << PermissionNote::Added;
+  QTest::newRow("remove, done") << false << AdminResult::Done << PermissionNote::Removed;
+}
+
+void AwdlControllerTests::allowAndRemove_saySoWhenTheyDidNotHappen()
+{
+  QFETCH(bool, adding);
+  QFETCH(AdminResult, result);
+  QFETCH(PermissionNote, note);
+  Rig rig;
+  QSignalSpy log(rig.controller, &AwdlController::logLine);
+  if (adding)
+    rig.controller->allowWithoutPassword();
+  else
+    rig.controller->removePermission();
+  rig.system->answerPermissionSet(result);
+  QVERIFY(!rig.controller->isAsking());
+  QCOMPARE(rig.controller->permissionNote(), note);
+  // a line in the log whatever came of it, and the state is looked at again
+  QVERIFY(log.count() >= 1);
+  QCOMPARE(rig.system->permissionChecks, 1);
+  // the next thing that is asked for starts with no note
+  if (adding)
+    rig.controller->allowWithoutPassword();
+  else
+    rig.controller->removePermission();
+  QCOMPARE(rig.controller->permissionNote(), PermissionNote::None);
+}
+
+void AwdlControllerTests::removePermission_asksOnceWithItsSentence_andLooksAgain()
+{
+  PermissionRig rig;
+  rig.controller->turnOffNow();
+  rig.system->answerSilent(SudoResult::Done);
+  QCOMPARE(rig.controller->permission(), PermissionState::Allowed);
+
+  rig.controller->removePermission();
+  QCOMPARE(rig.system->removals, (QStringList{kRemoveSentence}));
+  QCOMPARE(rig.system->installs.size(), 0);
+  QVERIFY(rig.controller->isAsking());
+  rig.controller->removePermission();
+  QCOMPARE(rig.system->removals.size(), 1);
+
+  rig.system->listing = Listing::PasswordNeeded;
+  rig.system->filePresent = false;
+  rig.system->answerPermissionSet(AdminResult::Done);
+  QCOMPARE(rig.controller->permission(), PermissionState::NotAllowed);
+  QVERIFY(!rig.controller->permissionFilePresent());
+  QCOMPARE(rig.controller->permissionNote(), PermissionNote::Removed);
+  // and the next change is the dialog again
+  rig.controller->turnOffNow();
+  QCOMPARE(rig.system->changes.size(), 1);
+  QCOMPARE(rig.system->silentChanges.size(), 1);
+}
+
+void AwdlControllerTests::thePermission_isLookedAtWhenThePageIsShown_atMostOnceInAWhile()
+{
+  Rig rig;
+  QCOMPARE(rig.system->permissionChecks, 0);
+  rig.controller->refresh();
+  QCOMPARE(rig.system->permissionChecks, 1);
+  QCOMPARE(rig.controller->permission(), PermissionState::NotAllowed);
+  // the page is shown again at once: each look is a line in the log of sudo, so it is not made again
+  rig.controller->refresh();
+  rig.controller->refresh();
+  QCOMPARE(rig.system->permissionChecks, 1);
+
+  // later it is
+  AwdlController::Options options;
+  options.optionOn = [] { return false; };
+  options.permissionEveryMs = 30;
+  auto *fake = new FakeAwdlSystem;
+  AwdlController quick(fake, options);
+  quick.refresh();
+  QCOMPARE(fake->permissionChecks, 1);
+  QTest::qWait(60);
+  quick.refresh();
+  QCOMPARE(fake->permissionChecks, 2);
+  // nothing is changed by looking
+  QVERIFY(fake->changes.isEmpty() && fake->silentChanges.isEmpty() && fake->installs.isEmpty());
+}
+
+void AwdlControllerTests::thePolicyAsksNothing_whileTheDialogOfThePermissionIsOpen()
+{
+  PermissionRig rig;
+  rig.controller->allowWithoutPassword();
+  // the core starts while the dialog is open, with the link up: that is not the moment for another change
+  rig.controller->setCoreRunning(true);
+  rig.system->answerRead(LinkState::Up);
+  QCOMPARE(rig.system->silentChanges.size(), 0);
+  QCOMPARE(rig.system->changes.size(), 0);
+
+  rig.system->answerPermissionSet(AdminResult::Done);
+  // the next reading of the link is the one that asks (once for this run), and now it needs no password
+  rig.system->answerRead(LinkState::Up);
+  QCOMPARE(rig.system->silentChanges, (QList<Direction>{Direction::Down}));
+  QCOMPARE(rig.system->changes.size(), 0);
+}
+
+void AwdlControllerTests::theButtonsOfThePermission_runNothingOffAMac_andNeverAskTwice()
+{
+  Rig rig(true, false);
+  rig.controller->allowWithoutPassword();
+  rig.controller->removePermission();
+  rig.controller->refresh();
+  QCOMPARE(rig.system->installs.size() + rig.system->removals.size() + rig.system->permissionChecks, 0);
+}
+
+void AwdlControllerTests::aSilentAnswer_thatNobodyAskedFor_saysNothing()
+{
+  PermissionRig rig;
+  QSignalSpy log(rig.controller, &AwdlController::logLine);
+  rig.system->answerSilent(SudoResult::PermissionMissing);
+  rig.system->answerSilent(SudoResult::Done);
+  rig.system->answerPermissionSet(AdminResult::Done);
+  QCOMPARE(log.count(), 0);
+  QCOMPARE(rig.controller->permission(), PermissionState::Unknown);
+  QCOMPARE(rig.system->changes.size(), 0);
+}
+
+void AwdlControllerTests::theAdminDialogIsOnlyForTheFallback_neverTheFirstChoiceWithAPermission()
+{
+  // every way into a change, with the permission there: none of them shows the dialog
+  PermissionRig rig;
+  rig.controller->setCoreRunning(true);
+  rig.system->answerRead(LinkState::Up);
+  rig.system->answerSilent(SudoResult::Done);
+  rig.controller->turnOffNow();
+  rig.system->answerSilent(SudoResult::Done);
+  rig.controller->turnBackOn();
+  rig.system->answerSilent(SudoResult::Done);
+  QCOMPARE(rig.system->silentChanges.size(), 3);
+  QCOMPARE(rig.system->changes.size(), 0);
 }
 
 QTEST_MAIN(AwdlControllerTests)

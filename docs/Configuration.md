@@ -213,8 +213,55 @@ the protocol.
 
 The application never runs as root. The only privileged action is that constant command (`down`, or `up` for *Turn back
 on*), run through `/usr/bin/osascript` with `do shell script ... with administrator privileges` and a fixed sentence for the
-dialog; no text of a person is in it. The dialog of the system asks for the password, and whether Touch ID is offered is up
-to macOS.
+dialog; no text of a person is in it. The dialog of the system asks for the password. It does not offer Touch ID here (the
+standard administrator dialog of macOS that `osascript` shows asks for the password only, also on a Mac whose Touch ID works
+for unlocking), so there is a way to ask for the password once and never again: the permission below.
+
+##### Allowing it without a password
+
+The row *Change without a password* of the card has the buttons *Allow without password...* and *Remove permission*.
+*Allow without password...* first says in plain words what it does and asks whether to go on, and then shows the dialog of
+the administrator password once. It adds one small file for sudo, `/etc/sudoers.d/deskflow-awdl` (owner `root:wheel`, mode
+`0440`), with one line:
+
+    <your account> ALL=(root) NOPASSWD: /sbin/ifconfig awdl0 down, /sbin/ifconfig awdl0 up
+
+The account is the one that runs Deskflow, as the OS says it (never typed by anyone); a name that is not a plain short name
+is refused. The arguments are exact: there is no wildcard, no `SETENV`, and no other command. From then on every change of
+the link (the start of sharing, *Turn off now*, *Turn back on*, the *Turn off* of the line above the pages) runs
+`/usr/bin/sudo -n /sbin/ifconfig awdl0 down` (or `up`), with a list of arguments and never through a shell, and no dialog
+is shown. Before each change the application asks sudo which rule decides (see below); if the permission is there it uses
+it, and if `sudo -n` is then refused (the file was removed, or another rule decides) it shows the dialog once, as before,
+and the row says *Not allowed* until the file is added again.
+
+How the file is added: the dialog runs one constant script as root. It writes the line to a temporary file in a directory of
+root, checks exactly those bytes with `/usr/sbin/visudo -cf`, copies them with the owner and mode that sudo wants to a name
+that sudo does not read (`deskflow-awdl.new`: sudo skips file names with a dot), reads the owner and mode back, checks that
+copy with `visudo -cf` once more, and only then renames it to `deskflow-awdl` (an atomic rename: sudo sees the old file or
+the new one, never half of one). If any step fails the script stops with nothing left behind, so a broken file cannot reach
+`/etc/sudoers.d` and lock sudo. A name that is a directory is refused, and an old file is replaced. *Remove permission*
+runs `/bin/rm -f /etc/sudoers.d/deskflow-awdl /etc/sudoers.d/deskflow-awdl.new` in the same dialog. Deskflow never edits
+`/etc/sudoers` and never touches other files in `/etc/sudoers.d`.
+
+How to see it: the row says *Allowed*, *Not allowed* or *Unknown*. By hand, `sudo -n -ll /sbin/ifconfig awdl0 down` prints the
+rule that decides for that command; the command needs no password when the entry that is printed with `Matched:` has the line
+`Options: !authenticate`. The plain `sudo -n -l` is not enough: with the default `listpw=any` it succeeds when ANY rule of
+yours has `NOPASSWD`, also when this command still asks for a password. (`-ll` with a command needs sudo 1.9.15 or later; an
+older sudo shows only the command, and then Deskflow counts the permission as there only while its own file is there.)
+Sudoers files are read in the order of their names and the last matching rule wins, so a file that sorts after
+`deskflow-awdl` with a rule for the same command and a password overrides it; the row then says *Not allowed* and Deskflow
+asks for the password as before.
+
+How to remove it: *Remove permission* in the card, or by hand `sudo rm /etc/sudoers.d/deskflow-awdl`.
+
+Security note: with the file in place any program that runs as you can turn `awdl0` down and up without a password. That
+only stops or starts AirDrop and Handoff, which is harmless, but it is real: it is a permission that is given to every
+process of your account. Nothing else is allowed by it. It is opt-in and off until you press the button.
+
+Touch ID in the Terminal is a separate thing that Deskflow does not touch: on macOS Sonoma and later, `sudo` in the Terminal
+uses Touch ID when `/etc/pam.d/sudo_local` has the line `auth       sufficient     pam_tid.so` (the file survives updates of
+macOS; `/etc/pam.d/sudo_local.template` is the template; inside `tmux` it needs `pam_reattach`). That helps the `sudo` that
+you type, not the dialog of the administrator password that Deskflow shows.
 
 To see the effect by hand, run `ping -c 100 -i 0.2 <router>` before and after (the address of the router is the gateway
 of `route -n get default`), and look at the average and the highest time. Other ways to use the link less, with no

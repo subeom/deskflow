@@ -14,6 +14,7 @@
 #include <QTimer>
 
 #include <functional>
+#include <optional>
 
 namespace deskflow::awdl {
 
@@ -36,6 +37,13 @@ namespace deskflow::awdl {
  *  - when the core stops nothing is restored (that would ask for the password again); turnBackOn() is the button of the
  *    settings, and the link comes back by itself after a restart of the Mac
  *  - the option off, or not a Mac: no program is run at all
+ *
+ * The permission to change the link with no password (AwdlPermission.h) is the other way to make a change: before every
+ * change the controller asks sudo (checkPermission(), which asks for nothing and changes nothing) and chooses by what
+ * it says (chooseChangeRoute()): `sudo -n` with no dialog when the permission is there, the dialog of the administrator
+ * otherwise. A `sudo -n` that is refused is a missing permission after all (the file was removed, or another rule
+ * decides): the dialog follows, once, and the state is NotAllowed until the file is added again. allowWithoutPassword()
+ * and removePermission() are the buttons of the settings; each shows the dialog once.
  */
 class AwdlController : public QObject
 {
@@ -48,10 +56,15 @@ public:
     std::function<bool()> optionOn;
     //! The sentence of the dialog of the password, in the language of the program
     std::function<QString(Direction)> prompt;
+    //! The same for adding and removing the file of the permission
+    std::function<QString(PermissionAction)> permissionPrompt;
     //! The state is read again this often while the core runs
     int pollMs = 8000;
     //! A burst of probes is made this often while the core runs and the link is up
     int burstEveryMs = kBurstEveryMs;
+    //! The page of the settings looks at the permission again when it is shown, if the last look was longer ago than
+    //! this
+    int permissionEveryMs = 15000;
     //! Not a Mac: the controller does nothing
     bool supported = true;
   };
@@ -73,6 +86,12 @@ public:
   Summary summary() const;
   //! A lookup of the route or a burst is under way
   bool isMeasuring() const;
+  //! What is known of the permission to change the link with no password
+  PermissionState permission() const;
+  //! The file of the permission is there (it may still not be what sudo uses: see permission())
+  bool permissionFilePresent() const;
+  //! What came of the last thing that the person asked for in the settings
+  PermissionNote permissionNote() const;
 
   //! The core starts or stops (any state of it that is not stopped is running)
   void setCoreRunning(bool running);
@@ -87,6 +106,10 @@ public:
   void turnOffNow();
   //! The button: asks for the password and turns the link on; the program does not take it back in this run
   void turnBackOn();
+  //! The button: asks for the password once and adds the file that lets the account change the link with no password
+  void allowWithoutPassword();
+  //! The button: asks for the password once and removes that file
+  void removePermission();
 
 Q_SIGNALS:
   void stateChanged(deskflow::awdl::LinkState state);
@@ -95,6 +118,8 @@ Q_SIGNALS:
   //! The route or the numbers of the last burst changed
   void latencyChanged();
   void measuringChanged(bool measuring);
+  //! The state of the permission, whether its file is there, or the note of the last attempt changed
+  void permissionChanged();
   //! One line for the log, without the name of the program in front
   void logLine(const QString &line);
 
@@ -110,6 +135,10 @@ private:
   void maybeProbe();
   void startLookup(bool thenMeasure);
   void requestChange(Direction direction);
+  //! The change that is asked for (by a button, or by the start of the core): the permission is looked at first
+  void beginChange(Direction direction);
+  void updatePermission();
+  void finishChange(AdminResult result, bool silent);
   void setHint(bool visible);
   void setAsking(bool asking);
   void setMeasuring(bool measuring);
@@ -117,6 +146,9 @@ private:
   void onLinkSet(AdminResult result);
   void onRouteFound(const Route &route);
   void onMeasured(const QList<Sample> &samples);
+  void onPermissionChecked(Listing listing, bool filePresent);
+  void onSilentRan(SudoResult result);
+  void onPermissionSet(AdminResult result);
 
   IAwdlSystem *m_system = nullptr;
   Options m_options;
@@ -138,6 +170,17 @@ private:
   //! What the log was told of the last burst (it is told again when it changes, and for the button)
   Pattern m_loggedPattern = Pattern::NotMeasured;
   bool m_manualMeasure = false;
+  Listing m_listing = Listing::Unknown;
+  bool m_filePresent = false;
+  //! `sudo -n` was tried in this run and said no: the listing did not tell the truth
+  bool m_sudoFailed = false;
+  PermissionState m_permission = PermissionState::Unknown;
+  PermissionNote m_note = PermissionNote::None;
+  //! The change that waits for the answer about the permission
+  std::optional<Direction> m_pendingChange;
+  //! What the dialog that is open is for: adding or removing the file
+  PermissionAction m_permissionAction = PermissionAction::Allow;
+  QElapsedTimer m_sincePermissionCheck;
 };
 
 } // namespace deskflow::awdl

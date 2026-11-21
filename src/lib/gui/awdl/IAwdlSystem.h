@@ -7,6 +7,7 @@
 #pragma once
 
 #include "AwdlModel.h"
+#include "AwdlPermission.h"
 
 #include <QObject>
 
@@ -41,11 +42,25 @@ public:
   //! yes to (anything else answers with no samples at once, and sends nothing); answers with measured()
   virtual void measure(const Route &route) = 0;
 
+  //! What sudo says of the permission to change the link with no password (`sudo -n -ll`, which asks for nothing and
+  //! changes nothing), and whether the file of the program is there; answers with permissionChecked()
+  virtual void checkPermission() = 0;
+  //! Turns the interface down or up with `sudo -n`: no dialog, no password; answers with silentRan(). Only for a
+  //! permission that checkPermission() said is there (the controller never makes it otherwise)
+  virtual void changeLinkSilently(Direction direction) = 0;
+  //! Adds the file of the permission, or removes it, with the password of an administrator, asking for it with
+  //! \p prompt in the dialog of the system; answer with permissionSet()
+  virtual void installPermission(const QString &prompt) = 0;
+  virtual void removePermission(const QString &prompt) = 0;
+
 Q_SIGNALS:
   void stateRead(deskflow::awdl::LinkState state);
   void linkSet(deskflow::awdl::AdminResult result);
   void routeFound(deskflow::awdl::Route route);
   void measured(QList<deskflow::awdl::Sample> samples);
+  void permissionChecked(deskflow::awdl::Listing listing, bool filePresent);
+  void silentRan(deskflow::awdl::SudoResult result);
+  void permissionSet(deskflow::awdl::AdminResult result);
 };
 
 } // namespace deskflow::awdl

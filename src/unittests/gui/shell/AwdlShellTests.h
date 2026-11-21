@@ -29,6 +29,9 @@ private Q_SLOTS:
   void notAMac_thereIsNoControllerNoCardAndNoCall();
   void aWindowOfThePlatform_hasNoSystemWithoutAScreen();
   void oldLook_theControllerRuns_andThereIsNoBanner();
+  void withThePermission_theStartOfSharingAndTheBanner_askNoPassword();
+  void withoutThePermission_theWindowAsksForThePasswordAsBefore();
+  void thePermissionButtons_ofTheWindow_askTheQuestion_thenShowTheDialogWithTheSentencesOfTheProgram();
 
 private:
   QTemporaryDir m_dir;
