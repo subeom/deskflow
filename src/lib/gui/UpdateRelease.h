@@ -43,6 +43,8 @@ struct UpdateEnvironment
   QString architecture;
   bool packageManaged = false;
   bool destinationWritable = false;
+  bool serviceMode = false;
+  bool supported = true;
 };
 
 struct UpdatePlan

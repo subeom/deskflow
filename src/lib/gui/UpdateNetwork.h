@@ -58,6 +58,20 @@ struct UpdateNetworkResult
   int retryAfterSeconds = 0;
 };
 
+class UpdateInactivityDeadline
+{
+public:
+  void start(qint64 nowMs, qint64 inactivityMs, qint64 totalMs);
+  void markProgress(qint64 nowMs);
+  bool expired(qint64 nowMs) const;
+
+private:
+  qint64 m_startedMs = 0;
+  qint64 m_lastProgressMs = 0;
+  qint64 m_inactivityMs = 0;
+  qint64 m_totalMs = 0;
+};
+
 using UpdateNetworkCallback = std::function<void(const UpdateNetworkResult &)>;
 
 class IUpdateNetwork

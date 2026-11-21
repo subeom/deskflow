@@ -21,6 +21,10 @@ the exact stable release page but do not execute MSI or package files. Open the
 [fork stable releases](https://github.com/subeom/deskflow/releases/latest) and use the package manager that owns
 the installation.
 
+Automatic staging accepts only manually published fork DMGs that carry the exact `SHA256SUMS.txt` and the pinned
+self-signed Deskflow certificate. Upstream/standard CI artifacts keep their `sums.txt` and notarized signing
+path; they are manual-only and are never mistaken for a fork auto-install candidate.
+
 ## Getting help online
 
 * View the [Wiki](https://github.com/deskflow/deskflow/wiki) Online resource

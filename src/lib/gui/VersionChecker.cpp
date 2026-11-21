@@ -9,6 +9,7 @@
 
 #include "common/VersionInfo.h"
 #include "common/UrlConstants.h"
+#include "common/Settings.h"
 #include "gui/UpdateIntegrity.h"
 
 #include <QCoreApplication>
@@ -55,11 +56,17 @@ std::optional<QString> deskflowBundlePath(const QString &executablePath)
 
 deskflow::gui::UpdateEnvironment currentUpdateEnvironment()
 {
-  QString platform = QStringLiteral("linux");
+  QString platform = QStringLiteral("unsupported");
+  bool supported = false;
 #if defined(Q_OS_MACOS)
   platform = QStringLiteral("macos");
+  supported = true;
 #elif defined(Q_OS_WIN)
   platform = QStringLiteral("windows");
+  supported = true;
+#elif defined(Q_OS_LINUX)
+  platform = QStringLiteral("linux");
+  supported = true;
 #endif
 
   bool packageManaged = false;
@@ -84,7 +91,13 @@ deskflow::gui::UpdateEnvironment currentUpdateEnvironment()
         QFileInfo(bundle.dir().absolutePath()).isWritable() && bundle.isWritable();
   }
 #endif
-  return {platform, QSysInfo::currentCpuArchitecture(), packageManaged, destinationWritable};
+  const auto serviceMode =
+      Settings::value(Settings::Core::ProcessMode).value<Settings::ProcessMode>() ==
+      Settings::ProcessMode::Service;
+  return {
+      platform, QSysInfo::currentCpuArchitecture(), packageManaged, destinationWritable,
+      serviceMode, supported
+  };
 }
 
 QString updateCachePath()
@@ -152,6 +165,10 @@ VersionChecker::~VersionChecker()
 void VersionChecker::checkLatest(UpdateCheckReason)
 {
   if (m_checking) {
+    return;
+  }
+  if (!m_environment.supported) {
+    setStatus({UpdateStatusSnapshot::Phase::Idle, {}, {}, {}, false});
     return;
   }
 

@@ -52,6 +52,7 @@ private:
 
 std::unique_ptr<IUpdateCommandRunner> createUpdateCommandRunner();
 bool updateCommandSucceeded(const UpdateCommandResult &result);
+bool isMacUpdateBundleVersion(const QString &expected, const QString &bundle);
 UpdateVerifierResult updateCommandFailure(
     const QString &description, const UpdateCommandResult &result
 );

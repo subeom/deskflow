@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 
 namespace deskflow::gui {
@@ -135,6 +136,15 @@ UpdateVerifierResult parseMacUpdateSignatureEvidence(const QByteArray &codesignE
     return {false, QStringLiteral("update is not signed with the pinned Deskflow requirement")};
   }
   return {true, {}};
+}
+
+bool isMacUpdateBundleVersion(const QString &expected, const QString &bundle)
+{
+  static const QRegularExpression stable(
+      QStringLiteral(R"(^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$)")
+  );
+  return stable.match(expected).hasMatch() &&
+         (bundle == expected || bundle == expected + QStringLiteral(".0"));
 }
 
 std::unique_ptr<IUpdateCommandRunner> createUpdateCommandRunner()
@@ -289,7 +299,9 @@ UpdateVerifierResult MacUpdateVerifier::verifyApplication(
          {QStringLiteral("CFBundleShortVersionString"), QStringLiteral("CFBundleVersion")}) {
       const auto version = readPlist(field);
       if (!updateCommandSucceeded(version) ||
-          QString::fromUtf8(commandOutput(version)) != expectedVersion) {
+          !isMacUpdateBundleVersion(
+              expectedVersion, QString::fromUtf8(commandOutput(version))
+          )) {
         if (!updateCommandSucceeded(version)) {
           return updateCommandFailure(QStringLiteral("reading update app version"), version);
         }

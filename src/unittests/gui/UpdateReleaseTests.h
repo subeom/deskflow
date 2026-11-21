@@ -18,6 +18,7 @@ private Q_SLOTS:
   void latestStableRelease_rejectsMissingOrInvalidDigest();
   void updatePlan_selectsExactArchitectureAndNeverFallbacks();
   void updatePlan_keepsWindowsLinuxAndPackageManagedMacManual();
+  void updatePlan_serviceUnknownAndUnverifiedCICandidatesStayManual();
   void versionComparison_rejectsPrereleaseAndNeverDowngrades();
   void checksumManifest_acceptsOneExactGithubLine();
   void checksumManifest_rejectsDuplicateMissingPathLikeAndMalformedLines();

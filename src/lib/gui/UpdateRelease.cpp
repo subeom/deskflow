@@ -186,6 +186,9 @@ UpdateReleaseParseResult parseGitHubRelease(const QByteArray &json)
 
 std::optional<UpdatePlan> planUpdate(const UpdateRelease &release, const UpdateEnvironment &environment)
 {
+  if (!environment.supported) {
+    return std::nullopt;
+  }
   const auto platform = environment.platform.toLower();
   if (platform != QStringLiteral("macos") && platform != QStringLiteral("windows") &&
       platform != QStringLiteral("linux")) {
@@ -198,7 +201,7 @@ std::optional<UpdatePlan> planUpdate(const UpdateRelease &release, const UpdateE
   plan.releaseUrl = release.pageUrl;
 
   if (platform == QStringLiteral("windows") || platform == QStringLiteral("linux") || environment.packageManaged ||
-      !environment.destinationWritable) {
+      environment.serviceMode || !environment.destinationWritable) {
     plan.mode = UpdateInstallMode::Manual;
     return plan;
   }
@@ -210,7 +213,8 @@ std::optional<UpdatePlan> planUpdate(const UpdateRelease &release, const UpdateE
   } else if (architecture == QStringLiteral("x86_64") || architecture == QStringLiteral("amd64")) {
     packageArchitecture = QStringLiteral("x86_64");
   } else {
-    return std::nullopt;
+    plan.mode = UpdateInstallMode::Manual;
+    return plan;
   }
 
   const auto installerName =
@@ -219,7 +223,8 @@ std::optional<UpdatePlan> planUpdate(const UpdateRelease &release, const UpdateE
   const auto checksums = findAsset(release, QStringLiteral("SHA256SUMS.txt"));
   if (!installer || !checksums || installer->size > kMaximumAutomaticInstallerBytes ||
       checksums->size > kMaximumChecksumBytes) {
-    return std::nullopt;
+    plan.mode = UpdateInstallMode::Manual;
+    return plan;
   }
 
   plan.mode = UpdateInstallMode::AutomaticMac;

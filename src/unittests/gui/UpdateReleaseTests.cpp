@@ -185,11 +185,18 @@ void UpdateReleaseTests::updatePlan_selectsExactArchitectureAndNeverFallbacks()
   QVERIFY(x64->installer);
   QCOMPARE(x64->installer->name, QStringLiteral("deskflow-2.0.6-macos-x86_64.dmg"));
 
-  QVERIFY(!planUpdate(*parsed.release, directMac(QStringLiteral("riscv64"))));
+  const auto unknown = planUpdate(*parsed.release, directMac(QStringLiteral("riscv64")));
+  QVERIFY(unknown);
+  QCOMPARE(unknown->mode, UpdateInstallMode::Manual);
+  QVERIFY(!unknown->installer);
 
   const auto armOnly = parseGitHubRelease(releaseJson(automaticAssets()));
   QVERIFY(armOnly.release);
-  QVERIFY(!planUpdate(*armOnly.release, directMac(QStringLiteral("x86_64"))));
+  const auto missingArchitecture =
+      planUpdate(*armOnly.release, directMac(QStringLiteral("x86_64")));
+  QVERIFY(missingArchitecture);
+  QCOMPARE(missingArchitecture->mode, UpdateInstallMode::Manual);
+  QVERIFY(!missingArchitecture->installer);
 }
 
 void UpdateReleaseTests::updatePlan_keepsWindowsLinuxAndPackageManagedMacManual()
@@ -212,6 +219,45 @@ void UpdateReleaseTests::updatePlan_keepsWindowsLinuxAndPackageManagedMacManual(
   }
 
   QVERIFY(!planUpdate(*parsed.release, {QStringLiteral("freebsd"), QStringLiteral("x86_64"), false, false}));
+}
+
+void UpdateReleaseTests::updatePlan_serviceUnknownAndUnverifiedCICandidatesStayManual()
+{
+  const auto parsed = parseGitHubRelease(releaseJson(automaticAssets()));
+  QVERIFY(parsed.release);
+
+  auto service = directMac(QStringLiteral("arm64"));
+  service.serviceMode = true;
+  const auto servicePlan = planUpdate(*parsed.release, service);
+  QVERIFY(servicePlan);
+  QCOMPARE(servicePlan->mode, UpdateInstallMode::Manual);
+  QVERIFY(!servicePlan->installer);
+
+  auto unknownCpu = directMac(QStringLiteral("riscv64"));
+  const auto unknownCpuPlan = planUpdate(*parsed.release, unknownCpu);
+  QVERIFY(unknownCpuPlan);
+  QCOMPARE(unknownCpuPlan->mode, UpdateInstallMode::Manual);
+  QVERIFY(!unknownCpuPlan->installer);
+
+  auto unsupported = directMac(QStringLiteral("arm64"));
+  unsupported.supported = false;
+  QVERIFY(!planUpdate(*parsed.release, unsupported));
+
+  auto ciOnly = automaticAssets();
+  auto checksum = ciOnly.takeAt(1).toObject();
+  checksum.insert(QStringLiteral("name"), QStringLiteral("sums.txt"));
+  checksum.insert(
+      QStringLiteral("browser_download_url"),
+      QStringLiteral("https://github.com/subeom/deskflow/releases/download/v2.0.6/sums.txt")
+  );
+  ciOnly.append(checksum);
+  const auto ciRelease = parseGitHubRelease(releaseJson(ciOnly));
+  QVERIFY(ciRelease.release);
+  const auto ciPlan = planUpdate(*ciRelease.release, directMac(QStringLiteral("arm64")));
+  QVERIFY(ciPlan);
+  QCOMPARE(ciPlan->mode, UpdateInstallMode::Manual);
+  QVERIFY(!ciPlan->installer);
+  QVERIFY(!ciPlan->checksums);
 }
 
 void UpdateReleaseTests::versionComparison_rejectsPrereleaseAndNeverDowngrades()

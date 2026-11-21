@@ -22,4 +22,5 @@ private Q_SLOTS:
   void checkLatest_discardsWrongIntegrityAndPlatformVerification();
   void checkLatest_missingExactArchitectureNeverFallsBack();
   void checkLatest_reusesOnlyAReverifiedStage();
+  void checkLatest_unsupportedEnvironmentDoesNotRequest();
 };

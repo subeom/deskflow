@@ -11,6 +11,7 @@
 #include "common/VersionInfo.h"
 
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -112,6 +113,8 @@ struct QtUpdateNetwork::Request
   QNetworkReply *reply = nullptr;
   QTimer *timeoutTimer = nullptr;
   QTimer *totalTimer = nullptr;
+  QElapsedTimer elapsed;
+  UpdateInactivityDeadline deadline;
   QUrl url;
   UpdateNetworkOptions options;
   UpdateNetworkCallback callback;
@@ -189,6 +192,25 @@ bool appendUpdateBytes(QByteArray &body, const QByteArray &next, qint64 maximumB
   return true;
 }
 
+void UpdateInactivityDeadline::start(qint64 nowMs, qint64 inactivityMs, qint64 totalMs)
+{
+  m_startedMs = nowMs;
+  m_lastProgressMs = nowMs;
+  m_inactivityMs = inactivityMs;
+  m_totalMs = totalMs;
+}
+
+void UpdateInactivityDeadline::markProgress(qint64 nowMs)
+{
+  m_lastProgressMs = nowMs;
+}
+
+bool UpdateInactivityDeadline::expired(qint64 nowMs) const
+{
+  return nowMs - m_lastProgressMs >= m_inactivityMs ||
+         nowMs - m_startedMs >= m_totalMs;
+}
+
 bool isCurrentUpdateGeneration(quint64 currentGeneration, quint64 callbackGeneration)
 {
   return currentGeneration != 0 && currentGeneration == callbackGeneration;
@@ -227,6 +249,8 @@ QtUpdateNetwork::get(const QUrl &url, const UpdateNetworkOptions &options, Updat
   state->totalTimer = new QTimer;
   state->totalTimer->setSingleShot(true);
   state->totalTimer->setInterval(options.maximumTotalMs);
+  state->elapsed.start();
+  state->deadline.start(0, options.timeoutMs, options.maximumTotalMs);
   connect(state->totalTimer, &QTimer::timeout, this, [this, id] {
     auto *timedOut = m_requests.value(id);
     if (timedOut == nullptr) {
@@ -295,9 +319,13 @@ void QtUpdateNetwork::beginRequest(quint64 id, const QUrl &url)
     if (timedOut == nullptr || timedOut->reply == nullptr) {
       return;
     }
-    timedOut->failure = UpdateNetworkStatus::Timeout;
-    timedOut->failureText = QStringLiteral("update request timed out");
-    timedOut->reply->abort();
+    if (timedOut->deadline.expired(timedOut->elapsed.elapsed())) {
+      timedOut->failure = UpdateNetworkStatus::Timeout;
+      timedOut->failureText = QStringLiteral("update request timed out");
+      timedOut->reply->abort();
+    } else {
+      timedOut->timeoutTimer->start();
+    }
   });
 
   connect(state->reply, &QNetworkReply::readyRead, state->reply, [this, id] {
@@ -311,7 +339,10 @@ void QtUpdateNetwork::beginRequest(quint64 id, const QUrl &url)
       reading->failure = UpdateNetworkStatus::TooLarge;
       reading->failureText = QStringLiteral("update response exceeds its configured limit");
       reading->reply->abort();
+      return;
     }
+    reading->deadline.markProgress(reading->elapsed.elapsed());
+    reading->timeoutTimer->start();
   });
 
   connect(state->reply, &QNetworkReply::finished, state->reply, [this, id] {

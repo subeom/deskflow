@@ -126,6 +126,26 @@ void UpdateVerifierTests::signatureEvidence_rejectsNotarizationOnlyAndMissingCor
   QVERIFY(!verifier.verifyApplication(app, QStringLiteral("2.0.6")).ok);
 }
 
+void UpdateVerifierTests::bundleVersion_acceptsStableOrZeroFourthComponentOnly()
+{
+  const auto accepted = QStringLiteral("2.0.5");
+  QVERIFY(deskflow::gui::isMacUpdateBundleVersion(accepted, QStringLiteral("2.0.5")));
+  QVERIFY(deskflow::gui::isMacUpdateBundleVersion(accepted, QStringLiteral("2.0.5.0")));
+  for (const auto rejected : {
+           QStringLiteral("2.0.5.1"),
+           QStringLiteral("2.0.5.0.0"),
+           QStringLiteral("v2.0.5"),
+           QStringLiteral("2.0.5-rc1"),
+           QStringLiteral("2.0.5 "),
+           QStringLiteral("2.0"),
+           QStringLiteral("02.0.5")}) {
+    QVERIFY(!deskflow::gui::isMacUpdateBundleVersion(accepted, rejected));
+  }
+  QVERIFY(!deskflow::gui::isMacUpdateBundleVersion(
+      QStringLiteral("2.0.5-rc1"), QStringLiteral("2.0.5.0")
+  ));
+}
+
 void UpdateVerifierTests::verifierApplication_checksVersionBundleAndNestedCore()
 {
   QTemporaryDir temporary;

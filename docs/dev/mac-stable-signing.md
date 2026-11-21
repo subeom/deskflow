@@ -149,6 +149,10 @@ does not require or invoke Apple Developer ID, Team Identifier, notarization, `s
 keychain. GitHub asset sizes and `SHA256SUMS.txt` verify delivery integrity; the pinned bundle identifier and
 certificate leaf bind the app to this fork.
 
+This policy applies only to manually published fork releases. Standard repository CI keeps its upstream
+`sums.txt` and notarized Developer ID path. Those artifacts are intentionally manual-only and are not accepted
+by the fork updater's `SHA256SUMS.txt` plus pinned-leaf policy.
+
 ## The one-time re-grant
 
 The first build that is signed with the identity replaces a build that is signed ad hoc. What macOS stored for that one is a cdhash, which the new build does not

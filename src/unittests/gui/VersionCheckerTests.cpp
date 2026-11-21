@@ -267,11 +267,14 @@ void VersionCheckerTests::checkLatest_timeoutMakesOnlyOneMetadataRetry()
 
 void VersionCheckerTests::checkLatest_manualPlatformsNeverDownload()
 {
+  auto serviceMac = directMac();
+  serviceMac.serviceMode = true;
   for (const auto &environment : {
            UpdateEnvironment{QStringLiteral("windows"), QStringLiteral("arm64"), false, false},
            UpdateEnvironment{QStringLiteral("windows"), QStringLiteral("x86_64"), false, false},
            UpdateEnvironment{QStringLiteral("linux"), QStringLiteral("x86_64"), false, false},
-           UpdateEnvironment{QStringLiteral("macos"), QStringLiteral("arm64"), true, true}}) {
+           UpdateEnvironment{QStringLiteral("macos"), QStringLiteral("arm64"), true, true},
+           serviceMac}) {
     QTemporaryDir temporary;
     QVERIFY(temporary.isValid());
     auto network = std::make_unique<FakeUpdateNetwork>();
@@ -285,6 +288,24 @@ void VersionCheckerTests::checkLatest_manualPlatformsNeverDownload()
     QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::ManualAvailable);
     QCOMPARE(fakeNetwork->calls.size(), 1);
   }
+}
+
+void VersionCheckerTests::checkLatest_unsupportedEnvironmentDoesNotRequest()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  auto environment = directMac();
+  environment.supported = false;
+  auto network = std::make_unique<FakeUpdateNetwork>();
+  auto *fakeNetwork = network.get();
+  VersionChecker checker(
+      std::move(network), environment, QDir(temporary.path()).filePath(QStringLiteral("updates")),
+      std::make_unique<FakeUpdateVerifier>(true), 0
+  );
+  checker.checkLatest();
+  QVERIFY(fakeNetwork->calls.isEmpty());
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::Idle);
+  QVERIFY(!checker.isChecking());
 }
 
 void VersionCheckerTests::checkLatest_directMacDownloadsChecksumsThenDmgThenVerifies()
@@ -364,7 +385,7 @@ void VersionCheckerTests::checkLatest_missingExactArchitectureNeverFallsBack()
   );
   checker.checkLatest();
   fakeNetwork->complete(0, success(releaseJson(QStringLiteral("2.0.6"), true)));
-  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::Failed);
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::ManualAvailable);
   QCOMPARE(fakeNetwork->calls.size(), 1);
 }
 

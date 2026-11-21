@@ -19,4 +19,5 @@ private Q_SLOTS:
   void retryPolicy_allowsOneMetadataOrChecksumTransientRetryOnly();
   void responseLimit_rejectsOversizeBeforeBodyPublication();
   void cancellation_generationInvalidatesLateCallbacks();
+  void inactivityDeadline_resetsOnProgressAndHonorsTotalDeadline();
 };

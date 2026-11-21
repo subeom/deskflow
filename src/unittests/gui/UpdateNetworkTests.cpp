@@ -145,4 +145,22 @@ void UpdateNetworkTests::cancellation_generationInvalidatesLateCallbacks()
   QVERIFY(!isCurrentUpdateGeneration(0, 1));
 }
 
+void UpdateNetworkTests::inactivityDeadline_resetsOnProgressAndHonorsTotalDeadline()
+{
+  deskflow::gui::UpdateInactivityDeadline deadline;
+  deadline.start(1'000, 30'000, 300'000);
+  QVERIFY(!deadline.expired(30'999));
+  deadline.markProgress(30'000);
+  QVERIFY(!deadline.expired(59'999));
+  QVERIFY(deadline.expired(60'000));
+
+  deskflow::gui::UpdateInactivityDeadline largeTransfer;
+  largeTransfer.start(0, 30'000, 300'000);
+  for (qint64 now = 29'000; now < 300'000; now += 29'000) {
+    largeTransfer.markProgress(now);
+    QVERIFY(!largeTransfer.expired(now));
+  }
+  QVERIFY(largeTransfer.expired(300'000));
+}
+
 QTEST_MAIN(UpdateNetworkTests)
