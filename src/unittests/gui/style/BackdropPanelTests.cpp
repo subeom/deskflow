@@ -128,6 +128,8 @@ void BackdropPanelTests::backdrop_isKeptBetweenPaints_andMadeAgainOnlyForOtherSi
   auto *style = install(lookOf(false));
   BackdropWidget window;
   window.resize(640, 420);
+  window.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&window));
   window.grab();
   QCOMPARE(window.renderCount(), 1);
   window.update();
@@ -137,11 +139,39 @@ void BackdropPanelTests::backdrop_isKeptBetweenPaints_andMadeAgainOnlyForOtherSi
 
   window.resize(700, 420);
   window.grab();
+  QCOMPARE(window.renderCount(), 1);
+  QTest::qWait(100);
+  window.grab();
   QCOMPARE(window.renderCount(), 2);
 
   style->useLook(lookOf(true));
   window.grab();
   QCOMPARE(window.renderCount(), 3);
+}
+
+void BackdropPanelTests::backdrop_doesNotRenderEveryFrameOfARapidResize_andFinishesWhenItSettles()
+{
+  install(lookOf(false));
+  BackdropWidget window;
+  window.resize(640, 420);
+  window.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&window));
+  window.grab();
+  QCOMPARE(window.renderCount(), 1);
+
+  for (int frame = 1; frame <= 12; ++frame) {
+    window.resize(640 + frame * 8, 420 + frame * 3);
+    window.grab();
+    QTest::qWait(5);
+  }
+  QCOMPARE(window.renderCount(), 1);
+
+  QTest::qWait(100);
+  window.grab();
+  QCOMPARE(window.renderCount(), 2);
+  window.update();
+  window.grab();
+  QCOMPARE(window.renderCount(), 2);
 }
 
 void BackdropPanelTests::backdrop_atTwoTimes_hasTwiceThePixels()

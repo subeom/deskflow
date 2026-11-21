@@ -11,10 +11,8 @@
 #include "ChromeGeometry.h"
 #include "FrameMessages.h"
 #include "WindowHeader.h"
-#include "gui/style/Appearance.h"
 
 #include <QAbstractNativeEventFilter>
-#include <QColor>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QMainWindow>
@@ -162,8 +160,6 @@ public:
   {
     if (auto *app = QCoreApplication::instance())
       app->removeNativeEventFilter(this);
-    if (m_background)
-      DeleteObject(m_background);
   }
 
   bool nativeEventFilter(const QByteArray &eventType, void *message, qintptr *result) override
@@ -222,14 +218,10 @@ public:
       info->ptMaxTrackSize.y = sizes.maximum.height();
   }
 
-  // The part of the window that the program has not painted yet (an edge that is dragged, a window that comes back from
-  // the taskbar) is the colour of the look and not what the system leaves there, which is white or black: the program
-  // paints over it as it is ready, and what shows in between is of the colour of the window
-  void paintBackground(std::uintptr_t wParam)
+  // BackdropWidget paints the whole opaque client. Clearing it first makes a visible flat frame between the native
+  // erase and the Qt paint during a move or resize; leaving the existing compositor surface in place avoids that flash.
+  void paintBackground(std::uintptr_t)
   {
-    RECT area{};
-    GetClientRect(m_hwnd, &area);
-    FillRect(reinterpret_cast<HDC>(wParam), &area, background());
   }
 
   qintptr hitCodeAt(std::intptr_t lParam)
@@ -312,19 +304,6 @@ public:
 private:
   static constexpr int kEdge = 6;
 
-  // the brush of the colour that the look has behind its panels now (the look is light or dark, and changes)
-  HBRUSH background()
-  {
-    const auto color = deskflow::gui::style::currentTokens().colors.bg;
-    if (!m_background || color != m_backgroundColor) {
-      if (m_background)
-        DeleteObject(m_background);
-      m_background = CreateSolidBrush(RGB(color.red(), color.green(), color.blue()));
-      m_backgroundColor = color;
-    }
-    return m_background;
-  }
-
   void showMaximizeState()
   {
     if (auto *button = m_header->captionButton(Region::Maximize))
@@ -337,8 +316,6 @@ private:
   bool m_snapLayouts;
   bool m_hover = false;
   bool m_pressed = false;
-  HBRUSH m_background = nullptr;
-  QColor m_backgroundColor;
 };
 
 } // namespace

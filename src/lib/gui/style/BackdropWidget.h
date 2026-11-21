@@ -9,6 +9,7 @@
 #include "DesignTokens.h"
 
 #include <QPixmap>
+#include <QTimer>
 #include <QWidget>
 
 namespace deskflow::gui::style {
@@ -22,8 +23,9 @@ namespace deskflow::gui::style {
 QPixmap backdropPixmap(const QSize &size, qreal dpr, const Tokens &tokens);
 
 /*!
- * \brief The background of a window or a page: paints the picture above, kept for the size and the device pixel ratio
- * that it has and made again only when the size, the screen or the look change (a resize drags no gradient).
+ * \brief The background of a window or a page: paints the picture above, kept for the size and the device pixel ratio.
+ * During a continuous resize it scales the previous picture instead of rendering every frame; once the resize settles
+ * it makes the exact picture for the final size. Screen and look changes also invalidate the picture.
  *
  * The panels (PanelWidget) are its children, and the window is opaque: nothing is transparent to the desktop.
  */
@@ -40,6 +42,7 @@ public:
 protected:
   void paintEvent(QPaintEvent *event) override;
   void changeEvent(QEvent *event) override;
+  void resizeEvent(QResizeEvent *event) override;
 
 private:
   void invalidate();
@@ -48,6 +51,7 @@ private:
   Tokens m_tokens;
   QPixmap m_picture;
   QMetaObject::Connection m_lookConnection;
+  QTimer m_resizeSettled;
   int m_renderCount = 0;
 };
 

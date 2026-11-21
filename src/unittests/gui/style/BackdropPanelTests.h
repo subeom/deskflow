@@ -15,6 +15,7 @@ private Q_SLOTS:
 
   void backdrop_isAGradientWithBlobs_andFlatWhenTransparencyIsReduced();
   void backdrop_isKeptBetweenPaints_andMadeAgainOnlyForOtherSizeOrLook();
+  void backdrop_doesNotRenderEveryFrameOfARapidResize_andFinishesWhenItSettles();
   void backdrop_atTwoTimes_hasTwiceThePixels();
 
   void shadowPatch_fadesOutFromTheShapeAndIsKept();

@@ -17,6 +17,8 @@ namespace deskflow::gui::style {
 
 namespace {
 
+constexpr int kResizeSettleMs = 80;
+
 // A soft blob: the colour at its centre, nothing at 70 % of its radius, an ellipse of the given radii (in pixels)
 void paintBlob(QPainter *painter, const QPointF &center, qreal rx, qreal ry, const QColor &color)
 {
@@ -67,6 +69,9 @@ BackdropWidget::BackdropWidget(QWidget *parent) : QWidget(parent), m_tokens(curr
 {
   // everything is painted: the widget itself is not transparent to what is behind it
   setAttribute(Qt::WA_OpaquePaintEvent);
+  m_resizeSettled.setSingleShot(true);
+  m_resizeSettled.setInterval(kResizeSettleMs);
+  connect(&m_resizeSettled, &QTimer::timeout, this, qOverload<>(&QWidget::update));
   watchLook();
 }
 
@@ -107,16 +112,30 @@ void BackdropWidget::changeEvent(QEvent *event)
   }
 }
 
+void BackdropWidget::resizeEvent(QResizeEvent *event)
+{
+  QWidget::resizeEvent(event);
+  if (!m_picture.isNull())
+    m_resizeSettled.start();
+  update();
+}
+
 void BackdropWidget::paintEvent(QPaintEvent *)
 {
   const auto dpr = devicePixelRatioF();
-  if (m_picture.isNull() || m_picture.deviceIndependentSize().toSize() != size() ||
-      !qFuzzyCompare(m_picture.devicePixelRatio(), dpr)) {
+  bool pictureMatches = !m_picture.isNull() && m_picture.deviceIndependentSize().toSize() == size() &&
+                        qFuzzyCompare(m_picture.devicePixelRatio(), dpr);
+  if (!pictureMatches && (m_picture.isNull() || !m_resizeSettled.isActive())) {
     m_picture = backdropPixmap(size(), dpr, m_tokens);
     ++m_renderCount;
+    pictureMatches = !m_picture.isNull() && m_picture.deviceIndependentSize().toSize() == size() &&
+                     qFuzzyCompare(m_picture.devicePixelRatio(), dpr);
   }
   QPainter painter(this);
-  painter.drawPixmap(0, 0, m_picture);
+  if (pictureMatches)
+    painter.drawPixmap(0, 0, m_picture);
+  else
+    painter.drawPixmap(rect(), m_picture);
 }
 
 } // namespace deskflow::gui::style
