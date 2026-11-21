@@ -31,6 +31,10 @@ add_library(${target} STATIC
   StyleUtils.h
   TlsUtility.cpp
   TlsUtility.h
+  UpdateCache.cpp
+  UpdateCache.h
+  UpdateIntegrity.cpp
+  UpdateIntegrity.h
   UpdateNetwork.cpp
   UpdateNetwork.h
   UpdateRelease.cpp

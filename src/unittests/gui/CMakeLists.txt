@@ -43,3 +43,17 @@ create_test(
   SOURCE UpdateNetworkTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )
+
+create_test(
+  NAME UpdateIntegrityTests
+  DEPENDS gui
+  SOURCE UpdateIntegrityTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
+
+create_test(
+  NAME UpdateCacheTests
+  DEPENDS gui
+  SOURCE UpdateCacheTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+)
