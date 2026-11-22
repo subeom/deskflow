@@ -103,6 +103,7 @@ class QtUpdateNetwork final : public QObject, public IUpdateNetwork
 {
 public:
   QtUpdateNetwork();
+  explicit QtUpdateNetwork(QNetworkAccessManager *manager);
   ~QtUpdateNetwork() override;
 
   quint64 get(

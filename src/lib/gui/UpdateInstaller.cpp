@@ -66,17 +66,31 @@ MacUpdateAclResult readMacUpdateAcl(const QString &path)
     const bool absenceProven = errorNumber == ENOENT && QFileInfo::exists(path);
     return {false, -1, false, false, errorNumber, absenceProven};
   }
+  errno = 0;
+  if (acl_valid(acl) != 0) {
+    const auto errorNumber = errno;
+    acl_free(acl);
+    return {false, -1, false, false, errorNumber};
+  }
   bool hasEntries = false;
   acl_entry_t entry = nullptr;
+  errno = 0;
   int result = acl_get_entry(acl, ACL_FIRST_ENTRY, &entry);
-  while (result == 1) {
+  while (result == 0) {
     hasEntries = true;
     result = acl_get_entry(acl, ACL_NEXT_ENTRY, &entry);
   }
-  const auto parseError = result == -1 ? errno : 0;
+  const auto parseComplete = result == -1 && errno == EINVAL;
+  const auto parseError = parseComplete ? 0 : errno;
   const auto released = acl_free(acl) == 0;
   const auto releaseError = released ? 0 : errno;
-  return {true, result, hasEntries, released, parseError != 0 ? parseError : releaseError};
+  return {
+      parseComplete,
+      result,
+      hasEntries,
+      released,
+      parseError != 0 ? parseError : releaseError
+  };
 }
 
 std::optional<QJsonObject> readPackageJson(
@@ -311,8 +325,7 @@ bool isMacUpdatePackageManaged(
 bool isMacUpdateAclTrustProven(const MacUpdateAclResult &result)
 {
   const bool readProven =
-      result.readSucceeded && result.entryResult == 0 &&
-      !result.hasEntries && result.releaseSucceeded &&
+      result.readSucceeded && !result.hasEntries && result.releaseSucceeded &&
       result.errorNumber == 0;
   const bool absenceProven =
       result.absenceProven && !result.readSucceeded &&

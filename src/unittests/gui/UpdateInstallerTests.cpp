@@ -16,6 +16,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
 #include <QRegularExpression>
 #include <QTemporaryDir>
 
@@ -1160,6 +1161,12 @@ void UpdateInstallerTests::aclPolicy_requiresSuccessfulEmptyAclRead()
       MacUpdateAclResult{true, 0, false, false, EIO}
   ));
   QVERIFY(isMacUpdateAclTrustProven(
+      MacUpdateAclResult{true, -1, false, true, 0}
+  ));
+  QVERIFY(!isMacUpdateAclTrustProven(
+      MacUpdateAclResult{true, -1, true, true, 0}
+  ));
+  QVERIFY(isMacUpdateAclTrustProven(
       MacUpdateAclResult{false, -1, false, false, ENOENT, true}
   ));
   QVERIFY(!isMacUpdateAclTrustProven(
@@ -1200,6 +1207,31 @@ void UpdateInstallerTests::aclPolicy_requiresSuccessfulEmptyAclRead()
       actualAcl.aclTrustProven,
       "an existing file with no extended ACL must be a proven safe absence"
   );
+
+#if defined(Q_OS_MACOS)
+  QProcess chmod;
+  chmod.start(
+      QStringLiteral("/bin/chmod"),
+      {QStringLiteral("+a"), QStringLiteral("everyone deny delete"), fixture.bundle}
+  );
+  QVERIFY(chmod.waitForStarted());
+  QVERIFY(chmod.waitForFinished());
+  QCOMPARE(chmod.exitCode(), 0);
+  const auto extendedAcl = deskflow::gui::evaluateMacUpdateInstall(
+      fixture.executable, false, false
+  );
+  QVERIFY(!extendedAcl.aclTrustProven);
+  QVERIFY(!deskflow::gui::isMacUpdateInstallEligible(extendedAcl));
+
+  QProcess removeAcl;
+  removeAcl.start(
+      QStringLiteral("/bin/chmod"),
+      {QStringLiteral("-a"), QStringLiteral("everyone deny delete"), fixture.bundle}
+  );
+  QVERIFY(removeAcl.waitForStarted());
+  QVERIFY(removeAcl.waitForFinished());
+  QCOMPARE(removeAcl.exitCode(), 0);
+#endif
 }
 
 void UpdateInstallerTests::apply_rejectsCandidateIdentityChangeBeforeAndAfterRename()

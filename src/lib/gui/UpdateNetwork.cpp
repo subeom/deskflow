@@ -43,19 +43,85 @@ bool isSafeHttpsUrl(const QUrl &url)
   }
 
   const auto encoded = QString::fromLatin1(url.toEncoded(QUrl::FullyEncoded)).toLower();
-  return !encoded.contains(QStringLiteral("%2f")) && !encoded.contains(QStringLiteral("%5c")) &&
-         !encoded.contains(QStringLiteral("%00"));
+  return !encoded.contains(QStringLiteral("%5c")) &&
+         !encoded.contains(QStringLiteral("%00")) &&
+         !encoded.contains(QStringLiteral("%0a")) &&
+         !encoded.contains(QStringLiteral("%0d"));
 }
 
 bool hasSafePath(const QUrl &url)
 {
-  const auto path = url.path(QUrl::FullyDecoded);
-  for (const auto &part : path.split(QLatin1Char('/'))) {
-    if (part == QStringLiteral(".") || part == QStringLiteral("..")) {
+  const auto encodedPath = url.path(QUrl::FullyEncoded).toUtf8();
+  const auto lowerEncodedPath = encodedPath.toLower();
+  if (lowerEncodedPath.contains("%2f") ||
+      lowerEncodedPath.contains("%5c") ||
+      lowerEncodedPath.contains("%00") ||
+      lowerEncodedPath.contains("%0a") ||
+      lowerEncodedPath.contains("%0d")) {
+    return false;
+  }
+
+  auto path = QUrl::fromPercentEncoding(encodedPath);
+  for (int pass = 0; pass < 3; ++pass) {
+    if (path.contains(QLatin1Char('\\')) || path.contains(QLatin1Char('\0')) ||
+        path.contains(QLatin1Char('\r')) || path.contains(QLatin1Char('\n'))) {
       return false;
     }
+    const auto lowerPath = path.toLower();
+    if (lowerPath.contains(QStringLiteral("%2f")) ||
+        lowerPath.contains(QStringLiteral("%5c")) ||
+        lowerPath.contains(QStringLiteral("%00")) ||
+        lowerPath.contains(QStringLiteral("%0a")) ||
+        lowerPath.contains(QStringLiteral("%0d"))) {
+      return false;
+    }
+    for (const auto &part : path.split(QLatin1Char('/'))) {
+      if (part == QStringLiteral(".") || part == QStringLiteral("..")) {
+        return false;
+      }
+    }
+    const auto decoded = QUrl::fromPercentEncoding(path.toUtf8());
+    if (decoded == path) {
+      break;
+    }
+    path = decoded;
   }
   return !path.isEmpty() && path != QStringLiteral("/");
+}
+
+bool hasSafeRedirectQuery(const QUrl &url)
+{
+  const auto encoded = url.query(QUrl::FullyEncoded).toUtf8();
+  if (encoded.size() > kMaximumUrlBytes) {
+    return false;
+  }
+  const auto lower = encoded.toLower();
+  if (lower.contains("%5c") || lower.contains("%00") ||
+      lower.contains("%0a") || lower.contains("%0d")) {
+    return false;
+  }
+  auto decoded = QUrl::fromPercentEncoding(encoded);
+  for (int pass = 0; pass < 3; ++pass) {
+    if (decoded.contains(QLatin1Char('\\')) ||
+        decoded.contains(QLatin1Char('\0')) ||
+        decoded.contains(QLatin1Char('\r')) ||
+        decoded.contains(QLatin1Char('\n'))) {
+      return false;
+    }
+    const auto lowerDecoded = decoded.toLower();
+    if (lowerDecoded.contains(QStringLiteral("%5c")) ||
+        lowerDecoded.contains(QStringLiteral("%00")) ||
+        lowerDecoded.contains(QStringLiteral("%0a")) ||
+        lowerDecoded.contains(QStringLiteral("%0d"))) {
+      return false;
+    }
+    const auto next = QUrl::fromPercentEncoding(decoded.toUtf8());
+    if (next == decoded) {
+      break;
+    }
+    decoded = next;
+  }
+  return true;
 }
 
 bool isTerminalAssetHost(const QString &host)
@@ -70,13 +136,13 @@ bool isTerminalAssetHost(const QString &host)
 
 bool isExactLatestUrl(const QUrl &url)
 {
-  return isSafeHttpsUrl(url) && url.query().isEmpty() &&
+  return isSafeHttpsUrl(url) && !url.hasQuery() &&
          url.toEncoded(QUrl::FullyEncoded) == kUrlUpdateCheck.toUtf8();
 }
 
 bool isExactAssetUrl(const QUrl &url)
 {
-  if (!isSafeHttpsUrl(url) || url.host() != QStringLiteral("github.com") || !url.query().isEmpty() ||
+  if (!isSafeHttpsUrl(url) || url.host() != QStringLiteral("github.com") || url.hasQuery() ||
       !hasSafePath(url)) {
     return false;
   }
@@ -138,10 +204,11 @@ bool isAllowedUpdateRedirect(
 {
   if ((kind != UpdateRequestKind::Checksum && kind != UpdateRequestKind::Installer) ||
       redirectCount < 1 || redirectCount > kMaximumRedirects || !isExactAssetUrl(source) ||
-      !isSafeHttpsUrl(redirect) || !isTerminalAssetHost(redirect.host()) || !hasSafePath(redirect)) {
+      !isSafeHttpsUrl(redirect) || !isTerminalAssetHost(redirect.host()) ||
+      !hasSafePath(redirect) || !hasSafeRedirectQuery(redirect)) {
     return false;
   }
-  return redirect.query(QUrl::FullyEncoded).toUtf8().size() <= kMaximumUrlBytes;
+  return true;
 }
 
 bool isUpdateRateLimited(int httpStatus, const QByteArray &remainingHeader)
@@ -216,7 +283,12 @@ bool isCurrentUpdateGeneration(quint64 currentGeneration, quint64 callbackGenera
   return currentGeneration != 0 && currentGeneration == callbackGeneration;
 }
 
-QtUpdateNetwork::QtUpdateNetwork() : m_manager(new QNetworkAccessManager(this))
+QtUpdateNetwork::QtUpdateNetwork() : QtUpdateNetwork(nullptr)
+{
+}
+
+QtUpdateNetwork::QtUpdateNetwork(QNetworkAccessManager *manager)
+    : m_manager(manager == nullptr ? new QNetworkAccessManager(this) : manager)
 {
 }
 
