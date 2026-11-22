@@ -9,6 +9,7 @@
 
 #include "common/Enums.h"
 #include "common/Settings.h"
+#include "deskflow/ipc/InputIndicatorIpc.h"
 #include "gui/FileTail.h"
 #include "gui/config/ServerConfig.h"
 
@@ -20,6 +21,7 @@
 #include <functional>
 
 struct MainWindowTestAccess;
+struct CoreProcessInputIndicatorTestAccess;
 
 namespace deskflow::tunnel {
 class ITunnelGate;
@@ -37,6 +39,7 @@ class CoreProcess : public QObject
 {
   //! The test of the main window sets the state that the core would report (it never starts the core)
   friend struct ::MainWindowTestAccess;
+  friend struct ::CoreProcessInputIndicatorTestAccess;
   using ConnectionState = deskflow::core::ConnectionState;
   using ProcessMode = Settings::ProcessMode;
   using ProcessState = deskflow::core::ProcessState;
@@ -61,6 +64,7 @@ public:
   void applyLogLevel();
   void clearSettings();
   void retryDaemon();
+  void setInputIndicatorEnabled(bool enabled);
 
   // Cloudflare Tunnel: the client core waits for the tunnel to listen before it starts, and the tunnel is let go when
   // the core stops (see gui/tunnel/TunnelStartGuard.h). Without a gate nothing of this is used.
@@ -111,6 +115,10 @@ Q_SIGNALS:
   void retryIn(int seconds);
   void peerFingerprint(const QString &fingerprint);
   void missingKeyboardLayouts(const QString &layouts);
+  void inputIndicatorActivityReceived(const deskflow::input::InputIndicatorActivity &activity);
+  void inputIndicatorLocalChanged(bool local);
+  void inputIndicatorActivityInvalidated();
+  void inputIndicatorStateInvalidated();
 
 private Q_SLOTS:
   void onProcessFinished(int exitCode, QProcess::ExitStatus);
@@ -131,6 +139,8 @@ private:
   void handleLogLines(const QString &text);
   QString correctedAddress(const QString &address) const;
   void setupDaemonLogTail(const QString &logPath);
+  void resetInputIndicatorState();
+  void sendInputIndicatorSubscription();
   void checkExistingProcess();
   static QString makeQuotedArgs(const QString &app, const QStringList &args);
   static QString processModeToString(const Settings::ProcessMode mode);
@@ -154,6 +164,9 @@ private:
   deskflow::tunnel::TunnelStartGuard *m_tunnelGuard = nullptr;
   deskflow::tunnel::ITunnelGate *m_tunnelGate = nullptr;
   std::optional<ProcessMode> m_tunnelPendingMode;
+  bool m_inputIndicatorEnabled = false;
+  bool m_inputIndicatorLocal = false;
+  uint64_t m_lastInputIndicatorSequence = 0;
   // the program is ending (Cloudflare Tunnel, service mode): nothing is started or queued any more
   bool m_quitting = false;
   QMetaObject::Connection m_pendingDaemonStart;

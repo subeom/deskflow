@@ -2844,6 +2844,58 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>포인터</translation>
     </message>
     <message>
+        <source>Input source indicator</source>
+        <translation>입력 소스 표시기</translation>
+    </message>
+    <message>
+        <source>한/A beside the cursor during text input</source>
+        <translation>텍스트 입력 시 커서 옆 한/A 표시</translation>
+    </message>
+    <message>
+        <source>Position from cursor</source>
+        <translation>커서 기준 위치</translation>
+    </message>
+    <message>
+        <source>Bottom right</source>
+        <translation>오른쪽 아래</translation>
+    </message>
+    <message>
+        <source>Top right</source>
+        <translation>오른쪽 위</translation>
+    </message>
+    <message>
+        <source>Bottom left</source>
+        <translation>왼쪽 아래</translation>
+    </message>
+    <message>
+        <source>Top left</source>
+        <translation>왼쪽 위</translation>
+    </message>
+    <message>
+        <source>Display time</source>
+        <translation>표시 시간</translation>
+    </message>
+    <message>
+        <source>Badge opacity</source>
+        <translation>배지 투명도</translation>
+    </message>
+    <message>
+        <source>Badge color</source>
+        <translation>배지 색상</translation>
+    </message>
+    <message>
+        <source>Light badge</source>
+        <translation>밝은 배지</translation>
+    </message>
+    <message>
+        <source>Dark badge</source>
+        <translation>어두운 배지</translation>
+    </message>
+    <message>
+        <source>Accessibility permission or field recognition unavailable: indicator hidden. Password and protected field: indicator hidden.</source>
+        <translation>Accessibility 권한 또는 입력란 확인 불가 시 표시 숨김. 비밀번호 및 보호 입력란: 표시 숨김.</translation>
+    </message>
+    <message>
         <source>Background service</source>
         <translation>백그라운드 서비스</translation>
     </message>

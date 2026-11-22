@@ -23,9 +23,13 @@ public:
   explicit CoreIpcServer(QObject *parent);
 
   static CoreIpcServer &instance();
+  void broadcastInputIndicatorCommand(const QString &command, const QString &args = "");
 
 private:
   void processCommand(QLocalSocket *clientSocket, const QString &command, const QStringList &parts) override;
+  void clientDisconnected(QLocalSocket *clientSocket) override;
+
+  QSet<QLocalSocket *> m_inputIndicatorSubscribers;
 };
 
 } // namespace deskflow::core::ipc

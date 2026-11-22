@@ -100,6 +100,10 @@ elseif(APPLE)
     OSXDisplays.h
     OSXEventQueueBuffer.cpp
     OSXEventQueueBuffer.h
+    OSXInputIndicatorRelay.cpp
+    OSXInputIndicatorRelay.h
+    OSXInputSource.h
+    OSXInputSource.mm
     OSXKeyLayoutResource.cpp
     OSXKeyLayoutResource.h
     OSXKeyGroupResolver.cpp

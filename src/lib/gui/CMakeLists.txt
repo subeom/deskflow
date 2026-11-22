@@ -10,6 +10,14 @@ if(APPLE)
   set (platform_sources
     OSXHelpers.h
     OSXHelpers.mm
+    input/MacAccessibilityProbe.h
+    input/MacAccessibilityProbe.mm
+    input/MacInputFocusMonitor.h
+    input/MacInputFocusMonitor.mm
+    input/MacInputIndicatorController.h
+    input/MacInputIndicatorController.mm
+    input/MacInputIndicatorPanel.h
+    input/MacInputIndicatorPanel.mm
     MacUpdateInstaller.cpp
     MacUpdateInstaller.h
     MacUpdateVerifier.cpp
@@ -393,7 +401,8 @@ if(WIN32)
 elseif(APPLE)
   find_library(lib_Security Security REQUIRED)
   find_library(lib_CoreFoundation CoreFoundation REQUIRED)
-  target_link_libraries(${target} PUBLIC ${lib_Security} ${lib_CoreFoundation})
+  find_library(lib_ApplicationServices ApplicationServices REQUIRED)
+  target_link_libraries(${target} PUBLIC ${lib_Security} ${lib_CoreFoundation} ${lib_ApplicationServices})
 endif()
 
 target_link_libraries(${target}

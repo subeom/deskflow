@@ -53,6 +53,10 @@ namespace deskflow::gui::settings {
 class SettingsPages;
 }
 
+namespace deskflow::gui::input {
+class MacInputIndicatorController;
+}
+
 namespace deskflow::gui::layout {
 class LayoutMemoryService;
 }
@@ -322,6 +326,7 @@ private:
   deskflow::gui::chrome::WindowHeader *m_header = nullptr;
   deskflow::gui::chrome::WindowChrome *m_chrome = nullptr;
   deskflow::gui::settings::SettingsPages *m_settingsPages = nullptr;
+  deskflow::gui::input::MacInputIndicatorController *m_inputIndicatorController = nullptr;
   bool m_shellRefreshPending = false;
   QStringList m_connectedClients;
   // the log was shown by an error (and is not what the user chose): it is not remembered, and it is done once for a run

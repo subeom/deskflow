@@ -35,6 +35,11 @@ const QHash<QString, Effect> &table()
     live(S::Gui::NativeWindowFrame);
     // the size of text follows at once (TextSize listens to the setting)
     live(S::Gui::TextSize);
+    live(S::Gui::InputIndicatorEnabled);
+    live(S::Gui::InputIndicatorPosition);
+    live(S::Gui::InputIndicatorDwellMs);
+    live(S::Gui::InputIndicatorOpacityPercent);
+    live(S::Gui::InputIndicatorTone);
     // the GUI logger listens for it
     live(S::Log::GuiDebug);
     // the window follows it at once (macOS: it asks, or stops asking, for the password while the core runs)

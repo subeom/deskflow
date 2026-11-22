@@ -129,6 +129,11 @@ public:
     inline static const auto ShownServerFirstStartMessage = QStringLiteral("gui/shownServerFirstStartMessage");
     inline static const auto ShowVersionInTitle = QStringLiteral("gui/showVersionInTitle");
     inline static const auto IgnoreMissingKeyboardLayouts = QStringLiteral("gui/ignoreMissingKeyboardLayouts");
+    inline static const auto InputIndicatorEnabled = QStringLiteral("gui/inputIndicatorEnabled");
+    inline static const auto InputIndicatorPosition = QStringLiteral("gui/inputIndicatorPosition");
+    inline static const auto InputIndicatorDwellMs = QStringLiteral("gui/inputIndicatorDwellMs");
+    inline static const auto InputIndicatorOpacityPercent = QStringLiteral("gui/inputIndicatorOpacityPercent");
+    inline static const auto InputIndicatorTone = QStringLiteral("gui/inputIndicatorTone");
   };
   struct Log
   {
@@ -412,6 +417,11 @@ private:
     , Gui::ShownServerFirstStartMessage
     , Gui::ShowVersionInTitle
     , Gui::IgnoreMissingKeyboardLayouts
+    , Gui::InputIndicatorEnabled
+    , Gui::InputIndicatorPosition
+    , Gui::InputIndicatorDwellMs
+    , Gui::InputIndicatorOpacityPercent
+    , Gui::InputIndicatorTone
     , Network::MacAwdlOff
     , Security::Certificate
     , Security::CheckPeers
@@ -455,6 +465,7 @@ private:
     , Gui::ShownServerFirstStartMessage
     , Gui::ShowVersionInTitle
     , Gui::IgnoreMissingKeyboardLayouts
+    , Gui::InputIndicatorEnabled
     , Core::PreventSleep
     , Core::MacHoldPointer
     , Core::EnableEnterCommand

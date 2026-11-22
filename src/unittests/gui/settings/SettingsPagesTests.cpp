@@ -20,6 +20,7 @@
 #include "gui/style/AccessibleInterfaces.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/DeskflowStyle.h"
+#include "gui/widgets/InlineHint.h"
 #include "gui/widgets/PageTitle.h"
 #include "gui/widgets/SettingCard.h"
 #include "gui/widgets/SettingRow.h"
@@ -159,6 +160,11 @@ void forgetAll()
   Settings::setValue(Settings::Server::XdpClipboardRetried);
   Settings::setValue(Settings::Gui::Appearance);
   Settings::setValue(Settings::Gui::NativeWindowFrame);
+  Settings::setValue(Settings::Gui::InputIndicatorEnabled);
+  Settings::setValue(Settings::Gui::InputIndicatorPosition);
+  Settings::setValue(Settings::Gui::InputIndicatorDwellMs);
+  Settings::setValue(Settings::Gui::InputIndicatorOpacityPercent);
+  Settings::setValue(Settings::Gui::InputIndicatorTone);
   Settings::setValue(Settings::Core::CoreMode);
 }
 
@@ -292,6 +298,54 @@ void SettingsPagesTests::effects_theSettingsThatTheCoreReadsNeedARestart()
   for (const auto &key : {Settings::Core::Language, Settings::Log::Level, Settings::Gui::ShowVersionInTitle})
     QVERIFY2(live.contains(key), qPrintable(key));
   QVERIFY(restart.size() + live.size() >= dialogKeys().size());
+}
+
+void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
+{
+#ifndef Q_OS_MACOS
+  QSKIP("The input indicator settings card is macOS-only");
+#else
+  SettingsPages pages;
+  auto *enabled = must<ToggleSwitch>(pages, "cbInputIndicator");
+  auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
+  auto *dwell = must<QSpinBox>(pages, "sbInputIndicatorDwell");
+  auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
+  auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
+  auto *note = must<InlineHint>(pages, "hintInputIndicatorSafety");
+
+  QVERIFY(!enabled->isChecked());
+  QCOMPARE(position->currentData().toString(), QStringLiteral("cursorBottomRight"));
+  QCOMPARE(dwell->value(), 1500);
+  QCOMPARE(opacity->value(), 85);
+  QCOMPARE(tone->currentData().toString(), QStringLiteral("automatic"));
+  QVERIFY(!position->isEnabled());
+  QVERIFY(!dwell->isEnabled());
+  QVERIFY(!opacity->isEnabled());
+  QVERIFY(!tone->isEnabled());
+  QVERIFY(note->text().contains(QStringLiteral("Password")));
+
+  for (const auto &key :
+       {Settings::Gui::InputIndicatorEnabled, Settings::Gui::InputIndicatorPosition,
+        Settings::Gui::InputIndicatorDwellMs, Settings::Gui::InputIndicatorOpacityPercent,
+        Settings::Gui::InputIndicatorTone}) {
+    QCOMPARE(effectOf(key), std::optional<Effect>(Effect::Live));
+  }
+
+  enabled->setChecked(true);
+  QVERIFY(position->isEnabled());
+  QVERIFY(dwell->isEnabled());
+  QVERIFY(opacity->isEnabled());
+  QVERIFY(tone->isEnabled());
+
+  choose(position, QStringLiteral("cursorTopLeft"));
+  dwell->setValue(1800);
+  opacity->setValue(90);
+  choose(tone, QStringLiteral("dark"));
+  QCOMPARE(Settings::value(Settings::Gui::InputIndicatorPosition).toString(), QStringLiteral("cursorTopLeft"));
+  QCOMPARE(Settings::value(Settings::Gui::InputIndicatorDwellMs).toInt(), 1800);
+  QCOMPARE(Settings::value(Settings::Gui::InputIndicatorOpacityPercent).toInt(), 90);
+  QCOMPARE(Settings::value(Settings::Gui::InputIndicatorTone).toString(), QStringLiteral("dark"));
+#endif
 }
 
 void SettingsPagesTests::pages_areInTheOrderOfTheSidebar_withTitlesAndCards()

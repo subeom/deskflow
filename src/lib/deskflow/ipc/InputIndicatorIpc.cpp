@@ -15,6 +15,7 @@ namespace deskflow::input {
 namespace {
 
 std::atomic_bool s_subscribed{false};
+std::atomic_uint64_t s_subscriptionEpoch{0};
 std::atomic_bool s_local{false};
 
 std::optional<uint64_t> parseUnsigned(const QString &value)
@@ -104,12 +105,20 @@ bool isInputIndicatorActivityNewer(const InputIndicatorActivity &activity, uint6
 
 void setInputIndicatorSubscribed(bool subscribed)
 {
-  s_subscribed.store(subscribed, std::memory_order_release);
+  const auto previous = s_subscribed.exchange(subscribed, std::memory_order_acq_rel);
+  if (previous != subscribed) {
+    s_subscriptionEpoch.fetch_add(1, std::memory_order_release);
+  }
 }
 
 bool isInputIndicatorSubscribed()
 {
   return s_subscribed.load(std::memory_order_acquire);
+}
+
+uint64_t inputIndicatorSubscriptionEpoch()
+{
+  return s_subscriptionEpoch.load(std::memory_order_acquire);
 }
 
 void setInputIndicatorLocal(bool local)

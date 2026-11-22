@@ -18,6 +18,7 @@
 
 #if defined(Q_OS_MACOS)
 #include "OSXHelpers.h"
+#include <mach/mach_time.h>
 #endif
 
 #ifdef Q_OS_LINUX
@@ -33,6 +34,30 @@
 #include <QRegularExpression>
 
 namespace deskflow::gui {
+
+namespace {
+
+#if defined(Q_OS_MACOS)
+bool isFreshInputIndicatorActivity(const deskflow::input::InputIndicatorActivity &activity)
+{
+  mach_timebase_info_data_t timebase{};
+  if (mach_timebase_info(&timebase) != KERN_SUCCESS || timebase.numer == 0) {
+    return false;
+  }
+
+  constexpr uint64_t kMaximumAgeNanoseconds = 300ULL * 1000000ULL;
+  const auto maximumAge =
+      kMaximumAgeNanoseconds * static_cast<uint64_t>(timebase.denom) / static_cast<uint64_t>(timebase.numer);
+  return deskflow::input::isInputIndicatorActivityFresh(activity, mach_absolute_time(), maximumAge);
+}
+#else
+bool isFreshInputIndicatorActivity(const deskflow::input::InputIndicatorActivity &)
+{
+  return false;
+}
+#endif
+
+} // namespace
 
 const int kRetryDelay = 1000;
 // how long the quit waits for the service to be reached, and then for the stop of the service core to be written to it
@@ -502,17 +527,20 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
               m_coreIpcClient, &ipc::CoreIpcClient::commandReceived, this, &CoreProcess::onCoreIpcMessageReceived,
               Qt::QueuedConnection
           );
-          connect(m_coreIpcClient, &ipc::CoreIpcClient::connected, this, [] {
+          connect(m_coreIpcClient, &ipc::CoreIpcClient::connected, this, [this] {
             qDebug("connected to core ipc server");
+            sendInputIndicatorSubscription();
           });
-          connect(m_coreIpcClient, &ipc::CoreIpcClient::connectionFailed, this, [] {
+          connect(m_coreIpcClient, &ipc::CoreIpcClient::connectionFailed, this, [this] {
             qWarning("failed to establish core ipc connection");
+            resetInputIndicatorState();
           });
           connect(m_coreIpcClient, &ipc::CoreIpcClient::serverShutdown, this, [this, client = m_coreIpcClient] {
             qDebug("core ipc server shut down cleanly");
             client->deleteLater();
             if (m_coreIpcClient == client)
               m_coreIpcClient = nullptr;
+            resetInputIndicatorState();
           });
 
           m_coreIpcClient->connectToServer();
@@ -538,6 +566,11 @@ void CoreProcess::stop(std::optional<ProcessMode> processModeOption)
   const auto processMode = processModeOption.value_or(currentMode);
 
   qInfo("stopping core process (%s mode)", qPrintable(processModeToString(processMode)));
+
+  if (m_coreIpcClient && m_coreIpcClient->isConnected()) {
+    m_coreIpcClient->sendInputIndicatorSubscription(false);
+  }
+  resetInputIndicatorState();
 
   if (m_coreIpcClient && processMode != ProcessMode::Desktop) {
     m_coreIpcClient->disconnectFromServer();
@@ -725,6 +758,9 @@ void CoreProcess::setProcessState(ProcessState state)
       qPrintable(processStateToString(m_processState)), qPrintable(processStateToString(state))
   );
   m_processState = state;
+  if (state != ProcessState::Started) {
+    resetInputIndicatorState();
+  }
   Q_EMIT processStateChanged(state);
 }
 
@@ -766,6 +802,26 @@ void CoreProcess::onCoreIpcMessageReceived(const QString &command, const QString
     Q_EMIT peerFingerprint(args);
   } else if (command == "missingKeyboardLayouts") {
     Q_EMIT missingKeyboardLayouts(args);
+  } else if (command == QLatin1String(deskflow::input::kInputIndicatorLocalCommand)) {
+    const auto local = deskflow::input::decodeInputIndicatorBoolean(args);
+    if (!local || !m_inputIndicatorEnabled) {
+      Q_EMIT inputIndicatorStateInvalidated();
+      return;
+    }
+    const bool changed = m_inputIndicatorLocal != *local;
+    m_inputIndicatorLocal = *local;
+    if (changed) {
+      Q_EMIT inputIndicatorLocalChanged(*local);
+    }
+  } else if (command == QLatin1String(deskflow::input::kInputIndicatorActivityCommand)) {
+    const auto activity = deskflow::input::decodeInputIndicatorActivity(args);
+    if (!activity || !m_inputIndicatorEnabled || !isFreshInputIndicatorActivity(*activity) ||
+        !deskflow::input::isInputIndicatorActivityNewer(*activity, m_lastInputIndicatorSequence)) {
+      Q_EMIT inputIndicatorActivityInvalidated();
+      return;
+    }
+    m_lastInputIndicatorSequence = activity->sequence;
+    Q_EMIT inputIndicatorActivityReceived(*activity);
   }
 }
 
@@ -832,6 +888,35 @@ void CoreProcess::clearSettings()
 void CoreProcess::retryDaemon()
 {
   m_daemonIpcClient->connectToServer();
+}
+
+void CoreProcess::setInputIndicatorEnabled(bool enabled)
+{
+  if (m_inputIndicatorEnabled == enabled) {
+    return;
+  }
+  m_inputIndicatorEnabled = enabled;
+  sendInputIndicatorSubscription();
+  if (!enabled) {
+    resetInputIndicatorState();
+  }
+}
+
+void CoreProcess::sendInputIndicatorSubscription()
+{
+  if (m_coreIpcClient && m_coreIpcClient->isConnected()) {
+    m_coreIpcClient->sendInputIndicatorSubscription(m_inputIndicatorEnabled);
+  }
+}
+
+void CoreProcess::resetInputIndicatorState()
+{
+  m_lastInputIndicatorSequence = 0;
+  if (m_inputIndicatorLocal) {
+    m_inputIndicatorLocal = false;
+    Q_EMIT inputIndicatorLocalChanged(false);
+  }
+  Q_EMIT inputIndicatorStateInvalidated();
 }
 
 } // namespace deskflow::gui

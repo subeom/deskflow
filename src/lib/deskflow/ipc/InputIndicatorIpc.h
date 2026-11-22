@@ -48,6 +48,7 @@ bool isInputIndicatorActivityNewer(const InputIndicatorActivity &activity, uint6
 
 void setInputIndicatorSubscribed(bool subscribed);
 bool isInputIndicatorSubscribed();
+uint64_t inputIndicatorSubscriptionEpoch();
 void setInputIndicatorLocal(bool local);
 bool isInputIndicatorLocal();
 
