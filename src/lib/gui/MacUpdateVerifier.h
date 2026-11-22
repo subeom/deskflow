@@ -22,6 +22,8 @@ struct UpdateCommandResult
   int exitCode = -1;
   QByteArray standardOutput;
   QByteArray standardError;
+  bool standardOutputTruncated = false;
+  bool standardErrorTruncated = false;
 };
 
 class IUpdateCommandRunner

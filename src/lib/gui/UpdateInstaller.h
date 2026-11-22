@@ -8,6 +8,7 @@
 
 #include "gui/UpdateCache.h"
 
+#include <QList>
 #include <QString>
 #include <QStringList>
 
@@ -59,6 +60,25 @@ struct MacUpdateAclResult
 };
 
 using MacUpdateAclReader = std::function<MacUpdateAclResult(const QString &)>;
+
+struct MacUpdatePackageArtifact
+{
+  QString path;
+  QString canonicalTarget;
+  bool symbolicLink = false;
+  bool broken = false;
+  bool receiptProof = false;
+  bool ambiguous = false;
+};
+
+struct MacUpdatePackageEnumeration
+{
+  QList<MacUpdatePackageArtifact> artifacts;
+  bool complete = true;
+};
+
+using MacUpdatePackageEnumerator =
+    std::function<MacUpdatePackageEnumeration(const QString &)>;
 
 struct MacUpdateInstallEvidence
 {
@@ -164,11 +184,15 @@ UpdateInstallResult claimUpdateReceipt(
 );
 MacUpdateInstallEvidence evaluateMacUpdateInstall(
     const QString &executablePath, bool packageManaged, bool serviceMode,
-    MacUpdateAclReader aclReader = {}
+    MacUpdateAclReader aclReader = {},
+    MacUpdatePackageEnumerator packageEnumerator = {}
 );
 bool isMacUpdateAclTrustProven(const MacUpdateAclResult &result);
 bool isMacUpdateInstallEligible(const MacUpdateInstallEvidence &evidence);
 bool isMacUpdatePackageManagedPath(const QString &canonicalPath);
-bool isMacUpdatePackageManaged(const QString &executablePath);
+bool isMacUpdatePackageManaged(
+    const QString &executablePath,
+    MacUpdatePackageEnumerator packageEnumerator = {}
+);
 
 } // namespace deskflow::gui

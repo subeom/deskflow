@@ -976,6 +976,8 @@ void UpdateInstallerTests::pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermiss
 void UpdateInstallerTests::packagePolicy_usesCanonicalExecutablePathOnly()
 {
   using deskflow::gui::isMacUpdatePackageManagedPath;
+  using deskflow::gui::MacUpdatePackageArtifact;
+  using deskflow::gui::MacUpdatePackageEnumeration;
 
   QVERIFY(!isMacUpdatePackageManagedPath(
       QStringLiteral("/Applications/Deskflow.app/Contents/MacOS/Deskflow")
@@ -995,6 +997,11 @@ void UpdateInstallerTests::packagePolicy_usesCanonicalExecutablePathOnly()
           "/Applications/Caskroom/deskflow-not-owned/Deskflow.app/Contents/MacOS/Deskflow"
       )
   ));
+  QVERIFY(!isMacUpdatePackageManagedPath(
+      QStringLiteral(
+          "/Applications/Caskroom/deskflow/2.0.6/Deskflow.app/Contents/MacOS/Deskflow"
+      )
+  ));
 
   QTemporaryDir temporary;
   QVERIFY(temporary.isValid());
@@ -1005,21 +1012,131 @@ void UpdateInstallerTests::packagePolicy_usesCanonicalExecutablePathOnly()
   ));
   QVERIFY(!deskflow::gui::isMacUpdatePackageManaged(direct.executable));
 
-  const auto managedBundle =
+  const auto directExecutable =
+      QDir(direct.bundle).filePath(QStringLiteral("Contents/MacOS/Deskflow"));
+  const auto reverseCaskArtifact =
       QDir(temporary.path()).filePath(
-          QStringLiteral("managed/Caskroom/deskflow/2.0.6/Deskflow.app")
+          QStringLiteral("opt/homebrew/Caskroom/deskflow/2.0.6/Deskflow.app")
       );
-  const auto managedExecutable =
-      QDir(managedBundle).filePath(QStringLiteral("Contents/MacOS/Deskflow"));
-  QVERIFY(QDir().mkpath(QFileInfo(managedExecutable).absolutePath()));
-  QVERIFY(writeFile(managedExecutable, QByteArrayLiteral("managed gui")));
-  const auto linkedBundle =
-      QDir(temporary.path()).filePath(QStringLiteral("Applications/Deskflow.app"));
-  QVERIFY(QDir().mkpath(QFileInfo(linkedBundle).absolutePath()));
-  QVERIFY(QFile::link(managedBundle, linkedBundle));
+  QVERIFY(QDir().mkpath(QFileInfo(reverseCaskArtifact).absolutePath()));
+  QVERIFY(QFile::link(direct.bundle, reverseCaskArtifact));
+
+  QString observedRunningBundle;
+  const auto enumerate = [&reverseCaskArtifact, &observedRunningBundle](
+                             const QString &runningBundle
+                         ) {
+    observedRunningBundle = runningBundle;
+    return MacUpdatePackageEnumeration{
+        QList<MacUpdatePackageArtifact>{
+            {QStringLiteral(
+                 "/opt/homebrew/Caskroom/deskflow/2.0.6/Deskflow.app"
+             ),
+             QFileInfo(reverseCaskArtifact).canonicalFilePath(),
+             true,
+             false,
+             false,
+             false}
+        },
+        true
+    };
+  };
   QVERIFY(deskflow::gui::isMacUpdatePackageManaged(
-      QDir(linkedBundle).filePath(QStringLiteral("Contents/MacOS/Deskflow"))
+      directExecutable, enumerate
   ));
+  QCOMPARE(
+      observedRunningBundle,
+      QFileInfo(direct.bundle).canonicalFilePath()
+  );
+
+  QVERIFY(!deskflow::gui::isMacUpdatePackageManaged(
+      directExecutable,
+      [](const QString &) {
+        return MacUpdatePackageEnumeration{
+            QList<MacUpdatePackageArtifact>{
+                {QStringLiteral("/opt/homebrew/Caskroom/deskflow/2.0.6/Deskflow.app"),
+                 QStringLiteral("/Applications/Other.app"),
+                 true,
+                 false,
+                 false,
+                 false}
+            },
+            true
+        };
+      }
+  ));
+  QVERIFY(deskflow::gui::isMacUpdatePackageManaged(
+      directExecutable,
+      [](const QString &) {
+        return MacUpdatePackageEnumeration{
+            QList<MacUpdatePackageArtifact>{
+                {QStringLiteral("/opt/homebrew/Caskroom/deskflow/2.0.6/Deskflow.app"),
+                 QStringLiteral("/Applications/Other.app"),
+                 true,
+                 false,
+                 false,
+                 true}
+            },
+            true
+        };
+      }
+  ));
+  QVERIFY(deskflow::gui::isMacUpdatePackageManaged(
+      directExecutable,
+      [](const QString &) {
+        return MacUpdatePackageEnumeration{
+            QList<MacUpdatePackageArtifact>{
+                {QStringLiteral("/opt/homebrew/Caskroom/deskflow/2.0.6/Deskflow.app"),
+                 {},
+                 true,
+                 true,
+                 false,
+                 false}
+            },
+            true
+        };
+      }
+  ));
+  QVERIFY(deskflow::gui::isMacUpdatePackageManaged(
+      directExecutable,
+      [](const QString &) {
+        return MacUpdatePackageEnumeration{
+            {},
+            false
+        };
+      }
+  ));
+  QVERIFY(deskflow::gui::isMacUpdatePackageManaged(
+      directExecutable,
+      [&direct](const QString &) {
+        return MacUpdatePackageEnumeration{
+            QList<MacUpdatePackageArtifact>{
+                {QStringLiteral(
+                     "/opt/homebrew/Caskroom/deskflow/.metadata/INSTALL_RECEIPT.json"
+                 ),
+                 QFileInfo(direct.bundle).canonicalFilePath(),
+                 false,
+                 false,
+                 true,
+                 false}
+            },
+            true
+        };
+      }
+  ));
+
+  const auto reverseEvidence = deskflow::gui::evaluateMacUpdateInstall(
+      directExecutable,
+      false,
+      false,
+      [](const QString &) {
+        return deskflow::gui::MacUpdateAclResult{
+            true, 0, false, true, 0, false
+        };
+      },
+      enumerate
+  );
+  QVERIFY(reverseEvidence.packageManaged);
+  QVERIFY(!deskflow::gui::isMacUpdateInstallEligible(reverseEvidence));
 }
 
 void UpdateInstallerTests::aclPolicy_requiresSuccessfulEmptyAclRead()

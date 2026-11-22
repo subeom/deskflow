@@ -125,8 +125,8 @@ UpdateCommandResult createSyntheticDmg(
 UpdateCommandResult addSyntheticSla(const QString &dmg, QTemporaryDir &temporary)
 {
   const auto xml = QDir(temporary.path()).filePath(QStringLiteral("sla.xml"));
-  if (!writeFile(
-      xml,
+  const auto filler = QByteArray(72 * 1024, 'A');
+  const auto resourceXml =
       QByteArrayLiteral(
           "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
           "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
@@ -142,10 +142,15 @@ UpdateCommandResult addSyntheticSla(const QString &dmg, QTemporaryDir &temporary
           "<key>Data</key><data>AAkHRW5nbGlzaAVBZ3JlZQhEaXNhZ3JlZQVQcmludAdTYXZlLi4u</data>"
           "<key>ID</key><string>5002</string><key>Name</key><string>English</string></dict></array>\n"
           "<key>TEXT</key><array><dict><key>Attributes</key><string>0x0000</string>"
-          "<key>Data</key><data>U3ludGhldGljIHRlc3QgbGljZW5zZQ0K</data>"
-          "<key>ID</key><string>5002</string><key>Name</key><string>English</string></dict></array>\n"
+          "<key>Data</key><data>"
+      ) +
+      filler +
+      QByteArrayLiteral(
+          "</data><key>ID</key><string>5002</string><key>Name</key><string>English</string></dict></array>\n"
           "</dict></plist>\n"
-      )
+      );
+  if (!writeFile(
+      xml, resourceXml
   )) {
     return {false, false, -1, {}, QByteArrayLiteral("cannot write synthetic SLA resources")};
   }
@@ -196,6 +201,13 @@ void MacUpdateIntegrationTests::verifier_rejectsSyntheticDmgWithSlaResourceBefor
   QVERIFY2(created.started && !created.timedOut && created.exitCode == 0, created.standardError.constData());
   const auto embedded = addSyntheticSla(dmg, temporary);
   QVERIFY2(embedded.started && !embedded.timedOut && embedded.exitCode == 0, embedded.standardError.constData());
+  const auto inspected = runReal(
+      QStringLiteral("/usr/bin/hdiutil"),
+      {QStringLiteral("udifderez"), QStringLiteral("-xml"), dmg},
+      120'000
+  );
+  QVERIFY2(inspected.started && !inspected.timedOut && inspected.exitCode == 0, inspected.standardError.constData());
+  QVERIFY(inspected.standardOutput.size() > 64 * 1024);
 
   auto runner = std::make_unique<SyntheticDmgRunner>();
   auto *rawRunner = runner.get();

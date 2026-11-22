@@ -11,6 +11,7 @@
 #include <QFileInfo>
 #include <QProcess>
 #include <QTemporaryDir>
+#include <QXmlStreamReader>
 
 namespace deskflow::gui {
 
@@ -20,6 +21,7 @@ constexpr auto kBundleIdentifier = "org.deskflow.deskflow";
 constexpr auto kLeafHash = "39b1c21df0ba75cdde058fcbb09a1ad38aef8055";
 constexpr int kCommandTimeoutMs = 120'000;
 constexpr qsizetype kMaximumCommandOutput = 64 * 1024;
+constexpr qsizetype kMaximumDmgResourceBytes = 8 * 1024 * 1024;
 constexpr qsizetype kMaximumUserError = 240;
 
 class QProcessUpdateCommandRunner final : public IUpdateCommandRunner
@@ -39,12 +41,16 @@ public:
       process.waitForFinished();
       return {true, true, -1, {}, QByteArrayLiteral("command timed out")};
     }
+    const auto standardOutput = process.readAllStandardOutput();
+    const auto standardError = process.readAllStandardError();
     return {
         true,
         false,
         process.exitCode(),
-        process.readAllStandardOutput().left(kMaximumCommandOutput),
-        process.readAllStandardError().left(kMaximumCommandOutput)
+        standardOutput.left(kMaximumCommandOutput),
+        standardError.left(kMaximumCommandOutput),
+        standardOutput.size() > kMaximumCommandOutput,
+        standardError.size() > kMaximumCommandOutput
     };
   }
 };
@@ -73,9 +79,40 @@ bool isInside(const QString &path, const QString &root)
          canonicalPath.startsWith(canonicalRoot + QLatin1Char('/'));
 }
 
-bool hasLicenseAgreementResource(const QByteArray &resourceXml)
+enum class DmgResourceInspection
 {
-  return resourceXml.contains(QByteArrayLiteral("<key>LPic</key>"));
+  Safe,
+  License,
+  Invalid
+};
+
+DmgResourceInspection inspectDmgResources(const QByteArray &resourceXml)
+{
+  if (resourceXml.isEmpty() || resourceXml.size() > kMaximumDmgResourceBytes ||
+      resourceXml.contains('\0')) {
+    return DmgResourceInspection::Invalid;
+  }
+
+  QXmlStreamReader reader(resourceXml);
+  bool sawElement = false;
+  bool hasLicenseAgreement = false;
+  while (!reader.atEnd()) {
+    const auto token = reader.readNext();
+    if (token == QXmlStreamReader::StartElement) {
+      sawElement = true;
+      if (reader.name() == QStringLiteral("key") &&
+          reader.readElementText(QXmlStreamReader::ErrorOnUnexpectedElement) ==
+              QStringLiteral("LPic")) {
+        hasLicenseAgreement = true;
+      }
+    }
+  }
+  if (reader.hasError() || !sawElement) {
+    return DmgResourceInspection::Invalid;
+  }
+  return hasLicenseAgreement
+             ? DmgResourceInspection::License
+             : DmgResourceInspection::Safe;
 }
 
 QStringList evidenceLines(const QByteArray &data)
@@ -195,7 +232,20 @@ UpdateVerifierResult MacUpdateVerifier::verify(const StagedUpdate &staged)
         QStringLiteral("inspecting update disk image resources"), resources
     );
   }
-  if (hasLicenseAgreementResource(resources.standardOutput)) {
+  if (resources.standardOutputTruncated || resources.standardErrorTruncated) {
+    return {
+        false,
+        QStringLiteral("update disk image resource inspection was truncated")
+    };
+  }
+  const auto inspection = inspectDmgResources(resources.standardOutput);
+  if (inspection == DmgResourceInspection::Invalid) {
+    return {
+        false,
+        QStringLiteral("update disk image resource inspection output is invalid")
+    };
+  }
+  if (inspection == DmgResourceInspection::License) {
     return {false, QStringLiteral("update disk image contains a software license agreement resource")};
   }
 

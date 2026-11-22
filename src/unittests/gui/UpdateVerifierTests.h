@@ -20,5 +20,6 @@ private Q_SLOTS:
   void verifierApplication_acceptsOnlyOnePlutilTerminator();
   void verifierApplication_checksVersionBundleAndNestedCore();
   void verifierApplication_boundsCommandFailures();
+  void verifier_failsClosedForIncompleteOrMalformedDmgResources();
   void verifier_rejectsLicenseResourceBeforeMount();
 };

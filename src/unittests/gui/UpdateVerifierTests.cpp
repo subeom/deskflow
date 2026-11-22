@@ -46,7 +46,15 @@ public:
     commands.append({program, arguments});
     if (program.endsWith(QStringLiteral("/hdiutil")) &&
         !arguments.isEmpty() && arguments.first() == QStringLiteral("udifderez")) {
-      return {true, false, 0, udifResourceOutput, {}};
+      return {
+          true,
+          false,
+          0,
+          udifResourceOutput,
+          {},
+          udifOutputTruncated,
+          udifErrorTruncated
+      };
     }
     if (program.endsWith(QStringLiteral("/plutil"))) {
       const auto &field = arguments.at(1);
@@ -71,7 +79,13 @@ public:
   QByteArray evidenceOutput = evidence();
   QByteArray identifierOutput = QByteArrayLiteral("org.deskflow.deskflow");
   QByteArray versionOutput = QByteArrayLiteral("2.0.6");
-  QByteArray udifResourceOutput;
+  QByteArray udifResourceOutput =
+      QByteArrayLiteral(
+          "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict>"
+          "<key>Safe</key><string>value</string></dict></plist>"
+      );
+  bool udifOutputTruncated = false;
+  bool udifErrorTruncated = false;
   bool fail = false;
 };
 
@@ -265,6 +279,72 @@ void UpdateVerifierTests::verifierApplication_boundsCommandFailures()
   const auto result = verifier.verifyApplication(app, QStringLiteral("2.0.6"));
   QVERIFY(!result.ok);
   QVERIFY(result.error.size() <= 240);
+}
+
+void UpdateVerifierTests::verifier_failsClosedForIncompleteOrMalformedDmgResources()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  const auto dmg = QDir(temporary.path()).filePath(QStringLiteral("fixture.dmg"));
+  QVERIFY(writeFile(dmg, QByteArrayLiteral("dmg")));
+  const deskflow::gui::StagedUpdate staged{
+      QStringLiteral("2.0.6"),
+      QStringLiteral("fixture.dmg"),
+      dmg,
+      QDir(temporary.path()).filePath(QStringLiteral("manifest.json"))
+  };
+
+  const QList<QPair<QByteArray, bool>> rejected{
+      {QByteArray(8 * 1024 * 1024 + 1, 'x'), false},
+      {QByteArray(64 * 1024, 'x'), true},
+      {QByteArray(65 * 1024, 'x'), false},
+      {QByteArrayLiteral("<plist><dict>"), false},
+      {QByteArrayLiteral(
+           "<?xml version=\"1.0\"?><plist><dict>"
+           "<key>Safe</key><string>value</string><null/></dict></plist>"
+       ) + QByteArray(1, '\0'),
+       false},
+      {QByteArrayLiteral(
+           "<?xml version=\"1.0\"?><plist><dict>"
+           "<key>Safe</key><string>value</string></dict></plist>"
+       ),
+       true}
+  };
+  for (const auto &[resourceOutput, truncated] : rejected) {
+    auto runner = std::make_unique<EvidenceRunner>();
+    auto *rawRunner = runner.get();
+    runner->udifResourceOutput = resourceOutput;
+    runner->udifOutputTruncated = truncated;
+    MacUpdateVerifier verifier(std::move(runner));
+    const auto result = verifier.verify(staged);
+    QVERIFY(!result.ok);
+    QVERIFY(std::ranges::none_of(rawRunner->commands, [](const auto &command) {
+      return command.first.endsWith(QStringLiteral("/hdiutil")) &&
+             command.second.value(0) == QStringLiteral("attach");
+    }));
+  }
+
+  auto truncatedErrorRunner = std::make_unique<EvidenceRunner>();
+  auto *rawTruncatedErrorRunner = truncatedErrorRunner.get();
+  truncatedErrorRunner->udifErrorTruncated = true;
+  MacUpdateVerifier truncatedErrorVerifier(std::move(truncatedErrorRunner));
+  QVERIFY(!truncatedErrorVerifier.verify(staged).ok);
+  QVERIFY(std::ranges::none_of(
+             rawTruncatedErrorRunner->commands,
+             [](const auto &command) {
+               return command.first.endsWith(QStringLiteral("/hdiutil")) &&
+                      command.second.value(0) == QStringLiteral("attach");
+             }
+  ));
+
+  auto safeRunner = std::make_unique<EvidenceRunner>();
+  auto *rawSafeRunner = safeRunner.get();
+  MacUpdateVerifier safeVerifier(std::move(safeRunner));
+  QVERIFY(!safeVerifier.verify(staged).ok);
+  QVERIFY(std::ranges::any_of(rawSafeRunner->commands, [](const auto &command) {
+    return command.first.endsWith(QStringLiteral("/hdiutil")) &&
+           command.second.value(0) == QStringLiteral("attach");
+  }));
 }
 
 void UpdateVerifierTests::verifier_rejectsLicenseResourceBeforeMount()

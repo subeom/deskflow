@@ -8,7 +8,12 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QStandardPaths>
 #include <QSysInfo>
 
@@ -74,6 +79,167 @@ MacUpdateAclResult readMacUpdateAcl(const QString &path)
   return {true, result, hasEntries, released, parseError != 0 ? parseError : releaseError};
 }
 
+std::optional<QJsonObject> readPackageJson(
+    const QString &path, bool &present, bool &ambiguous
+)
+{
+  const QFileInfo info(path);
+  present = info.exists() || info.isSymLink();
+  if (!present) {
+    return std::nullopt;
+  }
+  if (info.isSymLink() || !info.isFile() || info.size() > 1024 * 1024) {
+    ambiguous = true;
+    return std::nullopt;
+  }
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly)) {
+    ambiguous = true;
+    return std::nullopt;
+  }
+  QJsonParseError error;
+  const auto document = QJsonDocument::fromJson(file.readAll(), &error);
+  if (error.error != QJsonParseError::NoError || !document.isObject()) {
+    ambiguous = true;
+    return std::nullopt;
+  }
+  return document.object();
+}
+
+void appendPackageArtifact(
+    QList<MacUpdatePackageArtifact> &artifacts, const QString &path
+)
+{
+  const QFileInfo info(path);
+  if (!info.exists() && !info.isSymLink()) {
+    return;
+  }
+  MacUpdatePackageArtifact artifact;
+  artifact.path = info.absoluteFilePath();
+  artifact.symbolicLink = info.isSymLink();
+  artifact.canonicalTarget = info.canonicalFilePath();
+  artifact.broken = artifact.symbolicLink &&
+                    (artifact.canonicalTarget.isEmpty() || !info.exists());
+  artifact.ambiguous =
+      !artifact.symbolicLink &&
+      (!info.isDir() || artifact.canonicalTarget.isEmpty());
+  artifacts.append(std::move(artifact));
+}
+
+void appendPackageReceipt(
+    MacUpdatePackageEnumeration &enumeration, const QString &packageRoot
+)
+{
+  const auto metadataRoot = QDir(packageRoot).filePath(QStringLiteral(".metadata"));
+  const auto receiptPath = QDir(metadataRoot).filePath(QStringLiteral("INSTALL_RECEIPT.json"));
+  const auto configPath = QDir(metadataRoot).filePath(QStringLiteral("config.json"));
+  bool receiptPresent = false;
+  bool configPresent = false;
+  bool ambiguous = false;
+  const auto receipt = readPackageJson(receiptPath, receiptPresent, ambiguous);
+  const auto config = readPackageJson(configPath, configPresent, ambiguous);
+  if (!receiptPresent && !configPresent) {
+    return;
+  }
+  if (ambiguous || !receipt || !config || !receiptPresent || !configPresent) {
+    enumeration.artifacts.append({
+        receiptPresent ? receiptPath : configPath,
+        {},
+        false,
+        false,
+        true,
+        true
+    });
+    return;
+  }
+
+  const auto homebrewVersion =
+      receipt->value(QStringLiteral("homebrew_version")).toString();
+  const auto tap =
+      receipt->value(QStringLiteral("source")).toObject()
+          .value(QStringLiteral("tap")).toString();
+  bool provesDeskflowApp = false;
+  for (const auto uninstall :
+       receipt->value(QStringLiteral("uninstall_artifacts")).toArray()) {
+    const auto apps = uninstall.toObject().value(QStringLiteral("app")).toArray();
+    for (const auto app : apps) {
+      if (app.toString() == QStringLiteral("Deskflow.app")) {
+        provesDeskflowApp = true;
+      }
+    }
+  }
+  const auto appDirectory =
+      config->value(QStringLiteral("default")).toObject()
+          .value(QStringLiteral("appdir")).toString();
+  if (homebrewVersion.isEmpty() || tap.isEmpty() || !provesDeskflowApp ||
+      appDirectory.isEmpty() || !QFileInfo(appDirectory).isAbsolute()) {
+    enumeration.artifacts.append({receiptPath, {}, false, false, true, true});
+    return;
+  }
+
+  const auto installedBundle =
+      QDir(appDirectory).filePath(QStringLiteral("Deskflow.app"));
+  const auto canonicalBundle = QFileInfo(installedBundle).canonicalFilePath();
+  if (canonicalBundle.isEmpty()) {
+    enumeration.artifacts.append({receiptPath, {}, false, false, true, true});
+    return;
+  }
+  enumeration.artifacts.append({
+      receiptPath,
+      canonicalBundle,
+      false,
+      false,
+      true,
+      false
+  });
+}
+
+MacUpdatePackageEnumeration enumerateMacUpdatePackageArtifacts(
+    const QString &
+)
+{
+  MacUpdatePackageEnumeration enumeration;
+  for (const auto &prefix :
+       {QStringLiteral("/opt/homebrew"), QStringLiteral("/usr/local")}) {
+    for (const auto &packageRoot :
+         {QDir(prefix).filePath(QStringLiteral("Caskroom/deskflow")),
+          QDir(prefix).filePath(QStringLiteral("Cellar/deskflow"))}) {
+      const QFileInfo rootInfo(packageRoot);
+      if (!rootInfo.exists() && !rootInfo.isSymLink()) {
+        continue;
+      }
+      if (rootInfo.isSymLink() || !rootInfo.isDir()) {
+        enumeration.artifacts.append({
+            packageRoot, {}, rootInfo.isSymLink(), true, false, true
+        });
+        continue;
+      }
+      QDir packageDirectory(packageRoot);
+      if (!packageDirectory.isReadable()) {
+        enumeration.complete = false;
+        continue;
+      }
+      const auto versions = packageDirectory.entryInfoList(
+          QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name
+      );
+      if (versions.size() > 256) {
+        enumeration.complete = false;
+      }
+      for (const auto &version : versions) {
+        appendPackageArtifact(
+            enumeration.artifacts,
+            QDir(version.absoluteFilePath())
+                .filePath(QStringLiteral("Deskflow.app"))
+        );
+      }
+      if (packageRoot.contains(QStringLiteral("/Caskroom/"))) {
+        appendPackageReceipt(enumeration, packageRoot);
+      }
+    }
+  }
+  return enumeration;
+}
+
 #endif
 
 } // namespace
@@ -81,15 +247,65 @@ MacUpdateAclResult readMacUpdateAcl(const QString &path)
 bool isMacUpdatePackageManagedPath(const QString &canonicalPath)
 {
   const auto cleaned = QDir::cleanPath(canonicalPath);
-  return cleaned.contains(QStringLiteral("/Caskroom/deskflow/")) ||
-         cleaned.contains(QStringLiteral("/Cellar/deskflow/"));
+  for (const auto &prefix :
+       {QStringLiteral("/opt/homebrew"), QStringLiteral("/usr/local")}) {
+    for (const auto &package :
+         {QStringLiteral("Caskroom/deskflow"), QStringLiteral("Cellar/deskflow")}) {
+      const auto root = QDir(prefix).filePath(package);
+      if (cleaned.startsWith(root + QLatin1Char('/'))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
-bool isMacUpdatePackageManaged(const QString &executablePath)
+bool isMacUpdatePackageManaged(
+    const QString &executablePath,
+    MacUpdatePackageEnumerator packageEnumerator
+)
 {
-  return isMacUpdatePackageManagedPath(
-      QFileInfo(executablePath).canonicalFilePath()
-  );
+#if !defined(Q_OS_MACOS)
+  Q_UNUSED(executablePath)
+  Q_UNUSED(packageEnumerator)
+  return false;
+#else
+  const auto bundlePath = deskflowBundlePath(executablePath);
+  if (!bundlePath) {
+    return false;
+  }
+  const auto lexicalBundle = QDir::cleanPath(*bundlePath);
+  const auto canonicalBundle = QFileInfo(*bundlePath).canonicalFilePath();
+  if (isMacUpdatePackageManagedPath(lexicalBundle) ||
+      isMacUpdatePackageManagedPath(canonicalBundle)) {
+    return true;
+  }
+  if (canonicalBundle.isEmpty()) {
+    return true;
+  }
+
+  const auto enumeration =
+      packageEnumerator ? packageEnumerator(canonicalBundle)
+                        : enumerateMacUpdatePackageArtifacts(canonicalBundle);
+  if (!enumeration.complete) {
+    return true;
+  }
+  bool ambiguous = false;
+  for (const auto &artifact : enumeration.artifacts) {
+    if (!isMacUpdatePackageManagedPath(artifact.path)) {
+      continue;
+    }
+    if (artifact.broken || artifact.ambiguous) {
+      ambiguous = true;
+      continue;
+    }
+    if ((artifact.symbolicLink || artifact.receiptProof) &&
+        QDir::cleanPath(artifact.canonicalTarget) == canonicalBundle) {
+      return true;
+    }
+  }
+  return ambiguous;
+#endif
 }
 
 bool isMacUpdateAclTrustProven(const MacUpdateAclResult &result)
@@ -107,7 +323,8 @@ bool isMacUpdateAclTrustProven(const MacUpdateAclResult &result)
 
 MacUpdateInstallEvidence evaluateMacUpdateInstall(
     const QString &executablePath, bool packageManaged, bool serviceMode,
-    MacUpdateAclReader aclReader
+    MacUpdateAclReader aclReader,
+    MacUpdatePackageEnumerator packageEnumerator
 )
 {
 #if !defined(Q_OS_MACOS)
@@ -136,8 +353,7 @@ MacUpdateInstallEvidence evaluateMacUpdateInstall(
   evidence.bundlePath = bundle.absoluteFilePath();
   evidence.packageManaged =
       packageManaged || bundle.isSymLink() ||
-      isMacUpdatePackageManagedPath(bundle.canonicalFilePath()) ||
-      isMacUpdatePackageManaged(executablePath) ||
+      isMacUpdatePackageManaged(executablePath, packageEnumerator) ||
       bundle.absoluteFilePath().startsWith(QStringLiteral("/opt/local/"));
   evidence.directApp = bundle.exists() && !bundle.isSymLink() && bundle.isDir();
   evidence.canonicalPath =
