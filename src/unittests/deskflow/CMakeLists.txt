@@ -6,6 +6,14 @@ if(WIN32)
 endif()
 
 create_test(
+  NAME InputIndicatorIpcTests
+  DEPENDS app
+  LIBS arch base ${extra_libs}
+  SOURCE InputIndicatorIpcTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+create_test(
   NAME CrossPlatformInputPolicyTests
   DEPENDS app
   LIBS arch base ${extra_libs}
