@@ -1,7 +1,7 @@
 # macOS 한/A 입력 상태와 로컬 교정 설계
 
 - **상태:** Track A 구현 완료. Track B 설계만 확정.
-- **구현 기준:** `fork/feat/auto-updater` `ab2416bb6b1471cbb0fd7c64e6682aee3dc5dc5b`
+- **구현 기준:** `fork/master` `7f4bebb9613c70abe55ff4fecdb311bbe7a5e054` (`v2.0.6`)
 - **구현 HEAD:** `5ce8bd895971bd1bce9b1d38e03acb1debd1193c`
 - **구현 커밋:** `c023adcf8`, `7a5235929`, `8336e99a6`, `649695ad2`, `deb3745dd`, `5ce8bd895`
 - **브랜치:** `subeomlee-microsoft-korean-input-cursor-indicator`
