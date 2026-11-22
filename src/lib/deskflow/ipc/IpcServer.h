@@ -26,6 +26,7 @@ public:
 
   void listen();
   void broadcastCommand(const QString &command, const QString &args = "");
+  QString fullServerName() const;
 
 Q_SIGNALS:
   void logLevelChanged(const QString &logLevel);

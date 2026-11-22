@@ -23,6 +23,7 @@ class CoreIpcServerSecurityTests : public QObject
 
 private Q_SLOTS:
   void initTestCase();
+  void cleanupTestCase();
   void cleanup();
 
   void rejectsMissingRegistrationAndWrongCapability();
@@ -39,5 +40,6 @@ private:
 
   deskflow::core::ipc::CoreIpcServer *m_server = nullptr;
   QString m_capability;
+  QString m_socketName;
   Log m_log;
 };

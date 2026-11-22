@@ -10,6 +10,7 @@
 
 #include <QObject>
 #include <QHash>
+#include <QString>
 #include <QSet>
 
 #include <chrono>
@@ -25,8 +26,10 @@ class CoreIpcServer : public IpcServer
 
 public:
   explicit CoreIpcServer(
-      QObject *parent, std::chrono::milliseconds indicatorSubscriptionTimeout = std::chrono::seconds{60}
+      QObject *parent, std::chrono::milliseconds indicatorSubscriptionTimeout = std::chrono::seconds{60},
+      const QString &serverName = QString()
   );
+  ~CoreIpcServer() override;
 
   static CoreIpcServer &instance();
   void broadcastInputIndicatorCommand(const QString &command, const QString &args = "");

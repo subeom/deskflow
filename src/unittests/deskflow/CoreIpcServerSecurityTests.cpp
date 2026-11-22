@@ -5,12 +5,12 @@
 
 #include "CoreIpcServerSecurityTests.h"
 
-#include "common/Constants.h"
 #include "common/VersionInfo.h"
 #include "deskflow/ipc/CoreIpcServer.h"
 #include "deskflow/ipc/InputIndicatorIpc.h"
 
 #include <QCoreApplication>
+#include <QLocalServer>
 #include <QLocalSocket>
 #include <QTest>
 
@@ -21,13 +21,26 @@ using namespace deskflow::input;
 void CoreIpcServerSecurityTests::initTestCase()
 {
   m_capability = QString(64, QLatin1Char('a'));
+  m_socketName = QStringLiteral("/tmp/deskflow-core-security-%1").arg(QCoreApplication::applicationPid());
   qputenv(kInputIndicatorCapabilityEnvironment, m_capability.toLatin1());
   qputenv(
       kInputIndicatorGuiPidEnvironment,
       QByteArray::number(static_cast<qint64>(QCoreApplication::applicationPid()))
   );
-  m_server = new deskflow::core::ipc::CoreIpcServer(this, std::chrono::milliseconds{200});
+  m_server =
+      new deskflow::core::ipc::CoreIpcServer(this, std::chrono::milliseconds{200}, m_socketName);
   m_server->listen();
+  QVERIFY(!m_server->fullServerName().isEmpty());
+  QCOMPARE(m_server->fullServerName(), m_socketName);
+  QVERIFY(m_socketName != QStringLiteral("deskflow-core"));
+  QVERIFY(m_socketName != QStringLiteral("deskflow-gui"));
+}
+
+void CoreIpcServerSecurityTests::cleanupTestCase()
+{
+  delete m_server;
+  m_server = nullptr;
+  QLocalServer::removeServer(m_socketName);
 }
 
 void CoreIpcServerSecurityTests::cleanup()
@@ -39,17 +52,21 @@ void CoreIpcServerSecurityTests::cleanup()
 std::unique_ptr<QLocalSocket> CoreIpcServerSecurityTests::connectClient(bool registered)
 {
   auto client = std::make_unique<QLocalSocket>();
-  client->connectToServer(kCoreIpcName);
+  client->connectToServer(m_socketName);
   if (!client->waitForConnected(1000)) {
     QTest::qFail("core ipc client did not connect", __FILE__, __LINE__);
-    return {};
+    return client;
+  }
+  if (client->fullServerName() != m_server->fullServerName()) {
+    QTest::qFail("client and server did not use the same isolated socket path", __FILE__, __LINE__);
+    return client;
   }
   if (registered) {
     const auto hello = QStringLiteral("hello=%1+%2\n").arg(kVersion, kVersionGitSha).toLatin1();
     const auto response = send(client, hello);
     if (!response.startsWith("hello=")) {
       QTest::qFail("core ipc handshake did not succeed", __FILE__, __LINE__);
-      return {};
+      return client;
     }
   }
   return client;
