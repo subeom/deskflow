@@ -8,7 +8,10 @@
 
 #include <QStringList>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
+#include <cstring>
 
 namespace deskflow::input {
 
@@ -32,6 +35,24 @@ std::optional<uint64_t> parseUnsigned(const QString &value)
   bool ok = false;
   const auto number = value.toULongLong(&ok);
   return ok ? std::optional(number) : std::nullopt;
+}
+
+} // namespace
+
+namespace {
+
+bool secureStringEquals(const QString &left, const QString &right)
+{
+  const auto leftBytes = left.toLatin1();
+  const auto rightBytes = right.toLatin1();
+  volatile unsigned difference = static_cast<unsigned>(leftBytes.size() ^ rightBytes.size());
+  const auto length = std::max(leftBytes.size(), rightBytes.size());
+  for (qsizetype index = 0; index < length; ++index) {
+    const unsigned leftByte = index < leftBytes.size() ? static_cast<unsigned char>(leftBytes.at(index)) : 0;
+    const unsigned rightByte = index < rightBytes.size() ? static_cast<unsigned char>(rightBytes.at(index)) : 0;
+    difference |= leftByte ^ rightByte;
+  }
+  return difference == 0;
 }
 
 } // namespace
@@ -86,6 +107,95 @@ std::optional<bool> decodeInputIndicatorBoolean(const QString &payload)
     return false;
   }
   return std::nullopt;
+}
+
+QString encodeInputIndicatorSubscription(bool enabled, const QString &capability)
+{
+  return QStringLiteral("%1:%2").arg(enabled ? 1 : 0).arg(capability);
+}
+
+std::optional<bool> decodeInputIndicatorSubscription(const QString &payload, const QString &expectedCapability)
+{
+  const auto parts = payload.split(QLatin1Char(':'), Qt::KeepEmptyParts);
+  if (parts.size() != 2 || parts.at(1).isEmpty() || !isValidInputIndicatorCapability(parts.at(1)) ||
+      !secureStringEquals(parts.at(1), expectedCapability)) {
+    return std::nullopt;
+  }
+  return decodeInputIndicatorBoolean(parts.at(0));
+}
+
+bool isValidInputIndicatorCapability(const QString &capability)
+{
+  if (capability.size() != kInputIndicatorCapabilityLength) {
+    return false;
+  }
+  for (const auto character : capability) {
+    const bool lowerHex = character >= QLatin1Char('0') && character <= QLatin1Char('9');
+    const bool upperHex = character >= QLatin1Char('a') && character <= QLatin1Char('f');
+    if (!lowerHex && !upperHex) {
+      return false;
+    }
+  }
+  return true;
+}
+
+InputIndicatorRawMessage parseInputIndicatorRawMessage(const QByteArray &raw)
+{
+  constexpr std::array commands{
+      kInputIndicatorSubscriptionCommand,
+      kInputIndicatorActivityCommand,
+      kInputIndicatorLocalCommand,
+  };
+
+  const char *matchedCommand = nullptr;
+  qsizetype matchedAt = -1;
+  for (const auto command : commands) {
+    const auto prefix = QByteArray::fromRawData(command, static_cast<int>(strlen(command)));
+    const auto found = raw.indexOf(prefix);
+    if (found >= 0) {
+      matchedCommand = command;
+      matchedAt = found;
+      break;
+    }
+  }
+  if (!matchedCommand) {
+    return {};
+  }
+  if (matchedAt != 0 || raw.size() > kMaximumInputIndicatorRawMessageSize) {
+    return {.state = InputIndicatorRawMessageState::Invalid,
+            .command = QString::fromLatin1(matchedCommand)};
+  }
+
+  for (const auto byte : raw) {
+    if (byte <= 0x20 || byte > 0x7e) {
+      return {.state = InputIndicatorRawMessageState::Invalid,
+              .command = QString::fromLatin1(matchedCommand)};
+    }
+  }
+  const auto separator = raw.indexOf('=');
+  if (separator <= 0 || separator != raw.lastIndexOf('=') || separator + 1 >= raw.size()) {
+    return {.state = InputIndicatorRawMessageState::Invalid,
+            .command = QString::fromLatin1(matchedCommand)};
+  }
+  const auto command = raw.left(separator);
+  if (command != QByteArray(matchedCommand)) {
+    return {.state = InputIndicatorRawMessageState::Invalid,
+            .command = QString::fromLatin1(matchedCommand)};
+  }
+  return {
+      .state = InputIndicatorRawMessageState::Valid,
+      .command = QString::fromLatin1(command),
+      .payload = QString::fromLatin1(raw.mid(separator + 1)),
+  };
+}
+
+QString redactInputIndicatorMessage(const QByteArray &raw)
+{
+  const auto parsed = parseInputIndicatorRawMessage(raw);
+  if (parsed.state == InputIndicatorRawMessageState::NotIndicator) {
+    return QString::fromUtf8(raw);
+  }
+  return QStringLiteral("%1=<redacted>").arg(parsed.command);
 }
 
 bool isInputIndicatorActivityFresh(

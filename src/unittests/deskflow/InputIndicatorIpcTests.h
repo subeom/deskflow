@@ -18,5 +18,7 @@ private Q_SLOTS:
   void staleAndFutureActivityIsRejected();
   void newerSequenceWins();
   void booleanPayloadsAreStrict();
+  void subscriptionCapabilityIsExactAndRedacted();
+  void rawIndicatorMessagesAreStrict();
   void subscriptionStateIsProcessLocalAndClearable();
 };

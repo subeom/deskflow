@@ -13,6 +13,16 @@ create_test(
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
 )
 
+if(APPLE)
+  create_test(
+    NAME CoreIpcServerSecurityTests
+    DEPENDS app
+    LIBS arch base
+    SOURCE CoreIpcServerSecurityTests.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+  )
+endif()
+
 create_test(
   NAME CrossPlatformInputPolicyTests
   DEPENDS app

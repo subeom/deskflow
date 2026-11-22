@@ -164,9 +164,11 @@ private:
   deskflow::tunnel::TunnelStartGuard *m_tunnelGuard = nullptr;
   deskflow::tunnel::ITunnelGate *m_tunnelGate = nullptr;
   std::optional<ProcessMode> m_tunnelPendingMode;
+  QString m_inputIndicatorCapability;
   bool m_inputIndicatorEnabled = false;
   bool m_inputIndicatorLocal = false;
   uint64_t m_lastInputIndicatorSequence = 0;
+  QTimer m_inputIndicatorSubscriptionTimer;
   // the program is ending (Cloudflare Tunnel, service mode): nothing is started or queued any more
   bool m_quitting = false;
   QMetaObject::Connection m_pendingDaemonStart;

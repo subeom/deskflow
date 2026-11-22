@@ -16,4 +16,6 @@ private Q_SLOTS:
   void validLocalAndActivityAreForwarded();
   void malformedStaleAndDuplicateActivityInvalidate();
   void resetDropsLocalState();
+  void rawClientBoundaryRejectsMalformedIndicatorMessages();
+  void rawClientBoundaryForwardsOnlyExactIndicatorMessages();
 };

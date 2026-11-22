@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <QByteArray>
 #include <QString>
 
 #include <cstdint>
@@ -36,11 +37,34 @@ struct InputIndicatorActivity
 inline constexpr auto kInputIndicatorActivityCommand = "inputIndicatorActivity";
 inline constexpr auto kInputIndicatorLocalCommand = "inputIndicatorLocal";
 inline constexpr auto kInputIndicatorSubscriptionCommand = "inputIndicatorSubscription";
+inline constexpr auto kInputIndicatorCapabilityEnvironment = "DESKFLOW_INPUT_INDICATOR_CAPABILITY";
+inline constexpr auto kInputIndicatorGuiPidEnvironment = "DESKFLOW_INPUT_INDICATOR_GUI_PID";
+inline constexpr int kInputIndicatorCapabilityLength = 64;
+inline constexpr int kMaximumInputIndicatorRawMessageSize = 256;
+
+enum class InputIndicatorRawMessageState
+{
+  NotIndicator,
+  Invalid,
+  Valid
+};
+
+struct InputIndicatorRawMessage
+{
+  InputIndicatorRawMessageState state = InputIndicatorRawMessageState::NotIndicator;
+  QString command;
+  QString payload;
+};
 
 QString encodeInputIndicatorActivity(const InputIndicatorActivity &activity);
 std::optional<InputIndicatorActivity> decodeInputIndicatorActivity(const QString &payload);
 QString encodeInputIndicatorBoolean(bool value);
 std::optional<bool> decodeInputIndicatorBoolean(const QString &payload);
+QString encodeInputIndicatorSubscription(bool enabled, const QString &capability);
+std::optional<bool> decodeInputIndicatorSubscription(const QString &payload, const QString &expectedCapability);
+bool isValidInputIndicatorCapability(const QString &capability);
+InputIndicatorRawMessage parseInputIndicatorRawMessage(const QByteArray &raw);
+QString redactInputIndicatorMessage(const QByteArray &raw);
 bool isInputIndicatorActivityFresh(
     const InputIndicatorActivity &activity, uint64_t nowTimestampMach, uint64_t maximumAgeMach
 );

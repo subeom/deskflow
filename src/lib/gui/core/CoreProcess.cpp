@@ -31,6 +31,8 @@
 #include <QFile>
 #include <QMetaEnum>
 #include <QMutexLocker>
+#include <QProcessEnvironment>
+#include <QRandomGenerator>
 #include <QRegularExpression>
 
 namespace deskflow::gui {
@@ -64,6 +66,18 @@ const int kRetryDelay = 1000;
 const int kQuitConnectWaitMs = 1000;
 const int kQuitFlushMs = 1000;
 const auto kLineSplitRegex = QRegularExpression("\r|\n|\r\n");
+constexpr int kInputIndicatorSubscriptionRenewalMs = 20'000;
+
+QString inputIndicatorCapability()
+{
+  QByteArray bytes;
+  bytes.reserve(deskflow::input::kInputIndicatorCapabilityLength / 2);
+  auto *random = QRandomGenerator::system();
+  while (bytes.size() < deskflow::input::kInputIndicatorCapabilityLength / 2) {
+    bytes.append(static_cast<char>(random->bounded(256)));
+  }
+  return QString::fromLatin1(bytes.toHex());
+}
 
 QString CoreProcess::processModeToString(const Settings::ProcessMode mode)
 {
@@ -137,6 +151,7 @@ CoreProcess::CoreProcess(const ServerConfig &serverConfig, DaemonClientFactory d
       m_daemonIpcClient{daemonClientFactory ? daemonClientFactory(this) : new ipc::DaemonIpcClient(this)}
 {
   m_appPath = QStringLiteral("%1/%2").arg(QCoreApplication::applicationDirPath(), kCoreBinName);
+  m_inputIndicatorCapability = inputIndicatorCapability();
   if (!QFile::exists(m_appPath)) {
     qCritical("core server binary does not exist");
   }
@@ -154,6 +169,10 @@ CoreProcess::CoreProcess(const ServerConfig &serverConfig, DaemonClientFactory d
       qDebug("retry cancelled, process state is not retry pending");
     }
   });
+  m_inputIndicatorSubscriptionTimer.setInterval(kInputIndicatorSubscriptionRenewalMs);
+  connect(
+      &m_inputIndicatorSubscriptionTimer, &QTimer::timeout, this, &CoreProcess::sendInputIndicatorSubscription
+  );
 }
 
 void CoreProcess::onProcessReadyReadStandardOutput()
@@ -263,6 +282,18 @@ void CoreProcess::startForegroundProcess(const QStringList &args)
     // so ensure the os also kills the core when that happens to the gui.
     prctl(PR_SET_PDEATHSIG, SIGTERM);
   });
+#endif
+
+#ifdef Q_OS_MACOS
+  auto environment = QProcessEnvironment::systemEnvironment();
+  environment.insert(
+      QLatin1String(deskflow::input::kInputIndicatorCapabilityEnvironment), m_inputIndicatorCapability
+  );
+  environment.insert(
+      QLatin1String(deskflow::input::kInputIndicatorGuiPidEnvironment),
+      QString::number(QCoreApplication::applicationPid())
+  );
+  m_process->setProcessEnvironment(environment);
 #endif
 
   m_process->start(m_appPath, args);
@@ -568,7 +599,7 @@ void CoreProcess::stop(std::optional<ProcessMode> processModeOption)
   qInfo("stopping core process (%s mode)", qPrintable(processModeToString(processMode)));
 
   if (m_coreIpcClient && m_coreIpcClient->isConnected()) {
-    m_coreIpcClient->sendInputIndicatorSubscription(false);
+    m_coreIpcClient->sendInputIndicatorSubscription(false, m_inputIndicatorCapability);
   }
   resetInputIndicatorState();
 
@@ -905,12 +936,20 @@ void CoreProcess::setInputIndicatorEnabled(bool enabled)
 void CoreProcess::sendInputIndicatorSubscription()
 {
   if (m_coreIpcClient && m_coreIpcClient->isConnected()) {
-    m_coreIpcClient->sendInputIndicatorSubscription(m_inputIndicatorEnabled);
+    m_coreIpcClient->sendInputIndicatorSubscription(m_inputIndicatorEnabled, m_inputIndicatorCapability);
+    if (m_inputIndicatorEnabled) {
+      m_inputIndicatorSubscriptionTimer.start();
+    } else {
+      m_inputIndicatorSubscriptionTimer.stop();
+    }
+  } else {
+    m_inputIndicatorSubscriptionTimer.stop();
   }
 }
 
 void CoreProcess::resetInputIndicatorState()
 {
+  m_inputIndicatorSubscriptionTimer.stop();
   m_lastInputIndicatorSequence = 0;
   if (m_inputIndicatorLocal) {
     m_inputIndicatorLocal = false;

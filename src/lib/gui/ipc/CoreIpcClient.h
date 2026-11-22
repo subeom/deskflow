@@ -20,7 +20,7 @@ public:
   explicit CoreIpcClient(QObject *parent = nullptr);
 
   void sendStop();
-  void sendInputIndicatorSubscription(bool enabled);
+  void sendInputIndicatorSubscription(bool enabled, const QString &capability);
 
 Q_SIGNALS:
   void commandReceived(const QString &command, const QString &args);

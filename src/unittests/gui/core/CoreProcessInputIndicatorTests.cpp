@@ -28,6 +28,11 @@ struct CoreProcessInputIndicatorTestAccess
   {
     process.resetInputIndicatorState();
   }
+
+  static QString capability(const deskflow::gui::CoreProcess &process)
+  {
+    return process.m_inputIndicatorCapability;
+  }
 };
 
 namespace {
@@ -36,11 +41,22 @@ class RecordingCoreIpcClient : public deskflow::gui::ipc::CoreIpcClient
 {
 public:
   QStringList sent;
+  QStringList received;
+
+  void feed(const QByteArray &data)
+  {
+    processIncomingData(data);
+  }
 
 protected:
   void sendMessage(const QString &message) override
   {
     sent << message;
+  }
+
+  void processCommand(const QString &command, const QStringList &parts) override
+  {
+    received << QStringLiteral("%1=%2").arg(command, parts.at(1));
   }
 };
 
@@ -66,17 +82,27 @@ deskflow::input::InputIndicatorActivity validActivity(uint64_t sequence)
 void CoreProcessInputIndicatorTests::coreClientEncodesSubscription()
 {
   RecordingCoreIpcClient client;
-  client.sendInputIndicatorSubscription(true);
-  client.sendInputIndicatorSubscription(false);
+  const QString capability(64, QLatin1Char('a'));
+  client.sendInputIndicatorSubscription(true, capability);
+  client.sendInputIndicatorSubscription(false, capability);
 
   QCOMPARE(client.sent.count(), 2);
-  QCOMPARE(client.sent.at(0), QStringLiteral("inputIndicatorSubscription=1"));
-  QCOMPARE(client.sent.at(1), QStringLiteral("inputIndicatorSubscription=0"));
+  QCOMPARE(
+      client.sent.at(0),
+      QStringLiteral("inputIndicatorSubscription=1:%1").arg(capability)
+  );
+  QCOMPARE(
+      client.sent.at(1),
+      QStringLiteral("inputIndicatorSubscription=0:%1").arg(capability)
+  );
 }
 
 void CoreProcessInputIndicatorTests::validLocalAndActivityAreForwarded()
 {
   auto process = makeCore();
+  QVERIFY(deskflow::input::isValidInputIndicatorCapability(
+      CoreProcessInputIndicatorTestAccess::capability(*process)
+  ));
   process->setInputIndicatorEnabled(true);
   std::optional<bool> local;
   std::optional<deskflow::input::InputIndicatorActivity> activity;
@@ -169,6 +195,49 @@ void CoreProcessInputIndicatorTests::resetDropsLocalState()
 
   QVERIFY(!local);
   QCOMPARE(changes, 2);
+}
+
+void CoreProcessInputIndicatorTests::rawClientBoundaryRejectsMalformedIndicatorMessages()
+{
+  RecordingCoreIpcClient client;
+  const QString capability(64, QLatin1Char('a'));
+  const QList<QByteArray> malformed{
+      QByteArray("inputIndicatorLocal=1=garbage\n"),
+      QByteArray("inputIndicatorLocal =1\n"),
+      QByteArray("inputIndicatorLocal=\n"),
+      QByteArray("inputIndicatorLocal=1\r\n"),
+      QByteArray("inputIndicatorLocal=1\0ignored\n", 25),
+      QByteArray("inputIndicatorSubscription=1:") + capability.toLatin1() + QByteArray("=garbage\n"),
+      QByteArray("inputIndicatorActivity=1:1:1=extra\n"),
+      QByteArray("inputIndicatorLocal=") + QByteArray(300, 'x') + QByteArray("\n"),
+      QByteArray("inputIndicatorLocal=") + QByteArray(5000, 'x'),
+  };
+
+  for (const auto &message : malformed) {
+    client.feed(message);
+  }
+
+  QVERIFY(client.received.isEmpty());
+}
+
+void CoreProcessInputIndicatorTests::rawClientBoundaryForwardsOnlyExactIndicatorMessages()
+{
+  RecordingCoreIpcClient client;
+  const auto activity = validActivity(9);
+  client.feed(
+      QByteArray("inputIndicatorLocal=1\n") +
+      QByteArray("inputIndicatorActivity=") +
+      deskflow::input::encodeInputIndicatorActivity(activity).toLatin1() + QByteArray("\n")
+  );
+
+  QCOMPARE(client.received.size(), 2);
+  QCOMPARE(client.received.at(0), QStringLiteral("inputIndicatorLocal=1"));
+  QCOMPARE(
+      client.received.at(1),
+      QStringLiteral("inputIndicatorActivity=%1").arg(
+          deskflow::input::encodeInputIndicatorActivity(activity)
+      )
+  );
 }
 
 QTEST_MAIN(CoreProcessInputIndicatorTests)
