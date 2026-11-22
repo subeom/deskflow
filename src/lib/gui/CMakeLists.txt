@@ -25,6 +25,10 @@ add_library(${target} STATIC
   Diagnostic.h
   FileTail.cpp
   FileTail.h
+  input/InputIndicatorGeometry.cpp
+  input/InputIndicatorGeometry.h
+  input/InputIndicatorPolicy.cpp
+  input/InputIndicatorPolicy.h
   Logger.cpp
   Logger.h
   MainWindow.cpp

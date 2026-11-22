@@ -105,6 +105,8 @@ add_library(${lib_name} STATIC ${PLATFORM_CODE}
   ipc/CoreIpc.h
   ipc/CoreIpcServer.cpp
   ipc/CoreIpcServer.h
+  ipc/InputIndicatorIpc.cpp
+  ipc/InputIndicatorIpc.h
 )
 
 target_link_libraries(${lib_name}
