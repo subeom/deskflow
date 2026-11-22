@@ -28,6 +28,17 @@ struct MacInputIndicatorPanelOptions
   InputIndicatorTone tone = InputIndicatorTone::Automatic;
 };
 
+enum class MacInputIndicatorPanelOrderCommand
+{
+  FrontRegardless
+};
+
+template <typename Dispatch>
+void requestMacInputIndicatorPanelPresentation(Dispatch dispatch)
+{
+  dispatch(MacInputIndicatorPanelOrderCommand::FrontRegardless);
+}
+
 class MacInputIndicatorPanel
 {
 public:

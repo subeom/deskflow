@@ -21,6 +21,7 @@ private Q_SLOTS:
   void accessibilitySnapshotRejectsStalePid();
   void accessibilitySnapshotRequiresFrontmostPid();
   void accessibilitySnapshotAcceptsMatchingFrontmostPid();
+  void panelPresentationRequestsFrontRegardless();
 #endif
   void visibilityDecisionReportsHideReason();
   void diagnosticThrottleLimitsToOnePerFiveSeconds();

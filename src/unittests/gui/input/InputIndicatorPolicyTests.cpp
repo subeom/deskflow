@@ -8,6 +8,7 @@
 #include "gui/input/InputIndicatorPolicy.h"
 #ifdef Q_OS_MACOS
 #include "gui/input/MacAccessibilityProbe.h"
+#include "gui/input/MacInputIndicatorPanel.h"
 #endif
 
 #include <QTest>
@@ -129,6 +130,23 @@ void InputIndicatorPolicyTests::accessibilitySnapshotAcceptsMatchingFrontmostPid
 
   QCOMPARE(current.state, EditableFocusState::SafeEditable);
   QCOMPARE(current.applicationPid, snapshot.applicationPid);
+}
+
+void InputIndicatorPolicyTests::panelPresentationRequestsFrontRegardless()
+{
+  std::vector<MacInputIndicatorPanelOrderCommand> commands;
+  requestMacInputIndicatorPanelPresentation(
+      [&commands](const MacInputIndicatorPanelOrderCommand command) {
+        commands.push_back(command);
+      }
+  );
+
+  QCOMPARE(
+      commands,
+      std::vector<MacInputIndicatorPanelOrderCommand>{
+          MacInputIndicatorPanelOrderCommand::FrontRegardless
+      }
+  );
 }
 #endif
 

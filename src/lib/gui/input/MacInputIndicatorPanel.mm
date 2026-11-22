@@ -191,7 +191,19 @@ bool MacInputIndicatorPanel::show(const MacInputIndicatorPanelOptions &options)
   m_impl->view.opacity = std::clamp(options.opacityPercent, 60, 100) / 100.0;
   [m_impl->panel setFrameOrigin:NSMakePoint(location->x, location->y)];
   [m_impl->view setNeedsDisplay:YES];
-  [m_impl->panel orderFront:nil];
+  requestMacInputIndicatorPanelPresentation(
+      [this](MacInputIndicatorPanelOrderCommand command) {
+        switch (command) {
+        case MacInputIndicatorPanelOrderCommand::FrontRegardless:
+          [m_impl->panel orderFrontRegardless];
+          break;
+        }
+      }
+  );
+  if (![m_impl->panel isVisible]) {
+    hide();
+    return false;
+  }
   return true;
 }
 
