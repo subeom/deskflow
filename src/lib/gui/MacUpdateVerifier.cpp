@@ -73,6 +73,11 @@ bool isInside(const QString &path, const QString &root)
          canonicalPath.startsWith(canonicalRoot + QLatin1Char('/'));
 }
 
+bool hasLicenseAgreementResource(const QByteArray &resourceXml)
+{
+  return resourceXml.contains(QByteArrayLiteral("<key>LPic</key>"));
+}
+
 QStringList evidenceLines(const QByteArray &data)
 {
   QStringList lines;
@@ -178,6 +183,20 @@ UpdateVerifierResult MacUpdateVerifier::verify(const StagedUpdate &staged)
   if (dmg.isSymLink() || !dmg.isFile() ||
       dmg.suffix().compare(QStringLiteral("dmg"), Qt::CaseInsensitive) != 0) {
     return {false, QStringLiteral("staged update is not a regular macOS disk image")};
+  }
+
+  const auto resources = m_runner->run(
+      QStringLiteral("/usr/bin/hdiutil"),
+      {QStringLiteral("udifderez"), QStringLiteral("-xml"), dmg.absoluteFilePath()},
+      kCommandTimeoutMs
+  );
+  if (!updateCommandSucceeded(resources)) {
+    return updateCommandFailure(
+        QStringLiteral("inspecting update disk image resources"), resources
+    );
+  }
+  if (hasLicenseAgreementResource(resources.standardOutput)) {
+    return {false, QStringLiteral("update disk image contains a software license agreement resource")};
   }
 
   QTemporaryDir temporary(QStringLiteral("%1/deskflow-update-verify-XXXXXX").arg(QDir::tempPath()));

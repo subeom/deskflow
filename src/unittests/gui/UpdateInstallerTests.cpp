@@ -973,6 +973,55 @@ void UpdateInstallerTests::pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermiss
   QVERIFY(!deskflow::gui::isMacUpdateInstallEligible(evidence));
 }
 
+void UpdateInstallerTests::packagePolicy_usesCanonicalExecutablePathOnly()
+{
+  using deskflow::gui::isMacUpdatePackageManagedPath;
+
+  QVERIFY(!isMacUpdatePackageManagedPath(
+      QStringLiteral("/Applications/Deskflow.app/Contents/MacOS/Deskflow")
+  ));
+  QVERIFY(isMacUpdatePackageManagedPath(
+      QStringLiteral(
+          "/opt/homebrew/Caskroom/deskflow/2.0.6/Deskflow.app/Contents/MacOS/Deskflow"
+      )
+  ));
+  QVERIFY(isMacUpdatePackageManagedPath(
+      QStringLiteral(
+          "/opt/homebrew/Cellar/deskflow/2.0.6/Deskflow.app/Contents/MacOS/Deskflow"
+      )
+  ));
+  QVERIFY(!isMacUpdatePackageManagedPath(
+      QStringLiteral(
+          "/Applications/Caskroom/deskflow-not-owned/Deskflow.app/Contents/MacOS/Deskflow"
+      )
+  ));
+
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  Fixture direct;
+  QVERIFY(createFixture(temporary, direct));
+  QVERIFY(QDir().mkpath(
+      QDir(temporary.path()).filePath(QStringLiteral("stale/opt/homebrew/Caskroom/deskflow"))
+  ));
+  QVERIFY(!deskflow::gui::isMacUpdatePackageManaged(direct.executable));
+
+  const auto managedBundle =
+      QDir(temporary.path()).filePath(
+          QStringLiteral("managed/Caskroom/deskflow/2.0.6/Deskflow.app")
+      );
+  const auto managedExecutable =
+      QDir(managedBundle).filePath(QStringLiteral("Contents/MacOS/Deskflow"));
+  QVERIFY(QDir().mkpath(QFileInfo(managedExecutable).absolutePath()));
+  QVERIFY(writeFile(managedExecutable, QByteArrayLiteral("managed gui")));
+  const auto linkedBundle =
+      QDir(temporary.path()).filePath(QStringLiteral("Applications/Deskflow.app"));
+  QVERIFY(QDir().mkpath(QFileInfo(linkedBundle).absolutePath()));
+  QVERIFY(QFile::link(managedBundle, linkedBundle));
+  QVERIFY(deskflow::gui::isMacUpdatePackageManaged(
+      QDir(linkedBundle).filePath(QStringLiteral("Contents/MacOS/Deskflow"))
+  ));
+}
+
 void UpdateInstallerTests::aclPolicy_requiresSuccessfulEmptyAclRead()
 {
   using deskflow::gui::MacUpdateAclResult;
@@ -992,6 +1041,12 @@ void UpdateInstallerTests::aclPolicy_requiresSuccessfulEmptyAclRead()
   ));
   QVERIFY(!isMacUpdateAclTrustProven(
       MacUpdateAclResult{true, 0, false, false, EIO}
+  ));
+  QVERIFY(isMacUpdateAclTrustProven(
+      MacUpdateAclResult{false, -1, false, false, ENOENT, true}
+  ));
+  QVERIFY(!isMacUpdateAclTrustProven(
+      MacUpdateAclResult{false, -1, false, false, ENOTSUP, true}
   ));
   QVERIFY(isMacUpdateAclTrustProven(
       MacUpdateAclResult{true, 0, false, true, 0}
@@ -1020,6 +1075,14 @@ void UpdateInstallerTests::aclPolicy_requiresSuccessfulEmptyAclRead()
   );
   QVERIFY(proven.aclTrustProven);
   QVERIFY(deskflow::gui::isMacUpdateInstallEligible(proven));
+
+  const auto actualAcl = deskflow::gui::evaluateMacUpdateInstall(
+      fixture.executable, false, false
+  );
+  QVERIFY2(
+      actualAcl.aclTrustProven,
+      "an existing file with no extended ACL must be a proven safe absence"
+  );
 }
 
 void UpdateInstallerTests::apply_rejectsCandidateIdentityChangeBeforeAndAfterRename()

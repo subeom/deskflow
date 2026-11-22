@@ -31,16 +31,6 @@ QString currentUpdateCacheRoot()
 }
 
 #if defined(Q_OS_MACOS)
-bool isPackageManaged(const QString &executablePath)
-{
-  const QFileInfo executable(executablePath);
-  const auto canonical = executable.canonicalFilePath();
-  return canonical.contains(QStringLiteral("/Caskroom/deskflow/")) ||
-         canonical.contains(QStringLiteral("/Cellar/")) ||
-         QFileInfo::exists(QStringLiteral("/opt/homebrew/Caskroom/deskflow")) ||
-         QFileInfo::exists(QStringLiteral("/usr/local/Caskroom/deskflow"));
-}
-
 std::optional<QString> deskflowBundlePath(const QString &executablePath)
 {
   const QFileInfo executable(executablePath);
@@ -67,7 +57,9 @@ MacUpdateAclResult readMacUpdateAcl(const QString &path)
   }
   acl_t acl = acl_get_file(path.toLocal8Bit().constData(), ACL_TYPE_EXTENDED);
   if (acl == nullptr) {
-    return {false, -1, false, false, errno};
+    const auto errorNumber = errno;
+    const bool absenceProven = errorNumber == ENOENT && QFileInfo::exists(path);
+    return {false, -1, false, false, errorNumber, absenceProven};
   }
   bool hasEntries = false;
   acl_entry_t entry = nullptr;
@@ -86,11 +78,31 @@ MacUpdateAclResult readMacUpdateAcl(const QString &path)
 
 } // namespace
 
+bool isMacUpdatePackageManagedPath(const QString &canonicalPath)
+{
+  const auto cleaned = QDir::cleanPath(canonicalPath);
+  return cleaned.contains(QStringLiteral("/Caskroom/deskflow/")) ||
+         cleaned.contains(QStringLiteral("/Cellar/deskflow/"));
+}
+
+bool isMacUpdatePackageManaged(const QString &executablePath)
+{
+  return isMacUpdatePackageManagedPath(
+      QFileInfo(executablePath).canonicalFilePath()
+  );
+}
+
 bool isMacUpdateAclTrustProven(const MacUpdateAclResult &result)
 {
-  return result.readSucceeded && result.entryResult == 0 &&
-         !result.hasEntries && result.releaseSucceeded &&
-         result.errorNumber == 0;
+  const bool readProven =
+      result.readSucceeded && result.entryResult == 0 &&
+      !result.hasEntries && result.releaseSucceeded &&
+      result.errorNumber == 0;
+  const bool absenceProven =
+      result.absenceProven && !result.readSucceeded &&
+      result.entryResult == -1 && !result.hasEntries &&
+      result.errorNumber == ENOENT;
+  return readProven || absenceProven;
 }
 
 MacUpdateInstallEvidence evaluateMacUpdateInstall(
@@ -124,8 +136,8 @@ MacUpdateInstallEvidence evaluateMacUpdateInstall(
   evidence.bundlePath = bundle.absoluteFilePath();
   evidence.packageManaged =
       packageManaged || bundle.isSymLink() ||
-      bundle.canonicalFilePath().contains(QStringLiteral("/Caskroom/deskflow/")) ||
-      bundle.canonicalFilePath().contains(QStringLiteral("/Cellar/")) ||
+      isMacUpdatePackageManagedPath(bundle.canonicalFilePath()) ||
+      isMacUpdatePackageManaged(executablePath) ||
       bundle.absoluteFilePath().startsWith(QStringLiteral("/opt/local/"));
   evidence.directApp = bundle.exists() && !bundle.isSymLink() && bundle.isDir();
   evidence.canonicalPath =
@@ -166,7 +178,7 @@ std::unique_ptr<IUpdateInstaller> createPlatformUpdateInstaller()
 #if defined(Q_OS_MACOS)
   const auto executable = QCoreApplication::applicationFilePath();
   return std::make_unique<MacUpdateInstaller>(
-      executable, currentUpdateCacheRoot(), isPackageManaged(executable)
+      executable, currentUpdateCacheRoot(), isMacUpdatePackageManaged(executable)
   );
 #else
   return {};
@@ -182,7 +194,7 @@ UpdateInstallResult applyPlatformUpdate(
 #if defined(Q_OS_MACOS)
   const auto executable = QCoreApplication::applicationFilePath();
   MacUpdateInstaller installer(
-      executable, currentUpdateCacheRoot(), isPackageManaged(executable)
+      executable, currentUpdateCacheRoot(), isMacUpdatePackageManaged(executable)
   );
   return installer.apply(
       manifestPath, parentPid, parentStartIdentity, receiptPath, helperToken

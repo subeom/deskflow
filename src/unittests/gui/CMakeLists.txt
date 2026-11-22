@@ -73,6 +73,18 @@ create_test(
 )
 
 if(APPLE)
+  if(BUILD_INSTALLER)
+    create_test(
+      NAME MacUpdatePackagingTests
+      DEPENDS gui
+      SOURCE MacUpdatePackagingTests.cpp
+      WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+    )
+    target_compile_definitions(
+      MacUpdatePackagingTests
+      PRIVATE DESKFLOW_CPACK_CONFIG="${CMAKE_BINARY_DIR}/CPackConfig.cmake"
+    )
+  endif()
   create_test(
     NAME UpdateVerifierTests
     DEPENDS gui

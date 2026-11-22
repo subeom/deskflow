@@ -55,6 +55,7 @@ struct MacUpdateAclResult
   bool hasEntries = false;
   bool releaseSucceeded = false;
   int errorNumber = 0;
+  bool absenceProven = false;
 };
 
 using MacUpdateAclReader = std::function<MacUpdateAclResult(const QString &)>;
@@ -167,5 +168,7 @@ MacUpdateInstallEvidence evaluateMacUpdateInstall(
 );
 bool isMacUpdateAclTrustProven(const MacUpdateAclResult &result);
 bool isMacUpdateInstallEligible(const MacUpdateInstallEvidence &evidence);
+bool isMacUpdatePackageManagedPath(const QString &canonicalPath);
+bool isMacUpdatePackageManaged(const QString &executablePath);
 
 } // namespace deskflow::gui

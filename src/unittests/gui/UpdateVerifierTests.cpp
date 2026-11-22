@@ -44,6 +44,10 @@ public:
   ) override
   {
     commands.append({program, arguments});
+    if (program.endsWith(QStringLiteral("/hdiutil")) &&
+        !arguments.isEmpty() && arguments.first() == QStringLiteral("udifderez")) {
+      return {true, false, 0, udifResourceOutput, {}};
+    }
     if (program.endsWith(QStringLiteral("/plutil"))) {
       const auto &field = arguments.at(1);
       if (field == QStringLiteral("CFBundleIdentifier")) {
@@ -67,6 +71,7 @@ public:
   QByteArray evidenceOutput = evidence();
   QByteArray identifierOutput = QByteArrayLiteral("org.deskflow.deskflow");
   QByteArray versionOutput = QByteArrayLiteral("2.0.6");
+  QByteArray udifResourceOutput;
   bool fail = false;
 };
 
@@ -260,6 +265,40 @@ void UpdateVerifierTests::verifierApplication_boundsCommandFailures()
   const auto result = verifier.verifyApplication(app, QStringLiteral("2.0.6"));
   QVERIFY(!result.ok);
   QVERIFY(result.error.size() <= 240);
+}
+
+void UpdateVerifierTests::verifier_rejectsLicenseResourceBeforeMount()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  const auto dmg = QDir(temporary.path()).filePath(QStringLiteral("fixture.dmg"));
+  QVERIFY(writeFile(dmg, QByteArrayLiteral("dmg")));
+  auto runner = std::make_unique<EvidenceRunner>();
+  auto *rawRunner = runner.get();
+  runner->udifResourceOutput = QByteArrayLiteral(
+      "<?xml version=\"1.0\"?><plist><dict>"
+      "<key>LPic</key><array/><key>STR#</key><array/><key>TEXT</key><array/>"
+      "</dict></plist>"
+  );
+  MacUpdateVerifier verifier(std::move(runner));
+  const deskflow::gui::StagedUpdate staged{
+      QStringLiteral("2.0.6"),
+      QStringLiteral("fixture.dmg"),
+      dmg,
+      QDir(temporary.path()).filePath(QStringLiteral("manifest.json"))
+  };
+
+  const auto result = verifier.verify(staged);
+  QVERIFY(!result.ok);
+  QVERIFY(result.error.contains(QStringLiteral("license"), Qt::CaseInsensitive));
+  QVERIFY(std::ranges::any_of(rawRunner->commands, [](const auto &command) {
+    return command.first.endsWith(QStringLiteral("/hdiutil")) &&
+           command.second.value(0) == QStringLiteral("udifderez");
+  }));
+  QVERIFY(std::ranges::none_of(rawRunner->commands, [](const auto &command) {
+    return command.first.endsWith(QStringLiteral("/hdiutil")) &&
+           command.second.value(0) == QStringLiteral("attach");
+  }));
 }
 
 QTEST_MAIN(UpdateVerifierTests)

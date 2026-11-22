@@ -13,6 +13,8 @@
 #include <QProcess>
 #include <QTemporaryDir>
 
+#include <ranges>
+
 using deskflow::gui::IUpdateCommandRunner;
 using deskflow::gui::UpdateCommandResult;
 
@@ -59,6 +61,7 @@ public:
       const QString &program, const QStringList &arguments, int timeoutMs
   ) override
   {
+    commands.append({program, arguments});
     if (program == QStringLiteral("/usr/bin/hdiutil") ||
         program == QStringLiteral("/usr/bin/ditto")) {
       return runReal(program, arguments, timeoutMs);
@@ -77,7 +80,81 @@ public:
     }
     return {false, false, -1, {}, QByteArrayLiteral("unexpected command")};
   }
+
+  QList<QPair<QString, QStringList>> commands;
 };
+
+bool createAppSource(QTemporaryDir &temporary, QString &source, QString &app)
+{
+  source = QDir(temporary.path()).filePath(QStringLiteral("source"));
+  app = QDir(source).filePath(QStringLiteral("Deskflow.app"));
+  return QDir().mkpath(QDir(app).filePath(QStringLiteral("Contents/MacOS"))) &&
+         writeFile(
+             QDir(app).filePath(QStringLiteral("Contents/Info.plist")),
+             QByteArrayLiteral(
+                 "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict>"
+                 "<key>CFBundleIdentifier</key><string>org.deskflow.deskflow</string>"
+                 "<key>CFBundleShortVersionString</key><string>2.0.6</string>"
+                 "<key>CFBundleVersion</key><string>2.0.6</string>"
+                 "</dict></plist>"
+             )
+         ) &&
+         writeFile(
+             QDir(app).filePath(QStringLiteral("Contents/MacOS/Deskflow")),
+             QByteArrayLiteral("gui")
+         ) &&
+         writeFile(
+             QDir(app).filePath(QStringLiteral("Contents/MacOS/deskflow-core")),
+             QByteArrayLiteral("core")
+         );
+}
+
+UpdateCommandResult createSyntheticDmg(
+    const QString &source, const QString &dmg
+)
+{
+  return runReal(
+      QStringLiteral("/usr/bin/hdiutil"),
+      {QStringLiteral("create"), QStringLiteral("-volname"), QStringLiteral("Deskflow"),
+       QStringLiteral("-srcfolder"), source, QStringLiteral("-format"), QStringLiteral("UDZO"),
+       QStringLiteral("-ov"), dmg},
+      120'000
+  );
+}
+
+UpdateCommandResult addSyntheticSla(const QString &dmg, QTemporaryDir &temporary)
+{
+  const auto xml = QDir(temporary.path()).filePath(QStringLiteral("sla.xml"));
+  if (!writeFile(
+      xml,
+      QByteArrayLiteral(
+          "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+          "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
+          "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+          "<plist version=\"1.0\"><dict>\n"
+          "<key>LPic</key><array><dict><key>Attributes</key><string>0x0000</string>"
+          "<key>Data</key><data>"
+          "AAIAEQADAAEAAAAAAAIAAAAIAAMAAAABAAQAAAAEAAUAAAAOAAYA"
+          "AQAFAAcAAAAHAAgAAABHAAkAAAA0AAoAAQA1AAsAAQAgAAwAAAAR"
+          "AA0AAABbAAQAAAAzAA8AAQAMABAAAAALAA4AAA=="
+          "</data><key>ID</key><string>5000</string><key>Name</key><string></string></dict></array>\n"
+          "<key>STR#</key><array><dict><key>Attributes</key><string>0x0000</string>"
+          "<key>Data</key><data>AAkHRW5nbGlzaAVBZ3JlZQhEaXNhZ3JlZQVQcmludAdTYXZlLi4u</data>"
+          "<key>ID</key><string>5002</string><key>Name</key><string>English</string></dict></array>\n"
+          "<key>TEXT</key><array><dict><key>Attributes</key><string>0x0000</string>"
+          "<key>Data</key><data>U3ludGhldGljIHRlc3QgbGljZW5zZQ0K</data>"
+          "<key>ID</key><string>5002</string><key>Name</key><string>English</string></dict></array>\n"
+          "</dict></plist>\n"
+      )
+  )) {
+    return {false, false, -1, {}, QByteArrayLiteral("cannot write synthetic SLA resources")};
+  }
+  return runReal(
+      QStringLiteral("/usr/bin/hdiutil"),
+      {QStringLiteral("udifrez"), dmg, QStringLiteral("-xml"), xml, QStringLiteral("-replaceall")},
+      120'000
+  );
+}
 
 } // namespace
 
@@ -85,30 +162,12 @@ void MacUpdateIntegrationTests::verifier_mountsSyntheticDmgCopiesChecksAndDetach
 {
   QTemporaryDir temporary;
   QVERIFY(temporary.isValid());
-  const auto source = QDir(temporary.path()).filePath(QStringLiteral("source"));
-  const auto app = QDir(source).filePath(QStringLiteral("Deskflow.app"));
-  QVERIFY(QDir().mkpath(QDir(app).filePath(QStringLiteral("Contents/MacOS"))));
-  QVERIFY(writeFile(
-      QDir(app).filePath(QStringLiteral("Contents/Info.plist")),
-      QByteArrayLiteral(
-          "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict>"
-          "<key>CFBundleIdentifier</key><string>org.deskflow.deskflow</string>"
-          "<key>CFBundleShortVersionString</key><string>2.0.6</string>"
-          "<key>CFBundleVersion</key><string>2.0.6</string>"
-          "</dict></plist>"
-      )
-  ));
-  QVERIFY(writeFile(QDir(app).filePath(QStringLiteral("Contents/MacOS/Deskflow")), QByteArrayLiteral("gui")));
-  QVERIFY(writeFile(QDir(app).filePath(QStringLiteral("Contents/MacOS/deskflow-core")), QByteArrayLiteral("core")));
+  QString source;
+  QString app;
+  QVERIFY(createAppSource(temporary, source, app));
 
   const auto dmg = QDir(temporary.path()).filePath(QStringLiteral("fixture.dmg"));
-  const auto created = runReal(
-      QStringLiteral("/usr/bin/hdiutil"),
-      {QStringLiteral("create"), QStringLiteral("-volname"), QStringLiteral("Deskflow"),
-       QStringLiteral("-srcfolder"), source, QStringLiteral("-format"), QStringLiteral("UDZO"),
-       QStringLiteral("-ov"), dmg},
-      120'000
-  );
+  const auto created = createSyntheticDmg(source, dmg);
   QVERIFY2(created.started && !created.timedOut && created.exitCode == 0, created.standardError.constData());
   QVERIFY(QFileInfo(dmg).isFile());
 
@@ -122,6 +181,42 @@ void MacUpdateIntegrationTests::verifier_mountsSyntheticDmgCopiesChecksAndDetach
   const auto result = verifier.verify(staged);
   QVERIFY2(result.ok, qPrintable(result.error));
   QVERIFY(QFileInfo(dmg).isFile());
+}
+
+void MacUpdateIntegrationTests::verifier_rejectsSyntheticDmgWithSlaResourceBeforeMount()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  QString source;
+  QString app;
+  QVERIFY(createAppSource(temporary, source, app));
+
+  const auto dmg = QDir(temporary.path()).filePath(QStringLiteral("fixture-sla.dmg"));
+  const auto created = createSyntheticDmg(source, dmg);
+  QVERIFY2(created.started && !created.timedOut && created.exitCode == 0, created.standardError.constData());
+  const auto embedded = addSyntheticSla(dmg, temporary);
+  QVERIFY2(embedded.started && !embedded.timedOut && embedded.exitCode == 0, embedded.standardError.constData());
+
+  auto runner = std::make_unique<SyntheticDmgRunner>();
+  auto *rawRunner = runner.get();
+  deskflow::gui::MacUpdateVerifier verifier(std::move(runner));
+  const deskflow::gui::StagedUpdate staged{
+      QStringLiteral("2.0.6"),
+      QStringLiteral("fixture-sla.dmg"),
+      dmg,
+      QDir(temporary.path()).filePath(QStringLiteral("manifest.json"))
+  };
+  const auto result = verifier.verify(staged);
+  QVERIFY(!result.ok);
+  QVERIFY(result.error.contains(QStringLiteral("license"), Qt::CaseInsensitive));
+  QVERIFY(std::ranges::any_of(rawRunner->commands, [](const auto &command) {
+    return command.first == QStringLiteral("/usr/bin/hdiutil") &&
+           command.second.value(0) == QStringLiteral("udifderez");
+  }));
+  QVERIFY(std::ranges::none_of(rawRunner->commands, [](const auto &command) {
+    return command.first == QStringLiteral("/usr/bin/hdiutil") &&
+           command.second.value(0) == QStringLiteral("attach");
+  }));
 }
 
 QTEST_MAIN(MacUpdateIntegrationTests)

@@ -53,8 +53,7 @@ deskflow::gui::UpdateEnvironment currentUpdateEnvironment()
 #if defined(Q_OS_MACOS)
   const auto executablePath = QCoreApplication::applicationFilePath();
   const bool packageOwned =
-      QFileInfo::exists(QStringLiteral("/opt/homebrew/Caskroom/deskflow")) ||
-      QFileInfo::exists(QStringLiteral("/usr/local/Caskroom/deskflow"));
+      deskflow::gui::isMacUpdatePackageManaged(executablePath);
   const auto evidence =
       deskflow::gui::evaluateMacUpdateInstall(
           executablePath, packageOwned, serviceMode

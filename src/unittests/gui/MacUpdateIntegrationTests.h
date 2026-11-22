@@ -13,4 +13,5 @@ class MacUpdateIntegrationTests : public QObject
   Q_OBJECT
 private Q_SLOTS:
   void verifier_mountsSyntheticDmgCopiesChecksAndDetaches();
+  void verifier_rejectsSyntheticDmgWithSlaResourceBeforeMount();
 };
