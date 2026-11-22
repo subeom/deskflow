@@ -7,12 +7,19 @@
 #include "IpcClient.h"
 
 #include "common/VersionInfo.h"
+#include "deskflow/ipc/InputIndicatorIpc.h"
 
 #include <QDebug>
 #include <QLocalSocket>
 #include <QTimer>
 
 namespace deskflow::gui::ipc {
+
+namespace {
+
+constexpr qsizetype kMaximumRawMessageSize = 4096;
+
+} // namespace
 
 IpcClient::IpcClient(QObject *parent, const QString &socketName, const QString &typeName)
     : QObject(parent),
@@ -119,14 +126,44 @@ void IpcClient::handleErrorOccurred()
 
 void IpcClient::handleReadyRead()
 {
-  QByteArray data = m_readBuffer + m_socket->readAll();
+  processIncomingData(m_socket->readAll());
+}
+
+void IpcClient::processIncomingData(const QByteArray &incoming)
+{
+  QByteArray data = m_readBuffer + incoming;
   m_readBuffer.clear();
+  if (!data.contains('\n') && data.size() > kMaximumRawMessageSize) {
+    qWarning().noquote() << QStringLiteral("%1 ipc client got oversized incomplete message").arg(m_typeName);
+    rejectIncomingMessage();
+    return;
+  }
 
   while (data.contains('\n')) {
     const auto index = data.indexOf('\n');
-    const auto message = QString::fromUtf8(data.left(index));
+    const auto raw = data.left(index);
     data.remove(0, index + 1);
+    if (raw.size() > kMaximumRawMessageSize) {
+      qWarning().noquote() << QStringLiteral("%1 ipc client got oversized message").arg(m_typeName);
+      rejectIncomingMessage();
+      return;
+    }
 
+    const auto indicator = deskflow::input::parseInputIndicatorRawMessage(raw);
+    if (indicator.state == deskflow::input::InputIndicatorRawMessageState::Invalid) {
+      qWarning().noquote() << QStringLiteral("%1 ipc client got invalid indicator message: %2")
+                                  .arg(m_typeName, deskflow::input::redactInputIndicatorMessage(raw));
+      rejectIncomingMessage();
+      return;
+    }
+    if (indicator.state == deskflow::input::InputIndicatorRawMessageState::Valid) {
+      qDebug().noquote() << QStringLiteral("%1 ipc client message: %2")
+                                .arg(m_typeName, deskflow::input::redactInputIndicatorMessage(raw));
+      processCommand(indicator.command, {indicator.command, indicator.payload});
+      continue;
+    }
+
+    const auto message = QString::fromUtf8(raw);
     qDebug().noquote() << QStringLiteral("%1 ipc client message: %2").arg(m_typeName, message);
     const auto parts = message.split('=');
     if (parts.isEmpty()) {
@@ -151,6 +188,15 @@ void IpcClient::handleReadyRead()
 
   if (!data.isEmpty()) {
     m_readBuffer = data;
+  }
+}
+
+void IpcClient::rejectIncomingMessage()
+{
+  const bool notifyFailure = m_state == State::Connecting || m_state == State::Connected;
+  disconnectFromServer();
+  if (notifyFailure) {
+    Q_EMIT connectionFailed();
   }
 }
 
@@ -225,7 +271,8 @@ void IpcClient::sendMessage(const QString &message)
   }
 
   m_socket->write(message.toUtf8() + "\n");
-  qDebug().noquote() << QStringLiteral("%1 ipc client sent message: %2").arg(m_typeName, message);
+  qDebug().noquote() << QStringLiteral("%1 ipc client sent message: %2")
+                            .arg(m_typeName, deskflow::input::redactInputIndicatorMessage(message.toUtf8()));
 }
 
 } // namespace deskflow::gui::ipc

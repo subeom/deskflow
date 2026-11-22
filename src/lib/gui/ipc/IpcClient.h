@@ -52,6 +52,8 @@ private Q_SLOTS:
   void handleReadyRead();
 
 protected:
+  void processIncomingData(const QByteArray &data);
+
   virtual void processCommand(const QString &command, const QStringList &parts)
   {
     Q_UNUSED(command)
@@ -61,6 +63,7 @@ protected:
   virtual void sendMessage(const QString &message);
 
 private:
+  void rejectIncomingMessage();
   void attemptConnection();
   void handleHandshakeMessage(const QStringList &parts);
   void handleConnectionSuccess();

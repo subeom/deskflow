@@ -93,6 +93,52 @@ void InputIndicatorIpcTests::booleanPayloadsAreStrict()
   QVERIFY(!decodeInputIndicatorBoolean(QStringLiteral("1:")).has_value());
 }
 
+void InputIndicatorIpcTests::subscriptionCapabilityIsExactAndRedacted()
+{
+  const QString capability(64, QLatin1Char('a'));
+  const auto payload = encodeInputIndicatorSubscription(true, capability);
+  const auto decoded = decodeInputIndicatorSubscription(payload, capability);
+
+  QVERIFY(decoded.has_value());
+  QVERIFY(*decoded);
+  QVERIFY(!decodeInputIndicatorSubscription(payload, QString(64, QLatin1Char('b'))).has_value());
+  QVERIFY(!decodeInputIndicatorSubscription(QStringLiteral("1:short"), capability).has_value());
+
+  const auto raw =
+      QStringLiteral("%1=%2")
+          .arg(QLatin1String(kInputIndicatorSubscriptionCommand), payload)
+          .toLatin1();
+  const auto redacted = redactInputIndicatorMessage(raw);
+  QVERIFY(redacted.contains(QStringLiteral("<redacted>")));
+  QVERIFY(!redacted.contains(capability));
+}
+
+void InputIndicatorIpcTests::rawIndicatorMessagesAreStrict()
+{
+  const QByteArray valid("inputIndicatorLocal=1");
+  const auto parsed = parseInputIndicatorRawMessage(valid);
+  QCOMPARE(parsed.state, InputIndicatorRawMessageState::Valid);
+  QCOMPARE(parsed.command, QStringLiteral("inputIndicatorLocal"));
+  QCOMPARE(parsed.payload, QStringLiteral("1"));
+
+  const QList<QByteArray> invalid{
+      QByteArray("inputIndicatorLocal=1=extra"),
+      QByteArray("inputIndicatorLocal="),
+      QByteArray("inputIndicatorLocal =1"),
+      QByteArray("inputIndicatorLocal=1\r"),
+      QByteArray("inputIndicatorLocal=1\0extra", 24),
+      QByteArray("prefix-inputIndicatorLocal=1"),
+      QByteArray("inputIndicatorLocal=") + QByteArray(300, 'x'),
+  };
+  for (const auto &message : invalid) {
+    QCOMPARE(parseInputIndicatorRawMessage(message).state, InputIndicatorRawMessageState::Invalid);
+  }
+  QCOMPARE(
+      parseInputIndicatorRawMessage(QByteArray("connectionState=Connected")).state,
+      InputIndicatorRawMessageState::NotIndicator
+  );
+}
+
 void InputIndicatorIpcTests::subscriptionStateIsProcessLocalAndClearable()
 {
   setInputIndicatorSubscribed(false);

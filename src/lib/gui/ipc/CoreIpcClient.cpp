@@ -23,12 +23,12 @@ void CoreIpcClient::sendStop()
   sendMessage(QStringLiteral("stop"));
 }
 
-void CoreIpcClient::sendInputIndicatorSubscription(bool enabled)
+void CoreIpcClient::sendInputIndicatorSubscription(bool enabled, const QString &capability)
 {
   sendMessage(
       QStringLiteral("%1=%2")
           .arg(QLatin1String(deskflow::input::kInputIndicatorSubscriptionCommand))
-          .arg(deskflow::input::encodeInputIndicatorBoolean(enabled))
+          .arg(deskflow::input::encodeInputIndicatorSubscription(enabled, capability))
   );
 }
 
