@@ -11,6 +11,7 @@
 #include "common/Settings.h"
 #include "platform/OSXInputSource.h"
 
+#include <AppKit/AppKit.h>
 #include <ApplicationServices/ApplicationServices.h>
 #include <mach/mach_time.h>
 
@@ -132,6 +133,9 @@ void MacInputIndicatorController::setEffectiveEnabled(bool enabled)
     createMonitors();
   } else {
     destroyMonitors();
+    m_coreConnected = false;
+    m_isOnComputer = false;
+    m_lastActivity.reset();
   }
   m_panel->hide();
   Q_EMIT enabledChanged(enabled);
@@ -178,7 +182,7 @@ void MacInputIndicatorController::trigger(InputIndicatorUiTrigger)
 
 void MacInputIndicatorController::requestAccessibility()
 {
-  if (!m_effectiveEnabled || !AXIsProcessTrusted() || !m_coreConnected) {
+  if (!m_effectiveEnabled || !AXIsProcessTrusted() || !m_coreConnected || !m_lastActivity) {
     hide();
     return;
   }
@@ -237,6 +241,11 @@ void MacInputIndicatorController::accessibilityCompleted(
 
   const auto eventAge = m_lastActivity ? activityAge(*m_lastActivity) : std::nullopt;
   if (!eventAge) {
+    hide();
+    return;
+  }
+  NSRunningApplication *frontmostApplication = [[NSWorkspace sharedWorkspace] frontmostApplication];
+  if (!frontmostApplication || snapshot.applicationPid != frontmostApplication.processIdentifier) {
     hide();
     return;
   }
