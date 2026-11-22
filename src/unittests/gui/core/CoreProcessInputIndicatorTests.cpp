@@ -203,8 +203,8 @@ void CoreProcessInputIndicatorTests::rawClientBoundaryRejectsMalformedIndicatorM
   const QString capability(64, QLatin1Char('a'));
   const QList<QByteArray> malformed{
       QByteArray("inputIndicatorLocal=1=garbage\n"),
-      QByteArray("inputIndicatorLocal =1\n"),
       QByteArray("inputIndicatorLocal=\n"),
+      QByteArray("inputIndicatorLocal=1 \n"),
       QByteArray("inputIndicatorLocal=1\r\n"),
       QByteArray("inputIndicatorLocal=1\0ignored\n", 25),
       QByteArray("inputIndicatorSubscription=1:") + capability.toLatin1() + QByteArray("=garbage\n"),
@@ -225,15 +225,23 @@ void CoreProcessInputIndicatorTests::rawClientBoundaryForwardsOnlyExactIndicator
   RecordingCoreIpcClient client;
   const auto activity = validActivity(9);
   client.feed(
+      QByteArray("connectedClients=inputIndicatorLocal\n") +
+      QByteArray("unrecognisedClient=foo-inputIndicatorActivity-bar\n") +
+      QByteArray("configFile=/tmp/inputIndicatorSubscription/config\n") +
+      QByteArray("inputIndicatorLocal =1\n") +
       QByteArray("inputIndicatorLocal=1\n") +
       QByteArray("inputIndicatorActivity=") +
       deskflow::input::encodeInputIndicatorActivity(activity).toLatin1() + QByteArray("\n")
   );
 
-  QCOMPARE(client.received.size(), 2);
-  QCOMPARE(client.received.at(0), QStringLiteral("inputIndicatorLocal=1"));
+  QCOMPARE(client.received.size(), 6);
+  QCOMPARE(client.received.at(0), QStringLiteral("connectedClients=inputIndicatorLocal"));
+  QCOMPARE(client.received.at(1), QStringLiteral("unrecognisedClient=foo-inputIndicatorActivity-bar"));
+  QCOMPARE(client.received.at(2), QStringLiteral("configFile=/tmp/inputIndicatorSubscription/config"));
+  QCOMPARE(client.received.at(3), QStringLiteral("inputIndicatorLocal =1"));
+  QCOMPARE(client.received.at(4), QStringLiteral("inputIndicatorLocal=1"));
   QCOMPARE(
-      client.received.at(1),
+      client.received.at(5),
       QStringLiteral("inputIndicatorActivity=%1").arg(
           deskflow::input::encodeInputIndicatorActivity(activity)
       )

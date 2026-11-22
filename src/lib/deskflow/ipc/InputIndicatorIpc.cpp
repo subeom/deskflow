@@ -147,21 +147,20 @@ InputIndicatorRawMessage parseInputIndicatorRawMessage(const QByteArray &raw)
       kInputIndicatorLocalCommand,
   };
 
+  const auto separator = raw.indexOf('=');
+  const auto commandToken = separator < 0 ? raw : raw.left(separator);
   const char *matchedCommand = nullptr;
-  qsizetype matchedAt = -1;
   for (const auto command : commands) {
     const auto prefix = QByteArray::fromRawData(command, static_cast<int>(strlen(command)));
-    const auto found = raw.indexOf(prefix);
-    if (found >= 0) {
+    if (commandToken == prefix) {
       matchedCommand = command;
-      matchedAt = found;
       break;
     }
   }
   if (!matchedCommand) {
     return {};
   }
-  if (matchedAt != 0 || raw.size() > kMaximumInputIndicatorRawMessageSize) {
+  if (raw.size() > kMaximumInputIndicatorRawMessageSize) {
     return {.state = InputIndicatorRawMessageState::Invalid,
             .command = QString::fromLatin1(matchedCommand)};
   }
@@ -172,19 +171,13 @@ InputIndicatorRawMessage parseInputIndicatorRawMessage(const QByteArray &raw)
               .command = QString::fromLatin1(matchedCommand)};
     }
   }
-  const auto separator = raw.indexOf('=');
   if (separator <= 0 || separator != raw.lastIndexOf('=') || separator + 1 >= raw.size()) {
-    return {.state = InputIndicatorRawMessageState::Invalid,
-            .command = QString::fromLatin1(matchedCommand)};
-  }
-  const auto command = raw.left(separator);
-  if (command != QByteArray(matchedCommand)) {
     return {.state = InputIndicatorRawMessageState::Invalid,
             .command = QString::fromLatin1(matchedCommand)};
   }
   return {
       .state = InputIndicatorRawMessageState::Valid,
-      .command = QString::fromLatin1(command),
+      .command = QString::fromLatin1(commandToken),
       .payload = QString::fromLatin1(raw.mid(separator + 1)),
   };
 }
