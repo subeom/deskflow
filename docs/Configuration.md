@@ -118,6 +118,11 @@ This section contains options used by the GUI it will begin with `[gui]`
 | appearance                     | `deskflow` or `system` | The look of the application. `deskflow` is the look of its own, the same on every OS; `system` is the look that each OS gave it before that. A value that is neither is `deskflow`. Used when the app starts [default: deskflow] |
 | autoHide                       | `true` or `false` | When true the app will hide itself on start up [default: false] |
 | enableUpdateCheck              | `true` or `false` | When true check the update URL to see if a new version was released on start up [default: false] |
+| inputIndicatorDwellMs          | `600` to `3000` | How long the macOS input source badge remains visible after eligible input activity [default: 1500] |
+| inputIndicatorEnabled          | `true` or `false` | Show a short-lived `한` or `A` badge near the mouse cursor on eligible macOS text input [default: false] |
+| inputIndicatorOpacityPercent   | `60` to `100` | Opacity of the macOS input source badge [default: 85] |
+| inputIndicatorPosition         | `cursorBottomRight`, `cursorTopRight`, `cursorBottomLeft` or `cursorTopLeft` | Position of the badge relative to the mouse cursor [default: cursorBottomRight] |
+| inputIndicatorTone             | `automatic`, `light` or `dark` | Color treatment of the macOS input source badge [default: automatic] |
 | closeReminder                  | `true` or `false` | Used to track if we have shown the reminder that when you close the app it remain running in the background  [default: true]|
 | closeToTray                    | `true` or `false` | When `true` the gui will run in the systemTray when its closed [default: true] |
 | logExpanded                    | `true` or `false` | Should the log section of the GUI be opened [default: false] |
@@ -130,6 +135,11 @@ This section contains options used by the GUI it will begin with `[gui]`
 | startCoreWithGui               | `true` or `false` | When true the Core will be started with the GUI. It is set to the Core's state on exit. |
 | textSize                       | `90`, `100`, `115`, `130` or `150` | The size of the text of the look `deskflow`, in percent of the size that the OS has [default: 100] |
 | updateCheckUrl                 | URL               | The URL to use when checking for a new version number, it should return a version [default: https://api.deskflow.org/version]|
+
+On macOS, the input source indicator reads no field value or typed text. It only reports `A` for the exact Apple ABC
+input source ID and `한` for the exact Apple Korean 2-set input source ID. It stays hidden when Accessibility cannot
+verify a focused editable field, the field may be protected, the source is unknown, Deskflow is disconnected, or the
+pointer is on a remote computer. Deskflow does not mutate or replay input for this feature.
 
 #### The look of the application, and the way back to the one of before
 

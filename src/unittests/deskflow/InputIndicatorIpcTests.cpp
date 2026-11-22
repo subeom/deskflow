@@ -97,6 +97,7 @@ void InputIndicatorIpcTests::subscriptionStateIsProcessLocalAndClearable()
 {
   setInputIndicatorSubscribed(false);
   setInputIndicatorLocal(false);
+  const auto before = inputIndicatorSubscriptionEpoch();
   QVERIFY(!isInputIndicatorSubscribed());
   QVERIFY(!isInputIndicatorLocal());
 
@@ -104,7 +105,11 @@ void InputIndicatorIpcTests::subscriptionStateIsProcessLocalAndClearable()
   setInputIndicatorLocal(true);
   QVERIFY(isInputIndicatorSubscribed());
   QVERIFY(isInputIndicatorLocal());
+  QVERIFY(inputIndicatorSubscriptionEpoch() > before);
 
+  const auto subscribedEpoch = inputIndicatorSubscriptionEpoch();
+  setInputIndicatorSubscribed(true);
+  QCOMPARE(inputIndicatorSubscriptionEpoch(), subscribedEpoch);
   setInputIndicatorSubscribed(false);
   setInputIndicatorLocal(false);
   QVERIFY(!isInputIndicatorSubscribed());

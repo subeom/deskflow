@@ -41,6 +41,9 @@
 #include "gui/chrome/WindowChrome.h"
 #include "gui/chrome/WindowHeader.h"
 #include "gui/core/CoreProcess.h"
+#ifdef Q_OS_MACOS
+#include "gui/input/MacInputIndicatorController.h"
+#endif
 #include "gui/ipc/DaemonIpcClient.h"
 #include "gui/layout/DisplayProvider.h"
 #include "gui/layout/LayoutMemoryService.h"
@@ -218,6 +221,29 @@ MainWindow::MainWindow()
   restoreWindow();
 
 #ifdef Q_OS_MACOS
+  m_inputIndicatorController = new deskflow::gui::input::MacInputIndicatorController(this);
+  connect(
+      m_inputIndicatorController, &deskflow::gui::input::MacInputIndicatorController::enabledChanged,
+      &m_coreProcess, &CoreProcess::setInputIndicatorEnabled
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::inputIndicatorActivityReceived, m_inputIndicatorController,
+      &deskflow::gui::input::MacInputIndicatorController::inputIndicatorActivityReceived
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::inputIndicatorLocalChanged, m_inputIndicatorController,
+      &deskflow::gui::input::MacInputIndicatorController::inputIndicatorLocalChanged
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::inputIndicatorActivityInvalidated, m_inputIndicatorController,
+      &deskflow::gui::input::MacInputIndicatorController::inputIndicatorActivityInvalidated
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::inputIndicatorStateInvalidated, m_inputIndicatorController,
+      &deskflow::gui::input::MacInputIndicatorController::inputIndicatorStateInvalidated
+  );
+  m_coreProcess.setInputIndicatorEnabled(m_inputIndicatorController->isEnabled());
+
   // Route native quits (Cmd+Q / Apple menu Quit / Dock "Quit") to the usual close-to-tray decision instead.
   installQuitHandler([this] { return shouldQuitForNativeRequest(); });
 #endif

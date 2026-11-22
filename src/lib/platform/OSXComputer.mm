@@ -22,6 +22,8 @@
 #include "deskflow/Clipboard.h"
 #include "deskflow/DisplayInvalidException.h"
 #include "deskflow/KeyMap.h"
+#include "deskflow/ipc/CoreIpc.h"
+#include "deskflow/ipc/InputIndicatorIpc.h"
 #include "mt/CondVar.h"
 #include "mt/Lock.h"
 #include "mt/Mutex.h"
@@ -29,6 +31,7 @@
 #include "platform/OSXClipboard.h"
 #include "platform/OSXDisplays.h"
 #include "platform/OSXEventQueueBuffer.h"
+#include "platform/OSXInputIndicatorRelay.h"
 #include "platform/OSXKeyState.h"
 #include "platform/OSXMediaKeySupport.h"
 #include "platform/OSXPasteboardPeeker.h"
@@ -43,6 +46,7 @@
 #include <libproc.h>
 #include <mach-o/dyld.h>
 #include <math.h>
+#include <QCoreApplication>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -126,6 +130,21 @@ OSXComputer::OSXComputer(IEventQueue *events, bool isPrimary, bool enableLangSyn
   try {
     m_screensaver = new OSXScreenSaver(m_events, getEventTarget());
     m_keyState = new OSXKeyState(m_events, AppUtil::instance().getKeyboardLayoutList(), enableLangSync);
+    if (m_isPrimary) {
+      m_inputIndicatorRelay = std::make_unique<deskflow::platform::OSXInputIndicatorRelay>(
+          [](deskflow::platform::OSXInputIndicatorRelay::Work work) {
+            if (auto *application = QCoreApplication::instance()) {
+              QMetaObject::invokeMethod(application, [work = std::move(work)] { work(); }, Qt::QueuedConnection);
+            }
+          },
+          [](const deskflow::input::InputIndicatorActivity &activity) {
+            ipcSendInputIndicatorToClient(
+                QLatin1String(deskflow::input::kInputIndicatorActivityCommand),
+                deskflow::input::encodeInputIndicatorActivity(activity)
+            );
+          }
+      );
+    }
 
     if (Settings::value(Settings::Core::PreventSleep).toBool()) {
       m_powerManager.disableSleep();
@@ -200,6 +219,7 @@ OSXComputer::OSXComputer(IEventQueue *events, bool isPrimary, bool enableLangSyn
 
   // install the platform event queue
   m_events->adoptBuffer(new OSXEventQueueBuffer(m_events));
+  updateInputIndicatorLocalState();
 }
 
 OSXComputer::~OSXComputer()
@@ -815,10 +835,22 @@ void OSXComputer::enable()
   } else {
     LOG_ERR("failed to create quartz event tap");
   }
+
+  updateInputIndicatorLocalState();
 }
 
 void OSXComputer::disable()
 {
+  deskflow::input::setInputIndicatorLocal(false);
+  if (m_inputIndicatorRelay) {
+    m_inputIndicatorRelay->invalidate();
+  }
+  if (deskflow::input::isInputIndicatorSubscribed()) {
+    ipcSendInputIndicatorToClient(
+        QLatin1String(deskflow::input::kInputIndicatorLocalCommand),
+        deskflow::input::encodeInputIndicatorBoolean(false)
+    );
+  }
   // stop looking at the pointer before the cursor is shown again, so that nothing hides it again behind showCursor()
   if (m_pointerHold) {
     m_pointerHold->detach();
@@ -869,6 +901,7 @@ void OSXComputer::disable()
 void OSXComputer::enter()
 {
   m_isOnComputer = true;
+  updateInputIndicatorLocalState();
   // the pointer is on this Mac again: it is not held any more (before the cursor is shown, so that nothing hides it)
   if (m_pointerHold) {
     m_pointerHold->disarm();
@@ -914,6 +947,7 @@ void OSXComputer::leave()
 
   // now off computer
   m_isOnComputer = false;
+  updateInputIndicatorLocalState();
 
   // park the pointer where it is: the capture above belongs to the foreground application and the core is never in the
   // foreground, so it is looked at from now on, and held again when the system takes it back
@@ -1648,11 +1682,28 @@ bool OSXComputer::checkAXPermissions()
   if (AXIsProcessTrusted()) {
     return true;
   }
+
   LOG_CRIT("process is not trusted anymore, quitting");
   disable();
   App &app = App::instance();
   app.getEvents()->addEvent(Event(EventTypes::Quit, nullptr, new ExitEventData(s_exitFailed)));
   return false;
+}
+
+void OSXComputer::updateInputIndicatorLocalState()
+{
+  const bool local = m_isPrimary && m_isOnComputer && m_eventTapPort != nullptr && m_eventTapRLSR != nullptr &&
+                     CGEventTapIsEnabled(m_eventTapPort);
+  deskflow::input::setInputIndicatorLocal(local);
+  if (!local && m_inputIndicatorRelay) {
+    m_inputIndicatorRelay->invalidate();
+  }
+  if (deskflow::input::isInputIndicatorSubscribed()) {
+    ipcSendInputIndicatorToClient(
+        QLatin1String(deskflow::input::kInputIndicatorLocalCommand),
+        deskflow::input::encodeInputIndicatorBoolean(local)
+    );
+  }
 }
 
 #pragma mark -
@@ -1806,6 +1857,22 @@ CGEventRef OSXComputer::handleCGInputEvent(CGEventTapProxy proxy, CGEventType ty
 {
   OSXComputer *computer = (OSXComputer *)refcon;
 
+  if (computer->m_inputIndicatorRelay) {
+    const bool click =
+        type == kCGEventLeftMouseDown || type == kCGEventRightMouseDown || type == kCGEventOtherMouseDown;
+    if (click) {
+      computer->m_inputIndicatorRelay->notify(
+          deskflow::input::InputIndicatorActivityKind::LocalPrimaryMouseClick, CGEventGetTimestamp(event),
+          computer->m_isPrimary, computer->m_isOnComputer
+      );
+    } else if (type == kCGEventKeyDown) {
+      computer->m_inputIndicatorRelay->notify(
+          deskflow::input::InputIndicatorActivityKind::LocalPrimaryKeyDown, CGEventGetTimestamp(event),
+          computer->m_isPrimary, computer->m_isOnComputer
+      );
+    }
+  }
+
   switch (type) {
   case kCGEventLeftMouseDown:
   case kCGEventRightMouseDown:
@@ -1844,11 +1911,13 @@ CGEventRef OSXComputer::handleCGInputEvent(CGEventTapProxy proxy, CGEventType ty
     if (computer->checkAXPermissions()) {
       CGEventTapEnable(computer->m_eventTapPort, true);
       LOG_INFO("quartz event tap was disabled by timeout, re-enabling");
+      computer->updateInputIndicatorLocalState();
     }
     computer->notifyPointerHold(deskflow::platform::PointerHoldTrigger::TapDisabledByTimeout);
     break;
   case kCGEventTapDisabledByUserInput:
     LOG_ERR("quartz event tap was disabled by user input");
+    computer->updateInputIndicatorLocalState();
     computer->notifyPointerHold(deskflow::platform::PointerHoldTrigger::TapDisabledByUser);
     break;
   case NX_NULLEVENT:

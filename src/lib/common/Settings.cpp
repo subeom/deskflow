@@ -363,6 +363,18 @@ QVariant Settings::defaultValue(const QString &key)
   if (key == Gui::TextSize)
     return 100;
 
+  if (key == Gui::InputIndicatorPosition)
+    return QStringLiteral("cursorBottomRight");
+
+  if (key == Gui::InputIndicatorDwellMs)
+    return 1500;
+
+  if (key == Gui::InputIndicatorOpacityPercent)
+    return 85;
+
+  if (key == Gui::InputIndicatorTone)
+    return QStringLiteral("automatic");
+
   if (key == Server::ExternalConfigFile)
     return QStringLiteral("%1/%2-server.conf").arg(Settings::settingsPath(), kAppId);
 

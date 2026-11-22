@@ -22,6 +22,7 @@ private Q_SLOTS:
   void pages_theWindowFrameIsChosenWithOneSwitch_whichSaysTheFrameOfTheNewLook();
   void pages_theAppearanceCard_isTheWayBackToTheLookOfTheSystem_andTheWayForward();
   void effects_theSettingsThatTheCoreReadsNeedARestart();
+  void pages_inputIndicatorDefaultsAndDependencies();
 
   void pages_areInTheOrderOfTheSidebar_withTitlesAndCards();
   void pages_changeIsWrittenAtOnce_andNothingIsWrittenForNoChange();

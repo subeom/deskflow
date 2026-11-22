@@ -40,6 +40,10 @@ protected:
    * \param message The message to write (without trailing newline).
    */
   void writeToClientSocket(QLocalSocket *&clientSocket, const QString &message) const;
+  virtual void clientDisconnected(QLocalSocket *clientSocket)
+  {
+    Q_UNUSED(clientSocket)
+  }
 
 private:
   void processMessage(QLocalSocket *clientSocket, const QString &message);

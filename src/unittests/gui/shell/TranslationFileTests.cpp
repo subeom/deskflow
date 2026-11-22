@@ -233,6 +233,11 @@ void TranslationFileTests::file_hasTheTextsThatTheRedesignAdded()
       {QStringLiteral("deskflow::gui::tray::TrayMenuModel"), QStringLiteral("Needs attention")},
       {QStringLiteral("SettingsPages"), QStringLiteral("Look of the application")},
       {QStringLiteral("SettingsPages"), QStringLiteral("Text size")},
+      {QStringLiteral("SettingsPages"), QStringLiteral("Input source indicator")},
+      {QStringLiteral("SettingsPages"), QStringLiteral("Position from cursor")},
+      {QStringLiteral("SettingsPages"),
+       QStringLiteral("Accessibility permission or field recognition unavailable: indicator hidden. Password and "
+                      "protected field: indicator hidden.")},
       {QStringLiteral("SettingsPages"), QStringLiteral("Use the Deskflow window frame")},
       {QStringLiteral("SettingsPages"), QStringLiteral("Security & clipboard")},
       {QStringLiteral("TunnelChip"), QStringLiteral("Tunnel: connected")},

@@ -21,6 +21,18 @@ void ipcSendToClient(const QString &command, const QString &args)
   );
 }
 
+void ipcSendInputIndicatorToClient(const QString &command, const QString &args)
+{
+  auto &server = deskflow::core::ipc::CoreIpcServer::instance();
+  QMetaObject::invokeMethod(
+      &server,
+      [command, args] {
+        deskflow::core::ipc::CoreIpcServer::instance().broadcastInputIndicatorCommand(command, args);
+      },
+      Qt::QueuedConnection
+  );
+}
+
 void ipcSendConnectionState(deskflow::core::ConnectionState state)
 {
   const auto metaEnum = QMetaEnum::fromType<deskflow::core::ConnectionState>();

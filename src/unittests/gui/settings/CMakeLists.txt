@@ -12,6 +12,17 @@ create_test(
 # the header of the dialog of the settings includes the headers next to it by their short names
 target_include_directories(SettingsPagesTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
 
+if(APPLE)
+  create_test(
+    NAME InputIndicatorSettingsTests
+    DEPENDS gui
+    LIBS server ${gui_server_libs}
+    SOURCE InputIndicatorSettingsTests.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+  )
+  target_include_directories(InputIndicatorSettingsTests PRIVATE "${CMAKE_SOURCE_DIR}/src/lib/gui")
+endif()
+
 # the page of the client has the group of the Cloudflare Tunnel (with a store in memory): it links the libraries of the
 # server like the other tests of widgets
 create_test(

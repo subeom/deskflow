@@ -1,6 +1,16 @@
 # SPDX-FileCopyrightText: (C) 2025 Deskflow Developers
 # SPDX-License-Identifier: MIT
 
+if(APPLE)
+  create_test(
+    NAME CoreProcessInputIndicatorTests
+    DEPENDS gui
+    LIBS server
+    SOURCE CoreProcessInputIndicatorTests.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
+  )
+endif()
+
 create_test(
   NAME NetworkMonitorTests
   DEPENDS gui

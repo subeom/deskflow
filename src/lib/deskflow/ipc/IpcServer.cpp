@@ -90,6 +90,7 @@ void IpcServer::handleDisconnected()
   const auto clientSocket = qobject_cast<QLocalSocket *>(sender());
   LOG_DEBUG("%s ipc server client disconnected", m_typeName.constData());
   m_clients.remove(clientSocket);
+  clientDisconnected(clientSocket);
   clientSocket->deleteLater();
 }
 
@@ -103,6 +104,7 @@ void IpcServer::handleErrorOccurred()
   }
 
   m_clients.remove(clientSocket);
+  clientDisconnected(clientSocket);
   clientSocket->deleteLater();
 }
 

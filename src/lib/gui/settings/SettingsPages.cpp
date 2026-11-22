@@ -1001,6 +1001,74 @@ SettingsPage *SettingsPages::buildKeyboard()
     )
         ->setObjectName(QStringLiteral("cbWin32KeepForeground"));
   }
+
+#ifdef Q_OS_MACOS
+  auto *inputIndicator = page->addCard(
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Input source indicator"))
+  );
+  inputIndicator->setObjectName(QStringLiteral("cardInputIndicator"));
+  auto *indicatorEnabled = addSwitch(
+      page, m_binder, inputIndicator, Settings::Gui::InputIndicatorEnabled,
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Input source indicator")),
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "한/A beside the cursor during text input"))
+  );
+  indicatorEnabled->setObjectName(QStringLiteral("cbInputIndicator"));
+  auto *indicatorPosition = addChoice(
+      page, m_binder, inputIndicator, Settings::Gui::InputIndicatorPosition,
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Position from cursor")),
+      {},
+      {
+          {tx(QT_TRANSLATE_NOOP("SettingsPages", "Bottom right")), QStringLiteral("cursorBottomRight")},
+          {tx(QT_TRANSLATE_NOOP("SettingsPages", "Top right")), QStringLiteral("cursorTopRight")},
+          {tx(QT_TRANSLATE_NOOP("SettingsPages", "Bottom left")), QStringLiteral("cursorBottomLeft")},
+          {tx(QT_TRANSLATE_NOOP("SettingsPages", "Top left")), QStringLiteral("cursorTopLeft")},
+      }
+  );
+  indicatorPosition->setObjectName(QStringLiteral("comboInputIndicatorPosition"));
+  auto *indicatorDwell = addNumber(
+      page, m_binder, inputIndicator, Settings::Gui::InputIndicatorDwellMs,
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Display time")), 600, 3000
+  );
+  indicatorDwell->setSuffix(QStringLiteral(" ms"));
+  indicatorDwell->setObjectName(QStringLiteral("sbInputIndicatorDwell"));
+  auto *indicatorOpacity = addNumber(
+      page, m_binder, inputIndicator, Settings::Gui::InputIndicatorOpacityPercent,
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Badge opacity")), 60, 100
+  );
+  indicatorOpacity->setSuffix(QStringLiteral("%"));
+  indicatorOpacity->setObjectName(QStringLiteral("sbInputIndicatorOpacity"));
+  auto *indicatorTone = addChoice(
+      page, m_binder, inputIndicator, Settings::Gui::InputIndicatorTone,
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Badge color")),
+      {},
+      {
+          {tx(QT_TRANSLATE_NOOP("SettingsPages", "System")), QStringLiteral("automatic")},
+          {tx(QT_TRANSLATE_NOOP("SettingsPages", "Light badge")), QStringLiteral("light")},
+          {tx(QT_TRANSLATE_NOOP("SettingsPages", "Dark badge")), QStringLiteral("dark")},
+      }
+  );
+  indicatorTone->setObjectName(QStringLiteral("comboInputIndicatorTone"));
+  auto *indicatorNote = new InlineHint;
+  indicatorNote->setObjectName(QStringLiteral("hintInputIndicatorSafety"));
+  page->follow([indicatorNote] {
+    indicatorNote->setText(
+        QCoreApplication::translate(
+            "SettingsPages",
+            "Accessibility permission or field recognition unavailable: indicator hidden. Password and protected "
+            "field: indicator hidden."
+        )
+    );
+  });
+  inputIndicator->addNote(indicatorNote);
+  m_binder->onRefresh([indicatorEnabled, indicatorPosition, indicatorDwell, indicatorOpacity, indicatorTone] {
+    const bool enabled = Settings::isWritable() && indicatorEnabled->isChecked();
+    indicatorPosition->setEnabled(enabled);
+    indicatorDwell->setEnabled(enabled);
+    indicatorOpacity->setEnabled(enabled);
+    indicatorTone->setEnabled(enabled);
+  });
+#endif
+
   markServerOnly(page, m_binder, lock);
   markServerOnly(page, m_binder, pointer);
   return page;
