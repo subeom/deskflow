@@ -13,6 +13,12 @@ class InputIndicatorPolicyTests : public QObject
 
 private Q_SLOTS:
   void safeStateShowsKnownSource();
+#ifdef Q_OS_MACOS
+  void accessibilityCandidateUsesFrontmostWhenSystemLookupFails();
+  void accessibilityCandidatesAvoidDuplicatePids();
+#endif
+  void visibilityDecisionReportsHideReason();
+  void diagnosticThrottleLimitsToOnePerFiveSeconds();
   void unsafeStateHides_data();
   void unsafeStateHides();
   void staleEventHides();

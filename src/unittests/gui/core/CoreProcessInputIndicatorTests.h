@@ -14,6 +14,8 @@ class CoreProcessInputIndicatorTests : public QObject
 private Q_SLOTS:
   void coreClientEncodesSubscription();
   void validLocalAndActivityAreForwarded();
+  void slowAccessibilityActivityRemainsFresh();
+  void rejectedSubscriptionInvalidatesIndicatorState();
   void malformedStaleAndDuplicateActivityInvalidate();
   void resetDropsLocalState();
   void rawClientBoundaryRejectsMalformedIndicatorMessages();

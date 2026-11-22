@@ -6,13 +6,15 @@
 
 #include "MacAccessibilityProbe.h"
 
-#include <ApplicationServices/ApplicationServices.h>
 #include <Foundation/Foundation.h>
+#include <ApplicationServices/ApplicationServices.h>
 
 #include <QCoreApplication>
 #include <QPointer>
 #include <QThreadPool>
 
+#include <algorithm>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -81,43 +83,58 @@ std::optional<bool> cfBoolean(CFTypeRef value)
   return CFBooleanGetValue(static_cast<CFBooleanRef>(value));
 }
 
-MacAccessibilitySnapshot readFocusedElement()
+std::optional<int64_t> applicationPidOfElement(AXUIElementRef element)
 {
-  if (!AXIsProcessTrusted()) {
+  pid_t pid = 0;
+  if (!element ||
+      AXUIElementGetPid(element, &pid) != kAXErrorSuccess ||
+      pid <= 0) {
+    return std::nullopt;
+  }
+  return static_cast<int64_t>(pid);
+}
+
+MacAccessibilitySnapshot readFocusedElementForApplication(int64_t applicationPid)
+{
+  if (applicationPid <= 0 ||
+      applicationPid > std::numeric_limits<pid_t>::max()) {
     return {};
   }
 
-  OwnedCF<AXUIElementRef> system(AXUIElementCreateSystemWide());
-  if (!system.get()) {
+  OwnedCF<AXUIElementRef> application(
+      AXUIElementCreateApplication(static_cast<pid_t>(applicationPid))
+  );
+  if (!application.get()) {
     return {};
   }
-
-  OwnedCF<CFTypeRef> application(copyAttribute(system.get(), kAXFocusedApplicationAttribute));
-  OwnedCF<CFTypeRef> focused;
-  if (application.get() && CFGetTypeID(application.get()) == AXUIElementGetTypeID()) {
-    focused = OwnedCF<CFTypeRef>(
-        copyAttribute(reinterpret_cast<AXUIElementRef>(application.get()), kAXFocusedUIElementAttribute)
-    );
-  }
+  OwnedCF<CFTypeRef> focused(
+      copyAttribute(application.get(), kAXFocusedUIElementAttribute)
+  );
   if (!focused.get() || CFGetTypeID(focused.get()) != AXUIElementGetTypeID()) {
     return {};
   }
 
   const auto element = reinterpret_cast<AXUIElementRef>(focused.get());
-  pid_t pid = 0;
-  if (AXUIElementGetPid(element, &pid) != kAXErrorSuccess || pid <= 0) {
+  const auto elementPid = applicationPidOfElement(element);
+  if (!elementPid || *elementPid != applicationPid) {
     return {};
   }
 
   OwnedCF<CFTypeRef> role(copyAttribute(element, kAXRoleAttribute));
   if (!role.get() || (!cfStringEquals(role.get(), kAXTextFieldRole) &&
                       !cfStringEquals(role.get(), kAXTextAreaRole))) {
-    return {.state = EditableFocusState::NotEditable, .applicationPid = pid};
+    return {
+        .state = EditableFocusState::NotEditable,
+        .applicationPid = *elementPid
+    };
   }
 
   OwnedCF<CFTypeRef> subrole(copyAttribute(element, kAXSubroleAttribute));
   if (cfStringEquals(subrole.get(), kAXSecureTextFieldSubrole)) {
-    return {.state = EditableFocusState::SecureOrProtected, .applicationPid = pid};
+    return {
+        .state = EditableFocusState::SecureOrProtected,
+        .applicationPid = *elementPid
+    };
   }
 
   OwnedCF<CFTypeRef> enabledValue(copyAttribute(element, kAXEnabledAttribute));
@@ -125,37 +142,99 @@ MacAccessibilitySnapshot readFocusedElement()
   const auto enabled = cfBoolean(enabledValue.get());
   const auto focusedState = cfBoolean(focusedValue.get());
   if (!enabled || !focusedState) {
-    return {.state = EditableFocusState::Unknown, .applicationPid = pid};
+    return {.state = EditableFocusState::Unknown, .applicationPid = *elementPid};
   }
   if (!*enabled || !*focusedState) {
-    return {.state = EditableFocusState::NotEditable, .applicationPid = pid};
+    return {
+        .state = EditableFocusState::NotEditable,
+        .applicationPid = *elementPid
+    };
   }
 
   Boolean settable = false;
   if (AXUIElementIsAttributeSettable(element, kAXValueAttribute, &settable) != kAXErrorSuccess || !settable) {
-    return {.state = EditableFocusState::Unknown, .applicationPid = pid};
+    return {.state = EditableFocusState::Unknown, .applicationPid = *elementPid};
   }
 
-  return {.state = EditableFocusState::SafeEditable, .applicationPid = pid};
+  return {
+      .state = EditableFocusState::SafeEditable,
+      .applicationPid = *elementPid
+  };
+}
+
+MacAccessibilitySnapshot readFocusedElement(
+    std::optional<int64_t> frontmostPid
+)
+{
+  if (!AXIsProcessTrusted()) {
+    return {};
+  }
+
+  std::optional<int64_t> systemWideApplicationPid;
+  OwnedCF<AXUIElementRef> system(AXUIElementCreateSystemWide());
+  if (system.get()) {
+    OwnedCF<CFTypeRef> application(
+        copyAttribute(system.get(), kAXFocusedApplicationAttribute)
+    );
+    if (application.get() &&
+        CFGetTypeID(application.get()) == AXUIElementGetTypeID()) {
+      systemWideApplicationPid = applicationPidOfElement(
+          reinterpret_cast<AXUIElementRef>(application.get())
+      );
+    }
+  }
+
+  for (const auto pid :
+       macAccessibilityApplicationPidCandidates(
+           systemWideApplicationPid, frontmostPid
+       )) {
+    const auto snapshot = readFocusedElementForApplication(pid);
+    if (snapshot.applicationPid > 0) {
+      return snapshot;
+    }
+  }
+  return {};
 }
 
 } // namespace
+
+std::vector<int64_t> macAccessibilityApplicationPidCandidates(
+    std::optional<int64_t> systemWideApplicationPid,
+    std::optional<int64_t> frontmostApplicationPid
+)
+{
+  std::vector<int64_t> candidates;
+  const auto append = [&candidates](const std::optional<int64_t> &pid) {
+    if (!pid || *pid <= 0 ||
+        std::find(candidates.begin(), candidates.end(), *pid) != candidates.end()) {
+      return;
+    }
+    candidates.push_back(*pid);
+  };
+  append(systemWideApplicationPid);
+  append(frontmostApplicationPid);
+  return candidates;
+}
 
 MacAccessibilityProbe::MacAccessibilityProbe(QObject *parent) : QObject(parent)
 {
 }
 
-void MacAccessibilityProbe::request(uint64_t generation)
+void MacAccessibilityProbe::request(
+    uint64_t generation,
+    std::optional<int64_t> frontmostApplicationPid
+)
 {
   m_requestedGeneration = generation;
+  m_requestedFrontmostApplicationPid = frontmostApplicationPid;
   if (m_running) {
     return;
   }
   m_running = true;
 
   QPointer<MacAccessibilityProbe> self(this);
-  QThreadPool::globalInstance()->start([self, generation] {
-    const auto snapshot = readFocusedElement();
+  QThreadPool::globalInstance()->start([self, generation, frontmostApplicationPid] {
+    const auto snapshot = readFocusedElement(frontmostApplicationPid);
     auto *application = QCoreApplication::instance();
     if (!application) {
       return;
@@ -176,7 +255,7 @@ void MacAccessibilityProbe::finish(uint64_t generation, const MacAccessibilitySn
 {
   m_running = false;
   if (generation != m_requestedGeneration) {
-    request(m_requestedGeneration);
+    request(m_requestedGeneration, m_requestedFrontmostApplicationPid);
     return;
   }
   Q_EMIT completed(generation, snapshot);

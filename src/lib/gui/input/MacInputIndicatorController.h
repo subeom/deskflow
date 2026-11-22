@@ -67,6 +67,7 @@ private:
   void destroyMonitors();
   void trigger(InputIndicatorUiTrigger trigger);
   void hide();
+  void reportHiddenReason(InputIndicatorVisibilityReason reason);
 
   bool m_effectiveEnabled = false;
   bool m_wantedEnabled = false;
@@ -86,6 +87,8 @@ private:
   std::unique_ptr<MacInputIndicatorPanel> m_panel;
   QTimer m_probeTimer;
   QTimer m_dwellTimer;
+  InputIndicatorDiagnosticThrottle m_diagnosticThrottle;
+
 };
 
 } // namespace deskflow::gui::input

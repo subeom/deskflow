@@ -114,9 +114,11 @@ Track B 첫 후보 알고리즘:
 1. Track A는 exact AX role/subrole, focused, enabled, value settable을 조회.
 2. AX value, selected text, document, caret, clipboard 조회 없음.
 3. Electron AX focus notification이 없으면 click 또는 keyDown trigger를 fallback으로 사용.
-4. unknown/secure/unsupported role은 hide.
-5. AX worker의 generation과 frontmost PID가 completion 시점과 다르면 hide.
-6. core IPC는 no text/no keycode 정책.
+4. system-wide focused application AX 조회 실패 시 NSWorkspace frontmost PID로 재조회.
+5. unknown/secure/unsupported role은 hide.
+6. AX worker의 generation과 frontmost PID가 completion 시점과 다르면 hide.
+7. core IPC는 no text/no keycode 정책.
+8. 숨김 원인은 reason code만 Debug log에 기록, 5초당 최대 1회.
 
 미확인 live 항목:
 
@@ -141,7 +143,7 @@ Track B 첫 후보 알고리즘:
 2. `com.apple.keylayout.ABC`: `A`.
 3. `com.apple.inputmethod.Korean.2SetKorean`: `한`.
 4. TIS 알림, focus 알림, click, keyDown을 generation으로 통합.
-5. source switch 후 stale activity는 300 ms gate로 제거.
+5. source switch 후 stale activity는 1,000 ms gate로 제거.
 6. 표시기는 text mutation이 없으므로 native Undo 대상 없음.
 
 ### Track B
@@ -349,6 +351,7 @@ src/input-correction/
 8. existing Accessibility permission 경로 재사용.
 9. second global event tap 없음.
 10. capability는 GUI child core 환경 전달, 로그 redaction, PID/UID 검증, per-client expiry 적용.
+11. Debug hidden-reason log는 5초당 최대 1회, app identity, PID, title, text, value 미포함.
 
 ### Track B
 

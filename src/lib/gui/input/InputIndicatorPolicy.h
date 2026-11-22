@@ -10,6 +10,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 
 namespace deskflow::gui::input {
 
@@ -21,6 +22,27 @@ enum class EditableFocusState
   SecureOrProtected,
   NotEditable,
   Unknown
+};
+
+enum class InputIndicatorVisibilityReason
+{
+  Shown,
+  Disabled,
+  AccessibilityUnavailable,
+  CoreDisconnected,
+  NotPrimary,
+  OffComputer,
+  ScreenUnknown,
+  FocusSecureOrProtected,
+  FocusNotEditable,
+  FocusUnknown,
+  SourceUnknown,
+  GenerationMismatch,
+  EventRejected,
+  NoRecentActivity,
+  InvalidDwell,
+  FrontmostChanged,
+  PanelUnavailable
 };
 
 struct InputIndicatorPolicyInput
@@ -36,7 +58,9 @@ struct InputIndicatorPolicyInput
   uint64_t probeGeneration = 0;
   uint64_t activityGeneration = 0;
   std::chrono::milliseconds eventAge{0};
-  std::chrono::milliseconds maximumEventAge{300};
+  std::chrono::milliseconds maximumEventAge{
+      deskflow::input::kInputIndicatorMaximumEventAgeMilliseconds
+  };
 };
 
 struct InputIndicatorVisibilityDecision
@@ -44,6 +68,21 @@ struct InputIndicatorVisibilityDecision
   bool show = false;
   InputIndicatorSource source = InputIndicatorSource::Unknown;
   std::chrono::milliseconds dwell{0};
+  InputIndicatorVisibilityReason reason =
+      InputIndicatorVisibilityReason::Disabled;
+};
+
+const char *inputIndicatorVisibilityReasonText(
+    InputIndicatorVisibilityReason reason
+);
+
+class InputIndicatorDiagnosticThrottle
+{
+public:
+  bool allow(std::chrono::steady_clock::time_point now);
+
+private:
+  std::optional<std::chrono::steady_clock::time_point> m_last;
 };
 
 class InputIndicatorPolicy

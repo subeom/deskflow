@@ -47,7 +47,8 @@ bool isFreshInputIndicatorActivity(const deskflow::input::InputIndicatorActivity
     return false;
   }
 
-  constexpr uint64_t kMaximumAgeNanoseconds = 300ULL * 1000000ULL;
+  constexpr auto kMaximumAgeNanoseconds =
+      static_cast<uint64_t>(deskflow::input::kInputIndicatorMaximumEventAgeMilliseconds) * 1000000ULL;
   const auto maximumAge =
       kMaximumAgeNanoseconds * static_cast<uint64_t>(timebase.denom) / static_cast<uint64_t>(timebase.numer);
   return deskflow::input::isInputIndicatorActivityFresh(activity, mach_absolute_time(), maximumAge);
@@ -833,6 +834,10 @@ void CoreProcess::onCoreIpcMessageReceived(const QString &command, const QString
     Q_EMIT peerFingerprint(args);
   } else if (command == "missingKeyboardLayouts") {
     Q_EMIT missingKeyboardLayouts(args);
+  } else if (command == "error" &&
+             args == QStringLiteral("invalid input indicator subscription")) {
+    qWarning("core rejected input indicator subscription");
+    resetInputIndicatorState();
   } else if (command == QLatin1String(deskflow::input::kInputIndicatorLocalCommand)) {
     const auto local = deskflow::input::decodeInputIndicatorBoolean(args);
     if (!local || !m_inputIndicatorEnabled) {

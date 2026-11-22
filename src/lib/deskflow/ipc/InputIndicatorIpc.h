@@ -41,6 +41,7 @@ inline constexpr auto kInputIndicatorCapabilityEnvironment = "DESKFLOW_INPUT_IND
 inline constexpr auto kInputIndicatorGuiPidEnvironment = "DESKFLOW_INPUT_INDICATOR_GUI_PID";
 inline constexpr int kInputIndicatorCapabilityLength = 64;
 inline constexpr int kMaximumInputIndicatorRawMessageSize = 256;
+inline constexpr int kInputIndicatorMaximumEventAgeMilliseconds = 1000;
 
 enum class InputIndicatorRawMessageState
 {

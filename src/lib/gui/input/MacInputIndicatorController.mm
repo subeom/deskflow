@@ -115,6 +115,9 @@ void MacInputIndicatorController::applySettings()
   m_opacityPercent = std::clamp(Settings::value(Settings::Gui::InputIndicatorOpacityPercent).toInt(), 60, 100);
   m_tone = toneFromSetting(Settings::value(Settings::Gui::InputIndicatorTone).toString());
   setEffectiveEnabled(m_wantedEnabled && AXIsProcessTrusted());
+  if (m_wantedEnabled && !AXIsProcessTrusted()) {
+    reportHiddenReason(InputIndicatorVisibilityReason::AccessibilityUnavailable);
+  }
   if (m_effectiveEnabled) {
     trigger(InputIndicatorUiTrigger::InputSourceChanged);
   }
@@ -182,11 +185,33 @@ void MacInputIndicatorController::trigger(InputIndicatorUiTrigger)
 
 void MacInputIndicatorController::requestAccessibility()
 {
-  if (!m_effectiveEnabled || !AXIsProcessTrusted() || !m_coreConnected || !m_lastActivity) {
+  if (!m_effectiveEnabled) {
     hide();
     return;
   }
-  m_probe->request(m_generation);
+  if (!AXIsProcessTrusted()) {
+    reportHiddenReason(InputIndicatorVisibilityReason::AccessibilityUnavailable);
+    hide();
+    return;
+  }
+  if (!m_coreConnected) {
+    reportHiddenReason(InputIndicatorVisibilityReason::CoreDisconnected);
+    hide();
+    return;
+  }
+  if (!m_lastActivity) {
+    reportHiddenReason(InputIndicatorVisibilityReason::NoRecentActivity);
+    hide();
+    return;
+  }
+  std::optional<int64_t> frontmostPid;
+  if (NSRunningApplication *frontmost =
+          [[NSWorkspace sharedWorkspace] frontmostApplication]) {
+    frontmostPid = static_cast<int64_t>(
+        frontmost.processIdentifier
+    );
+  }
+  m_probe->request(m_generation, frontmostPid);
 }
 
 void MacInputIndicatorController::inputIndicatorActivityReceived(
@@ -208,6 +233,7 @@ void MacInputIndicatorController::inputIndicatorLocalChanged(bool local)
   ++m_generation;
   if (!local) {
     m_lastActivity.reset();
+    reportHiddenReason(InputIndicatorVisibilityReason::OffComputer);
     hide();
     return;
   }
@@ -218,6 +244,7 @@ void MacInputIndicatorController::inputIndicatorActivityInvalidated()
   m_lastActivity.reset();
   ++m_generation;
   m_probeTimer.stop();
+  reportHiddenReason(InputIndicatorVisibilityReason::EventRejected);
   hide();
 }
 
@@ -228,6 +255,7 @@ void MacInputIndicatorController::inputIndicatorStateInvalidated()
   m_lastActivity.reset();
   ++m_generation;
   m_probeTimer.stop();
+  reportHiddenReason(InputIndicatorVisibilityReason::CoreDisconnected);
   hide();
 }
 
@@ -241,11 +269,13 @@ void MacInputIndicatorController::accessibilityCompleted(
 
   const auto eventAge = m_lastActivity ? activityAge(*m_lastActivity) : std::nullopt;
   if (!eventAge) {
+    reportHiddenReason(InputIndicatorVisibilityReason::EventRejected);
     hide();
     return;
   }
   NSRunningApplication *frontmostApplication = [[NSWorkspace sharedWorkspace] frontmostApplication];
   if (!frontmostApplication || snapshot.applicationPid != frontmostApplication.processIdentifier) {
+    reportHiddenReason(InputIndicatorVisibilityReason::FrontmostChanged);
     hide();
     return;
   }
@@ -263,16 +293,24 @@ void MacInputIndicatorController::accessibilityCompleted(
       .probeGeneration = generation,
       .activityGeneration = m_generation,
       .eventAge = *eventAge,
-      .maximumEventAge = std::chrono::milliseconds{300},
+      .maximumEventAge = std::chrono::milliseconds{
+          deskflow::input::kInputIndicatorMaximumEventAgeMilliseconds
+      },
   };
   const auto decision = InputIndicatorPolicy::decide(input, m_dwell);
-  if (!decision.show || snapshot.applicationPid <= 0 ||
+  if (!decision.show) {
+    reportHiddenReason(decision.reason);
+    hide();
+    return;
+  }
+  if (snapshot.applicationPid <= 0 ||
       !m_panel->show({
           .source = decision.source,
           .position = m_position,
           .opacityPercent = m_opacityPercent,
           .tone = m_tone,
       })) {
+    reportHiddenReason(InputIndicatorVisibilityReason::PanelUnavailable);
     hide();
     return;
   }
@@ -284,6 +322,19 @@ void MacInputIndicatorController::hide()
 {
   m_dwellTimer.stop();
   m_panel->hide();
+}
+
+void MacInputIndicatorController::reportHiddenReason(
+    InputIndicatorVisibilityReason reason
+)
+{
+  if (!m_diagnosticThrottle.allow(std::chrono::steady_clock::now())) {
+    return;
+  }
+  qDebug(
+      "input indicator hidden: %s",
+      inputIndicatorVisibilityReasonText(reason)
+  );
 }
 
 } // namespace deskflow::gui::input

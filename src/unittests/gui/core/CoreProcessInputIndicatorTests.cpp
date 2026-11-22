@@ -77,6 +77,20 @@ deskflow::input::InputIndicatorActivity validActivity(uint64_t sequence)
   };
 }
 
+uint64_t machTicksOlderThan(std::chrono::milliseconds age)
+{
+  mach_timebase_info_data_t timebase{};
+  if (mach_timebase_info(&timebase) != KERN_SUCCESS ||
+      timebase.numer == 0 || timebase.denom == 0) {
+    return 0;
+  }
+  const auto nanoseconds =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(age).count();
+  return static_cast<uint64_t>(nanoseconds) *
+         static_cast<uint64_t>(timebase.denom) /
+         static_cast<uint64_t>(timebase.numer);
+}
+
 } // namespace
 
 void CoreProcessInputIndicatorTests::coreClientEncodesSubscription()
@@ -126,6 +140,68 @@ void CoreProcessInputIndicatorTests::validLocalAndActivityAreForwarded()
   QVERIFY(*local);
   QVERIFY(activity.has_value());
   QCOMPARE(activity->sequence, expected.sequence);
+}
+
+void CoreProcessInputIndicatorTests::slowAccessibilityActivityRemainsFresh()
+{
+  auto process = makeCore();
+  process->setInputIndicatorEnabled(true);
+  std::optional<deskflow::input::InputIndicatorActivity> activity;
+  connect(
+      process.get(), &deskflow::gui::CoreProcess::inputIndicatorActivityReceived,
+      process.get(),
+      [&activity](const deskflow::input::InputIndicatorActivity &value) {
+        activity = value;
+      }
+  );
+
+  CoreProcessInputIndicatorTestAccess::receive(
+      *process, QLatin1String(deskflow::input::kInputIndicatorLocalCommand),
+      QStringLiteral("1")
+  );
+  auto delayed = validActivity(8);
+  const auto now = mach_absolute_time();
+  const auto delayedTicks = machTicksOlderThan(std::chrono::milliseconds{750});
+  const auto oldLimitTicks = machTicksOlderThan(std::chrono::milliseconds{300});
+  QVERIFY(delayedTicks > oldLimitTicks);
+  QVERIFY(oldLimitTicks > 0);
+  delayed.eventTimestampMach = now - delayedTicks;
+  QVERIFY2(
+      !deskflow::input::isInputIndicatorActivityFresh(
+          delayed, now, oldLimitTicks
+      ),
+      "the delayed event must exceed the current 300ms freshness limit"
+  );
+
+  CoreProcessInputIndicatorTestAccess::receive(
+      *process, QLatin1String(deskflow::input::kInputIndicatorActivityCommand),
+      deskflow::input::encodeInputIndicatorActivity(delayed)
+  );
+
+  QVERIFY(activity.has_value());
+  QCOMPARE(activity->sequence, delayed.sequence);
+}
+
+void CoreProcessInputIndicatorTests::rejectedSubscriptionInvalidatesIndicatorState()
+{
+  auto process = makeCore();
+  process->setInputIndicatorEnabled(true);
+  int invalidated = 0;
+  connect(
+      process.get(), &deskflow::gui::CoreProcess::inputIndicatorStateInvalidated,
+      process.get(), [&invalidated] { ++invalidated; }
+  );
+  CoreProcessInputIndicatorTestAccess::receive(
+      *process, QLatin1String(deskflow::input::kInputIndicatorLocalCommand),
+      QStringLiteral("1")
+  );
+
+  CoreProcessInputIndicatorTestAccess::receive(
+      *process, QStringLiteral("error"),
+      QStringLiteral("invalid input indicator subscription")
+  );
+
+  QCOMPARE(invalidated, 1);
 }
 
 void CoreProcessInputIndicatorTests::malformedStaleAndDuplicateActivityInvalidate()

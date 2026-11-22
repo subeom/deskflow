@@ -139,7 +139,12 @@ This section contains options used by the GUI it will begin with `[gui]`
 On macOS, the input source indicator reads no field value or typed text. It only reports `A` for the exact Apple ABC
 input source ID and `한` for the exact Apple Korean 2-set input source ID. It stays hidden when Accessibility cannot
 verify a focused editable field, the field may be protected, the source is unknown, Deskflow is disconnected, or the
-pointer is on a remote computer. Deskflow does not mutate or replay input for this feature.
+pointer is on a remote computer. Enabling the setting only arms the indicator: a click or key press while the pointer is
+on the local Mac and focus is in an eligible field is required. Hovering, moving the mouse, or enabling the setting
+does not show the badge. The GUI uses the system-wide AX focused application when available, then falls back to the
+current frontmost application PID; it never reads the field value. Activity stays correlated for one second so a slow
+AX probe can complete. Debug logs may emit one reason-only `input indicator hidden` message per five seconds. Deskflow
+does not mutate or replay input for this feature.
 
 #### The look of the application, and the way back to the one of before
 

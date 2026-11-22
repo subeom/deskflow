@@ -6,6 +6,9 @@
 #include "InputIndicatorPolicyTests.h"
 
 #include "gui/input/InputIndicatorPolicy.h"
+#ifdef Q_OS_MACOS
+#include "gui/input/MacAccessibilityProbe.h"
+#endif
 
 #include <QTest>
 
@@ -28,7 +31,9 @@ InputIndicatorPolicyInput safeInput()
       .probeGeneration = 7,
       .activityGeneration = 7,
       .eventAge = std::chrono::milliseconds{40},
-      .maximumEventAge = std::chrono::milliseconds{300},
+      .maximumEventAge = std::chrono::milliseconds{
+          deskflow::input::kInputIndicatorMaximumEventAgeMilliseconds
+      },
   };
 }
 
@@ -41,6 +46,57 @@ void InputIndicatorPolicyTests::safeStateShowsKnownSource()
   QVERIFY(decision.show);
   QCOMPARE(decision.source, Source::LatinABC);
   QCOMPARE(decision.dwell, std::chrono::milliseconds{1500});
+}
+
+#ifdef Q_OS_MACOS
+void InputIndicatorPolicyTests::accessibilityCandidateUsesFrontmostWhenSystemLookupFails()
+{
+  const auto candidates =
+      macAccessibilityApplicationPidCandidates(std::nullopt, std::optional<int64_t>{4242});
+
+  QCOMPARE(candidates, std::vector<int64_t>{4242});
+}
+
+void InputIndicatorPolicyTests::accessibilityCandidatesAvoidDuplicatePids()
+{
+  const auto candidates = macAccessibilityApplicationPidCandidates(
+      std::optional<int64_t>{4242}, std::optional<int64_t>{4242}
+  );
+
+  QCOMPARE(candidates, std::vector<int64_t>{4242});
+}
+#endif
+
+void InputIndicatorPolicyTests::visibilityDecisionReportsHideReason()
+{
+  auto input = safeInput();
+  input.isOnComputer = false;
+
+  const auto decision =
+      InputIndicatorPolicy::decide(input, std::chrono::milliseconds{1500});
+
+  QVERIFY(!decision.show);
+  QCOMPARE(
+      decision.reason, InputIndicatorVisibilityReason::OffComputer
+  );
+  QCOMPARE(
+      QString::fromLatin1(
+          inputIndicatorVisibilityReasonText(decision.reason)
+      ),
+      QStringLiteral("off-computer")
+  );
+}
+
+void InputIndicatorPolicyTests::diagnosticThrottleLimitsToOnePerFiveSeconds()
+{
+  InputIndicatorDiagnosticThrottle throttle;
+  const auto start = std::chrono::steady_clock::time_point{
+      std::chrono::seconds{10}
+  };
+
+  QVERIFY(throttle.allow(start));
+  QVERIFY(!throttle.allow(start + std::chrono::milliseconds{4999}));
+  QVERIFY(throttle.allow(start + std::chrono::milliseconds{5000}));
 }
 
 void InputIndicatorPolicyTests::unsafeStateHides_data()
