@@ -23,8 +23,10 @@ namespace deskflow::core::ipc {
 
 static CoreIpcServer *s_instance = nullptr;
 
-CoreIpcServer::CoreIpcServer(QObject *parent, std::chrono::milliseconds indicatorSubscriptionTimeout)
-    : IpcServer(parent, kCoreIpcName, QStringLiteral("core")),
+CoreIpcServer::CoreIpcServer(
+    QObject *parent, std::chrono::milliseconds indicatorSubscriptionTimeout, const QString &serverName
+)
+    : IpcServer(parent, serverName.isEmpty() ? QString::fromLatin1(kCoreIpcName) : serverName, QStringLiteral("core")),
       m_inputIndicatorCapability(
           qEnvironmentVariable(deskflow::input::kInputIndicatorCapabilityEnvironment)
       ),
@@ -35,6 +37,14 @@ CoreIpcServer::CoreIpcServer(QObject *parent, std::chrono::milliseconds indicato
 {
   assert(s_instance == nullptr);
   s_instance = this;
+}
+
+CoreIpcServer::~CoreIpcServer()
+{
+  deskflow::input::setInputIndicatorSubscribed(false);
+  if (s_instance == this) {
+    s_instance = nullptr;
+  }
 }
 
 CoreIpcServer &CoreIpcServer::instance()

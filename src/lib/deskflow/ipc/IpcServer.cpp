@@ -45,8 +45,16 @@ void IpcServer::listen()
   if (m_server->listen(m_serverName)) {
     LOG_DEBUG("%s ipc server listening on: %s", m_typeName.constData(), m_serverName.toUtf8().constData());
   } else {
-    LOG_ERR("%s ipc server failed to listen on: %s", m_typeName.constData(), m_serverName.toUtf8().constData());
+    LOG_ERR(
+        "%s ipc server failed to listen on: %s (%s)", m_typeName.constData(), m_serverName.toUtf8().constData(),
+        m_server->errorString().toUtf8().constData()
+    );
   }
+}
+
+QString IpcServer::fullServerName() const
+{
+  return m_server->fullServerName();
 }
 
 void IpcServer::handleNewConnection()
