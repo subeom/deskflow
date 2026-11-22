@@ -6,14 +6,18 @@
 
 #include "MacAccessibilityProbe.h"
 
-#include <Foundation/Foundation.h>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic ignored "-Wdeprecated-enum-enum-conversion"
+#pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
 #include <ApplicationServices/ApplicationServices.h>
+#include <Foundation/Foundation.h>
+#pragma clang diagnostic pop
 
 #include <QCoreApplication>
 #include <QPointer>
 #include <QThreadPool>
 
-#include <algorithm>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -203,17 +207,27 @@ std::vector<int64_t> macAccessibilityApplicationPidCandidates(
     std::optional<int64_t> frontmostApplicationPid
 )
 {
-  std::vector<int64_t> candidates;
-  const auto append = [&candidates](const std::optional<int64_t> &pid) {
-    if (!pid || *pid <= 0 ||
-        std::find(candidates.begin(), candidates.end(), *pid) != candidates.end()) {
-      return;
-    }
-    candidates.push_back(*pid);
-  };
-  append(systemWideApplicationPid);
-  append(frontmostApplicationPid);
-  return candidates;
+  if (!frontmostApplicationPid || *frontmostApplicationPid <= 0) {
+    return {};
+  }
+  if (systemWideApplicationPid &&
+      *systemWideApplicationPid == *frontmostApplicationPid) {
+    return {*systemWideApplicationPid};
+  }
+  return {*frontmostApplicationPid};
+}
+
+MacAccessibilitySnapshot macAccessibilitySnapshotForFrontmostApplication(
+    const MacAccessibilitySnapshot &snapshot,
+    std::optional<int64_t> frontmostApplicationPid
+)
+{
+  if (!frontmostApplicationPid ||
+      *frontmostApplicationPid <= 0 ||
+      snapshot.applicationPid != *frontmostApplicationPid) {
+    return {};
+  }
+  return snapshot;
 }
 
 MacAccessibilityProbe::MacAccessibilityProbe(QObject *parent) : QObject(parent)

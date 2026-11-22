@@ -274,7 +274,17 @@ void MacInputIndicatorController::accessibilityCompleted(
     return;
   }
   NSRunningApplication *frontmostApplication = [[NSWorkspace sharedWorkspace] frontmostApplication];
-  if (!frontmostApplication || snapshot.applicationPid != frontmostApplication.processIdentifier) {
+  const std::optional<int64_t> frontmostPid =
+      frontmostApplication
+          ? std::optional<int64_t>{
+                static_cast<int64_t>(frontmostApplication.processIdentifier)
+            }
+          : std::nullopt;
+  const auto currentSnapshot =
+      macAccessibilitySnapshotForFrontmostApplication(
+          snapshot, frontmostPid
+      );
+  if (currentSnapshot.applicationPid <= 0) {
     reportHiddenReason(InputIndicatorVisibilityReason::FrontmostChanged);
     hide();
     return;
@@ -288,7 +298,7 @@ void MacInputIndicatorController::accessibilityCompleted(
       .isPrimary = true,
       .isOnComputer = m_isOnComputer,
       .screenKnown = true,
-      .focus = snapshot.state,
+      .focus = currentSnapshot.state,
       .source = m_source,
       .probeGeneration = generation,
       .activityGeneration = m_generation,
@@ -303,8 +313,7 @@ void MacInputIndicatorController::accessibilityCompleted(
     hide();
     return;
   }
-  if (snapshot.applicationPid <= 0 ||
-      !m_panel->show({
+  if (!m_panel->show({
           .source = decision.source,
           .position = m_position,
           .opacityPercent = m_opacityPercent,

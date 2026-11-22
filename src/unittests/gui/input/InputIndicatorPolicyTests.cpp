@@ -65,6 +65,71 @@ void InputIndicatorPolicyTests::accessibilityCandidatesAvoidDuplicatePids()
 
   QCOMPARE(candidates, std::vector<int64_t>{4242});
 }
+
+void InputIndicatorPolicyTests::accessibilityCandidatesIgnoreStaleSystemPid()
+{
+  const auto candidates = macAccessibilityApplicationPidCandidates(
+      std::optional<int64_t>{31337}, std::optional<int64_t>{4242}
+  );
+
+  QCOMPARE(candidates, std::vector<int64_t>{4242});
+}
+
+void InputIndicatorPolicyTests::accessibilityCandidatesRequireFrontmostPid()
+{
+  const auto candidates = macAccessibilityApplicationPidCandidates(
+      std::optional<int64_t>{31337}, std::nullopt
+  );
+
+  QVERIFY(candidates.empty());
+}
+
+void InputIndicatorPolicyTests::accessibilitySnapshotRejectsStalePid()
+{
+  const MacAccessibilitySnapshot stale{
+      .state = EditableFocusState::SafeEditable,
+      .applicationPid = 31337
+  };
+
+  const auto current = macAccessibilitySnapshotForFrontmostApplication(
+      stale, std::optional<int64_t>{4242}
+  );
+
+  QCOMPARE(current.state, EditableFocusState::Unknown);
+  QCOMPARE(current.applicationPid, int64_t{0});
+}
+
+void InputIndicatorPolicyTests::accessibilitySnapshotRequiresFrontmostPid()
+{
+  const MacAccessibilitySnapshot snapshot{
+      .state = EditableFocusState::SafeEditable,
+      .applicationPid = 4242
+  };
+
+  const auto current =
+      macAccessibilitySnapshotForFrontmostApplication(
+          snapshot, std::nullopt
+      );
+
+  QCOMPARE(current.state, EditableFocusState::Unknown);
+  QCOMPARE(current.applicationPid, int64_t{0});
+}
+
+void InputIndicatorPolicyTests::accessibilitySnapshotAcceptsMatchingFrontmostPid()
+{
+  const MacAccessibilitySnapshot snapshot{
+      .state = EditableFocusState::SafeEditable,
+      .applicationPid = 4242
+  };
+
+  const auto current =
+      macAccessibilitySnapshotForFrontmostApplication(
+          snapshot, std::optional<int64_t>{4242}
+      );
+
+  QCOMPARE(current.state, EditableFocusState::SafeEditable);
+  QCOMPARE(current.applicationPid, snapshot.applicationPid);
+}
 #endif
 
 void InputIndicatorPolicyTests::visibilityDecisionReportsHideReason()

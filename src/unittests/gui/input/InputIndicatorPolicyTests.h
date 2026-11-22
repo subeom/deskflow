@@ -16,6 +16,11 @@ private Q_SLOTS:
 #ifdef Q_OS_MACOS
   void accessibilityCandidateUsesFrontmostWhenSystemLookupFails();
   void accessibilityCandidatesAvoidDuplicatePids();
+  void accessibilityCandidatesIgnoreStaleSystemPid();
+  void accessibilityCandidatesRequireFrontmostPid();
+  void accessibilitySnapshotRejectsStalePid();
+  void accessibilitySnapshotRequiresFrontmostPid();
+  void accessibilitySnapshotAcceptsMatchingFrontmostPid();
 #endif
   void visibilityDecisionReportsHideReason();
   void diagnosticThrottleLimitsToOnePerFiveSeconds();
