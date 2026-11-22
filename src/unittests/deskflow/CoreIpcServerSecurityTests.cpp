@@ -141,6 +141,25 @@ void CoreIpcServerSecurityTests::malformedRawMessageRemovesExistingAuthorization
   QTRY_VERIFY(!isInputIndicatorSubscribed());
 }
 
+void CoreIpcServerSecurityTests::ordinaryPayloadsContainingIndicatorNamesStayConnected()
+{
+  auto client = connectClient();
+  const QList<QByteArray> ordinary{
+      QByteArray("connectedClients=inputIndicatorLocal\n"),
+      QByteArray("unrecognisedClient=foo-inputIndicatorActivity-bar\n"),
+      QByteArray("configFile=/tmp/inputIndicatorSubscription/config\n"),
+      QByteArray("connectedClients=inputIndicatorLocal=extra\n"),
+      QByteArray("unrecognisedClient=\xed\x95\x9c-inputIndicatorActivity\n"),
+      QByteArray("unrecognisedClient=\0inputIndicatorLocal\n", 43),
+  };
+
+  for (const auto &message : ordinary) {
+    send(client, message);
+    QCOMPARE(client->state(), QLocalSocket::ConnectedState);
+  }
+  QVERIFY(!isInputIndicatorSubscribed());
+}
+
 void CoreIpcServerSecurityTests::subscriptionExpiresAndCanRenew()
 {
   auto client = connectClient();

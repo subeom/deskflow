@@ -29,6 +29,7 @@ private Q_SLOTS:
   void exactCapabilityAuthorizesAndDisconnectRemovesIt();
   void malformedRawSubscriptionNeverAuthorizes();
   void malformedRawMessageRemovesExistingAuthorization();
+  void ordinaryPayloadsContainingIndicatorNamesStayConnected();
   void subscriptionExpiresAndCanRenew();
   void disconnectFromOnePeerKeepsOtherSubscription();
 

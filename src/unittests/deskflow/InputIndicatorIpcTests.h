@@ -20,5 +20,6 @@ private Q_SLOTS:
   void booleanPayloadsAreStrict();
   void subscriptionCapabilityIsExactAndRedacted();
   void rawIndicatorMessagesAreStrict();
+  void ordinaryPayloadsContainingIndicatorNamesStayOrdinary();
   void subscriptionStateIsProcessLocalAndClearable();
 };

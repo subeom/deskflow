@@ -124,10 +124,8 @@ void InputIndicatorIpcTests::rawIndicatorMessagesAreStrict()
   const QList<QByteArray> invalid{
       QByteArray("inputIndicatorLocal=1=extra"),
       QByteArray("inputIndicatorLocal="),
-      QByteArray("inputIndicatorLocal =1"),
       QByteArray("inputIndicatorLocal=1\r"),
       QByteArray("inputIndicatorLocal=1\0extra", 24),
-      QByteArray("prefix-inputIndicatorLocal=1"),
       QByteArray("inputIndicatorLocal=") + QByteArray(300, 'x'),
   };
   for (const auto &message : invalid) {
@@ -137,6 +135,26 @@ void InputIndicatorIpcTests::rawIndicatorMessagesAreStrict()
       parseInputIndicatorRawMessage(QByteArray("connectionState=Connected")).state,
       InputIndicatorRawMessageState::NotIndicator
   );
+}
+
+void InputIndicatorIpcTests::ordinaryPayloadsContainingIndicatorNamesStayOrdinary()
+{
+  const QList<QByteArray> ordinary{
+      QByteArray("connectedClients=inputIndicatorLocal"),
+      QByteArray("unrecognisedClient=foo-inputIndicatorActivity-bar"),
+      QByteArray("configFile=/tmp/inputIndicatorSubscription/config"),
+      QByteArray("configFile=/tmp/inputIndicatorLocal=value"),
+      QByteArray("unrecognisedClient=\xed\x95\x9c-inputIndicatorActivity"),
+      QByteArray("unrecognisedClient=\0inputIndicatorLocal", 29),
+      QByteArray("inputIndicatorLocal =1"),
+  };
+
+  for (const auto &message : ordinary) {
+    QCOMPARE(
+        parseInputIndicatorRawMessage(message).state,
+        InputIndicatorRawMessageState::NotIndicator
+    );
+  }
 }
 
 void InputIndicatorIpcTests::subscriptionStateIsProcessLocalAndClearable()
