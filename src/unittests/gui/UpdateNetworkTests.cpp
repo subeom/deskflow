@@ -24,6 +24,7 @@ using deskflow::gui::isAllowedUpdateRedirect;
 using deskflow::gui::isAllowedUpdateUrl;
 using deskflow::gui::isCurrentUpdateGeneration;
 using deskflow::gui::parseUpdateRetryAfterSeconds;
+using deskflow::gui::resolveUpdateRedirectLocation;
 using deskflow::gui::shouldRetryUpdateRequest;
 
 namespace {
@@ -46,6 +47,15 @@ QString signedAssetQuery()
   return QStringLiteral(
       "rsct=application%2Foctet-stream&sig=abcd%2Fefghijk&sp=r&sv=2018-03-28&sr=b"
   );
+}
+
+QString nestedPercentEncoding(const QString &escape, int levels)
+{
+  auto encoded = escape;
+  for (int level = 0; level < levels; ++level) {
+    encoded.replace(QStringLiteral("%"), QStringLiteral("%25"));
+  }
+  return encoded;
 }
 
 QUrl assetRedirect(
@@ -226,7 +236,10 @@ void UpdateNetworkTests::redirectPolicy_acceptsOnlyTerminalGithubAssetHosts()
            QStringLiteral("a%252Fb.dmg"),
            QStringLiteral("%2e%2e/file.dmg"),
            QStringLiteral("%252e%252e/file.dmg"),
-           QStringLiteral("a%5Cb.dmg")}) {
+           QStringLiteral("a%5Cb.dmg"),
+           QStringLiteral("a%00b.dmg"),
+           QStringLiteral("a%0Ab.dmg"),
+           QStringLiteral("a%0Db.dmg")}) {
     QVERIFY2(
         !isAllowedUpdateRedirect(
             assetUrl(),
@@ -238,6 +251,66 @@ void UpdateNetworkTests::redirectPolicy_acceptsOnlyTerminalGithubAssetHosts()
         ),
         qPrintable(path)
     );
+  }
+  for (int depth = 1; depth <= 10; ++depth) {
+    const auto nestedSlash = nestedPercentEncoding(QStringLiteral("%2F"), depth);
+    const auto path = QStringLiteral("%1/file.dmg").arg(
+        nestedSlash
+    );
+    QVERIFY2(
+        !isAllowedUpdateRedirect(
+            assetUrl(),
+            QUrl(
+                QStringLiteral("https://release-assets.githubusercontent.com/%1?%2")
+                    .arg(path, signedAssetQuery())
+            ),
+            UpdateRequestKind::Installer, 1
+        ),
+        qPrintable(path)
+    );
+    const auto nestedSlashQuery =
+          QStringLiteral("sig=%1").arg(nestedSlash);
+    QVERIFY2(
+          !isAllowedUpdateRedirect(
+              assetUrl(),
+              assetRedirect(
+                  QStringLiteral("release-assets.githubusercontent.com"),
+                  nestedSlashQuery
+              ),
+              UpdateRequestKind::Installer, 1
+          ),
+          qPrintable(nestedSlashQuery)
+    );
+    for (const auto &escape :
+         {QStringLiteral("%5C"), QStringLiteral("%00"), QStringLiteral("%0A"), QStringLiteral("%0D")}) {
+        const auto nestedPath = QStringLiteral("%1/file.dmg").arg(
+            nestedPercentEncoding(escape, depth)
+        );
+        QVERIFY2(
+            !isAllowedUpdateRedirect(
+                assetUrl(),
+                QUrl(
+                    QStringLiteral("https://release-assets.githubusercontent.com/%1?%2")
+                        .arg(nestedPath, signedAssetQuery())
+                ),
+                UpdateRequestKind::Installer, 1
+            ),
+            qPrintable(nestedPath)
+        );
+      const auto query =
+          QStringLiteral("sig=%1").arg(nestedPercentEncoding(escape, depth));
+      QVERIFY2(
+          !isAllowedUpdateRedirect(
+              assetUrl(),
+              assetRedirect(
+                  QStringLiteral("release-assets.githubusercontent.com"),
+                  query
+              ),
+              UpdateRequestKind::Installer, 1
+          ),
+          qPrintable(query)
+      );
+    }
   }
   QVERIFY(!isAllowedUpdateRedirect(
       QUrl(QStringLiteral("%1?x=1").arg(assetUrl().toString())),
@@ -307,6 +380,65 @@ void UpdateNetworkTests::redirectPolicy_handlesSignedGithubCdnRedirectsInNetwork
   QCOMPARE(result.status, UpdateNetworkStatus::PolicyError);
   QCOMPARE(result.httpStatus, 302);
   QCOMPARE(blockedManager.requestedUrls, (QList<QUrl>{assetUrl()}));
+}
+
+void UpdateNetworkTests::redirectLocation_rejectsRawMalformedAndOverlongReferences()
+{
+  QUrl resolved;
+  const QByteArray valid(assetRedirect().toEncoded(QUrl::FullyEncoded));
+  QVERIFY(resolveUpdateRedirectLocation(valid, assetUrl(), resolved));
+  QCOMPARE(resolved, assetRedirect());
+
+  QVERIFY(resolveUpdateRedirectLocation(
+      QByteArrayLiteral("//release-assets.githubusercontent.com/github-production-release-asset/1/token?sig=x"),
+      assetUrl(), resolved
+  ));
+  QCOMPARE(resolved.host(), QStringLiteral("release-assets.githubusercontent.com"));
+  QVERIFY(resolveUpdateRedirectLocation(
+      QByteArrayLiteral("//evil.example/path"), assetUrl(), resolved
+  ));
+  QVERIFY(!isAllowedUpdateRedirect(
+      assetUrl(), resolved, UpdateRequestKind::Installer, 1
+  ));
+
+  const QByteArray encodedSeparator(
+      "https://release-assets.githubusercontent.com/path%5cfile"
+  );
+  QVERIFY(resolveUpdateRedirectLocation(
+      encodedSeparator, assetUrl(), resolved
+  ));
+  QVERIFY(!isAllowedUpdateRedirect(
+      assetUrl(), resolved, UpdateRequestKind::Installer, 1
+  ));
+
+  auto nul = QByteArrayLiteral("https://release-assets.githubusercontent.com/path");
+  nul.append('\0');
+  nul.append('x');
+  const QList<QByteArray> invalid{
+      {},
+      QByteArrayLiteral("https://release-assets.githubusercontent.com/%ZZ"),
+      QByteArrayLiteral("https://release-assets.githubusercontent.com/%2"),
+      QByteArrayLiteral("https://release-assets.githubusercontent.com:bad/path"),
+      QByteArrayLiteral("https://[invalid]/path"),
+      QByteArrayLiteral("\\\\release-assets.githubusercontent.com\\path"),
+      QByteArrayLiteral("https://release-assets.githubusercontent.com/path\r\nX-Evil: yes"),
+      nul,
+  };
+  for (const auto &raw : invalid) {
+    QVERIFY2(
+        !resolveUpdateRedirectLocation(raw, assetUrl(), resolved),
+        raw.constData()
+    );
+  }
+
+  const auto overlongRelative =
+      QStringLiteral("./").repeated(5 * 1024).toUtf8();
+  QVERIFY(overlongRelative.size() > 8 * 1024);
+  QVERIFY(!resolveUpdateRedirectLocation(overlongRelative, assetUrl(), resolved));
+
+  QVERIFY(resolveUpdateRedirectLocation(
+      QByteArrayLiteral("../relative/target"), assetUrl(), resolved
+  ));
 }
 
 void UpdateNetworkTests::rateLimit_classifies429AndExhausted403ButNotOrdinary403()

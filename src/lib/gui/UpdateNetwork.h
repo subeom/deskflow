@@ -89,6 +89,9 @@ bool isAllowedUpdateUrl(const QUrl &url, UpdateRequestKind kind);
 bool isAllowedUpdateRedirect(
     const QUrl &source, const QUrl &redirect, UpdateRequestKind kind, int redirectCount
 );
+bool resolveUpdateRedirectLocation(
+    const QByteArray &rawLocation, const QUrl &base, QUrl &resolved
+);
 bool isUpdateRateLimited(int httpStatus, const QByteArray &remainingHeader);
 int parseUpdateRetryAfterSeconds(
     const QByteArray &retryAfter, const QByteArray &rateLimitReset, qint64 nowEpochSeconds

@@ -16,6 +16,7 @@ private Q_SLOTS:
   void redirectPolicy_rejectsApiRedirectsThirdPartyHostsAndUnsafeUrls();
   void redirectPolicy_acceptsOnlyTerminalGithubAssetHosts();
   void redirectPolicy_handlesSignedGithubCdnRedirectsInNetworkPath();
+  void redirectLocation_rejectsRawMalformedAndOverlongReferences();
   void rateLimit_classifies429AndExhausted403ButNotOrdinary403();
   void retryPolicy_allowsOneMetadataOrChecksumTransientRetryOnly();
   void responseLimit_rejectsOversizeBeforeBodyPublication();

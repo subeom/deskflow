@@ -31,8 +31,30 @@ constexpr int kMaximumRateLimitWaitSeconds = 24 * 60 * 60;
 constexpr int kMaximumRequestTimeoutMs = 30'000;
 constexpr int kMaximumMetadataTotalTimeoutMs = 30'000;
 constexpr int kMaximumInstallerTotalTimeoutMs = 5 * 60'000;
+constexpr int kMaximumPercentDecodePasses = 8;
 constexpr qint64 kMaximumMetadataBytes = 2LL * 1024 * 1024;
 constexpr qint64 kMaximumInstallerBytes = 512LL * 1024 * 1024;
+
+bool hasPercentEscape(const QString &value)
+{
+  static const QRegularExpression pattern(
+      QStringLiteral(R"(%[0-9A-Fa-f]{2})")
+  );
+  return pattern.match(value).hasMatch();
+}
+
+bool hasForbiddenEncodedValue(
+    const QString &value, bool rejectSlash, int pass
+)
+{
+  const auto lower = value.toLower();
+  return (rejectSlash && lower.contains(QStringLiteral("%2f"))) ||
+         (pass > 0 && lower.contains(QStringLiteral("%2f"))) ||
+         lower.contains(QStringLiteral("%5c")) ||
+         lower.contains(QStringLiteral("%00")) ||
+         lower.contains(QStringLiteral("%0a")) ||
+         lower.contains(QStringLiteral("%0d"));
+}
 
 bool isSafeHttpsUrl(const QUrl &url)
 {
@@ -52,27 +74,13 @@ bool isSafeHttpsUrl(const QUrl &url)
 bool hasSafePath(const QUrl &url)
 {
   const auto encodedPath = url.path(QUrl::FullyEncoded).toUtf8();
-  const auto lowerEncodedPath = encodedPath.toLower();
-  if (lowerEncodedPath.contains("%2f") ||
-      lowerEncodedPath.contains("%5c") ||
-      lowerEncodedPath.contains("%00") ||
-      lowerEncodedPath.contains("%0a") ||
-      lowerEncodedPath.contains("%0d")) {
-    return false;
-  }
-
-  auto path = QUrl::fromPercentEncoding(encodedPath);
-  for (int pass = 0; pass < 3; ++pass) {
+  auto path = QString::fromUtf8(encodedPath);
+  for (int pass = 0; pass < kMaximumPercentDecodePasses; ++pass) {
     if (path.contains(QLatin1Char('\\')) || path.contains(QLatin1Char('\0')) ||
         path.contains(QLatin1Char('\r')) || path.contains(QLatin1Char('\n'))) {
       return false;
     }
-    const auto lowerPath = path.toLower();
-    if (lowerPath.contains(QStringLiteral("%2f")) ||
-        lowerPath.contains(QStringLiteral("%5c")) ||
-        lowerPath.contains(QStringLiteral("%00")) ||
-        lowerPath.contains(QStringLiteral("%0a")) ||
-        lowerPath.contains(QStringLiteral("%0d"))) {
+    if (hasForbiddenEncodedValue(path, true, pass)) {
       return false;
     }
     for (const auto &part : path.split(QLatin1Char('/'))) {
@@ -86,7 +94,8 @@ bool hasSafePath(const QUrl &url)
     }
     path = decoded;
   }
-  return !path.isEmpty() && path != QStringLiteral("/");
+  return !path.isEmpty() && path != QStringLiteral("/") &&
+         !hasPercentEscape(path);
 }
 
 bool hasSafeRedirectQuery(const QUrl &url)
@@ -95,24 +104,15 @@ bool hasSafeRedirectQuery(const QUrl &url)
   if (encoded.size() > kMaximumUrlBytes) {
     return false;
   }
-  const auto lower = encoded.toLower();
-  if (lower.contains("%5c") || lower.contains("%00") ||
-      lower.contains("%0a") || lower.contains("%0d")) {
-    return false;
-  }
-  auto decoded = QUrl::fromPercentEncoding(encoded);
-  for (int pass = 0; pass < 3; ++pass) {
+  auto decoded = QString::fromUtf8(encoded);
+  for (int pass = 0; pass < kMaximumPercentDecodePasses; ++pass) {
     if (decoded.contains(QLatin1Char('\\')) ||
         decoded.contains(QLatin1Char('\0')) ||
         decoded.contains(QLatin1Char('\r')) ||
         decoded.contains(QLatin1Char('\n'))) {
       return false;
     }
-    const auto lowerDecoded = decoded.toLower();
-    if (lowerDecoded.contains(QStringLiteral("%5c")) ||
-        lowerDecoded.contains(QStringLiteral("%00")) ||
-        lowerDecoded.contains(QStringLiteral("%0a")) ||
-        lowerDecoded.contains(QStringLiteral("%0d"))) {
+    if (hasForbiddenEncodedValue(decoded, false, pass)) {
       return false;
     }
     const auto next = QUrl::fromPercentEncoding(decoded.toUtf8());
@@ -121,7 +121,7 @@ bool hasSafeRedirectQuery(const QUrl &url)
     }
     decoded = next;
   }
-  return true;
+  return !hasPercentEscape(decoded);
 }
 
 bool isTerminalAssetHost(const QString &host)
@@ -209,6 +209,29 @@ bool isAllowedUpdateRedirect(
     return false;
   }
   return true;
+}
+
+bool resolveUpdateRedirectLocation(
+    const QByteArray &rawLocation, const QUrl &base, QUrl &resolved
+)
+{
+  resolved = QUrl();
+  if (rawLocation.isEmpty() || rawLocation.size() > kMaximumUrlBytes ||
+      rawLocation.contains('\\')) {
+    return false;
+  }
+  for (const auto byte : rawLocation) {
+    const auto value = static_cast<unsigned char>(byte);
+    if (value < 0x20 || value == 0x7f) {
+      return false;
+    }
+  }
+  const auto reference = QUrl::fromEncoded(rawLocation, QUrl::StrictMode);
+  if (!reference.isValid() || reference.isEmpty()) {
+    return false;
+  }
+  resolved = reference.isRelative() ? base.resolved(reference) : reference;
+  return resolved.isValid() && !resolved.isEmpty();
 }
 
 bool isUpdateRateLimited(int httpStatus, const QByteArray &remainingHeader)
@@ -434,11 +457,14 @@ void QtUpdateNetwork::beginRequest(quint64 id, const QUrl &url)
     static const QSet<int> redirectStatuses{301, 302, 303, 307, 308};
     if (redirectStatuses.contains(status)) {
       const auto location =
-          QUrl::fromEncoded(completed->reply->rawHeader(QByteArrayLiteral("Location")));
-      const auto redirect =
-          location.isRelative() ? completed->reply->url().resolved(location) : location;
+          completed->reply->rawHeader(QByteArrayLiteral("Location"));
+      QUrl redirect;
+      const auto resolved =
+          resolveUpdateRedirectLocation(
+              location, completed->reply->url(), redirect
+          );
       ++completed->redirectCount;
-      if (!isAllowedUpdateRedirect(
+      if (!resolved || !isAllowedUpdateRedirect(
               completed->url, redirect, completed->options.kind, completed->redirectCount
           )) {
         finishRequest(
