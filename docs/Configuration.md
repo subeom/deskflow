@@ -136,17 +136,24 @@ This section contains options used by the GUI it will begin with `[gui]`
 | textSize                       | `90`, `100`, `115`, `130` or `150` | The size of the text of the look `deskflow`, in percent of the size that the OS has [default: 100] |
 | updateCheckUrl                 | URL               | The URL to use when checking for a new version number, it should return a version [default: https://api.deskflow.org/version]|
 
-On macOS, the input source indicator reads no field value or typed text. It only reports `A` for the exact Apple ABC
-input source ID and `한` for the exact Apple Korean 2-set input source ID. It stays hidden when Accessibility cannot
-verify a focused editable field, the field may be protected, the source is unknown, Deskflow is disconnected, or the
-pointer is on a remote computer. Enabling the setting only arms the indicator: a click or key press while the pointer is
-on the local Mac, a real focus change, or an actual input-source change can request an eligible-field check. Hovering,
-moving the mouse, or enabling the setting does not show the badge. Click/key triggers require fresh core activity;
-focus/source triggers require no synthetic activity record. The GUI uses the system-wide AX focused application when
-available, then falls back to the current frontmost application PID; it never reads the field value. Deskflow's own GUI
-process is not queried, so opening its dialogs cannot re-enter the accessibility bridge while their widgets are created.
-Activity stays correlated for one second so a slow AX probe can complete. Debug logs may emit one reason-only
-`input indicator hidden` message per five seconds. Deskflow does not mutate or replay input for this feature.
+On macOS, the input source indicator reads no field value or typed text. It reports `A` only for the exact Apple ABC
+input source ID and `한` only for the exact Apple Korean 2-set input source ID. Enabling the setting only arms the
+indicator: a real local ABC/Korean source transition, local primary mouse-down, or local primary key-down can request
+one short badge beside the current mouse pointer. Moving or hovering the mouse, changing focus or the frontmost app,
+starting a monitor, and enabling the setting do not show a badge. Focus/app changes only hide or invalidate a pending
+display.
+
+Accessibility is used to identify the external frontmost target and to reject a positively identified secure or protected
+field. Unknown or not-editable AX metadata does not by itself reject a fresh local activity candidate. The badge still
+stays hidden when Accessibility is not trusted, Deskflow is the frontmost app, the target PID or generation no longer
+matches, the source is unknown, the core is disconnected, the pointer is on a remote computer, the activity is stale or
+invalid, or the pointer geometry is unavailable. Click/key activity is accepted for one second and carries only event
+kind, sequence, and timestamp; it carries no keycode or typed content.
+
+The GUI places the panel from `NSEvent.mouseLocation` with the selected cursor-relative setting and existing screen-edge
+clamping. It never reads or uses AX caret, range, selection, or field-frame coordinates, and mouse movement does not
+extend the dwell timer. The panel closes after the configured short display time. Debug logs may emit one reason-only
+`input indicator hidden` message per five seconds. Deskflow does not mutate, replay, or log user input for this feature.
 
 #### The look of the application, and the way back to the one of before
 

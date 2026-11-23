@@ -15,6 +15,8 @@ private Q_SLOTS:
   void bottomRightOffsetsCursor();
   void positionsFlipInsideScreen();
   void choosesScreenContainingCursor();
+  void everyPositionIsPointerRelative_data();
+  void everyPositionIsPointerRelative();
   void unknownOrInvalidGeometryHides_data();
   void unknownOrInvalidGeometryHides();
 };

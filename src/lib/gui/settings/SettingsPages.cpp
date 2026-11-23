@@ -1010,7 +1010,10 @@ SettingsPage *SettingsPages::buildKeyboard()
   auto *indicatorEnabled = addSwitch(
       page, m_binder, inputIndicator, Settings::Gui::InputIndicatorEnabled,
       tx(QT_TRANSLATE_NOOP("SettingsPages", "Input source indicator")),
-      tx(QT_TRANSLATE_NOOP("SettingsPages", "한/A beside the cursor during text input"))
+      tx(QT_TRANSLATE_NOOP(
+          "SettingsPages",
+          "한/A briefly beside the mouse pointer after input activity"
+      ))
   );
   indicatorEnabled->setObjectName(QStringLiteral("cbInputIndicator"));
   auto *indicatorPosition = addChoice(
@@ -1054,8 +1057,9 @@ SettingsPage *SettingsPages::buildKeyboard()
     indicatorNote->setText(
         QCoreApplication::translate(
             "SettingsPages",
-            "Accessibility permission or field recognition unavailable: indicator hidden. Password and protected "
-            "field: indicator hidden."
+            "Shown beside the mouse pointer only after a local input-source change, click, or key activity. "
+            "Password and protected fields remain hidden; an unavailable Accessibility permission also hides it, "
+            "but other unrecognized focus states do not block a valid event."
         )
     );
   });

@@ -2848,8 +2848,8 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>입력 소스 표시기</translation>
     </message>
     <message>
-        <source>한/A beside the cursor during text input</source>
-        <translation>텍스트 입력 시 커서 옆 한/A 표시</translation>
+        <source>한/A briefly beside the mouse pointer after input activity</source>
+        <translation>입력 활동 후 마우스 포인터 옆 한/A 짧게 표시</translation>
     </message>
     <message>
         <source>Position from cursor</source>
@@ -2892,8 +2892,8 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>어두운 배지</translation>
     </message>
     <message>
-        <source>Accessibility permission or field recognition unavailable: indicator hidden. Password and protected field: indicator hidden.</source>
-        <translation>Accessibility 권한 또는 입력란 확인 불가 시 표시 숨김. 비밀번호 및 보호 입력란: 표시 숨김.</translation>
+        <source>Shown beside the mouse pointer only after a local input-source change, click, or key activity. Password and protected fields remain hidden; an unavailable Accessibility permission also hides it, but other unrecognized focus states do not block a valid event.</source>
+        <translation>로컬 입력 소스 변경, 클릭, 키 입력 뒤에만 마우스 포인터 옆에 표시. 비밀번호 및 보호 입력란, Accessibility 권한 불가 시 숨김. 그 외 인식되지 않은 초점은 유효한 입력 이벤트를 차단하지 않음.</translation>
     </message>
     <message>
         <source>Background service</source>

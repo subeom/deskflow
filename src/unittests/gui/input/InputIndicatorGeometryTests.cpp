@@ -66,6 +66,46 @@ void InputIndicatorGeometryTests::choosesScreenContainingCursor()
   QCOMPARE(result->y, 164.0);
 }
 
+void InputIndicatorGeometryTests::everyPositionIsPointerRelative_data()
+{
+  QTest::addColumn<int>("position");
+  QTest::addColumn<double>("x");
+  QTest::addColumn<double>("y");
+
+  QTest::newRow("bottom-right")
+      << static_cast<int>(InputIndicatorPosition::CursorBottomRight)
+      << 408.0 << 464.0;
+  QTest::newRow("top-right")
+      << static_cast<int>(InputIndicatorPosition::CursorTopRight)
+      << 408.0 << 508.0;
+  QTest::newRow("bottom-left")
+      << static_cast<int>(InputIndicatorPosition::CursorBottomLeft)
+      << 352.0 << 464.0;
+  QTest::newRow("top-left")
+      << static_cast<int>(InputIndicatorPosition::CursorTopLeft)
+      << 352.0 << 508.0;
+}
+
+void InputIndicatorGeometryTests::everyPositionIsPointerRelative()
+{
+  QFETCH(int, position);
+  QFETCH(double, x);
+  QFETCH(double, y);
+
+  const auto result = positionInputIndicator(
+      {.x = 400, .y = 500},
+      {.width = 40, .height = 28},
+      oneScreen(),
+      static_cast<InputIndicatorPosition>(position),
+      8,
+      8
+  );
+
+  QVERIFY(result.has_value());
+  QCOMPARE(result->x, x);
+  QCOMPARE(result->y, y);
+}
+
 void InputIndicatorGeometryTests::unknownOrInvalidGeometryHides_data()
 {
   QTest::addColumn<int>("condition");

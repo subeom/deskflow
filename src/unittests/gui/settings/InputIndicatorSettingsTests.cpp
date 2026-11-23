@@ -70,6 +70,11 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
   QCOMPARE(opacity->value(), 85);
   QCOMPARE(tone->currentData().toString(), QStringLiteral("automatic"));
   QVERIFY(note->text().contains(QStringLiteral("Password")));
+  QVERIFY(note->text().contains(QStringLiteral("input-source")));
+  QVERIFY(note->text().contains(QStringLiteral("mouse pointer")));
+  QVERIFY(!note->text().contains(
+      QStringLiteral("field recognition unavailable: indicator hidden")
+  ));
 
   for (const auto &key :
        {Settings::Gui::InputIndicatorEnabled, Settings::Gui::InputIndicatorPosition,
