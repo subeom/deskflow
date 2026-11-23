@@ -77,11 +77,35 @@ void InputIndicatorPolicyTests::safeStateShowsKnownSource()
   QCOMPARE(decision.dwell, std::chrono::milliseconds{1500});
 }
 
-void InputIndicatorPolicyTests::focusTriggerWithoutActivityShows()
+void InputIndicatorPolicyTests::unknownAndNotEditableFocusCanShow_data()
 {
+  QTest::addColumn<int>("focus");
+  QTest::addColumn<int>("trigger");
+
+  QTest::newRow("unknown-core")
+      << static_cast<int>(EditableFocusState::Unknown)
+      << static_cast<int>(InputIndicatorTrigger::CoreActivity);
+  QTest::newRow("not-editable-core")
+      << static_cast<int>(EditableFocusState::NotEditable)
+      << static_cast<int>(InputIndicatorTrigger::CoreActivity);
+  QTest::newRow("unknown-source")
+      << static_cast<int>(EditableFocusState::Unknown)
+      << static_cast<int>(InputIndicatorTrigger::SourceChanged);
+  QTest::newRow("not-editable-source")
+      << static_cast<int>(EditableFocusState::NotEditable)
+      << static_cast<int>(InputIndicatorTrigger::SourceChanged);
+}
+
+void InputIndicatorPolicyTests::unknownAndNotEditableFocusCanShow()
+{
+  QFETCH(int, focus);
+  QFETCH(int, trigger);
   auto input = safeInput();
-  input.trigger = InputIndicatorTrigger::FocusChanged;
-  input.eventAge.reset();
+  input.focus = static_cast<EditableFocusState>(focus);
+  input.trigger = static_cast<InputIndicatorTrigger>(trigger);
+  if (input.trigger == InputIndicatorTrigger::SourceChanged) {
+    input.eventAge.reset();
+  }
 
   QVERIFY(InputIndicatorPolicy::decide(
       input, std::chrono::milliseconds{1500}
@@ -115,43 +139,22 @@ void InputIndicatorPolicyTests::coreTriggerWithoutActivityHidesWithReason()
   );
 }
 
-void InputIndicatorPolicyTests::focusTriggerGenerationMismatchHides()
-{
-  auto input = safeInput();
-  input.trigger = InputIndicatorTrigger::FocusChanged;
-  input.eventAge.reset();
-  ++input.probeGeneration;
-
-  QVERIFY(!InputIndicatorPolicy::decide(
-      input, std::chrono::milliseconds{1500}
-  ).show);
-}
-
 void InputIndicatorPolicyTests::nonCoreTriggerSafetyHides_data()
 {
   QTest::addColumn<int>("trigger");
   QTest::addColumn<int>("condition");
 
-  const QList<int> triggers{
-      static_cast<int>(InputIndicatorTrigger::FocusChanged),
-      static_cast<int>(InputIndicatorTrigger::SourceChanged),
-  };
-  for (const auto trigger : triggers) {
-    const auto name = trigger ==
-            static_cast<int>(InputIndicatorTrigger::FocusChanged)
-        ? QByteArrayLiteral("focus")
-        : QByteArrayLiteral("source");
-    QTest::newRow((name + "-disabled").constData()) << trigger << 0;
-    QTest::newRow((name + "-no-permission").constData()) << trigger << 1;
-    QTest::newRow((name + "-core-disconnected").constData()) << trigger << 2;
-    QTest::newRow((name + "-not-primary").constData()) << trigger << 3;
-    QTest::newRow((name + "-off-computer").constData()) << trigger << 4;
-    QTest::newRow((name + "-screen-unknown").constData()) << trigger << 5;
-    QTest::newRow((name + "-secure-focus").constData()) << trigger << 6;
-    QTest::newRow((name + "-not-editable").constData()) << trigger << 7;
-    QTest::newRow((name + "-unknown-focus").constData()) << trigger << 8;
-    QTest::newRow((name + "-unknown-source").constData()) << trigger << 9;
-  }
+  const auto trigger = static_cast<int>(
+      InputIndicatorTrigger::SourceChanged
+  );
+  QTest::newRow("source-disabled") << trigger << 0;
+  QTest::newRow("source-no-permission") << trigger << 1;
+  QTest::newRow("source-core-disconnected") << trigger << 2;
+  QTest::newRow("source-not-primary") << trigger << 3;
+  QTest::newRow("source-off-computer") << trigger << 4;
+  QTest::newRow("source-screen-unknown") << trigger << 5;
+  QTest::newRow("source-secure-focus") << trigger << 6;
+  QTest::newRow("source-unknown-source") << trigger << 7;
 }
 
 void InputIndicatorPolicyTests::nonCoreTriggerSafetyHides()
@@ -185,12 +188,6 @@ void InputIndicatorPolicyTests::nonCoreTriggerSafetyHides()
     input.focus = EditableFocusState::SecureOrProtected;
     break;
   case 7:
-    input.focus = EditableFocusState::NotEditable;
-    break;
-  case 8:
-    input.focus = EditableFocusState::Unknown;
-    break;
-  case 9:
     input.source = Source::Unknown;
     break;
   default:
@@ -437,10 +434,8 @@ void InputIndicatorPolicyTests::unsafeStateHides_data()
   QTest::newRow("off computer") << 4;
   QTest::newRow("screen unknown") << 5;
   QTest::newRow("secure field") << 6;
-  QTest::newRow("not editable") << 7;
-  QTest::newRow("focus unknown") << 8;
-  QTest::newRow("source unknown") << 9;
-  QTest::newRow("generation changed") << 10;
+  QTest::newRow("source unknown") << 7;
+  QTest::newRow("generation changed") << 8;
 }
 
 void InputIndicatorPolicyTests::unsafeStateHides()
@@ -471,15 +466,9 @@ void InputIndicatorPolicyTests::unsafeStateHides()
     input.focus = EditableFocusState::SecureOrProtected;
     break;
   case 7:
-    input.focus = EditableFocusState::NotEditable;
-    break;
-  case 8:
-    input.focus = EditableFocusState::Unknown;
-    break;
-  case 9:
     input.source = Source::Unknown;
     break;
-  case 10:
+  case 8:
     ++input.probeGeneration;
     break;
   default:

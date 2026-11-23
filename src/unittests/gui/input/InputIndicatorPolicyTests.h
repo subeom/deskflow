@@ -13,10 +13,10 @@ class InputIndicatorPolicyTests : public QObject
 
 private Q_SLOTS:
   void safeStateShowsKnownSource();
-  void focusTriggerWithoutActivityShows();
+  void unknownAndNotEditableFocusCanShow_data();
+  void unknownAndNotEditableFocusCanShow();
   void sourceTriggerWithoutActivityShows();
   void coreTriggerWithoutActivityHidesWithReason();
-  void focusTriggerGenerationMismatchHides();
   void nonCoreTriggerSafetyHides_data();
   void nonCoreTriggerSafetyHides();
   void accessibilityProbeRejectsOwnApplication();

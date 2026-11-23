@@ -109,12 +109,6 @@ InputIndicatorPolicy::decide(const InputIndicatorPolicyInput &input, std::chrono
         .reason = InputIndicatorVisibilityReason::FocusSecureOrProtected
     };
   }
-  if (input.focus == EditableFocusState::NotEditable) {
-    return {.reason = InputIndicatorVisibilityReason::FocusNotEditable};
-  }
-  if (input.focus != EditableFocusState::SafeEditable) {
-    return {.reason = InputIndicatorVisibilityReason::FocusUnknown};
-  }
   if (input.source == InputIndicatorSource::Unknown) {
     return {.reason = InputIndicatorVisibilityReason::SourceUnknown};
   }
