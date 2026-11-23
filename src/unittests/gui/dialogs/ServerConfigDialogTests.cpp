@@ -13,6 +13,8 @@
 #include "gui/config/ServerConfig.h"
 #include "gui/dialogs/ComputerSettingsDialog.h"
 #include "gui/dialogs/ServerConfigDialog.h"
+#include "gui/input/MacAccessibilityProbe.h"
+#include "gui/input/MacInputIndicatorController.h"
 #include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
@@ -44,6 +46,50 @@
 #include <optional>
 #include <tuple>
 #include <vector>
+
+using deskflow::gui::input::InputIndicatorUiTrigger;
+using deskflow::gui::input::InputIndicatorVisibilityReason;
+using deskflow::gui::input::MacInputIndicatorController;
+using deskflow::gui::input::macAccessibilityProbeTargetPid;
+
+struct MacInputIndicatorControllerTestAccess
+{
+  static void arm(
+      MacInputIndicatorController &controller
+  )
+  {
+    controller.m_effectiveEnabled = true;
+    controller.m_coreConnected = true;
+    controller.m_isOnComputer = true;
+  }
+
+  static void trigger(
+      MacInputIndicatorController &controller,
+      InputIndicatorUiTrigger trigger
+  )
+  {
+    controller.trigger(trigger);
+  }
+
+  static void request(MacInputIndicatorController &controller)
+  {
+    controller.requestAccessibility();
+  }
+
+  static std::optional<InputIndicatorUiTrigger> pendingTrigger(
+      const MacInputIndicatorController &controller
+  )
+  {
+    return controller.m_pendingTrigger;
+  }
+
+  static bool probeTimerActive(
+      const MacInputIndicatorController &controller
+  )
+  {
+    return controller.m_probeTimer.isActive();
+  }
+};
 
 namespace {
 
@@ -1123,29 +1169,114 @@ void ServerConfigDialogTests::accessibilityActive_repeatedShowAndCloseKeepsInter
   if (!QAccessible::isActive())
     QSKIP("QAccessible::setActive does not turn accessibility on before Qt 6.10");
 
+  const auto indicatorEnabled =
+      Settings::value(Settings::Gui::InputIndicatorEnabled);
+  Settings::setValue(Settings::Gui::InputIndicatorEnabled, false);
+  const auto restoreIndicatorEnabled = qScopeGuard([&indicatorEnabled] {
+    Settings::setValue(
+        Settings::Gui::InputIndicatorEnabled, indicatorEnabled
+    );
+  });
+
   DeskflowLook look;
   for (int cycle = 0; cycle < 20; ++cycle) {
     ServerConfig config;
     ServerConfigDialog dialog(nullptr, config);
-    bool checked = false;
-    QTimer::singleShot(0, &dialog, [&dialog, &checked] {
+    const int64_t ownPid =
+        static_cast<int64_t>(QCoreApplication::applicationPid());
+    std::optional<int64_t> frontmostPid = ownPid;
+    int probeRequests = 0;
+    std::optional<int64_t> probedPid;
+    QList<InputIndicatorVisibilityReason> diagnostics;
+    MacInputIndicatorController::Dependencies dependencies;
+    dependencies.frontmostApplicationPid = [&frontmostPid] {
+      return frontmostPid;
+    };
+    dependencies.accessibilityTrusted = [] { return true; };
+    dependencies.probeRequest =
+        [&probeRequests, &probedPid](
+            uint64_t, const std::optional<int64_t> pid
+        ) {
+          ++probeRequests;
+          probedPid = pid;
+        };
+    dependencies.diagnosticEmitter =
+        [&diagnostics](InputIndicatorVisibilityReason reason) {
+          diagnostics.push_back(reason);
+        };
+    MacInputIndicatorController controller(nullptr, dependencies);
+    MacInputIndicatorControllerTestAccess::arm(controller);
+
+    bool callbackRan = false;
+    bool topInterfacePresent = false;
+    bool topInterfaceValid = false;
+    int invalidChildInterfaces = 0;
+    bool ownProbeBlocked = false;
+    bool ownPendingCleared = false;
+    bool ownProbeTimerStopped = false;
+    bool ownDiagnosticThrottled = false;
+    bool externalProbeScheduled = false;
+    QTimer::singleShot(2000, &dialog, &QDialog::reject);
+    QTimer::singleShot(0, &dialog, [&] {
+      const auto closeDialog =
+          qScopeGuard([&dialog] { dialog.reject(); });
+      callbackRan = true;
       auto *interface = QAccessible::queryAccessibleInterface(&dialog);
-      QVERIFY(interface != nullptr);
-      QVERIFY(interface->isValid());
+      topInterfacePresent = interface != nullptr;
+      topInterfaceValid =
+          interface != nullptr && interface->isValid();
       const auto children = dialog.findChildren<QWidget *>();
       for (auto *child : children) {
         auto *childInterface =
             QAccessible::queryAccessibleInterface(child);
-        if (childInterface) {
-          childInterface->isValid();
-          childInterface->text(QAccessible::Name);
-        }
+        if (childInterface && !childInterface->isValid())
+          ++invalidChildInterfaces;
       }
-      checked = true;
-      dialog.reject();
+
+      ownProbeBlocked = !macAccessibilityProbeTargetPid(
+          std::optional<int64_t>{ownPid}, ownPid
+      );
+      MacInputIndicatorControllerTestAccess::trigger(
+          controller, InputIndicatorUiTrigger::FocusedElementChanged
+      );
+      MacInputIndicatorControllerTestAccess::request(controller);
+      ownPendingCleared =
+          !MacInputIndicatorControllerTestAccess::pendingTrigger(
+              controller
+          );
+      ownProbeTimerStopped =
+          !MacInputIndicatorControllerTestAccess::probeTimerActive(
+              controller
+          ) &&
+          probeRequests == 0;
+
+      MacInputIndicatorControllerTestAccess::trigger(
+          controller, InputIndicatorUiTrigger::FocusedElementChanged
+      );
+      MacInputIndicatorControllerTestAccess::request(controller);
+      ownDiagnosticThrottled =
+          diagnostics.size() == 1 &&
+          diagnostics.constFirst() ==
+              InputIndicatorVisibilityReason::OwnApplication;
+
+      frontmostPid = ownPid + 1;
+      MacInputIndicatorControllerTestAccess::trigger(
+          controller, InputIndicatorUiTrigger::FocusedElementChanged
+      );
+      MacInputIndicatorControllerTestAccess::request(controller);
+      externalProbeScheduled =
+          probeRequests == 1 && probedPid == frontmostPid;
     });
     dialog.exec();
-    QVERIFY(checked);
+    QVERIFY(callbackRan);
+    QVERIFY(topInterfacePresent);
+    QVERIFY(topInterfaceValid);
+    QCOMPARE(invalidChildInterfaces, 0);
+    QVERIFY(ownProbeBlocked);
+    QVERIFY(ownPendingCleared);
+    QVERIFY(ownProbeTimerStopped);
+    QVERIFY(ownDiagnosticThrottled);
+    QVERIFY(externalProbeScheduled);
   }
 }
 

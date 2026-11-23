@@ -15,6 +15,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -40,7 +41,19 @@ class MacInputIndicatorController : public QObject
   Q_OBJECT
 
 public:
+  struct Dependencies
+  {
+    std::function<std::optional<int64_t>()> frontmostApplicationPid;
+    std::function<bool()> accessibilityTrusted;
+    std::function<void(
+        uint64_t generation,
+        std::optional<int64_t> targetPid
+    )> probeRequest;
+    std::function<void(InputIndicatorVisibilityReason)> diagnosticEmitter;
+  };
+
   explicit MacInputIndicatorController(QObject *parent = nullptr);
+  MacInputIndicatorController(QObject *parent, Dependencies dependencies);
   ~MacInputIndicatorController() override;
 
   bool isEnabled() const
@@ -94,6 +107,14 @@ private:
   QTimer m_probeTimer;
   QTimer m_dwellTimer;
   InputIndicatorDiagnosticThrottle m_diagnosticThrottle;
+  std::function<std::optional<int64_t>()> m_frontmostApplicationPid;
+  std::function<bool()> m_accessibilityTrusted;
+  std::function<void(
+      uint64_t generation,
+      std::optional<int64_t> targetPid
+  )> m_probeRequest;
+  std::function<void(InputIndicatorVisibilityReason)>
+      m_diagnosticEmitter;
 
 };
 

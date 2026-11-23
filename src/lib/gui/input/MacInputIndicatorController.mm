@@ -68,6 +68,15 @@ InputIndicatorTrigger policyTrigger(InputIndicatorUiTrigger trigger)
   }
 }
 
+std::optional<int64_t> copyFrontmostApplicationPid()
+{
+  if (NSRunningApplication *frontmost =
+          [[NSWorkspace sharedWorkspace] frontmostApplication]) {
+    return static_cast<int64_t>(frontmost.processIdentifier);
+  }
+  return std::nullopt;
+}
+
 std::optional<std::chrono::milliseconds> activityAge(
     const deskflow::input::InputIndicatorActivity &activity
 )
@@ -91,12 +100,46 @@ std::optional<std::chrono::milliseconds> activityAge(
 } // namespace
 
 MacInputIndicatorController::MacInputIndicatorController(QObject *parent)
+    : MacInputIndicatorController(parent, Dependencies{})
+{
+}
+
+MacInputIndicatorController::MacInputIndicatorController(
+    QObject *parent, Dependencies dependencies
+)
     : QObject(parent),
       m_probe(std::make_unique<MacAccessibilityProbe>(this)),
       m_panel(std::make_unique<MacInputIndicatorPanel>()),
       m_probeTimer(this),
       m_dwellTimer(this)
 {
+  m_frontmostApplicationPid =
+      dependencies.frontmostApplicationPid
+          ? std::move(dependencies.frontmostApplicationPid)
+          : [] { return copyFrontmostApplicationPid(); };
+  m_accessibilityTrusted =
+      dependencies.accessibilityTrusted
+          ? std::move(dependencies.accessibilityTrusted)
+          : [] { return static_cast<bool>(AXIsProcessTrusted()); };
+  m_probeRequest =
+      dependencies.probeRequest
+          ? std::move(dependencies.probeRequest)
+          : [this](
+                uint64_t generation,
+                std::optional<int64_t> targetPid
+            ) {
+              m_probe->request(generation, targetPid);
+            };
+  m_diagnosticEmitter =
+      dependencies.diagnosticEmitter
+          ? std::move(dependencies.diagnosticEmitter)
+          : [](InputIndicatorVisibilityReason reason) {
+              qDebug(
+                  "input indicator hidden: %s",
+                  inputIndicatorVisibilityReasonText(reason)
+              );
+            };
+
   m_probeTimer.setSingleShot(true);
   m_probeTimer.setInterval(30);
   connect(&m_probeTimer, &QTimer::timeout, this, &MacInputIndicatorController::requestAccessibility);
@@ -136,8 +179,8 @@ void MacInputIndicatorController::applySettings()
   );
   m_opacityPercent = std::clamp(Settings::value(Settings::Gui::InputIndicatorOpacityPercent).toInt(), 60, 100);
   m_tone = toneFromSetting(Settings::value(Settings::Gui::InputIndicatorTone).toString());
-  setEffectiveEnabled(m_wantedEnabled && AXIsProcessTrusted());
-  if (m_wantedEnabled && !AXIsProcessTrusted()) {
+  setEffectiveEnabled(m_wantedEnabled && m_accessibilityTrusted());
+  if (m_wantedEnabled && !m_accessibilityTrusted()) {
     reportHiddenReason(InputIndicatorVisibilityReason::AccessibilityUnavailable);
   }
 }
@@ -209,12 +252,13 @@ void MacInputIndicatorController::trigger(InputIndicatorUiTrigger trigger)
 
 void MacInputIndicatorController::requestAccessibility()
 {
+  m_probeTimer.stop();
   if (!m_effectiveEnabled) {
     m_pendingTrigger.reset();
     hide();
     return;
   }
-  if (!AXIsProcessTrusted()) {
+  if (!m_accessibilityTrusted()) {
     m_pendingTrigger.reset();
     reportHiddenReason(InputIndicatorVisibilityReason::AccessibilityUnavailable);
     hide();
@@ -245,13 +289,7 @@ void MacInputIndicatorController::requestAccessibility()
     hide();
     return;
   }
-  std::optional<int64_t> frontmostPid;
-  if (NSRunningApplication *frontmost =
-          [[NSWorkspace sharedWorkspace] frontmostApplication]) {
-    frontmostPid = static_cast<int64_t>(
-        frontmost.processIdentifier
-    );
-  }
+  const auto frontmostPid = m_frontmostApplicationPid();
   const auto ownPid =
       static_cast<int64_t>(QCoreApplication::applicationPid());
   const auto targetPid =
@@ -266,7 +304,7 @@ void MacInputIndicatorController::requestAccessibility()
     hide();
     return;
   }
-  m_probe->request(m_generation, targetPid);
+  m_probeRequest(m_generation, targetPid);
 }
 
 void MacInputIndicatorController::inputIndicatorActivityReceived(
@@ -376,7 +414,7 @@ void MacInputIndicatorController::accessibilityCompleted(
   m_source = deskflow::platform::copyCurrentMacInputSource().source;
   const InputIndicatorPolicyInput input{
       .enabled = m_effectiveEnabled,
-      .accessibilityTrusted = static_cast<bool>(AXIsProcessTrusted()),
+      .accessibilityTrusted = m_accessibilityTrusted(),
       .coreConnected = m_coreConnected,
       .isPrimary = true,
       .isOnComputer = m_isOnComputer,
@@ -426,10 +464,7 @@ void MacInputIndicatorController::reportHiddenReason(
   if (!m_diagnosticThrottle.allow(std::chrono::steady_clock::now())) {
     return;
   }
-  qDebug(
-      "input indicator hidden: %s",
-      inputIndicatorVisibilityReasonText(reason)
-  );
+  m_diagnosticEmitter(reason);
 }
 
 } // namespace deskflow::gui::input
