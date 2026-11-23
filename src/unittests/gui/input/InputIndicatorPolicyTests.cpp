@@ -260,6 +260,18 @@ void InputIndicatorPolicyTests::accessibilityCandidatesRequireFrontmostPid()
   QVERIFY(candidates.empty());
 }
 
+void InputIndicatorPolicyTests::accessibilityUnavailableMetadataKeepsTargetIdentity()
+{
+  const auto snapshot = macUnknownAccessibilitySnapshot(4242);
+
+  QCOMPARE(snapshot.state, EditableFocusState::Unknown);
+  QCOMPARE(snapshot.applicationPid, int64_t{4242});
+
+  const auto invalid = macUnknownAccessibilitySnapshot(0);
+  QCOMPARE(invalid.state, EditableFocusState::Unknown);
+  QCOMPARE(invalid.applicationPid, int64_t{0});
+}
+
 void InputIndicatorPolicyTests::accessibilitySnapshotRejectsStalePid()
 {
   const MacAccessibilitySnapshot stale{

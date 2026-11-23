@@ -24,6 +24,19 @@
 
 namespace deskflow::gui::input {
 
+MacAccessibilitySnapshot macUnknownAccessibilitySnapshot(
+    int64_t applicationPid
+)
+{
+  if (applicationPid <= 0) {
+    return {};
+  }
+  return {
+      .state = EditableFocusState::Unknown,
+      .applicationPid = applicationPid
+  };
+}
+
 namespace {
 
 template <typename T> class OwnedCF
@@ -109,13 +122,13 @@ MacAccessibilitySnapshot readFocusedElementForApplication(int64_t applicationPid
       AXUIElementCreateApplication(static_cast<pid_t>(applicationPid))
   );
   if (!application.get()) {
-    return {};
+    return macUnknownAccessibilitySnapshot(applicationPid);
   }
   OwnedCF<CFTypeRef> focused(
       copyAttribute(application.get(), kAXFocusedUIElementAttribute)
   );
   if (!focused.get() || CFGetTypeID(focused.get()) != AXUIElementGetTypeID()) {
-    return {};
+    return macUnknownAccessibilitySnapshot(applicationPid);
   }
 
   const auto element = reinterpret_cast<AXUIElementRef>(focused.get());
@@ -125,18 +138,22 @@ MacAccessibilitySnapshot readFocusedElementForApplication(int64_t applicationPid
   }
 
   OwnedCF<CFTypeRef> role(copyAttribute(element, kAXRoleAttribute));
-  if (!role.get() || (!cfStringEquals(role.get(), kAXTextFieldRole) &&
-                      !cfStringEquals(role.get(), kAXTextAreaRole))) {
-    return {
-        .state = EditableFocusState::NotEditable,
-        .applicationPid = *elementPid
-    };
+  if (!role.get()) {
+    return macUnknownAccessibilitySnapshot(*elementPid);
   }
 
   OwnedCF<CFTypeRef> subrole(copyAttribute(element, kAXSubroleAttribute));
   if (cfStringEquals(subrole.get(), kAXSecureTextFieldSubrole)) {
     return {
         .state = EditableFocusState::SecureOrProtected,
+        .applicationPid = *elementPid
+    };
+  }
+
+  if (!cfStringEquals(role.get(), kAXTextFieldRole) &&
+      !cfStringEquals(role.get(), kAXTextAreaRole)) {
+    return {
+        .state = EditableFocusState::NotEditable,
         .applicationPid = *elementPid
     };
   }
@@ -153,11 +170,6 @@ MacAccessibilitySnapshot readFocusedElementForApplication(int64_t applicationPid
         .state = EditableFocusState::NotEditable,
         .applicationPid = *elementPid
     };
-  }
-
-  Boolean settable = false;
-  if (AXUIElementIsAttributeSettable(element, kAXValueAttribute, &settable) != kAXErrorSuccess || !settable) {
-    return {.state = EditableFocusState::Unknown, .applicationPid = *elementPid};
   }
 
   return {

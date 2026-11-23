@@ -22,6 +22,9 @@ struct MacAccessibilitySnapshot
   int64_t applicationPid = 0;
 };
 
+MacAccessibilitySnapshot macUnknownAccessibilitySnapshot(
+    int64_t applicationPid
+);
 std::vector<int64_t> macAccessibilityApplicationPidCandidates(
     std::optional<int64_t> systemWideApplicationPid,
     std::optional<int64_t> frontmostApplicationPid

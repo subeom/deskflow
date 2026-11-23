@@ -26,6 +26,7 @@ private Q_SLOTS:
   void accessibilityCandidatesAvoidDuplicatePids();
   void accessibilityCandidatesIgnoreStaleSystemPid();
   void accessibilityCandidatesRequireFrontmostPid();
+  void accessibilityUnavailableMetadataKeepsTargetIdentity();
   void accessibilitySnapshotRejectsStalePid();
   void accessibilitySnapshotRequiresFrontmostPid();
   void accessibilitySnapshotAcceptsMatchingFrontmostPid();
