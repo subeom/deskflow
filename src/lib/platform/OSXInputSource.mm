@@ -25,6 +25,15 @@ deskflow::input::InputIndicatorSource classifyMacInputSourceId(std::string_view 
   return deskflow::input::InputIndicatorSource::Unknown;
 }
 
+bool shouldActivateMacInputSourceTransition(
+    deskflow::input::InputIndicatorSource previous,
+    deskflow::input::InputIndicatorSource current
+)
+{
+  return previous != current &&
+         current != deskflow::input::InputIndicatorSource::Unknown;
+}
+
 OSXInputSourceSnapshot copyCurrentMacInputSource()
 {
   std::string identifier;

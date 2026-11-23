@@ -14,4 +14,6 @@ class OSXInputSourceTests : public QObject
 private Q_SLOTS:
   void exactIdsAreClassified();
   void otherValuesAreUnknown();
+  void transitionActivationRequiresAChangedKnownSource_data();
+  void transitionActivationRequiresAChangedKnownSource();
 };

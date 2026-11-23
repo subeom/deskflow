@@ -25,6 +25,10 @@ struct OSXInputSourceSnapshot
 };
 
 deskflow::input::InputIndicatorSource classifyMacInputSourceId(std::string_view identifier);
+bool shouldActivateMacInputSourceTransition(
+    deskflow::input::InputIndicatorSource previous,
+    deskflow::input::InputIndicatorSource current
+);
 OSXInputSourceSnapshot copyCurrentMacInputSource();
 
 class OSXInputSourceMonitor

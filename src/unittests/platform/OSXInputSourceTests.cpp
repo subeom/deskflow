@@ -41,4 +41,46 @@ void OSXInputSourceTests::otherValuesAreUnknown()
   }
 }
 
+void OSXInputSourceTests::transitionActivationRequiresAChangedKnownSource_data()
+{
+  QTest::addColumn<int>("previous");
+  QTest::addColumn<int>("current");
+  QTest::addColumn<bool>("activate");
+
+  using Source = InputIndicatorSource;
+  QTest::newRow("baseline-abc")
+      << static_cast<int>(Source::LatinABC)
+      << static_cast<int>(Source::LatinABC) << false;
+  QTest::newRow("duplicate-korean")
+      << static_cast<int>(Source::Korean2Set)
+      << static_cast<int>(Source::Korean2Set) << false;
+  QTest::newRow("abc-to-korean")
+      << static_cast<int>(Source::LatinABC)
+      << static_cast<int>(Source::Korean2Set) << true;
+  QTest::newRow("korean-to-abc")
+      << static_cast<int>(Source::Korean2Set)
+      << static_cast<int>(Source::LatinABC) << true;
+  QTest::newRow("unknown-to-abc")
+      << static_cast<int>(Source::Unknown)
+      << static_cast<int>(Source::LatinABC) << true;
+  QTest::newRow("abc-to-unknown")
+      << static_cast<int>(Source::LatinABC)
+      << static_cast<int>(Source::Unknown) << false;
+}
+
+void OSXInputSourceTests::transitionActivationRequiresAChangedKnownSource()
+{
+  QFETCH(int, previous);
+  QFETCH(int, current);
+  QFETCH(bool, activate);
+
+  QCOMPARE(
+      deskflow::platform::shouldActivateMacInputSourceTransition(
+          static_cast<InputIndicatorSource>(previous),
+          static_cast<InputIndicatorSource>(current)
+      ),
+      activate
+  );
+}
+
 QTEST_MAIN(OSXInputSourceTests)
