@@ -13,6 +13,12 @@ class InputIndicatorPolicyTests : public QObject
 
 private Q_SLOTS:
   void safeStateShowsKnownSource();
+  void focusTriggerWithoutActivityShows();
+  void sourceTriggerWithoutActivityShows();
+  void coreTriggerWithoutActivityHidesWithReason();
+  void focusTriggerGenerationMismatchHides();
+  void nonCoreTriggerSafetyHides_data();
+  void nonCoreTriggerSafetyHides();
 #ifdef Q_OS_MACOS
   void accessibilityCandidateUsesFrontmostWhenSystemLookupFails();
   void accessibilityCandidatesAvoidDuplicatePids();
@@ -22,6 +28,10 @@ private Q_SLOTS:
   void accessibilitySnapshotRequiresFrontmostPid();
   void accessibilitySnapshotAcceptsMatchingFrontmostPid();
   void panelPresentationRequestsFrontRegardless();
+  void focusTriggerWithoutActivityQueuesProbe();
+  void sourceTriggerWithoutActivityQueuesProbe();
+  void coreTriggerWithoutActivityDoesNotQueueProbe();
+  void invalidActivityDoesNotCancelFocusTrigger();
 #endif
   void visibilityDecisionReportsHideReason();
   void diagnosticThrottleLimitsToOnePerFiveSeconds();

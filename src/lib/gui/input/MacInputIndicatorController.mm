@@ -11,8 +11,16 @@
 #include "common/Settings.h"
 #include "platform/OSXInputSource.h"
 
-#include <AppKit/AppKit.h>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic ignored "-Wdeprecated-enum-enum-conversion"
+#pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
+#pragma clang diagnostic ignored "-Wnullability-completeness"
+#pragma clang diagnostic ignored "-Wavailability"
+#include <AppKit/NSRunningApplication.h>
+#include <AppKit/NSWorkspace.h>
 #include <ApplicationServices/ApplicationServices.h>
+#pragma clang diagnostic pop
 #include <mach/mach_time.h>
 
 #include <algorithm>
@@ -44,6 +52,18 @@ InputIndicatorTone toneFromSetting(const QString &value)
     return InputIndicatorTone::Dark;
   }
   return InputIndicatorTone::Automatic;
+}
+
+InputIndicatorTrigger policyTrigger(InputIndicatorUiTrigger trigger)
+{
+  switch (trigger) {
+  case InputIndicatorUiTrigger::CoreActivity:
+    return InputIndicatorTrigger::CoreActivity;
+  case InputIndicatorUiTrigger::FocusedElementChanged:
+    return InputIndicatorTrigger::FocusChanged;
+  case InputIndicatorUiTrigger::InputSourceChanged:
+    return InputIndicatorTrigger::SourceChanged;
+  }
 }
 
 std::optional<std::chrono::milliseconds> activityAge(
@@ -118,9 +138,6 @@ void MacInputIndicatorController::applySettings()
   if (m_wantedEnabled && !AXIsProcessTrusted()) {
     reportHiddenReason(InputIndicatorVisibilityReason::AccessibilityUnavailable);
   }
-  if (m_effectiveEnabled) {
-    trigger(InputIndicatorUiTrigger::InputSourceChanged);
-  }
 }
 
 void MacInputIndicatorController::setEffectiveEnabled(bool enabled)
@@ -139,6 +156,8 @@ void MacInputIndicatorController::setEffectiveEnabled(bool enabled)
     m_coreConnected = false;
     m_isOnComputer = false;
     m_lastActivity.reset();
+    m_pendingTrigger.reset();
+    m_visibleTrigger.reset();
   }
   m_panel->hide();
   Q_EMIT enabledChanged(enabled);
@@ -173,11 +192,14 @@ void MacInputIndicatorController::destroyMonitors()
   m_source = deskflow::input::InputIndicatorSource::Unknown;
 }
 
-void MacInputIndicatorController::trigger(InputIndicatorUiTrigger)
+void MacInputIndicatorController::trigger(InputIndicatorUiTrigger trigger)
 {
-  if (!m_effectiveEnabled || !m_lastActivity) {
+  if (!m_effectiveEnabled ||
+      (inputIndicatorTriggerRequiresActivity(policyTrigger(trigger)) &&
+       !m_lastActivity)) {
     return;
   }
+  m_pendingTrigger = trigger;
   ++m_generation;
   hide();
   m_probeTimer.start();
@@ -186,21 +208,38 @@ void MacInputIndicatorController::trigger(InputIndicatorUiTrigger)
 void MacInputIndicatorController::requestAccessibility()
 {
   if (!m_effectiveEnabled) {
+    m_pendingTrigger.reset();
     hide();
     return;
   }
   if (!AXIsProcessTrusted()) {
+    m_pendingTrigger.reset();
     reportHiddenReason(InputIndicatorVisibilityReason::AccessibilityUnavailable);
     hide();
     return;
   }
   if (!m_coreConnected) {
+    m_pendingTrigger.reset();
     reportHiddenReason(InputIndicatorVisibilityReason::CoreDisconnected);
     hide();
     return;
   }
-  if (!m_lastActivity) {
+  if (!m_isOnComputer) {
+    m_pendingTrigger.reset();
+    reportHiddenReason(InputIndicatorVisibilityReason::OffComputer);
+    hide();
+    return;
+  }
+  if (!m_pendingTrigger) {
+    hide();
+    return;
+  }
+  if (inputIndicatorTriggerRequiresActivity(
+          policyTrigger(*m_pendingTrigger)
+      ) &&
+      !m_lastActivity) {
     reportHiddenReason(InputIndicatorVisibilityReason::NoRecentActivity);
+    m_pendingTrigger.reset();
     hide();
     return;
   }
@@ -233,6 +272,7 @@ void MacInputIndicatorController::inputIndicatorLocalChanged(bool local)
   ++m_generation;
   if (!local) {
     m_lastActivity.reset();
+    m_pendingTrigger.reset();
     reportHiddenReason(InputIndicatorVisibilityReason::OffComputer);
     hide();
     return;
@@ -242,6 +282,17 @@ void MacInputIndicatorController::inputIndicatorLocalChanged(bool local)
 void MacInputIndicatorController::inputIndicatorActivityInvalidated()
 {
   m_lastActivity.reset();
+  if ((m_pendingTrigger &&
+       !inputIndicatorTriggerRequiresActivity(
+           policyTrigger(*m_pendingTrigger)
+       )) ||
+      (m_visibleTrigger &&
+       !inputIndicatorTriggerRequiresActivity(
+           policyTrigger(*m_visibleTrigger)
+       ))) {
+    return;
+  }
+  m_pendingTrigger.reset();
   ++m_generation;
   m_probeTimer.stop();
   reportHiddenReason(InputIndicatorVisibilityReason::EventRejected);
@@ -253,6 +304,7 @@ void MacInputIndicatorController::inputIndicatorStateInvalidated()
   m_coreConnected = false;
   m_isOnComputer = false;
   m_lastActivity.reset();
+  m_pendingTrigger.reset();
   ++m_generation;
   m_probeTimer.stop();
   reportHiddenReason(InputIndicatorVisibilityReason::CoreDisconnected);
@@ -267,11 +319,26 @@ void MacInputIndicatorController::accessibilityCompleted(
     return;
   }
 
-  const auto eventAge = m_lastActivity ? activityAge(*m_lastActivity) : std::nullopt;
-  if (!eventAge) {
-    reportHiddenReason(InputIndicatorVisibilityReason::EventRejected);
+  const auto pendingTrigger = m_pendingTrigger;
+  m_pendingTrigger.reset();
+  if (!pendingTrigger) {
     hide();
     return;
+  }
+  const auto trigger = policyTrigger(*pendingTrigger);
+  std::optional<std::chrono::milliseconds> eventAge;
+  if (inputIndicatorTriggerRequiresActivity(trigger)) {
+    if (!m_lastActivity) {
+      reportHiddenReason(InputIndicatorVisibilityReason::NoRecentActivity);
+      hide();
+      return;
+    }
+    eventAge = activityAge(*m_lastActivity);
+    if (!eventAge) {
+      reportHiddenReason(InputIndicatorVisibilityReason::EventRejected);
+      hide();
+      return;
+    }
   }
   NSRunningApplication *frontmostApplication = [[NSWorkspace sharedWorkspace] frontmostApplication];
   const std::optional<int64_t> frontmostPid =
@@ -300,9 +367,10 @@ void MacInputIndicatorController::accessibilityCompleted(
       .screenKnown = true,
       .focus = currentSnapshot.state,
       .source = m_source,
+      .trigger = trigger,
       .probeGeneration = generation,
       .activityGeneration = m_generation,
-      .eventAge = *eventAge,
+      .eventAge = eventAge,
       .maximumEventAge = std::chrono::milliseconds{
           deskflow::input::kInputIndicatorMaximumEventAgeMilliseconds
       },
@@ -324,12 +392,14 @@ void MacInputIndicatorController::accessibilityCompleted(
     return;
   }
 
+  m_visibleTrigger = pendingTrigger;
   m_dwellTimer.start(static_cast<int>(decision.dwell.count()));
 }
 
 void MacInputIndicatorController::hide()
 {
   m_dwellTimer.stop();
+  m_visibleTrigger.reset();
   m_panel->hide();
 }
 

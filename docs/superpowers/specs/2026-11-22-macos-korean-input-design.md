@@ -27,6 +27,7 @@
 5. GUI가 borderless transparent `NSPanel`에 `A` 또는 `한` 표시.
 6. pointer 위치는 현재 `NSEvent.mouseLocation`, 화면 좌표는 logical point와 display rect로 clamp.
 7. source/focus/IPC generation 불일치, stale event, unknown state 시 즉시 숨김.
+8. focus/source trigger는 prior core activity 없이 probe 가능. core activity trigger는 1,000 ms 내 fresh event 필수.
 
 선택 이유:
 
@@ -142,9 +143,10 @@ Track B 첫 후보 알고리즘:
 1. TIS exact ID만 source truth.
 2. `com.apple.keylayout.ABC`: `A`.
 3. `com.apple.inputmethod.Korean.2SetKorean`: `한`.
-4. TIS 알림, focus 알림, click, keyDown을 generation으로 통합.
+4. TIS 알림, focus 알림, click, keyDown을 trigger provenance와 generation으로 통합.
 5. source switch 후 stale activity는 1,000 ms gate로 제거.
 6. 표시기는 text mutation이 없으므로 native Undo 대상 없음.
+7. setting enable 자체는 표시 trigger가 아니며 monitor 초기 callback도 probe하지 않음.
 
 ### Track B
 

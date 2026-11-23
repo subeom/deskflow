@@ -6,8 +6,16 @@
 
 #include "MacInputFocusMonitor.h"
 
-#include <AppKit/AppKit.h>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic ignored "-Wdeprecated-enum-enum-conversion"
+#pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
+#pragma clang diagnostic ignored "-Wnullability-completeness"
+#pragma clang diagnostic ignored "-Wavailability"
+#include <AppKit/NSRunningApplication.h>
+#include <AppKit/NSWorkspace.h>
 #include <ApplicationServices/ApplicationServices.h>
+#pragma clang diagnostic pop
 
 #include <utility>
 #include <memory>
@@ -126,9 +134,6 @@ MacInputFocusMonitor::MacInputFocusMonitor(std::function<void()> changed)
                   state->owner->changed();
                 }
               }];
-  if (m_impl->changed) {
-    m_impl->changed();
-  }
 }
 
 MacInputFocusMonitor::~MacInputFocusMonitor() = default;

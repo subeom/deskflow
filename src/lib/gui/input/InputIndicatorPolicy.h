@@ -24,6 +24,13 @@ enum class EditableFocusState
   Unknown
 };
 
+enum class InputIndicatorTrigger
+{
+  CoreActivity,
+  FocusChanged,
+  SourceChanged
+};
+
 enum class InputIndicatorVisibilityReason
 {
   Shown,
@@ -55,9 +62,10 @@ struct InputIndicatorPolicyInput
   bool screenKnown = false;
   EditableFocusState focus = EditableFocusState::Unknown;
   InputIndicatorSource source = InputIndicatorSource::Unknown;
+  InputIndicatorTrigger trigger = InputIndicatorTrigger::CoreActivity;
   uint64_t probeGeneration = 0;
   uint64_t activityGeneration = 0;
-  std::chrono::milliseconds eventAge{0};
+  std::optional<std::chrono::milliseconds> eventAge;
   std::chrono::milliseconds maximumEventAge{
       deskflow::input::kInputIndicatorMaximumEventAgeMilliseconds
   };
@@ -75,6 +83,7 @@ struct InputIndicatorVisibilityDecision
 const char *inputIndicatorVisibilityReasonText(
     InputIndicatorVisibilityReason reason
 );
+bool inputIndicatorTriggerRequiresActivity(InputIndicatorTrigger trigger);
 
 class InputIndicatorDiagnosticThrottle
 {

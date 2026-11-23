@@ -62,6 +62,11 @@ bool InputIndicatorDiagnosticThrottle::allow(
   return true;
 }
 
+bool inputIndicatorTriggerRequiresActivity(InputIndicatorTrigger trigger)
+{
+  return trigger == InputIndicatorTrigger::CoreActivity;
+}
+
 InputIndicatorVisibilityDecision
 InputIndicatorPolicy::decide(const InputIndicatorPolicyInput &input, std::chrono::milliseconds dwell)
 {
@@ -102,10 +107,17 @@ InputIndicatorPolicy::decide(const InputIndicatorPolicyInput &input, std::chrono
         .reason = InputIndicatorVisibilityReason::GenerationMismatch
     };
   }
-  if (input.eventAge < std::chrono::milliseconds{0} ||
-      input.maximumEventAge <= std::chrono::milliseconds{0} ||
-      input.eventAge > input.maximumEventAge) {
-    return {.reason = InputIndicatorVisibilityReason::EventRejected};
+  if (inputIndicatorTriggerRequiresActivity(input.trigger)) {
+    if (!input.eventAge) {
+      return {
+          .reason = InputIndicatorVisibilityReason::NoRecentActivity
+      };
+    }
+    if (*input.eventAge < std::chrono::milliseconds{0} ||
+        input.maximumEventAge <= std::chrono::milliseconds{0} ||
+        *input.eventAge > input.maximumEventAge) {
+      return {.reason = InputIndicatorVisibilityReason::EventRejected};
+    }
   }
   if (dwell <= std::chrono::milliseconds{0}) {
     return {.reason = InputIndicatorVisibilityReason::InvalidDwell};

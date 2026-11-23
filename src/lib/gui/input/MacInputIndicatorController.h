@@ -18,6 +18,8 @@
 #include <memory>
 #include <optional>
 
+struct MacInputIndicatorControllerTestAccess;
+
 namespace deskflow::platform {
 class OSXInputSourceMonitor;
 }
@@ -61,6 +63,8 @@ private Q_SLOTS:
   void requestAccessibility();
 
 private:
+  friend struct ::MacInputIndicatorControllerTestAccess;
+
   void applySettings();
   void setEffectiveEnabled(bool enabled);
   void createMonitors();
@@ -80,6 +84,8 @@ private:
   InputIndicatorTone m_tone = InputIndicatorTone::Automatic;
   deskflow::input::InputIndicatorSource m_source = deskflow::input::InputIndicatorSource::Unknown;
   std::optional<deskflow::input::InputIndicatorActivity> m_lastActivity;
+  std::optional<InputIndicatorUiTrigger> m_pendingTrigger;
+  std::optional<InputIndicatorUiTrigger> m_visibleTrigger;
 
   std::unique_ptr<MacAccessibilityProbe> m_probe;
   std::unique_ptr<MacInputFocusMonitor> m_focusMonitor;
