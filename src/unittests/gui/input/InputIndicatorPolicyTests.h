@@ -31,10 +31,18 @@ private Q_SLOTS:
   void accessibilitySnapshotRequiresFrontmostPid();
   void accessibilitySnapshotAcceptsMatchingFrontmostPid();
   void panelPresentationRequestsFrontRegardless();
-  void focusTriggerWithoutActivityQueuesProbe();
+  void focusChangeInvalidatesWithoutQueueingProbe();
   void sourceTriggerWithoutActivityQueuesProbe();
   void coreTriggerWithoutActivityDoesNotQueueProbe();
-  void invalidActivityDoesNotCancelFocusTrigger();
+  void duplicateSourceNotificationDoesNotQueueProbe();
+  void sourceTransitionQueuesProbe();
+  void unknownSourceTransitionHidesWithoutProbe();
+  void unknownFocusCanShowAfterFreshCoreActivity();
+  void secureFocusNeverShows();
+  void ownApplicationNeverRequestsProbe();
+  void staleProbeGenerationNeverShows();
+  void mismatchedSnapshotPidNeverShows();
+  void invalidActivityDoesNotCancelSourceTrigger();
 #endif
   void visibilityDecisionReportsHideReason();
   void diagnosticThrottleLimitsToOnePerFiveSeconds();

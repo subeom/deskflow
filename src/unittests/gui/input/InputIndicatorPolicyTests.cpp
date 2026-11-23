@@ -10,6 +10,8 @@
 #include "gui/input/MacAccessibilityProbe.h"
 #include "gui/input/MacInputIndicatorController.h"
 #include "gui/input/MacInputIndicatorPanel.h"
+#include "platform/OSXInputSource.h"
+#include <mach/mach_time.h>
 #endif
 
 #include <QTest>
@@ -20,11 +22,15 @@ using Source = deskflow::input::InputIndicatorSource;
 #ifdef Q_OS_MACOS
 struct MacInputIndicatorControllerTestAccess
 {
-  static void arm(MacInputIndicatorController &controller)
+  static void arm(
+      MacInputIndicatorController &controller,
+      Source source = Source::LatinABC
+  )
   {
     controller.m_effectiveEnabled = true;
     controller.m_coreConnected = true;
     controller.m_isOnComputer = true;
+    controller.m_source = source;
   }
 
   static void trigger(
@@ -35,11 +41,60 @@ struct MacInputIndicatorControllerTestAccess
     controller.trigger(trigger);
   }
 
+  static void focusChanged(MacInputIndicatorController &controller)
+  {
+    controller.focusChanged();
+  }
+
+  static void inputSourceChanged(
+      MacInputIndicatorController &controller
+  )
+  {
+    controller.inputSourceChanged();
+  }
+
+  static void requestAccessibility(
+      MacInputIndicatorController &controller
+  )
+  {
+    controller.requestAccessibility();
+  }
+
+  static void accessibilityCompleted(
+      MacInputIndicatorController &controller,
+      uint64_t generation,
+      const MacAccessibilitySnapshot &snapshot
+  )
+  {
+    controller.accessibilityCompleted(generation, snapshot);
+  }
+
   static std::optional<InputIndicatorUiTrigger> pendingTrigger(
       const MacInputIndicatorController &controller
   )
   {
     return controller.m_pendingTrigger;
+  }
+
+  static std::optional<InputIndicatorUiTrigger> visibleTrigger(
+      const MacInputIndicatorController &controller
+  )
+  {
+    return controller.m_visibleTrigger;
+  }
+
+  static std::optional<int64_t> pendingTargetPid(
+      const MacInputIndicatorController &controller
+  )
+  {
+    return controller.m_pendingTargetPid;
+  }
+
+  static uint64_t generation(
+      const MacInputIndicatorController &controller
+  )
+  {
+    return controller.m_generation;
   }
 };
 #endif
@@ -336,26 +391,42 @@ void InputIndicatorPolicyTests::panelPresentationRequestsFrontRegardless()
   );
 }
 
-void InputIndicatorPolicyTests::focusTriggerWithoutActivityQueuesProbe()
+void InputIndicatorPolicyTests::focusChangeInvalidatesWithoutQueueingProbe()
 {
-  MacInputIndicatorController controller;
+  MacInputIndicatorController::Dependencies dependencies;
+  dependencies.inputSource = [] {
+    return deskflow::platform::OSXInputSourceSnapshot{
+        .source = Source::LatinABC
+    };
+  };
+  MacInputIndicatorController controller(nullptr, std::move(dependencies));
   MacInputIndicatorControllerTestAccess::arm(controller);
+  const auto generation =
+      MacInputIndicatorControllerTestAccess::generation(controller);
 
   MacInputIndicatorControllerTestAccess::trigger(
-      controller, InputIndicatorUiTrigger::FocusedElementChanged
+      controller, InputIndicatorUiTrigger::InputSourceChanged
   );
+  QVERIFY(MacInputIndicatorControllerTestAccess::pendingTrigger(controller));
 
-  QCOMPARE(
-      MacInputIndicatorControllerTestAccess::pendingTrigger(controller),
-      std::optional<InputIndicatorUiTrigger>{
-          InputIndicatorUiTrigger::FocusedElementChanged
-      }
+  MacInputIndicatorControllerTestAccess::focusChanged(controller);
+
+  QVERIFY(!MacInputIndicatorControllerTestAccess::pendingTrigger(controller));
+  QVERIFY(
+      MacInputIndicatorControllerTestAccess::generation(controller) >
+      generation
   );
 }
 
 void InputIndicatorPolicyTests::sourceTriggerWithoutActivityQueuesProbe()
 {
-  MacInputIndicatorController controller;
+  MacInputIndicatorController::Dependencies dependencies;
+  dependencies.inputSource = [] {
+    return deskflow::platform::OSXInputSourceSnapshot{
+        .source = Source::LatinABC
+    };
+  };
+  MacInputIndicatorController controller(nullptr, std::move(dependencies));
   MacInputIndicatorControllerTestAccess::arm(controller);
 
   MacInputIndicatorControllerTestAccess::trigger(
@@ -384,12 +455,311 @@ void InputIndicatorPolicyTests::coreTriggerWithoutActivityDoesNotQueueProbe()
   ));
 }
 
-void InputIndicatorPolicyTests::invalidActivityDoesNotCancelFocusTrigger()
+void InputIndicatorPolicyTests::duplicateSourceNotificationDoesNotQueueProbe()
 {
-  MacInputIndicatorController controller;
+  Source source = Source::LatinABC;
+  MacInputIndicatorController::Dependencies dependencies;
+  dependencies.inputSource = [&source] {
+    return deskflow::platform::OSXInputSourceSnapshot{
+        .source = source
+    };
+  };
+  MacInputIndicatorController controller(nullptr, std::move(dependencies));
+  MacInputIndicatorControllerTestAccess::arm(controller, Source::LatinABC);
+
+  MacInputIndicatorControllerTestAccess::inputSourceChanged(controller);
+
+  QVERIFY(!MacInputIndicatorControllerTestAccess::pendingTrigger(
+      controller
+  ));
+}
+
+void InputIndicatorPolicyTests::sourceTransitionQueuesProbe()
+{
+  Source source = Source::LatinABC;
+  MacInputIndicatorController::Dependencies dependencies;
+  dependencies.inputSource = [&source] {
+    return deskflow::platform::OSXInputSourceSnapshot{
+        .source = source
+    };
+  };
+  MacInputIndicatorController controller(nullptr, std::move(dependencies));
+  MacInputIndicatorControllerTestAccess::arm(controller, Source::LatinABC);
+  source = Source::Korean2Set;
+
+  MacInputIndicatorControllerTestAccess::inputSourceChanged(controller);
+
+  QCOMPARE(
+      MacInputIndicatorControllerTestAccess::pendingTrigger(controller),
+      std::optional<InputIndicatorUiTrigger>{
+          InputIndicatorUiTrigger::InputSourceChanged
+      }
+  );
+}
+
+void InputIndicatorPolicyTests::unknownSourceTransitionHidesWithoutProbe()
+{
+  Source source = Source::Unknown;
+  int hidden = 0;
+  MacInputIndicatorController::Dependencies dependencies;
+  dependencies.inputSource = [&source] {
+    return deskflow::platform::OSXInputSourceSnapshot{
+        .source = source
+    };
+  };
+  dependencies.panelHide = [&hidden] { ++hidden; };
+  MacInputIndicatorController controller(nullptr, std::move(dependencies));
+  MacInputIndicatorControllerTestAccess::arm(controller, Source::LatinABC);
+
+  MacInputIndicatorControllerTestAccess::inputSourceChanged(controller);
+
+  QVERIFY(!MacInputIndicatorControllerTestAccess::pendingTrigger(
+      controller
+  ));
+  QVERIFY(hidden > 0);
+}
+
+void InputIndicatorPolicyTests::unknownFocusCanShowAfterFreshCoreActivity()
+{
+  int shown = 0;
+  std::optional<std::pair<uint64_t, std::optional<int64_t>>> requested;
+  MacInputIndicatorController::Dependencies dependencies;
+  dependencies.frontmostApplicationPid = [] {
+    return std::optional<int64_t>{31337};
+  };
+  dependencies.accessibilityTrusted = [] { return true; };
+  dependencies.inputSource = [] {
+    return deskflow::platform::OSXInputSourceSnapshot{
+        .identifier = "com.apple.keylayout.ABC",
+        .source = Source::LatinABC
+    };
+  };
+  dependencies.probeRequest =
+      [&requested](uint64_t generation, std::optional<int64_t> pid) {
+        requested = std::pair{generation, pid};
+      };
+  dependencies.panelShow =
+      [&shown](const MacInputIndicatorPanelOptions &) {
+        ++shown;
+        return true;
+      };
+  dependencies.panelHide = [] {};
+  MacInputIndicatorController controller(nullptr, std::move(dependencies));
+  MacInputIndicatorControllerTestAccess::arm(controller);
+
+  controller.inputIndicatorActivityReceived({
+      .sequence = 1,
+      .eventTimestampMach = mach_absolute_time(),
+      .kind = deskflow::input::InputIndicatorActivityKind::LocalPrimaryKeyDown,
+  });
+  MacInputIndicatorControllerTestAccess::requestAccessibility(controller);
+  QVERIFY(requested);
+
+  MacInputIndicatorControllerTestAccess::accessibilityCompleted(
+      controller,
+      requested->first,
+      {
+          .state = EditableFocusState::Unknown,
+          .applicationPid = 31337
+      }
+  );
+
+  QCOMPARE(shown, 1);
+  QCOMPARE(
+      MacInputIndicatorControllerTestAccess::visibleTrigger(controller),
+      std::optional<InputIndicatorUiTrigger>{
+          InputIndicatorUiTrigger::CoreActivity
+      }
+  );
+}
+
+void InputIndicatorPolicyTests::secureFocusNeverShows()
+{
+  int shown = 0;
+  std::optional<std::pair<uint64_t, std::optional<int64_t>>> requested;
+  MacInputIndicatorController::Dependencies dependencies;
+  dependencies.frontmostApplicationPid = [] {
+    return std::optional<int64_t>{31337};
+  };
+  dependencies.accessibilityTrusted = [] { return true; };
+  dependencies.inputSource = [] {
+    return deskflow::platform::OSXInputSourceSnapshot{
+        .source = Source::Korean2Set
+    };
+  };
+  dependencies.probeRequest =
+      [&requested](uint64_t generation, std::optional<int64_t> pid) {
+        requested = std::pair{generation, pid};
+      };
+  dependencies.panelShow =
+      [&shown](const MacInputIndicatorPanelOptions &) {
+        ++shown;
+        return true;
+      };
+  dependencies.panelHide = [] {};
+  MacInputIndicatorController controller(nullptr, std::move(dependencies));
+  MacInputIndicatorControllerTestAccess::arm(
+      controller, Source::Korean2Set
+  );
+
+  controller.inputIndicatorActivityReceived({
+      .sequence = 2,
+      .eventTimestampMach = mach_absolute_time(),
+      .kind = deskflow::input::InputIndicatorActivityKind::LocalPrimaryMouseClick,
+  });
+  MacInputIndicatorControllerTestAccess::requestAccessibility(controller);
+  QVERIFY(requested);
+  MacInputIndicatorControllerTestAccess::accessibilityCompleted(
+      controller,
+      requested->first,
+      {
+          .state = EditableFocusState::SecureOrProtected,
+          .applicationPid = 31337
+      }
+  );
+
+  QCOMPARE(shown, 0);
+  QVERIFY(!MacInputIndicatorControllerTestAccess::visibleTrigger(
+      controller
+  ));
+}
+
+void InputIndicatorPolicyTests::ownApplicationNeverRequestsProbe()
+{
+  bool requested = false;
+  MacInputIndicatorController::Dependencies dependencies;
+  dependencies.frontmostApplicationPid = [] {
+    return std::optional<int64_t>{
+        static_cast<int64_t>(QCoreApplication::applicationPid())
+    };
+  };
+  dependencies.accessibilityTrusted = [] { return true; };
+  dependencies.inputSource = [] {
+    return deskflow::platform::OSXInputSourceSnapshot{
+        .source = Source::LatinABC
+    };
+  };
+  dependencies.probeRequest =
+      [&requested](uint64_t, std::optional<int64_t>) {
+        requested = true;
+      };
+  dependencies.panelShow =
+      [](const MacInputIndicatorPanelOptions &) { return true; };
+  dependencies.panelHide = [] {};
+  MacInputIndicatorController controller(nullptr, std::move(dependencies));
   MacInputIndicatorControllerTestAccess::arm(controller);
   MacInputIndicatorControllerTestAccess::trigger(
-      controller, InputIndicatorUiTrigger::FocusedElementChanged
+      controller, InputIndicatorUiTrigger::InputSourceChanged
+  );
+
+  MacInputIndicatorControllerTestAccess::requestAccessibility(controller);
+
+  QVERIFY(!requested);
+  QVERIFY(!MacInputIndicatorControllerTestAccess::pendingTargetPid(
+      controller
+  ));
+}
+
+void InputIndicatorPolicyTests::staleProbeGenerationNeverShows()
+{
+  int shown = 0;
+  std::optional<std::pair<uint64_t, std::optional<int64_t>>> requested;
+  MacInputIndicatorController::Dependencies dependencies;
+  dependencies.frontmostApplicationPid = [] {
+    return std::optional<int64_t>{31337};
+  };
+  dependencies.accessibilityTrusted = [] { return true; };
+  dependencies.inputSource = [] {
+    return deskflow::platform::OSXInputSourceSnapshot{
+        .source = Source::LatinABC
+    };
+  };
+  dependencies.probeRequest =
+      [&requested](uint64_t generation, std::optional<int64_t> pid) {
+        requested = std::pair{generation, pid};
+      };
+  dependencies.panelShow =
+      [&shown](const MacInputIndicatorPanelOptions &) {
+        ++shown;
+        return true;
+      };
+  dependencies.panelHide = [] {};
+  MacInputIndicatorController controller(nullptr, std::move(dependencies));
+  MacInputIndicatorControllerTestAccess::arm(controller);
+  MacInputIndicatorControllerTestAccess::trigger(
+      controller, InputIndicatorUiTrigger::InputSourceChanged
+  );
+  MacInputIndicatorControllerTestAccess::requestAccessibility(controller);
+  QVERIFY(requested);
+
+  MacInputIndicatorControllerTestAccess::accessibilityCompleted(
+      controller,
+      requested->first + 1,
+      {
+          .state = EditableFocusState::Unknown,
+          .applicationPid = 31337
+      }
+  );
+
+  QCOMPARE(shown, 0);
+}
+
+void InputIndicatorPolicyTests::mismatchedSnapshotPidNeverShows()
+{
+  int shown = 0;
+  std::optional<std::pair<uint64_t, std::optional<int64_t>>> requested;
+  MacInputIndicatorController::Dependencies dependencies;
+  dependencies.frontmostApplicationPid = [] {
+    return std::optional<int64_t>{31337};
+  };
+  dependencies.accessibilityTrusted = [] { return true; };
+  dependencies.inputSource = [] {
+    return deskflow::platform::OSXInputSourceSnapshot{
+        .source = Source::LatinABC
+    };
+  };
+  dependencies.probeRequest =
+      [&requested](uint64_t generation, std::optional<int64_t> pid) {
+        requested = std::pair{generation, pid};
+      };
+  dependencies.panelShow =
+      [&shown](const MacInputIndicatorPanelOptions &) {
+        ++shown;
+        return true;
+      };
+  dependencies.panelHide = [] {};
+  MacInputIndicatorController controller(nullptr, std::move(dependencies));
+  MacInputIndicatorControllerTestAccess::arm(controller);
+  MacInputIndicatorControllerTestAccess::trigger(
+      controller, InputIndicatorUiTrigger::InputSourceChanged
+  );
+  MacInputIndicatorControllerTestAccess::requestAccessibility(controller);
+  QVERIFY(requested);
+
+  MacInputIndicatorControllerTestAccess::accessibilityCompleted(
+      controller,
+      requested->first,
+      {
+          .state = EditableFocusState::Unknown,
+          .applicationPid = 4242
+      }
+  );
+
+  QCOMPARE(shown, 0);
+}
+
+void InputIndicatorPolicyTests::invalidActivityDoesNotCancelSourceTrigger()
+{
+  MacInputIndicatorController::Dependencies dependencies;
+  dependencies.inputSource = [] {
+    return deskflow::platform::OSXInputSourceSnapshot{
+        .source = Source::LatinABC
+    };
+  };
+  MacInputIndicatorController controller(nullptr, std::move(dependencies));
+  MacInputIndicatorControllerTestAccess::arm(controller);
+  MacInputIndicatorControllerTestAccess::trigger(
+      controller, InputIndicatorUiTrigger::InputSourceChanged
   );
 
   controller.inputIndicatorActivityInvalidated();
@@ -397,7 +767,7 @@ void InputIndicatorPolicyTests::invalidActivityDoesNotCancelFocusTrigger()
   QCOMPARE(
       MacInputIndicatorControllerTestAccess::pendingTrigger(controller),
       std::optional<InputIndicatorUiTrigger>{
-          InputIndicatorUiTrigger::FocusedElementChanged
+          InputIndicatorUiTrigger::InputSourceChanged
       }
   );
 }

@@ -27,7 +27,6 @@ enum class EditableFocusState
 enum class InputIndicatorTrigger
 {
   CoreActivity,
-  FocusChanged,
   SourceChanged
 };
 
@@ -41,8 +40,6 @@ enum class InputIndicatorVisibilityReason
   OffComputer,
   ScreenUnknown,
   FocusSecureOrProtected,
-  FocusNotEditable,
-  FocusUnknown,
   SourceUnknown,
   OwnApplication,
   GenerationMismatch,

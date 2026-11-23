@@ -1236,6 +1236,12 @@ void ServerConfigDialogTests::indicatorController_duringAccessibleDialogBlocksOw
       return frontmostPid;
     };
     dependencies.accessibilityTrusted = [] { return true; };
+    dependencies.inputSource = [] {
+      return deskflow::platform::OSXInputSourceSnapshot{
+          .source =
+              deskflow::input::InputIndicatorSource::LatinABC
+      };
+    };
     dependencies.probeRequest =
         [&probeRequests, &probedPid](
             uint64_t, const std::optional<int64_t> pid
@@ -1266,7 +1272,7 @@ void ServerConfigDialogTests::indicatorController_duringAccessibleDialogBlocksOw
           std::optional<int64_t>{ownPid}, ownPid
       );
       MacInputIndicatorControllerTestAccess::trigger(
-          controller, InputIndicatorUiTrigger::FocusedElementChanged
+          controller, InputIndicatorUiTrigger::InputSourceChanged
       );
       MacInputIndicatorControllerTestAccess::request(controller);
       ownPendingCleared =
@@ -1280,7 +1286,7 @@ void ServerConfigDialogTests::indicatorController_duringAccessibleDialogBlocksOw
           probeRequests == 0;
 
       MacInputIndicatorControllerTestAccess::trigger(
-          controller, InputIndicatorUiTrigger::FocusedElementChanged
+          controller, InputIndicatorUiTrigger::InputSourceChanged
       );
       MacInputIndicatorControllerTestAccess::request(controller);
       ownDiagnosticThrottled =
@@ -1290,7 +1296,7 @@ void ServerConfigDialogTests::indicatorController_duringAccessibleDialogBlocksOw
 
       frontmostPid = ownPid + 1;
       MacInputIndicatorControllerTestAccess::trigger(
-          controller, InputIndicatorUiTrigger::FocusedElementChanged
+          controller, InputIndicatorUiTrigger::InputSourceChanged
       );
       MacInputIndicatorControllerTestAccess::request(controller);
       externalProbeScheduled =

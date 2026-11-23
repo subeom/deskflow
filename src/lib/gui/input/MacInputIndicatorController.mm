@@ -61,8 +61,6 @@ InputIndicatorTrigger policyTrigger(InputIndicatorUiTrigger trigger)
   switch (trigger) {
   case InputIndicatorUiTrigger::CoreActivity:
     return InputIndicatorTrigger::CoreActivity;
-  case InputIndicatorUiTrigger::FocusedElementChanged:
-    return InputIndicatorTrigger::FocusChanged;
   case InputIndicatorUiTrigger::InputSourceChanged:
     return InputIndicatorTrigger::SourceChanged;
   }
@@ -130,6 +128,22 @@ MacInputIndicatorController::MacInputIndicatorController(
             ) {
               m_probe->request(generation, targetPid);
             };
+  m_inputSource =
+      dependencies.inputSource
+          ? std::move(dependencies.inputSource)
+          : [] {
+              return deskflow::platform::copyCurrentMacInputSource();
+            };
+  m_panelShow =
+      dependencies.panelShow
+          ? std::move(dependencies.panelShow)
+          : [this](const MacInputIndicatorPanelOptions &options) {
+              return m_panel->show(options);
+            };
+  m_panelHide =
+      dependencies.panelHide
+          ? std::move(dependencies.panelHide)
+          : [this] { m_panel->hide(); };
   m_diagnosticEmitter =
       dependencies.diagnosticEmitter
           ? std::move(dependencies.diagnosticEmitter)
@@ -166,6 +180,12 @@ void MacInputIndicatorController::settingsChanged(const QString &key)
       key == Settings::Gui::InputIndicatorDwellMs ||
       key == Settings::Gui::InputIndicatorOpacityPercent ||
       key == Settings::Gui::InputIndicatorTone) {
+    ++m_generation;
+    m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
+    m_probeTimer.stop();
+    hide();
     applySettings();
   }
 }
@@ -202,32 +222,27 @@ void MacInputIndicatorController::setEffectiveEnabled(bool enabled)
     m_isOnComputer = false;
     m_lastActivity.reset();
     m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
     m_visibleTrigger.reset();
   }
-  m_panel->hide();
+  m_panelHide();
   Q_EMIT enabledChanged(enabled);
 }
 
 void MacInputIndicatorController::createMonitors()
 {
+  m_source = m_inputSource().source;
   if (!m_focusMonitor) {
     m_focusMonitor = std::make_unique<MacInputFocusMonitor>(
-        [this] { trigger(InputIndicatorUiTrigger::FocusedElementChanged); }
+        [this] { focusChanged(); }
     );
   }
   if (!m_sourceMonitor) {
     m_sourceMonitor = std::make_unique<deskflow::platform::OSXInputSourceMonitor>(
-        [this] {
-          const auto source = deskflow::platform::copyCurrentMacInputSource();
-          m_source = source.source;
-          if (m_source == deskflow::input::InputIndicatorSource::Unknown) {
-            hide();
-          }
-          trigger(InputIndicatorUiTrigger::InputSourceChanged);
-        }
+        [this] { inputSourceChanged(); }
     );
   }
-  m_source = deskflow::platform::copyCurrentMacInputSource().source;
 }
 
 void MacInputIndicatorController::destroyMonitors()
@@ -237,6 +252,40 @@ void MacInputIndicatorController::destroyMonitors()
   m_source = deskflow::input::InputIndicatorSource::Unknown;
 }
 
+void MacInputIndicatorController::focusChanged()
+{
+  ++m_generation;
+  m_pendingTrigger.reset();
+  m_pendingSource.reset();
+  m_pendingTargetPid.reset();
+  m_probeTimer.stop();
+  hide();
+}
+
+void MacInputIndicatorController::inputSourceChanged()
+{
+  const auto previous = m_source;
+  const auto current = m_inputSource().source;
+  m_source = current;
+
+  if (current == deskflow::input::InputIndicatorSource::Unknown) {
+    ++m_generation;
+    m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
+    m_probeTimer.stop();
+    reportHiddenReason(InputIndicatorVisibilityReason::SourceUnknown);
+    hide();
+    return;
+  }
+  if (!deskflow::platform::shouldActivateMacInputSourceTransition(
+          previous, current
+      )) {
+    return;
+  }
+  trigger(InputIndicatorUiTrigger::InputSourceChanged);
+}
+
 void MacInputIndicatorController::trigger(InputIndicatorUiTrigger trigger)
 {
   if (!m_effectiveEnabled ||
@@ -244,7 +293,21 @@ void MacInputIndicatorController::trigger(InputIndicatorUiTrigger trigger)
        !m_lastActivity)) {
     return;
   }
+  const auto source = m_inputSource().source;
+  if (source == deskflow::input::InputIndicatorSource::Unknown) {
+    ++m_generation;
+    m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
+    m_probeTimer.stop();
+    reportHiddenReason(InputIndicatorVisibilityReason::SourceUnknown);
+    hide();
+    return;
+  }
+  m_source = source;
   m_pendingTrigger = trigger;
+  m_pendingSource = source;
+  m_pendingTargetPid.reset();
   ++m_generation;
   hide();
   m_probeTimer.start();
@@ -255,28 +318,47 @@ void MacInputIndicatorController::requestAccessibility()
   m_probeTimer.stop();
   if (!m_effectiveEnabled) {
     m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
     hide();
     return;
   }
   if (!m_accessibilityTrusted()) {
     m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
     reportHiddenReason(InputIndicatorVisibilityReason::AccessibilityUnavailable);
     hide();
     return;
   }
   if (!m_coreConnected) {
     m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
     reportHiddenReason(InputIndicatorVisibilityReason::CoreDisconnected);
     hide();
     return;
   }
   if (!m_isOnComputer) {
     m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
     reportHiddenReason(InputIndicatorVisibilityReason::OffComputer);
     hide();
     return;
   }
   if (!m_pendingTrigger) {
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
+    hide();
+    return;
+  }
+  if (!m_pendingSource ||
+      *m_pendingSource == deskflow::input::InputIndicatorSource::Unknown) {
+    m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
+    reportHiddenReason(InputIndicatorVisibilityReason::SourceUnknown);
     hide();
     return;
   }
@@ -286,6 +368,8 @@ void MacInputIndicatorController::requestAccessibility()
       !m_lastActivity) {
     reportHiddenReason(InputIndicatorVisibilityReason::NoRecentActivity);
     m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
     hide();
     return;
   }
@@ -296,6 +380,8 @@ void MacInputIndicatorController::requestAccessibility()
       macAccessibilityProbeTargetPid(frontmostPid, ownPid);
   if (!targetPid) {
     m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
     reportHiddenReason(
         frontmostPid && *frontmostPid == ownPid
             ? InputIndicatorVisibilityReason::OwnApplication
@@ -304,6 +390,7 @@ void MacInputIndicatorController::requestAccessibility()
     hide();
     return;
   }
+  m_pendingTargetPid = targetPid;
   m_probeRequest(m_generation, targetPid);
 }
 
@@ -324,11 +411,14 @@ void MacInputIndicatorController::inputIndicatorLocalChanged(bool local)
   m_coreConnected = true;
   m_isOnComputer = local;
   ++m_generation;
+  m_pendingTrigger.reset();
+  m_pendingSource.reset();
+  m_pendingTargetPid.reset();
+  m_probeTimer.stop();
+  hide();
   if (!local) {
     m_lastActivity.reset();
-    m_pendingTrigger.reset();
     reportHiddenReason(InputIndicatorVisibilityReason::OffComputer);
-    hide();
     return;
   }
 }
@@ -336,21 +426,28 @@ void MacInputIndicatorController::inputIndicatorLocalChanged(bool local)
 void MacInputIndicatorController::inputIndicatorActivityInvalidated()
 {
   m_lastActivity.reset();
-  if ((m_pendingTrigger &&
-       !inputIndicatorTriggerRequiresActivity(
-           policyTrigger(*m_pendingTrigger)
-       )) ||
-      (m_visibleTrigger &&
-       !inputIndicatorTriggerRequiresActivity(
-           policyTrigger(*m_visibleTrigger)
-       ))) {
+  const bool pendingActivity = m_pendingTrigger &&
+      inputIndicatorTriggerRequiresActivity(
+          policyTrigger(*m_pendingTrigger)
+      );
+  const bool visibleActivity = m_visibleTrigger &&
+      inputIndicatorTriggerRequiresActivity(
+          policyTrigger(*m_visibleTrigger)
+      );
+  if (!pendingActivity && !visibleActivity) {
     return;
   }
-  m_pendingTrigger.reset();
   ++m_generation;
-  m_probeTimer.stop();
+  if (pendingActivity) {
+    m_pendingTrigger.reset();
+    m_pendingSource.reset();
+    m_pendingTargetPid.reset();
+    m_probeTimer.stop();
+  }
   reportHiddenReason(InputIndicatorVisibilityReason::EventRejected);
-  hide();
+  if (visibleActivity) {
+    hide();
+  }
 }
 
 void MacInputIndicatorController::inputIndicatorStateInvalidated()
@@ -359,6 +456,8 @@ void MacInputIndicatorController::inputIndicatorStateInvalidated()
   m_isOnComputer = false;
   m_lastActivity.reset();
   m_pendingTrigger.reset();
+  m_pendingSource.reset();
+  m_pendingTargetPid.reset();
   ++m_generation;
   m_probeTimer.stop();
   reportHiddenReason(InputIndicatorVisibilityReason::CoreDisconnected);
@@ -374,8 +473,12 @@ void MacInputIndicatorController::accessibilityCompleted(
   }
 
   const auto pendingTrigger = m_pendingTrigger;
+  const auto pendingSource = m_pendingSource;
+  const auto pendingTargetPid = m_pendingTargetPid;
   m_pendingTrigger.reset();
-  if (!pendingTrigger) {
+  m_pendingSource.reset();
+  m_pendingTargetPid.reset();
+  if (!pendingTrigger || !pendingSource || !pendingTargetPid) {
     hide();
     return;
   }
@@ -394,13 +497,13 @@ void MacInputIndicatorController::accessibilityCompleted(
       return;
     }
   }
-  NSRunningApplication *frontmostApplication = [[NSWorkspace sharedWorkspace] frontmostApplication];
-  const std::optional<int64_t> frontmostPid =
-      frontmostApplication
-          ? std::optional<int64_t>{
-                static_cast<int64_t>(frontmostApplication.processIdentifier)
-            }
-          : std::nullopt;
+  const auto frontmostPid = m_frontmostApplicationPid();
+  if (!frontmostPid || *frontmostPid != *pendingTargetPid ||
+      snapshot.applicationPid != *pendingTargetPid) {
+    reportHiddenReason(InputIndicatorVisibilityReason::FrontmostChanged);
+    hide();
+    return;
+  }
   const auto currentSnapshot =
       macAccessibilitySnapshotForFrontmostApplication(
           snapshot, frontmostPid
@@ -411,7 +514,14 @@ void MacInputIndicatorController::accessibilityCompleted(
     return;
   }
 
-  m_source = deskflow::platform::copyCurrentMacInputSource().source;
+  const auto currentSource = m_inputSource().source;
+  if (currentSource != *pendingSource) {
+    ++m_generation;
+    reportHiddenReason(InputIndicatorVisibilityReason::GenerationMismatch);
+    hide();
+    return;
+  }
+  m_source = currentSource;
   const InputIndicatorPolicyInput input{
       .enabled = m_effectiveEnabled,
       .accessibilityTrusted = m_accessibilityTrusted(),
@@ -420,7 +530,7 @@ void MacInputIndicatorController::accessibilityCompleted(
       .isOnComputer = m_isOnComputer,
       .screenKnown = true,
       .focus = currentSnapshot.state,
-      .source = m_source,
+      .source = *pendingSource,
       .trigger = trigger,
       .probeGeneration = generation,
       .activityGeneration = m_generation,
@@ -435,7 +545,7 @@ void MacInputIndicatorController::accessibilityCompleted(
     hide();
     return;
   }
-  if (!m_panel->show({
+  if (!m_panelShow({
           .source = decision.source,
           .position = m_position,
           .opacityPercent = m_opacityPercent,
@@ -454,7 +564,7 @@ void MacInputIndicatorController::hide()
 {
   m_dwellTimer.stop();
   m_visibleTrigger.reset();
-  m_panel->hide();
+  m_panelHide();
 }
 
 void MacInputIndicatorController::reportHiddenReason(

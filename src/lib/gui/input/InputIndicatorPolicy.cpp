@@ -29,10 +29,6 @@ const char *inputIndicatorVisibilityReasonText(
     return "screen-unknown";
   case InputIndicatorVisibilityReason::FocusSecureOrProtected:
     return "secure-focus";
-  case InputIndicatorVisibilityReason::FocusNotEditable:
-    return "not-editable";
-  case InputIndicatorVisibilityReason::FocusUnknown:
-    return "no-focus";
   case InputIndicatorVisibilityReason::SourceUnknown:
     return "unknown-source";
   case InputIndicatorVisibilityReason::OwnApplication:

@@ -9,6 +9,7 @@
 #include "MacAccessibilityProbe.h"
 #include "MacInputIndicatorPanel.h"
 #include "deskflow/ipc/InputIndicatorIpc.h"
+#include "platform/OSXInputSource.h"
 
 #include <QObject>
 #include <QTimer>
@@ -21,10 +22,6 @@
 
 struct MacInputIndicatorControllerTestAccess;
 
-namespace deskflow::platform {
-class OSXInputSourceMonitor;
-}
-
 namespace deskflow::gui::input {
 
 class MacInputFocusMonitor;
@@ -32,7 +29,6 @@ class MacInputFocusMonitor;
 enum class InputIndicatorUiTrigger
 {
   CoreActivity,
-  FocusedElementChanged,
   InputSourceChanged
 };
 
@@ -49,6 +45,12 @@ public:
         uint64_t generation,
         std::optional<int64_t> targetPid
     )> probeRequest;
+    std::function<deskflow::platform::OSXInputSourceSnapshot()>
+        inputSource;
+    std::function<bool(
+        const MacInputIndicatorPanelOptions &options
+    )> panelShow;
+    std::function<void()> panelHide;
     std::function<void(InputIndicatorVisibilityReason)> diagnosticEmitter;
   };
 
@@ -82,6 +84,8 @@ private:
   void setEffectiveEnabled(bool enabled);
   void createMonitors();
   void destroyMonitors();
+  void focusChanged();
+  void inputSourceChanged();
   void trigger(InputIndicatorUiTrigger trigger);
   void hide();
   void reportHiddenReason(InputIndicatorVisibilityReason reason);
@@ -98,6 +102,8 @@ private:
   deskflow::input::InputIndicatorSource m_source = deskflow::input::InputIndicatorSource::Unknown;
   std::optional<deskflow::input::InputIndicatorActivity> m_lastActivity;
   std::optional<InputIndicatorUiTrigger> m_pendingTrigger;
+  std::optional<deskflow::input::InputIndicatorSource> m_pendingSource;
+  std::optional<int64_t> m_pendingTargetPid;
   std::optional<InputIndicatorUiTrigger> m_visibleTrigger;
 
   std::unique_ptr<MacAccessibilityProbe> m_probe;
@@ -113,6 +119,12 @@ private:
       uint64_t generation,
       std::optional<int64_t> targetPid
   )> m_probeRequest;
+  std::function<deskflow::platform::OSXInputSourceSnapshot()>
+      m_inputSource;
+  std::function<bool(
+      const MacInputIndicatorPanelOptions &options
+  )> m_panelShow;
+  std::function<void()> m_panelHide;
   std::function<void(InputIndicatorVisibilityReason)>
       m_diagnosticEmitter;
 
