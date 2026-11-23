@@ -25,6 +25,8 @@
 
 #include <algorithm>
 
+#include <QCoreApplication>
+
 namespace deskflow::gui::input {
 
 namespace {
@@ -250,7 +252,21 @@ void MacInputIndicatorController::requestAccessibility()
         frontmost.processIdentifier
     );
   }
-  m_probe->request(m_generation, frontmostPid);
+  const auto ownPid =
+      static_cast<int64_t>(QCoreApplication::applicationPid());
+  const auto targetPid =
+      macAccessibilityProbeTargetPid(frontmostPid, ownPid);
+  if (!targetPid) {
+    m_pendingTrigger.reset();
+    reportHiddenReason(
+        frontmostPid && *frontmostPid == ownPid
+            ? InputIndicatorVisibilityReason::OwnApplication
+            : InputIndicatorVisibilityReason::FrontmostChanged
+    );
+    hide();
+    return;
+  }
+  m_probe->request(m_generation, targetPid);
 }
 
 void MacInputIndicatorController::inputIndicatorActivityReceived(

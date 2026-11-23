@@ -285,6 +285,31 @@ void InputIndicatorPolicyTests::accessibilitySnapshotAcceptsMatchingFrontmostPid
   QCOMPARE(current.applicationPid, snapshot.applicationPid);
 }
 
+void InputIndicatorPolicyTests::accessibilityProbeRejectsOwnApplication()
+{
+  QVERIFY(!macAccessibilityProbeTargetPid(
+      std::optional<int64_t>{4242}, int64_t{4242}
+  ));
+  QVERIFY(!macAccessibilityProbeTargetPid(
+      std::nullopt, int64_t{4242}
+  ));
+  QCOMPARE(
+      QString::fromLatin1(inputIndicatorVisibilityReasonText(
+          InputIndicatorVisibilityReason::OwnApplication
+      )),
+      QStringLiteral("own-application")
+  );
+}
+
+void InputIndicatorPolicyTests::accessibilityProbeAcceptsExternalApplication()
+{
+  const auto target = macAccessibilityProbeTargetPid(
+      std::optional<int64_t>{31337}, int64_t{4242}
+  );
+
+  QCOMPARE(target, std::optional<int64_t>{31337});
+}
+
 void InputIndicatorPolicyTests::panelPresentationRequestsFrontRegardless()
 {
   std::vector<MacInputIndicatorPanelOrderCommand> commands;

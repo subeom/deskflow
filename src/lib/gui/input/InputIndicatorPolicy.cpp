@@ -35,6 +35,8 @@ const char *inputIndicatorVisibilityReasonText(
     return "no-focus";
   case InputIndicatorVisibilityReason::SourceUnknown:
     return "unknown-source";
+  case InputIndicatorVisibilityReason::OwnApplication:
+    return "own-application";
   case InputIndicatorVisibilityReason::GenerationMismatch:
     return "generation-mismatch";
   case InputIndicatorVisibilityReason::EventRejected:

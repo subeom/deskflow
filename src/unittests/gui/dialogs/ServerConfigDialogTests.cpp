@@ -20,6 +20,7 @@
 #include "gui/widgets/SettingsDialogButtonBox.h"
 
 #include <QApplication>
+#include <QAccessible>
 #include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -1113,6 +1114,39 @@ void ServerConfigDialogTests::systemLook_theToolbarOfTheArrangementIsWhatItWas()
   QVERIFY(x("btnArrangementAdd") < x("btnArrangementMonitors"));
   QVERIFY(buttonNamed(dialog, "btnArrangementAdd")->icon().isNull());
   QVERIFY(!panelOf(dialog)->findChild<QWidget *>(QStringLiteral("arrangementToolsDivider")));
+}
+
+void ServerConfigDialogTests::accessibilityActive_repeatedShowAndCloseKeepsInterfacesValid()
+{
+  QAccessible::setActive(true);
+  const auto deactivate = qScopeGuard([] { QAccessible::setActive(false); });
+  if (!QAccessible::isActive())
+    QSKIP("QAccessible::setActive does not turn accessibility on before Qt 6.10");
+
+  DeskflowLook look;
+  for (int cycle = 0; cycle < 20; ++cycle) {
+    ServerConfig config;
+    ServerConfigDialog dialog(nullptr, config);
+    bool checked = false;
+    QTimer::singleShot(0, &dialog, [&dialog, &checked] {
+      auto *interface = QAccessible::queryAccessibleInterface(&dialog);
+      QVERIFY(interface != nullptr);
+      QVERIFY(interface->isValid());
+      const auto children = dialog.findChildren<QWidget *>();
+      for (auto *child : children) {
+        auto *childInterface =
+            QAccessible::queryAccessibleInterface(child);
+        if (childInterface) {
+          childInterface->isValid();
+          childInterface->text(QAccessible::Name);
+        }
+      }
+      checked = true;
+      dialog.reject();
+    });
+    dialog.exec();
+    QVERIFY(checked);
+  }
 }
 
 // The grid builds the option of its cells from a widget of its own that it deletes at once, and the option kept that

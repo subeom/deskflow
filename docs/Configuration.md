@@ -143,8 +143,9 @@ pointer is on a remote computer. Enabling the setting only arms the indicator: a
 on the local Mac, a real focus change, or an actual input-source change can request an eligible-field check. Hovering,
 moving the mouse, or enabling the setting does not show the badge. Click/key triggers require fresh core activity;
 focus/source triggers require no synthetic activity record. The GUI uses the system-wide AX focused application when
-available, then falls back to the current frontmost application PID; it never reads the field value. Activity stays
-correlated for one second so a slow AX probe can complete. Debug logs may emit one reason-only
+available, then falls back to the current frontmost application PID; it never reads the field value. Deskflow's own GUI
+process is not queried, so opening its dialogs cannot re-enter the accessibility bridge while their widgets are created.
+Activity stays correlated for one second so a slow AX probe can complete. Debug logs may emit one reason-only
 `input indicator hidden` message per five seconds. Deskflow does not mutate or replay input for this feature.
 
 #### The look of the application, and the way back to the one of before

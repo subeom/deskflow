@@ -120,6 +120,7 @@ Track B 첫 후보 알고리즘:
 6. AX worker의 generation과 frontmost PID가 completion 시점과 다르면 hide.
 7. core IPC는 no text/no keycode 정책.
 8. 숨김 원인은 reason code만 Debug log에 기록, 5초당 최대 1회.
+9. Deskflow GUI PID 자체는 AX probe target에서 제외, modal/widget construction 중 self-AX re-entry 금지.
 
 미확인 live 항목:
 

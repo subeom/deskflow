@@ -27,6 +27,8 @@ private Q_SLOTS:
   void accessibilitySnapshotRejectsStalePid();
   void accessibilitySnapshotRequiresFrontmostPid();
   void accessibilitySnapshotAcceptsMatchingFrontmostPid();
+  void accessibilityProbeRejectsOwnApplication();
+  void accessibilityProbeAcceptsExternalApplication();
   void panelPresentationRequestsFrontRegardless();
   void focusTriggerWithoutActivityQueuesProbe();
   void sourceTriggerWithoutActivityQueuesProbe();

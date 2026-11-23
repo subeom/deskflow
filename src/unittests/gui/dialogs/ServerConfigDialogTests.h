@@ -48,6 +48,7 @@ private Q_SLOTS:
   // phase 5: the toolbar of the arrangement in the new look; with the system look it is what it was
   void newLook_theToolbarOfTheArrangementIsGroupedAndStillHasEveryHook();
   void systemLook_theToolbarOfTheArrangementIsWhatItWas();
+  void accessibilityActive_repeatedShowAndCloseKeepsInterfacesValid();
 
   // the grid of the classic arrangement builds the option of its cells from a widget that it deletes
   void computerGrid_neverHandsAStyleAnObjectThatIsGone();

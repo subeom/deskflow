@@ -26,6 +26,10 @@ std::vector<int64_t> macAccessibilityApplicationPidCandidates(
     std::optional<int64_t> systemWideApplicationPid,
     std::optional<int64_t> frontmostApplicationPid
 );
+std::optional<int64_t> macAccessibilityProbeTargetPid(
+    std::optional<int64_t> frontmostApplicationPid,
+    int64_t ownApplicationPid
+);
 MacAccessibilitySnapshot macAccessibilitySnapshotForFrontmostApplication(
     const MacAccessibilitySnapshot &snapshot,
     std::optional<int64_t> frontmostApplicationPid

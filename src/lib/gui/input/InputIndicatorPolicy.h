@@ -44,6 +44,7 @@ enum class InputIndicatorVisibilityReason
   FocusNotEditable,
   FocusUnknown,
   SourceUnknown,
+  OwnApplication,
   GenerationMismatch,
   EventRejected,
   NoRecentActivity,
