@@ -236,8 +236,9 @@ void TranslationFileTests::file_hasTheTextsThatTheRedesignAdded()
       {QStringLiteral("SettingsPages"), QStringLiteral("Input source indicator")},
       {QStringLiteral("SettingsPages"), QStringLiteral("Position from cursor")},
       {QStringLiteral("SettingsPages"),
-       QStringLiteral("Accessibility permission or field recognition unavailable: indicator hidden. Password and "
-                      "protected field: indicator hidden.")},
+       QStringLiteral("Shown beside the mouse pointer only after a local input-source change, click, or key activity. "
+                      "Password and protected fields remain hidden; an unavailable Accessibility permission also hides "
+                      "it, but other unrecognized focus states do not block a valid event.")},
       {QStringLiteral("SettingsPages"), QStringLiteral("Use the Deskflow window frame")},
       {QStringLiteral("SettingsPages"), QStringLiteral("Security & clipboard")},
       {QStringLiteral("TunnelChip"), QStringLiteral("Tunnel: connected")},
