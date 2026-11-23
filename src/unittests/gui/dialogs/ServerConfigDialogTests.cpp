@@ -13,8 +13,9 @@
 #include "gui/config/ServerConfig.h"
 #include "gui/dialogs/ComputerSettingsDialog.h"
 #include "gui/dialogs/ServerConfigDialog.h"
-#include "gui/input/MacAccessibilityProbe.h"
+#if defined(Q_OS_MACOS)
 #include "gui/input/MacInputIndicatorController.h"
+#endif
 #include "gui/style/DeskflowStyle.h"
 #include "gui/widgets/ArrangementCanvas.h"
 #include "gui/widgets/ArrangementPanel.h"
@@ -47,6 +48,7 @@
 #include <tuple>
 #include <vector>
 
+#if defined(Q_OS_MACOS)
 using deskflow::gui::input::InputIndicatorUiTrigger;
 using deskflow::gui::input::InputIndicatorVisibilityReason;
 using deskflow::gui::input::MacInputIndicatorController;
@@ -90,6 +92,7 @@ struct MacInputIndicatorControllerTestAccess
     return controller.m_probeTimer.isActive();
   }
 };
+#endif
 
 namespace {
 
@@ -1166,6 +1169,46 @@ void ServerConfigDialogTests::accessibilityActive_repeatedShowAndCloseKeepsInter
 {
   QAccessible::setActive(true);
   const auto deactivate = qScopeGuard([] { QAccessible::setActive(false); });
+
+  DeskflowLook look;
+  for (int cycle = 0; cycle < 20; ++cycle) {
+    ServerConfig config;
+    ServerConfigDialog dialog(nullptr, config);
+
+    bool callbackRan = false;
+    bool topInterfacePresent = false;
+    bool topInterfaceValid = false;
+    int invalidChildInterfaces = 0;
+    QTimer::singleShot(2000, &dialog, &QDialog::reject);
+    QTimer::singleShot(0, &dialog, [&] {
+      const auto closeDialog =
+          qScopeGuard([&dialog] { dialog.reject(); });
+      callbackRan = true;
+      auto *interface = QAccessible::queryAccessibleInterface(&dialog);
+      topInterfacePresent = interface != nullptr;
+      topInterfaceValid =
+          interface != nullptr && interface->isValid();
+      const auto children = dialog.findChildren<QWidget *>();
+      for (auto *child : children) {
+        auto *childInterface =
+            QAccessible::queryAccessibleInterface(child);
+        if (childInterface && !childInterface->isValid())
+          ++invalidChildInterfaces;
+      }
+    });
+    dialog.exec();
+    QVERIFY(callbackRan);
+    QVERIFY(topInterfacePresent);
+    QVERIFY(topInterfaceValid);
+    QCOMPARE(invalidChildInterfaces, 0);
+  }
+}
+
+#if defined(Q_OS_MACOS)
+void ServerConfigDialogTests::indicatorController_duringAccessibleDialogBlocksOwnProbe()
+{
+  QAccessible::setActive(true);
+  const auto deactivate = qScopeGuard([] { QAccessible::setActive(false); });
   if (!QAccessible::isActive())
     QSKIP("QAccessible::setActive does not turn accessibility on before Qt 6.10");
 
@@ -1208,9 +1251,6 @@ void ServerConfigDialogTests::accessibilityActive_repeatedShowAndCloseKeepsInter
     MacInputIndicatorControllerTestAccess::arm(controller);
 
     bool callbackRan = false;
-    bool topInterfacePresent = false;
-    bool topInterfaceValid = false;
-    int invalidChildInterfaces = 0;
     bool ownProbeBlocked = false;
     bool ownPendingCleared = false;
     bool ownProbeTimerStopped = false;
@@ -1221,17 +1261,6 @@ void ServerConfigDialogTests::accessibilityActive_repeatedShowAndCloseKeepsInter
       const auto closeDialog =
           qScopeGuard([&dialog] { dialog.reject(); });
       callbackRan = true;
-      auto *interface = QAccessible::queryAccessibleInterface(&dialog);
-      topInterfacePresent = interface != nullptr;
-      topInterfaceValid =
-          interface != nullptr && interface->isValid();
-      const auto children = dialog.findChildren<QWidget *>();
-      for (auto *child : children) {
-        auto *childInterface =
-            QAccessible::queryAccessibleInterface(child);
-        if (childInterface && !childInterface->isValid())
-          ++invalidChildInterfaces;
-      }
 
       ownProbeBlocked = !macAccessibilityProbeTargetPid(
           std::optional<int64_t>{ownPid}, ownPid
@@ -1269,9 +1298,6 @@ void ServerConfigDialogTests::accessibilityActive_repeatedShowAndCloseKeepsInter
     });
     dialog.exec();
     QVERIFY(callbackRan);
-    QVERIFY(topInterfacePresent);
-    QVERIFY(topInterfaceValid);
-    QCOMPARE(invalidChildInterfaces, 0);
     QVERIFY(ownProbeBlocked);
     QVERIFY(ownPendingCleared);
     QVERIFY(ownProbeTimerStopped);
@@ -1279,6 +1305,7 @@ void ServerConfigDialogTests::accessibilityActive_repeatedShowAndCloseKeepsInter
     QVERIFY(externalProbeScheduled);
   }
 }
+#endif
 
 // The grid builds the option of its cells from a widget of its own that it deletes at once, and the option kept that
 // widget as its style object. The windowsvista and windows11 styles ask the style object for a property whenever they

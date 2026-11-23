@@ -85,6 +85,10 @@ const char *inputIndicatorVisibilityReasonText(
     InputIndicatorVisibilityReason reason
 );
 bool inputIndicatorTriggerRequiresActivity(InputIndicatorTrigger trigger);
+std::optional<int64_t> macAccessibilityProbeTargetPid(
+    std::optional<int64_t> frontmostApplicationPid,
+    int64_t ownApplicationPid
+);
 
 class InputIndicatorDiagnosticThrottle
 {

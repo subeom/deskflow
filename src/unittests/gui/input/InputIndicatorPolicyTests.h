@@ -19,6 +19,8 @@ private Q_SLOTS:
   void focusTriggerGenerationMismatchHides();
   void nonCoreTriggerSafetyHides_data();
   void nonCoreTriggerSafetyHides();
+  void accessibilityProbeRejectsOwnApplication();
+  void accessibilityProbeAcceptsExternalApplication();
 #ifdef Q_OS_MACOS
   void accessibilityCandidateUsesFrontmostWhenSystemLookupFails();
   void accessibilityCandidatesAvoidDuplicatePids();
@@ -27,8 +29,6 @@ private Q_SLOTS:
   void accessibilitySnapshotRejectsStalePid();
   void accessibilitySnapshotRequiresFrontmostPid();
   void accessibilitySnapshotAcceptsMatchingFrontmostPid();
-  void accessibilityProbeRejectsOwnApplication();
-  void accessibilityProbeAcceptsExternalApplication();
   void panelPresentationRequestsFrontRegardless();
   void focusTriggerWithoutActivityQueuesProbe();
   void sourceTriggerWithoutActivityQueuesProbe();

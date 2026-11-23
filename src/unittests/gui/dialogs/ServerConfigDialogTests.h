@@ -49,6 +49,9 @@ private Q_SLOTS:
   void newLook_theToolbarOfTheArrangementIsGroupedAndStillHasEveryHook();
   void systemLook_theToolbarOfTheArrangementIsWhatItWas();
   void accessibilityActive_repeatedShowAndCloseKeepsInterfacesValid();
+#if defined(Q_OS_MACOS)
+  void indicatorController_duringAccessibleDialogBlocksOwnProbe();
+#endif
 
   // the grid of the classic arrangement builds the option of its cells from a widget that it deletes
   void computerGrid_neverHandsAStyleAnObjectThatIsGone();
