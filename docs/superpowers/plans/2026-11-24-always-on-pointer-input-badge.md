@@ -4,7 +4,7 @@
 
 **Goal:** Replace the transient activity-driven input indicator with an always-on `A`/`한` badge that follows the native mouse pointer while the pointer is local.
 
-**Architecture:** Keep the existing privacy-safe `NSPanel`, exact TIS snapshot, and core local/off-computer subscription. Remove Accessibility and input-activity dependencies from `MacInputIndicatorController`, separate panel configuration from 60 Hz frame movement, and leave legacy IPC/activity/AX classes buildable but disconnected.
+**Architecture:** Keep the privacy-safe `NSPanel`, exact TIS snapshot, and core local/off-computer subscription. Add Cat/Dog/Turtle vector drawing, event-driven local/global pointer targeting with a short-lived 8 ms render timer and 16 ms fallback, and leave legacy IPC/activity/AX classes buildable but disconnected.
 
 **Tech Stack:** C++20, Objective-C++, Qt 6.12 Core/Widgets/Test, AppKit `NSPanel`/`NSEvent`, Carbon TIS, CMake/Ninja, CTest, CPack DragNDrop.
 
@@ -1110,3 +1110,381 @@ Expected: clean named branch; direct ancestry from
 `58069ddaac60648528df19c40de92b93e425d398` through the revision docs and
 implementation commit; no HEAD tag, push, merge, release, PR, install, or
 system UI change.
+
+---
+
+## Revision 3: Original Pet Companion and Event-Driven Tracking
+
+### Task 14: Record Companion, Render, and Tracking RED
+
+**Files:**
+- Create: `src/lib/gui/input/MacInputPointerMonitor.h`
+- Create: `src/lib/gui/input/MacInputPointerMonitor.mm`
+- Modify: `src/lib/gui/CMakeLists.txt`
+- Modify: `src/lib/common/Settings.h`
+- Modify: `src/lib/common/Settings.cpp`
+- Modify: `src/lib/gui/settings/SettingEffects.cpp`
+- Modify: `src/lib/gui/settings/SettingsPages.cpp`
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.cpp`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+- Modify: `src/unittests/gui/input/InputIndicatorPolicyTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorPolicyTests.cpp`
+- Modify: `src/unittests/gui/settings/InputIndicatorSettingsTests.cpp`
+- Modify: `src/unittests/gui/settings/SettingsPagesTests.cpp`
+
+- [ ] **Step 1: Add companion setting assertions**
+
+Update both settings tests to require:
+
+```cpp
+auto *companion = must<QComboBox>(
+    pages, "comboInputIndicatorCompanion"
+);
+QCOMPARE(
+    companion->currentData().toString(),
+    QStringLiteral("cat")
+);
+QCOMPARE(
+    Settings::value(Settings::Gui::InputIndicatorCompanion).toString(),
+    QStringLiteral("cat")
+);
+QVERIFY(companion->findData(QStringLiteral("dog")).toInt() >= 0);
+QVERIFY(companion->findData(QStringLiteral("turtle")).toInt() >= 0);
+```
+
+Assert the companion control is disabled with the feature off, enabled with
+the feature, and participates in `SettingEffects::Live`.
+
+- [ ] **Step 2: Add companion and render-state geometry assertions**
+
+Use the pure types to test:
+
+```cpp
+QCOMPARE(macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat).width, 28.0);
+QCOMPARE(macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat).height, 24.0);
+QCOMPARE(macInputIndicatorPanelStyle(InputIndicatorCompanion::Dog).width, 28.0);
+QCOMPARE(macInputIndicatorPanelStyle(InputIndicatorCompanion::Dog).height, 24.0);
+QCOMPARE(macInputIndicatorPanelStyle(InputIndicatorCompanion::Turtle).width, 30.0);
+QCOMPARE(macInputIndicatorPanelStyle(InputIndicatorCompanion::Turtle).height, 22.0);
+```
+
+Assert `inputIndicatorCompanionFromSetting("cat"|"dog"|"turtle")` and Cat for
+unknown values.
+
+- [ ] **Step 3: Add motion and Reduced Motion assertions**
+
+Add tests for:
+
+```cpp
+inputIndicatorMotionOffset(previousTarget, target, 8, false)
+inputIndicatorTransitionProgress(elapsedMs, 200, false)
+inputIndicatorTransitionProgress(elapsedMs, 200, true)
+```
+
+Rows cover a 100 pt movement clamped to length 8, a 4 pt movement preserved,
+zero motion, eased 0/100/200 ms progress (`0`, `0.5`, `1`), and Reduced Motion
+returning zero deformation plus transition progress 1.
+
+- [ ] **Step 4: Add event-monitor controller assertions**
+
+Extend `PersistentControllerHarness` with:
+
+```cpp
+std::function<void()> pointerMoved;
+bool pointerMonitorComplete = true;
+int pointerMonitorStarts = 0;
+int pointerMonitorStops = 0;
+```
+
+Set `Dependencies::pointerMonitorStart` to capture the callback and return
+`MacInputPointerMonitorHandle{.complete = pointerMonitorComplete,
+.stop = [&] { ++pointerMonitorStops; }}`.
+
+Tests assert:
+
+```cpp
+pointerMonitorComplete == true -> no 16 ms fallback timer;
+pointerMonitorComplete == false -> 16 ms fallback timer;
+pointerMoved() -> one immediate move, 8 ms render timer;
+pointerMoved() twice while render active -> only next frame sees latest target;
+move result animating=false -> render timer stops;
+feature off -> monitor stop called and render/fallback timers stop.
+```
+
+- [ ] **Step 5: Capture RED**
+
+Build and run:
+
+```bash
+InputIndicatorGeometryTests
+InputIndicatorPolicyTests
+InputIndicatorSettingsTests
+SettingsPagesTests
+```
+
+Expected: compile failures for missing companion/pointer-monitor/render APIs
+and value failures for Cat/default setting.
+
+### Task 15: Implement Settings and Pure Render Helpers
+
+**Files:**
+- Modify: files from Task 14
+- Modify: `src/lib/gui/settings/SettingEffects.cpp`
+- Modify: `src/unittests/gui/settings/InputIndicatorSettingsTests.cpp`
+- Modify: `src/unittests/gui/settings/SettingsPagesTests.cpp`
+
+- [ ] **Step 1: Add the companion setting**
+
+In `Settings::Gui`:
+
+```cpp
+inline static const auto InputIndicatorCompanion =
+    QStringLiteral("gui/inputIndicatorCompanion");
+```
+
+Add it to the all-keys list, the  default-value logic:
+
+```cpp
+if (key == Gui::InputIndicatorCompanion)
+  return QStringLiteral("cat");
+```
+
+and `SettingEffects::live`.
+
+- [ ] **Step 2: Add the Settings UI**
+
+In the macOS Input source indicator card, add a `QComboBox` named
+`comboInputIndicatorCompanion` with:
+
+```cpp
+Cat    -> "cat"
+Dog    -> "dog"
+Turtle -> "turtle"
+```
+
+Bind it to the new key and enable it together with position, opacity, and
+tone.
+
+- [ ] **Step 3: Add pure companion and style helpers**
+
+Add:
+
+```cpp
+enum class InputIndicatorCompanion { Cat, Dog, Turtle };
+InputIndicatorCompanion inputIndicatorCompanionFromSetting(
+    const QString &value
+);
+MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
+    InputIndicatorCompanion companion
+);
+```
+
+Use `Cat` for invalid values. Cat/Dog style is 28 x 24; Turtle is 30 x 22. Tag
+font is 8 pt semibold and normal body opacity is 65.
+
+- [ ] **Step 4: Add pure motion helpers**
+
+Use two helpers:
+
+```cpp
+std::optional<InputIndicatorPoint> inputIndicatorMotionOffset(
+    InputIndicatorPoint previousTarget,
+    InputIndicatorPoint target,
+    double maximumLength,
+    bool reducedMotion
+);
+double inputIndicatorTransitionProgress(
+    double elapsedMilliseconds,
+    double durationMilliseconds,
+    bool reducedMotion
+);
+```
+
+The motion helper returns zero for Reduced Motion, otherwise the target delta
+clamped to `maximumLength` by Euclidean magnitude. The transition helper clamps
+elapsed, applies smoothstep, and returns 1 immediately for Reduced Motion.
+
+- [ ] **Step 5: Verify settings/pure-helper GREEN**
+
+Run the Task 14 command. Expected: all four focused executables pass.
+
+### Task 16: Implement Event-Driven Pointer Monitoring
+
+**Files:**
+- Create: `src/lib/gui/input/MacInputPointerMonitor.h`
+- Create: `src/lib/gui/input/MacInputPointerMonitor.mm`
+- Modify: `src/lib/gui/CMakeLists.txt`
+- Modify: `src/lib/gui/input/MacInputIndicatorController.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorController.mm`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+
+- [ ] **Step 1: Add the AppKit monitor handle**
+
+Declare:
+
+```cpp
+struct MacInputPointerMonitorHandle
+{
+  bool complete = false;
+  std::function<void()> stop;
+};
+
+MacInputPointerMonitorHandle startMacInputPointerMonitor(
+    std::function<void()> changed
+);
+```
+
+The `.mm` implementation registers local and global monitors for moved and
+dragged mouse events. Blocks call `changed` only; they neither store nor log
+event data. The local handler returns its original event. `complete` is true
+only when both monitor tokens exist.
+
+- [ ] **Step 2: Add controller dependencies and timers**
+
+Add:
+
+```cpp
+std::function<MacInputPointerMonitorHandle(std::function<void()>)>
+    pointerMonitorStart;
+std::function<MacInputIndicatorPanelMoveResult(InputIndicatorPosition)>
+    panelMove;
+```
+
+Keep the source/panel injection seam real. Replace the always-active 16 ms
+timer with:
+
+```cpp
+QTimer m_renderTimer;   // 8 ms, one-shot active only
+QTimer m_fallbackTimer; // 16 ms when monitor setup is incomplete
+```
+
+- [ ] **Step 3: Coalesce events and stop on settlement**
+
+`pointerTargetChanged()` calls an immediate panel move if the render timer is
+inactive. Additional events while it is active leave only a dirty target
+implicit in the next read of `NSEvent.mouseLocation`.
+
+`panelMove` returns:
+
+```cpp
+struct MacInputIndicatorPanelMoveResult
+{
+  bool visible = false;
+  bool animating = false;
+};
+```
+
+When `animating` is true keep/restart the 8 ms render timer. When false stop
+it. The 16 ms fallback timer remains independent only if `complete` is false.
+
+- [ ] **Step 4: Preserve Space invalidation**
+
+Pass a `presentationInvalidated` callback into
+`MacInputIndicatorPanel`. Its Active Space observer marks `activeSpaceChanged`
+and calls the callback, which starts one render frame even while no pointer
+event has arrived.
+
+- [ ] **Step 5: Verify tracking GREEN**
+
+Run `InputIndicatorPolicyTests` and `InputIndicatorGeometryTests`. Expected:
+complete monitor, incomplete fallback, coalesced event, timer-stop, and
+Space-invalidation tests pass.
+
+### Task 17: Draw the Original Companions
+
+**Files:**
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+- Modify: `src/lib/gui/input/MacInputIndicatorController.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorController.mm`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+- Modify: `src/unittests/gui/input/InputIndicatorPolicyTests.cpp`
+
+- [ ] **Step 1: Store transition and motion state**
+
+Extend the AppKit view properties with companion, source, previous source,
+transition progress, motion offset, and Reduced Motion. Extend the panel
+`Impl` with previous target, follower, motion pose, and source transition
+start.
+
+- [ ] **Step 2: Draw three original vector silhouettes**
+
+Use `NSBezierPath` only:
+
+- Cat: rounded head/body, two triangular ears, curled side tail.
+- Dog: rounded head/body, two floppy ears, curved tail.
+- Turtle: oval shell, tiny head, feet, and tail.
+
+Add a 1 pt system highlight stroke and translucent fill. Draw the language tag
+in a small internal rounded capsule. Use cool English and warm Korean body
+tints. No raster image, external asset, native cursor call, shadow, or private
+API.
+
+- [ ] **Step 3: Animate only allowed state**
+
+In `move`, compute:
+
+```cpp
+sourceProgress =
+  inputIndicatorTransitionProgress(elapsedMs, 200, reducedMotion);
+motionTarget =
+  inputIndicatorMotionOffset(previousTarget, target, 8, reducedMotion);
+```
+
+Ease the motion pose, then apply it only to body/ear/tail curves and <=10%
+body-width morph. Cap the panel follower at 8 pt. Crossfade old/new label and
+source tint. Mark `animating=true` until transition, follower, and motion are
+settled; otherwise return false.
+
+For Reduced Motion, set follower directly to target, motion offset to zero,
+source progress to 1, and no animation timer.
+
+- [ ] **Step 4: Update Korean UI copy and translation contract**
+
+Add/translate:
+
+- Companion
+- Cat
+- Dog
+- Turtle
+
+Update the Korean indicator description to describe a persistent companion
+that carries the current input-source tag. Keep every source string translated
+in `translations/deskflow_ko.ts`; restore generated changes in other locale
+files.
+
+- [ ] **Step 5: Verify focused GREEN**
+
+Build and run the existing nine focused suites plus `TranslationFileTests`
+for the new labels. Expected: 9/9 executable tests pass; the full geometry and
+policy suites contain the pet enum, style, motion, Reduced Motion, event,
+fallback, and Space coverage.
+
+### Task 18: Commit, Run Full Gate, and Package
+
+- [ ] **Step 1: Commit docs and implementation**
+
+Keep the docs revision and implementation as separate commits. Preserve the
+required Co-authored-by trailer and do not amend prior commits.
+
+- [ ] **Step 2: Build 158 targets and run 157 eligible CTests**
+
+Use Release Qt 6.12, warnings as errors, and exclude only
+`OSXClipboardTests` and `OSXKeyStateTests`.
+
+- [ ] **Step 3: Package to a new clean path**
+
+Configure `build/pointer-badge-companion-package`, copy the exact
+2.0.9.0 DMG to `build/pointer-badge-companion/`, and record SHA-256, metadata,
+architecture, codesign state, TeamIdentifier, CDHash, and macdeploy diagnostics.
+Do not install or stable-sign without an existing identity.
+
+- [ ] **Step 4: Verify final state**
+
+Expected: clean branch with direct ancestry from
+`a0db752a36ad254824f478fd96e97d7463509877`, no tag/push/merge/release/PR, and
+the final report identifies visual feel, live full-screen transition, and
+peripheral latency as residual visual-only checks not automated by CTest.

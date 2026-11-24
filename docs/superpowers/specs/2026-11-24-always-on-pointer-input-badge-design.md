@@ -2,13 +2,15 @@
 
 **Date:** 2026-11-24  
 **Status:** Approved for implementation  
-**Revision base:** `58069ddaac60648528df19c40de92b93e425d398`
+**Revision base:** `a0db752a36ad254824f478fd96e97d7463509877`
 
 ## Goal
 
-Replace the transient macOS input-source indicator with a persistent `A` or `한`
-badge attached to the native mouse pointer. The badge represents the exact
-current macOS input-source ID while Deskflow believes the pointer is local.
+Replace the transient macOS input-source indicator with a persistent original
+companion attached to the native mouse pointer. Cat is the default companion;
+Dog and Turtle are alternatives. Every companion carries a tiny `A` or `한`
+tag for the exact current macOS input-source ID while Deskflow believes the
+pointer is local.
 
 "Caret" means the mouse pointer location here. Decorating an arbitrary
 application's text caret is intentionally out of scope.
@@ -24,11 +26,17 @@ non-activating `NSPanel` near it:
 - No `NSCursor`, cursor image, cursor hide/show, or cursor warp API is used.
 - The native arrow, I-beam, resize, and other cursor shape remains the
   operating system's responsibility.
-- The badge is a 24 x 20 pt soft pill with a 7 pt radius, 11 pt semibold
-  label, 6 pt pointer gap, and 6 pt screen margin.
-- The badge has no shadow and does not add a layout overlay. Its automatic tint
-  is lower emphasis than an accent fill; explicit light and dark tones remain
+- Cat and Dog are approximately 28 x 24 pt; Turtle is at most 30 x 22 pt.
+  Each uses an 8 pt semibold language tag, 6 pt pointer gap, and 6 pt screen
+  margin.
+- Cat uses a rounded head/body, triangular ears, and curled tail. Dog uses
+  floppy ears and a tail. Turtle uses an oval shell and tiny head/tail. All are
+  original in-code vector drawings with no stock asset or external dependency.
+- Bodies use a soft translucent, glass-like fill and a 1 pt highlight. There is
+  no large shadow or layout overlay. Explicit light and dark tones remain
   available.
+- English uses a cool tint and Korean uses a warm tint. Source changes morph the
+  tint, a subtle <=10% body/ear pose, and the label over 160-220 ms.
 
 This is preferable to replacing the native cursor image because cursor image
 replacement loses application-specific cursor shapes and would require fragile
@@ -59,27 +67,33 @@ required for visibility.
 
 1. The existing core subscription remains because it carries local/off-computer
    routing state. Its wire protocol is unchanged.
-2. `MacInputIndicatorController` owns one TIS source monitor and one
-   approximately 60 Hz pointer timer. The controller still has no pointer
-   movement IPC.
+2. `MacInputIndicatorController` owns one TIS source monitor, local and global
+   `NSEvent` mouse-move/drag monitors, and a precise 120 Hz/8 ms render timer
+   that runs only for pointer or source animation. The controller still has no
+   pointer-movement IPC.
 3. Enabling the feature reads a full `OSXInputSourceSnapshot`, including the
    exact identifier. A known source is presented immediately even if the core
    is disconnected.
 4. A TIS notification reads a new snapshot. Only an identifier/source change
    reconfigures the panel label and style. An identical notification performs
    no panel presentation or redraw.
-5. Every pointer timer tick reads `NSEvent.mouseLocation` locally and resolves
-   a target panel frame from the screen containing the cursor. A bounded
-   no-overshoot follower advances partway toward that target, normally catching
-   up in two or three frames. Its distance from the target never exceeds
-   18 pt, so the lag reads as a tiny trailing attachment instead of jitter.
+5. Local and global pointer events immediately mark one coalesced target
+   update. The render timer reads `NSEvent.mouseLocation` locally and resolves a
+   target panel frame from the screen containing the cursor. A bounded
+   no-overshoot follower advances partway toward that target and never lags
+   more than 8 pt. The timer stops as soon as position, tail pose, and source
+   transition are settled.
 6. `MacInputIndicatorPanel` separates `show(options)` from
    `move(position)`. `show` changes source/style and snaps the follower;
    `move` changes frame only and presents only when the panel is hidden or
    Space presentation is invalidated.
-7. Explicit local/off-computer updates and core-state invalidation drive
+7. If local or global monitor setup is incomplete, a 16 ms/60 Hz fallback timer
+   remains active while the companion is logically visible. It is silent and
+   reads no additional sensitive data. Local and global duplicate events are
+   coalesced; coordinates are never sent over IPC or logged.
+8. Explicit local/off-computer updates and core-state invalidation drive
    visibility. Activity arrival and activity invalidation do not affect it.
-8. An `NSWorkspaceActiveSpaceDidChangeNotification` marks panel presentation
+9. An `NSWorkspaceActiveSpaceDidChangeNotification` marks panel presentation
    needed and resets the follower. On the next pointer frame, the panel calls
    `orderFrontRegardless` even if `NSPanel.isVisible` is already true, then
    snaps to the current target. It keeps the existing
@@ -92,13 +106,19 @@ The follower uses deterministic local easing, not AppKit animation:
 
 - calculate the current cursor-relative target frame;
 - move toward it with a fixed 0.5 catch-up factor;
-- clamp any remaining target distance to 18 pt;
+- clamp any remaining target distance to 8 pt;
 - never move past the target;
 - snap when a Space changes or a known source is presented after a hide/change.
 
 The panel has no pulse, blink, zoom, spring-back, slide-in, or occluding
 animation. At screen edges, the geometry helper first clamps the exact target
 to a valid screen, then the follower approaches that valid target.
+
+Pet motion derives only from successive local pointer positions. A speed pose
+deforms the ears/tail/body by 4-8 pt, then eases to neutral when movement
+settles. Source transition uses an eased 200 ms tint/pose/label crossfade.
+`isOSXReduceMotion()` disables follower easing, tail deformation, and source
+morphing: the stable companion moves directly to the target.
 
 ## Retained and Disconnected Work
 
@@ -111,6 +131,7 @@ notifies the activity relay, avoiding click/key routing work.
 ## Settings
 
 - Keep `gui/inputIndicatorEnabled`, off by default.
+- Add `gui/inputIndicatorCompanion` with `cat` (default), `dog`, and `turtle`.
 - Keep position, opacity, and tone controls.
 - Change the default opacity from 85% to 65% while retaining the 60-100 range.
 - Remove the visible `Display time` control because the badge is persistent.
@@ -125,13 +146,15 @@ notifies the activity relay, avoiding click/key routing work.
 The feature reads only:
 
 - the exact macOS TIS input-source identifier;
-- the global mouse pointer position for a local frame update;
+- local/global mouse-move or drag notifications and the global pointer
+  position for a local frame update;
 - the existing core local/off-computer boolean.
 
 It writes no input and changes no native cursor state. While logically hidden,
 the pointer timer is stopped for feature-off, unknown-source, and
-off-computer states. While visible, work is one local geometry calculation, one bounded follower
-calculation, and one frame update per tick.
+off-computer states. The 120 Hz render timer stops on settlement; a 60 Hz
+timer exists only as a fallback for an incomplete monitor setup. No pointer
+coordinate is persisted, transmitted, or logged.
 
 ## Test Contract
 
@@ -141,8 +164,12 @@ Focused tests cover:
 - off-computer hides and local/disconnected transitions show;
 - unknown source hides and cannot leave stale `A` or `한`;
 - repeated pointer ticks move only, without source redraw;
-- compact panel metrics and low-emphasis automatic opacity;
-- bounded follower convergence without overshoot or more than 18 pt lag;
+- compact Cat/Dog/Turtle metrics and low-emphasis automatic opacity;
+- companion setting persistence and Cat default;
+- bounded follower convergence without overshoot or more than 8 pt lag;
+- local/global event seams, fallback registration, and render-timer stop;
+- 4-8 pt motion pose clamp and Reduced Motion direct-to-target behavior;
+- 200 ms source color/shape/label transition;
 - duplicate exact TIS snapshot notifications do not reconfigure the panel;
 - ABC and Korean source changes update the label;
 - feature off hides and stops all indicator monitors/timers;
