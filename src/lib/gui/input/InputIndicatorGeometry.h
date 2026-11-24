@@ -79,6 +79,11 @@ std::optional<InputIndicatorPoint> inputIndicatorMotionOffset(
     double maximumLength, bool reducedMotion
 );
 
+bool inputIndicatorCompanionFacesRight(
+    bool previousFacesRight,
+    double motionX
+);
+
 double inputIndicatorTransitionProgress(
     double elapsedMilliseconds, double durationMilliseconds,
     bool reducedMotion

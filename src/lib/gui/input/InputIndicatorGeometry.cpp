@@ -144,6 +144,21 @@ std::optional<InputIndicatorPoint> inputIndicatorMotionOffset(
   };
 }
 
+bool inputIndicatorCompanionFacesRight(
+    bool previousFacesRight,
+    double motionX
+)
+{
+  if (!std::isfinite(motionX)) {
+    return previousFacesRight;
+  }
+  constexpr double kFacingDeadZone = 0.25;
+  if (std::abs(motionX) <= kFacingDeadZone) {
+    return previousFacesRight;
+  }
+  return motionX > 0;
+}
+
 double inputIndicatorTransitionProgress(
     double elapsedMilliseconds, double durationMilliseconds,
     bool reducedMotion

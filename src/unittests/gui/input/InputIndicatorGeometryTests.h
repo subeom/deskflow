@@ -21,6 +21,7 @@ private Q_SLOTS:
   void unknownOrInvalidGeometryHides();
   void compactPanelStyleUsesApprovedMetrics();
   void companionRenderModelUsesUnifiedSilhouetteAndInternalLabel();
+  void catRenderModelUsesSideProfileAndPersistentFacing();
   void companionRenderAlphaFollowsSettingAndBoundsDetail();
   void catTailUsesContinuousPhaseLaggedCurve();
   void companionSettingDefaultsToCat();

@@ -25,7 +25,6 @@ enum class InputIndicatorCompanion
 
 enum class InputIndicatorRenderPrimitive
 {
-  Tile,
   SilhouetteUnion,
   LanguageGlyph
 };
@@ -36,12 +35,18 @@ struct MacInputIndicatorRenderModel
       InputIndicatorCompanion::Cat;
   InputIndicatorRenderPrimitive silhouettePrimitive =
       InputIndicatorRenderPrimitive::SilhouetteUnion;
+  InputIndicatorRenderPrimitive languagePrimitive =
+      InputIndicatorRenderPrimitive::LanguageGlyph;
   bool usesEyePrimitives = false;
-  double tileWidth = 24;
-  double tileHeight = 24;
+  bool usesSideProfile = false;
+  bool mirrorsWithMotion = false;
   double totalWidth = 30;
   double totalHeight = 28;
   InputIndicatorRect silhouetteBounds;
+  InputIndicatorRect headBounds;
+  InputIndicatorRect torsoBounds;
+  InputIndicatorRect pawBounds;
+  InputIndicatorRect tailBounds;
   InputIndicatorRect languageBounds;
 };
 
@@ -59,7 +64,6 @@ struct MacInputIndicatorPanelStyle
   double cursorGap = 0;
   double screenMargin = 0;
   double labelSize = 0;
-  double cornerRadius = 0;
   double maximumLag = 0;
   double maximumMotion = 0;
   double transitionMilliseconds = 0;
@@ -99,7 +103,6 @@ constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
       .cursorGap = 6,
       .screenMargin = 6,
       .labelSize = 8,
-      .cornerRadius = 7,
       .maximumLag = 8,
       .maximumMotion = 8,
       .transitionMilliseconds = 200,
@@ -115,11 +118,25 @@ constexpr MacInputIndicatorRenderModel macInputIndicatorRenderModel(
   case InputIndicatorCompanion::Cat:
     return {
         .companion = InputIndicatorCompanion::Cat,
+        .usesSideProfile = true,
+        .mirrorsWithMotion = true,
         .silhouetteBounds = {
-            .x = 1, .y = 3, .width = 25, .height = 21
+            .x = 0.5, .y = 2, .width = 29.5, .height = 24.5
+        },
+        .headBounds = {
+            .x = 0.5, .y = 11.5, .width = 11.5, .height = 14.5
+        },
+        .torsoBounds = {
+            .x = 7, .y = 5, .width = 16, .height = 14.5
+        },
+        .pawBounds = {
+            .x = 7, .y = 3.5, .width = 16.5, .height = 3.5
+        },
+        .tailBounds = {
+            .x = 20, .y = 8, .width = 10, .height = 10
         },
         .languageBounds = {
-            .x = 9, .y = 7, .width = 10, .height = 8
+            .x = 11, .y = 8, .width = 9, .height = 8
         },
     };
   case InputIndicatorCompanion::Dog:

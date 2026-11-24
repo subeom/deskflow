@@ -82,28 +82,6 @@ void fillSilhouette(NSBezierPath *path, NSColor *fill)
   [path fill];
 }
 
-void drawTile(NSRect bounds, NSColor *fill)
-{
-  const auto model =
-      macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
-  NSBezierPath *tile = [NSBezierPath
-      bezierPathWithRoundedRect:NSMakeRect(
-                                    0,
-                                    0,
-                                    model.tileWidth,
-                                    model.tileHeight
-                                )
-                       xRadius:7
-                       yRadius:7];
-  [fill setFill];
-  [tile fill];
-  [[[NSColor separatorColor]
-      colorWithAlphaComponent:fill.alphaComponent] setStroke];
-  [tile setLineWidth:0.5];
-  [tile stroke];
-  (void)bounds;
-}
-
 double bodyScale(
     double transitionProgress,
     double motionX,
@@ -169,29 +147,48 @@ void drawCat(
     double transitionProgress,
     InputIndicatorMotionState motionState,
     double motionPhase,
-    bool reducedMotion
+    bool reducedMotion,
+    bool facesRight
 )
 {
   const auto pose = inputIndicatorMotionPose(
       motionState, motionPhase, reducedMotion
   );
+  const auto model =
+      macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
   const double scale = bodyScale(
       transitionProgress, motionX, pose.bodyStretch
   );
-  const double center = 12;
-  const double bodyWidth = 16.0 * scale;
-  const double bodyX = center - bodyWidth / 2.0;
-  const double sway = motionX * 0.12;
+  const double localMotionX = facesRight ? -motionX : motionX;
+  const double bodyWidth =
+      model.torsoBounds.width * scale;
+  const double bodyX =
+      model.torsoBounds.x +
+      (model.torsoBounds.width - bodyWidth) / 2.0;
+  const double sway = std::clamp(
+      localMotionX * 0.08, -0.5, 0.5
+  );
   const double bob = pose.bodyBob;
   const double lift =
       bob + std::clamp(motionY * 0.12, -1.0, 1.0);
   const auto tailPose = inputIndicatorCatTailPose(
-      {.x = bodyX + bodyWidth - 2, .y = 8 + lift},
-      11,
+      {
+          .x = model.tailBounds.x + 0.5,
+          .y = model.tailBounds.y + 2 + lift
+      },
+      8.5,
       motionPhase,
-      motionX,
+      localMotionX,
       reducedMotion
   );
+
+  [NSGraphicsContext saveGraphicsState];
+  if (facesRight) {
+    NSAffineTransform *mirror = [NSAffineTransform transform];
+    [mirror translateXBy:bounds.size.width yBy:0];
+    [mirror scaleXBy:-1 yBy:1];
+    [mirror concat];
+  }
 
   NSBezierPath *silhouette = [NSBezierPath bezierPath];
   drawCatTail(tailPose, fill);
@@ -199,56 +196,111 @@ void drawCat(
       silhouette,
       [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
                                                  bodyX,
-                                                 3 + lift,
+                                                 model.torsoBounds.y +
+                                                     lift,
                                                  bodyWidth,
-                                                 16
+                                                 model.torsoBounds.height
                                              )
-                                     xRadius:7
-                                     yRadius:7]
+                                     xRadius:6.5
+                                     yRadius:6.5]
   );
   appendPath(
       silhouette,
       [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
                                                    bodyX,
-                                                   10 + lift,
+                                                   model.torsoBounds.y +
+                                                       4 + lift,
                                                    bodyWidth,
-                                                   12
+                                                   11.5
+                                               )]
+  );
+  appendPath(
+      silhouette,
+      [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
+                                                  model.headBounds.x +
+                                                      5 + sway,
+                                                  10 + lift,
+                                                  7,
+                                                  10
+                                              )
+                                      xRadius:3.5
+                                      yRadius:3.5]
+  );
+  appendPath(
+      silhouette,
+      [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
+                                                   model.headBounds.x +
+                                                       0.5 + sway,
+                                                   13.5 + lift,
+                                                   10.5,
+                                                   8.5
+                                               )]
+  );
+  appendPath(
+      silhouette,
+      [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
+                                                   model.headBounds.x +
+                                                       sway,
+                                                   13 + lift,
+                                                   6.5,
+                                                   5.5
                                                )]
   );
 
   NSBezierPath *ears = [NSBezierPath bezierPath];
-  [ears moveToPoint:NSMakePoint(bodyX + 1 + sway, 19 + lift)];
-  [ears lineToPoint:NSMakePoint(bodyX + 4 + sway, 23 + lift)];
-  [ears lineToPoint:NSMakePoint(bodyX + 7 + sway, 20 + lift)];
-  [ears lineToPoint:NSMakePoint(bodyX + 9 + sway, 24 + lift)];
-  [ears lineToPoint:NSMakePoint(bodyX + 13 + sway, 24 + lift)];
-  [ears lineToPoint:NSMakePoint(bodyX + 14 + sway, 19 + lift)];
+  [ears moveToPoint:NSMakePoint(
+                        model.headBounds.x + 2.5 + sway,
+                        19.5 + lift
+                    )];
+  [ears lineToPoint:NSMakePoint(
+                        model.headBounds.x + 4.5 + sway,
+                        26 + lift
+                    )];
+  [ears lineToPoint:NSMakePoint(
+                        model.headBounds.x + 7 + sway,
+                        20 + lift
+                    )];
+  [ears lineToPoint:NSMakePoint(
+                        model.headBounds.x + 8.5 + sway,
+                        25 + lift
+                    )];
+  [ears lineToPoint:NSMakePoint(
+                        model.headBounds.x + 11 + sway,
+                        18.5 + lift
+                    )];
   [ears closePath];
   appendPath(silhouette, ears);
 
-  if (motionState != InputIndicatorMotionState::Idle) {
-    const double paw =
-        std::sin(motionPhase * 2 * M_PI) * 0.8;
-    appendPath(
-        silhouette,
-        [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
-                                                     bodyX + 3,
-                                                     4 + lift + paw,
-                                                     4,
-                                                     2.5
-                                                 )]
-    );
-    appendPath(
-        silhouette,
-        [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
-                                                     bodyX + 10,
-                                                     4 + lift - paw,
-                                                     4,
-                                                     2.5
-                                                 )]
-    );
-  }
+  const double paw =
+      motionState == InputIndicatorMotionState::Idle
+          ? 0
+          : std::sin(motionPhase * 2 * M_PI) * 0.8;
+  appendPath(
+      silhouette,
+      [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
+                                                  model.pawBounds.x + 1,
+                                                  model.pawBounds.y +
+                                                      lift + paw,
+                                                  5.5,
+                                                  3
+                                              )
+                                      xRadius:1.5
+                                      yRadius:1.5]
+  );
+  appendPath(
+      silhouette,
+      [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
+                                                  model.pawBounds.x + 10.5,
+                                                  model.pawBounds.y +
+                                                      lift - paw,
+                                                  5.5,
+                                                  3
+                                              )
+                                      xRadius:1.5
+                                      yRadius:1.5]
+  );
   fillSilhouette(silhouette, fill);
+  [NSGraphicsContext restoreGraphicsState];
 }
 
 void drawDog(
@@ -512,6 +564,7 @@ void drawLanguageGlyph(
 @property(nonatomic) NSInteger motionState;
 @property(nonatomic) double motionPhase;
 @property(nonatomic) BOOL reducedMotion;
+@property(nonatomic) BOOL facesRight;
 @end
 
 @implementation DeskflowInputIndicatorView
@@ -540,26 +593,16 @@ void drawLanguageGlyph(
       macInputIndicatorRenderAlpha(
           static_cast<int>(std::lround(self.opacity * 100.0))
       );
-  NSColor *from = deskflow::gui::input::indicatorTint(
+  NSColor *silhouetteFrom = deskflow::gui::input::indicatorTint(
       previousSource, tone, alpha.body
   );
-  NSColor *to = deskflow::gui::input::indicatorTint(
-      source, tone, alpha.body
-  );
-  NSColor *tileFill =
-      [from blendedColorWithFraction:self.transitionProgress
-                            ofColor:to];
-  NSColor *silhouetteFrom = deskflow::gui::input::indicatorTint(
-      previousSource, tone, alpha.detail
-  );
   NSColor *silhouetteTo = deskflow::gui::input::indicatorTint(
-      source, tone, alpha.detail
+      source, tone, alpha.body
   );
   NSColor *silhouetteFill =
       [silhouetteFrom
           blendedColorWithFraction:self.transitionProgress
                            ofColor:silhouetteTo];
-  deskflow::gui::input::drawTile(bounds, tileFill);
 
   switch (companion) {
   case deskflow::gui::input::InputIndicatorCompanion::Cat:
@@ -568,7 +611,8 @@ void drawLanguageGlyph(
         self.transitionProgress,
         motionState,
         self.motionPhase,
-        self.reducedMotion
+        self.reducedMotion,
+        self.facesRight
     );
     break;
   case deskflow::gui::input::InputIndicatorCompanion::Dog:
@@ -738,6 +782,7 @@ struct MacInputIndicatorPanel::Impl
   InputIndicatorPoint follower;
   InputIndicatorPoint previousTarget;
   InputIndicatorPoint motion;
+  bool facesRight = true;
   InputIndicatorMotionState motionState =
       InputIndicatorMotionState::Idle;
 };
@@ -794,6 +839,7 @@ bool MacInputIndicatorPanel::show(
   m_impl->view.transitionProgress = 0;
   m_impl->view.motionX = 0;
   m_impl->view.motionY = 0;
+  m_impl->view.facesRight = m_impl->facesRight;
   [m_impl->view setNeedsDisplay:YES];
   return move(options.position).visible;
 }
@@ -937,6 +983,10 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   if (distance(m_impl->motion) <= kSettledDistance) {
     m_impl->motion = {};
   }
+  m_impl->facesRight =
+      inputIndicatorCompanionFacesRight(
+          m_impl->facesRight, m_impl->motion.x
+      );
   const bool animating =
       transitionProgress < 1.0 ||
       followerDistance > kSettledDistance ||
@@ -966,7 +1016,8 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       m_impl->view.motionState !=
           static_cast<NSInteger>(m_impl->motionState) ||
       std::abs(m_impl->view.motionPhase - motionPhase) >
-          kRedrawTolerance;
+          kRedrawTolerance ||
+      m_impl->view.facesRight != m_impl->facesRight;
   m_impl->view.previousSource =
       static_cast<NSInteger>(m_impl->previousSource);
   m_impl->view.source =
@@ -978,6 +1029,7 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       static_cast<NSInteger>(m_impl->motionState);
   m_impl->view.motionPhase = reducedMotion ? 0 : motionPhase;
   m_impl->view.reducedMotion = reducedMotion;
+  m_impl->view.facesRight = m_impl->facesRight;
   if (viewNeedsDisplay) {
     [m_impl->view setNeedsDisplay:YES];
   }

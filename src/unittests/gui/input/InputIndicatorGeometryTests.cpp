@@ -170,7 +170,6 @@ void InputIndicatorGeometryTests::compactPanelStyleUsesApprovedMetrics()
   QCOMPARE(cat.cursorGap, 6.0);
   QCOMPARE(cat.screenMargin, 6.0);
   QCOMPARE(cat.labelSize, 8.0);
-  QCOMPARE(cat.cornerRadius, 7.0);
   QCOMPARE(cat.maximumLag, 8.0);
   QCOMPARE(cat.maximumMotion, 8.0);
   QCOMPARE(cat.transitionMilliseconds, 200.0);
@@ -196,8 +195,10 @@ void InputIndicatorGeometryTests::companionRenderModelUsesUnifiedSilhouetteAndIn
         model.silhouettePrimitive,
         InputIndicatorRenderPrimitive::SilhouetteUnion
     );
-    QCOMPARE(model.tileWidth, 24.0);
-    QCOMPARE(model.tileHeight, 24.0);
+    QCOMPARE(
+        model.languagePrimitive,
+        InputIndicatorRenderPrimitive::LanguageGlyph
+    );
     QVERIFY(model.totalWidth <= 30.0);
     QVERIFY(model.totalHeight <= 28.0);
     QVERIFY(model.languageBounds.x >= model.silhouetteBounds.x);
@@ -211,6 +212,52 @@ void InputIndicatorGeometryTests::companionRenderModelUsesUnifiedSilhouetteAndIn
         model.silhouetteBounds.y + model.silhouetteBounds.height
     );
   }
+}
+
+void InputIndicatorGeometryTests::catRenderModelUsesSideProfileAndPersistentFacing()
+{
+  const auto model =
+      macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
+  QVERIFY(model.usesSideProfile);
+  QVERIFY(model.mirrorsWithMotion);
+  QVERIFY(model.headBounds.x < model.torsoBounds.x);
+  QVERIFY(
+      model.tailBounds.x + model.tailBounds.width >
+      model.torsoBounds.x + model.torsoBounds.width
+  );
+  QVERIFY(model.pawBounds.y <= model.torsoBounds.y);
+  QVERIFY(
+      model.languageBounds.x >= model.torsoBounds.x &&
+      model.languageBounds.y >= model.torsoBounds.y &&
+      model.languageBounds.x + model.languageBounds.width <=
+          model.torsoBounds.x + model.torsoBounds.width &&
+      model.languageBounds.y + model.languageBounds.height <=
+          model.torsoBounds.y + model.torsoBounds.height
+  );
+
+  const auto insideSilhouette =
+      [silhouette = model.silhouetteBounds](
+          const InputIndicatorRect &bounds
+      ) {
+        return bounds.x >= silhouette.x &&
+               bounds.y >= silhouette.y &&
+               bounds.x + bounds.width <=
+                   silhouette.x + silhouette.width &&
+               bounds.y + bounds.height <=
+                   silhouette.y + silhouette.height;
+      };
+  QVERIFY(insideSilhouette(model.headBounds));
+  QVERIFY(insideSilhouette(model.torsoBounds));
+  QVERIFY(insideSilhouette(model.pawBounds));
+  QVERIFY(insideSilhouette(model.tailBounds));
+
+  QVERIFY(inputIndicatorCompanionFacesRight(false, 1.0));
+  QVERIFY(!inputIndicatorCompanionFacesRight(true, -1.0));
+  QVERIFY(inputIndicatorCompanionFacesRight(true, 0.0));
+  QVERIFY(!inputIndicatorCompanionFacesRight(false, 0.0));
+  QVERIFY(!inputIndicatorCompanionFacesRight(
+      false, std::numeric_limits<double>::quiet_NaN()
+  ));
 }
 
 void InputIndicatorGeometryTests::companionRenderAlphaFollowsSettingAndBoundsDetail()
