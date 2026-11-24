@@ -1993,3 +1993,128 @@ stable-sign.
 Expected: direct ancestry from
 `396258834879ffc0f0419f47411489cbd72edef5`, clean branch, no tag/push/merge/
 release/PR, and actual silhouette cuteness remains a visual-only live check.
+
+---
+
+## Revision 7: Tile-Free Side-Profile Cat Companion
+
+Revision 6's rounded-tile concept is superseded. The companion is only the
+free-standing animal silhouette plus its internal language glyph. No rounded
+rectangle, icon container, border, separate tag, or other framing path is
+allowed in the render model or drawing path.
+
+### Task 29: Record Tile-Free Cat Render RED
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+
+- [ ] **Step 1: Remove the tile expectation**
+
+The render model exposes exactly the silhouette union and language-glyph
+primitives. It has no `Tile` enum value, tile dimensions, tile-use flag, tile
+radius, or generic badge background.
+
+- [ ] **Step 2: Add the Cat anatomy and facing contract**
+
+Define Cat head, torso, paw, and tail bounds in the 30 x 28 pt model. Assert:
+
+```text
+Cat usesSideProfile == true
+Cat mirrorsWithMotion == true
+head lies in front of the torso
+tail extends behind the torso
+paws remain below the torso
+languageBounds stays wholly inside torsoBounds
+all anatomy bounds stay inside silhouetteBounds
+```
+
+Add `inputIndicatorCompanionFacesRight(previous, motionX)`. Positive horizontal
+motion selects right-facing, negative motion selects left-facing, motion in the
+dead zone preserves the prior facing, and non-finite motion preserves it too.
+
+- [ ] **Step 3: Capture RED**
+
+Build `InputIndicatorGeometryTests`. Expected failure is limited to the
+missing two-primitive model, Cat anatomy fields, and facing helper.
+
+### Task 30: Draw a Free-Standing Cat Profile
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.cpp`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+
+- [ ] **Step 1: Implement the pure model**
+
+Remove every tile field and style metric. Keep one silhouette primitive and
+one language primitive. Give Cat a left-facing base profile centered in the
+30 pt panel; preserve Dog and Turtle as distinct unified silhouettes.
+
+- [ ] **Step 2: Replace the Cat path**
+
+Build one side-profile Cat from the modeled regions:
+
+- a rounded elongated torso;
+- a connected neck and head with a subtle muzzle;
+- two pointed ears integrated into the upper outline;
+- alternating lower paws with bounded walk/run displacement;
+- the existing anchored two-segment, tapered tail behind the torso.
+
+Do not append eye, pupil, mouth, nose-mark, whisker, highlight, or face-detail
+paths. No tile or framing path may be called before or after the animal path.
+
+- [ ] **Step 3: Mirror only the silhouette**
+
+Track one `facesRight` flag in the panel implementation. Feed the eased
+horizontal motion through the pure facing helper, mirror the AppKit path around
+the panel center, and keep the language glyph outside the transform so `A` and
+`한` remain upright. Preserve facing while stopped.
+
+- [ ] **Step 4: Apply the no-tile alpha**
+
+The free-standing animal and all of its body parts use body opacity directly,
+defaulting to 65%. Only the glyph uses the bounded detail alpha. Source
+transition, locomotion, Space presentation, Reduced Motion, and privacy
+behavior remain unchanged.
+
+### Task 31: Verify the Cat Correction
+
+- [ ] **Step 1: Run focused GREEN**
+
+Build and run the existing nine focused targets. Expected: 9/9 pass, including
+no-tile render primitives, region containment, facing persistence, tail
+continuity, alpha bounds, motion state, and panel/controller behavior.
+
+- [ ] **Step 2: Run the Release gate**
+
+Build all 158 registered targets and run 157 eligible CTests under Release
+Qt 6.12 warnings as errors, excluding only `OSXClipboardTests` and
+`OSXKeyStateTests`.
+
+- [ ] **Step 3: Self-review**
+
+Check the final diff for any remaining Tile/tile-use model field, drawing
+function, corner-radius metric, external tag, face primitive, or accidental
+native-cursor change. Inspect the side-profile path and transform for clipping
+inside 30 x 28 pt.
+
+### Task 32: Commit, Package, and Audit
+
+- [ ] **Step 1: Commit docs and implementation separately**
+
+Keep the mandatory trailer. Do not amend the Revision 6 commits.
+
+- [ ] **Step 2: Package the final candidate**
+
+Build a clean
+`build/pointer-badge-cat/deskflow-2.0.9.0-macos-arm64.dmg`, record metadata,
+SHA-256, signature/CDHash, architecture, and package tooling state. Do not
+install, stable-sign, push, merge, tag, release, or open a PR.
+
+- [ ] **Step 3: Audit final state**
+
+Expected: direct ancestry from
+`2724a5794f711ebd6503191f4ad0537278c77cef`, a clean worktree, and only the
+live visual feel remaining as a non-automated check.

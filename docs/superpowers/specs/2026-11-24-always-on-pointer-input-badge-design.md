@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-24  
 **Status:** Approved for implementation  
-**Revision base:** `396258834879ffc0f0419f47411489cbd72edef5`
+**Revision base:** `2724a5794f711ebd6503191f4ad0537278c77cef`
 
 ## Goal
 
@@ -26,21 +26,22 @@ non-activating `NSPanel` near it:
 - No `NSCursor`, cursor image, cursor hide/show, or cursor warp API is used.
 - The native arrow, I-beam, resize, and other cursor shape remains the
   operating system's responsibility.
-- The companion uses a subtle 24 x 24 pt rounded tile when needed for contrast;
-  the full visual stays inside 30 x 28 pt. It keeps a 6 pt pointer gap and
-  6 pt screen margin.
+- The companion has no containing tile, badge, border, icon frame, or
+  background. The complete free-standing silhouette stays inside 30 x 28 pt
+  with a 6 pt pointer gap and 6 pt screen margin.
 - Cat, Dog, and Turtle are unified filled silhouette paths, not illustrated
-  faces. Cat has a compact profile, pointed ears, and curled tail; Dog has
+  faces. Cat is a recognizable side profile with a distinct head, two pointed
+  ears, elongated torso, paws, and a naturally curved rear tail. Dog has
   floppy ears and a tail; Turtle has a shell and tiny head/tail. All are
   original in-code drawings with no stock asset or external dependency.
 - The 8 pt semibold `A`/`한` is a negative/highlight glyph inside the torso or
   shell. There are no eye dots, pupils, mouth, whiskers, face marks, or
   external corner language badge.
 - Bodies, ears, shell, tail, and paws use the configured opacity directly
-  (default 65%, clamped to 60-100%). The 1 pt highlight and `A`/`한` glyph may
-  be at most 10 percentage points above body opacity; the tile stays at body
-  opacity. There is no solid sticker, large shadow, or layout overlay.
-  Explicit light and dark tones remain available.
+  (default 65%, clamped to 60-100%). The `A`/`한` glyph may be at most
+  10 percentage points above body opacity. There is no solid sticker, tile,
+  large shadow, or layout overlay. Explicit light and dark tones remain
+  available.
 - English uses a cool tint and Korean uses a warm tint. Source changes morph the
   tint, a subtle <=10% body/ear pose, and the label over 160-220 ms.
 
@@ -143,7 +144,10 @@ snapping or rotating like a pendulum. Pointer velocity adds opposite-direction
 inertia to the tip, but the complete bend is clamped to preserve the
 silhouette. Cat tail thickness tapers toward the tip. Dog uses the same
 continuity principle without the Cat curl; Turtle keeps a subtle head/tail
-settle. Reduced Motion freezes a neutral curled Cat tail.
+settle. The Cat profile faces the latest sustained horizontal motion and keeps
+that direction through stationary frames; only the silhouette mirrors, so
+`A`/`한` always remains upright and readable. Reduced Motion freezes a neutral
+curled Cat tail.
 
 `isOSXReduceMotion()` disables idle tail, walk/run pose, follower easing, and
 source morphing: the stable companion moves directly to the target and starts
@@ -195,11 +199,16 @@ Focused tests cover:
 - unknown source hides and cannot leave stale `A` or `한`;
 - repeated pointer ticks move only, without source redraw;
 - compact Cat/Dog/Turtle metrics and low-emphasis automatic opacity;
-- a silhouette-union render plan with no eye primitives;
+- a two-primitive silhouette/language render plan with no tile or eye
+  primitives;
+- distinct Cat head/torso/paw/tail regions in one side profile, with the
+  language bounds inside the torso;
+- persistent horizontal mirroring based on sustained motion, including
+  stationary and non-finite-motion fallbacks;
 - the language glyph bounds remain inside the body/shell;
 - two-segment Cat tail continuity, phase lag, root anchor, and max-bend bounds;
-- every body part uses clamped configured body alpha and glyph/outline alpha
-  stays within 10 percentage points;
+- every body part uses clamped configured body alpha and glyph alpha stays
+  within 10 percentage points;
 - companion setting persistence and Cat default;
 - bounded follower convergence without overshoot or more than 8 pt lag;
 - local/global event seams, fallback registration, and render-timer stop;
