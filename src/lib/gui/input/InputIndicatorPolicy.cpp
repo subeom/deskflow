@@ -79,6 +79,26 @@ std::optional<int64_t> macAccessibilityProbeTargetPid(
   return frontmostApplicationPid;
 }
 
+InputIndicatorVisibilityDecision InputIndicatorPolicy::decidePersistent(
+    const PersistentInputIndicatorPolicyInput &input
+)
+{
+  if (!input.enabled) {
+    return {.reason = InputIndicatorVisibilityReason::Disabled};
+  }
+  if (!input.isOnComputer) {
+    return {.reason = InputIndicatorVisibilityReason::OffComputer};
+  }
+  if (input.source == InputIndicatorSource::Unknown) {
+    return {.reason = InputIndicatorVisibilityReason::SourceUnknown};
+  }
+  return {
+      .show = true,
+      .source = input.source,
+      .reason = InputIndicatorVisibilityReason::Shown,
+  };
+}
+
 InputIndicatorVisibilityDecision
 InputIndicatorPolicy::decide(const InputIndicatorPolicyInput &input, std::chrono::milliseconds dwell)
 {

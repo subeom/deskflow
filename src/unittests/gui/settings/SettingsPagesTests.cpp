@@ -308,21 +308,24 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
   SettingsPages pages;
   auto *enabled = must<ToggleSwitch>(pages, "cbInputIndicator");
   auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
-  auto *dwell = must<QSpinBox>(pages, "sbInputIndicatorDwell");
   auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
   auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
   auto *note = must<InlineHint>(pages, "hintInputIndicatorSafety");
 
   QVERIFY(!enabled->isChecked());
   QCOMPARE(position->currentData().toString(), QStringLiteral("cursorBottomRight"));
-  QCOMPARE(dwell->value(), 1500);
   QCOMPARE(opacity->value(), 85);
   QCOMPARE(tone->currentData().toString(), QStringLiteral("automatic"));
+  QVERIFY(!find<QSpinBox>(pages, "sbInputIndicatorDwell"));
+  QCOMPARE(Settings::value(Settings::Gui::InputIndicatorDwellMs).toInt(), 1500);
   QVERIFY(!position->isEnabled());
-  QVERIFY(!dwell->isEnabled());
   QVERIFY(!opacity->isEnabled());
   QVERIFY(!tone->isEnabled());
-  QVERIFY(note->text().contains(QStringLiteral("Password")));
+  QVERIFY(note->text().contains(QStringLiteral("input-source")));
+  QVERIFY(note->text().contains(QStringLiteral("mouse pointer")));
+  QVERIFY(note->text().contains(QStringLiteral("Accessibility")));
+  QVERIFY(note->text().contains(QStringLiteral("does not read")));
+  QVERIFY(!note->text().contains(QStringLiteral("Password")));
 
   for (const auto &key :
        {Settings::Gui::InputIndicatorEnabled, Settings::Gui::InputIndicatorPosition,
@@ -333,16 +336,13 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
 
   enabled->setChecked(true);
   QVERIFY(position->isEnabled());
-  QVERIFY(dwell->isEnabled());
   QVERIFY(opacity->isEnabled());
   QVERIFY(tone->isEnabled());
 
   choose(position, QStringLiteral("cursorTopLeft"));
-  dwell->setValue(1800);
   opacity->setValue(90);
   choose(tone, QStringLiteral("dark"));
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorPosition).toString(), QStringLiteral("cursorTopLeft"));
-  QCOMPARE(Settings::value(Settings::Gui::InputIndicatorDwellMs).toInt(), 1800);
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorOpacityPercent).toInt(), 90);
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorTone).toString(), QStringLiteral("dark"));
 #endif

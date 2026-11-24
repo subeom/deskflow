@@ -20,12 +20,21 @@ using namespace deskflow::gui::settings;
 
 namespace {
 
-template <class T> T *must(const SettingsPages &pages, const char *name)
+template <class T> T *find(const SettingsPages &pages, const char *name)
 {
   for (const auto &entry : pages.entries()) {
     if (auto *found = entry.page->findChild<T *>(QString::fromLatin1(name))) {
       return found;
     }
+  }
+  return nullptr;
+}
+
+template <class T> T *must(const SettingsPages &pages, const char *name)
+{
+  auto *found = find<T>(pages, name);
+  if (found) {
+    return found;
   }
   Q_ASSERT_X(false, "must", name);
   return nullptr;
@@ -59,22 +68,21 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
   SettingsPages pages;
   auto *enabled = must<ToggleSwitch>(pages, "cbInputIndicator");
   auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
-  auto *dwell = must<QSpinBox>(pages, "sbInputIndicatorDwell");
   auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
   auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
   auto *note = must<InlineHint>(pages, "hintInputIndicatorSafety");
 
   QVERIFY(!enabled->isChecked());
   QCOMPARE(position->currentData().toString(), QStringLiteral("cursorBottomRight"));
-  QCOMPARE(dwell->value(), 1500);
   QCOMPARE(opacity->value(), 85);
   QCOMPARE(tone->currentData().toString(), QStringLiteral("automatic"));
-  QVERIFY(note->text().contains(QStringLiteral("Password")));
+  QVERIFY(!find<QSpinBox>(pages, "sbInputIndicatorDwell"));
+  QCOMPARE(Settings::value(Settings::Gui::InputIndicatorDwellMs).toInt(), 1500);
   QVERIFY(note->text().contains(QStringLiteral("input-source")));
   QVERIFY(note->text().contains(QStringLiteral("mouse pointer")));
-  QVERIFY(!note->text().contains(
-      QStringLiteral("field recognition unavailable: indicator hidden")
-  ));
+  QVERIFY(note->text().contains(QStringLiteral("Accessibility")));
+  QVERIFY(note->text().contains(QStringLiteral("does not read")));
+  QVERIFY(!note->text().contains(QStringLiteral("Password")));
 
   for (const auto &key :
        {Settings::Gui::InputIndicatorEnabled, Settings::Gui::InputIndicatorPosition,
@@ -89,19 +97,16 @@ void InputIndicatorSettingsTests::dependencyControlsFollowTheToggle()
   SettingsPages pages;
   auto *enabled = must<ToggleSwitch>(pages, "cbInputIndicator");
   auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
-  auto *dwell = must<QSpinBox>(pages, "sbInputIndicatorDwell");
   auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
   auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
 
   QVERIFY(!position->isEnabled());
-  QVERIFY(!dwell->isEnabled());
   QVERIFY(!opacity->isEnabled());
   QVERIFY(!tone->isEnabled());
 
   enabled->setChecked(true);
 
   QVERIFY(position->isEnabled());
-  QVERIFY(dwell->isEnabled());
   QVERIFY(opacity->isEnabled());
   QVERIFY(tone->isEnabled());
 }

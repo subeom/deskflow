@@ -172,12 +172,21 @@ bool MacInputIndicatorPanel::show(const MacInputIndicatorPanelOptions &options)
     return false;
   }
 
+  m_impl->view.label = label;
+  m_impl->view.tone = static_cast<NSInteger>(options.tone);
+  m_impl->view.opacity = std::clamp(options.opacityPercent, 60, 100) / 100.0;
+  [m_impl->view setNeedsDisplay:YES];
+  return move(options.position);
+}
+
+bool MacInputIndicatorPanel::move(InputIndicatorPosition position)
+{
   const auto cursor = NSEvent.mouseLocation;
   const auto location = positionInputIndicator(
       {.x = cursor.x, .y = cursor.y},
       {.width = kPanelWidth, .height = kPanelHeight},
       screenRects(),
-      options.position,
+      position,
       kCursorGap,
       kScreenMargin
   );
@@ -186,20 +195,18 @@ bool MacInputIndicatorPanel::show(const MacInputIndicatorPanelOptions &options)
     return false;
   }
 
-  m_impl->view.label = label;
-  m_impl->view.tone = static_cast<NSInteger>(options.tone);
-  m_impl->view.opacity = std::clamp(options.opacityPercent, 60, 100) / 100.0;
   [m_impl->panel setFrameOrigin:NSMakePoint(location->x, location->y)];
-  [m_impl->view setNeedsDisplay:YES];
-  requestMacInputIndicatorPanelPresentation(
-      [this](MacInputIndicatorPanelOrderCommand command) {
-        switch (command) {
-        case MacInputIndicatorPanelOrderCommand::FrontRegardless:
-          [m_impl->panel orderFrontRegardless];
-          break;
+  if (![m_impl->panel isVisible]) {
+    requestMacInputIndicatorPanelPresentation(
+        [this](MacInputIndicatorPanelOrderCommand command) {
+          switch (command) {
+          case MacInputIndicatorPanelOrderCommand::FrontRegardless:
+            [m_impl->panel orderFrontRegardless];
+            break;
+          }
         }
-      }
-  );
+    );
+  }
   if (![m_impl->panel isVisible]) {
     hide();
     return false;

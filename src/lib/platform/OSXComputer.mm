@@ -31,7 +31,6 @@
 #include "platform/OSXClipboard.h"
 #include "platform/OSXDisplays.h"
 #include "platform/OSXEventQueueBuffer.h"
-#include "platform/OSXInputIndicatorRelay.h"
 #include "platform/OSXKeyState.h"
 #include "platform/OSXMediaKeySupport.h"
 #include "platform/OSXPasteboardPeeker.h"
@@ -130,21 +129,6 @@ OSXComputer::OSXComputer(IEventQueue *events, bool isPrimary, bool enableLangSyn
   try {
     m_screensaver = new OSXScreenSaver(m_events, getEventTarget());
     m_keyState = new OSXKeyState(m_events, AppUtil::instance().getKeyboardLayoutList(), enableLangSync);
-    if (m_isPrimary) {
-      m_inputIndicatorRelay = std::make_unique<deskflow::platform::OSXInputIndicatorRelay>(
-          [](deskflow::platform::OSXInputIndicatorRelay::Work work) {
-            if (auto *application = QCoreApplication::instance()) {
-              QMetaObject::invokeMethod(application, [work = std::move(work)] { work(); }, Qt::QueuedConnection);
-            }
-          },
-          [](const deskflow::input::InputIndicatorActivity &activity) {
-            ipcSendInputIndicatorToClient(
-                QLatin1String(deskflow::input::kInputIndicatorActivityCommand),
-                deskflow::input::encodeInputIndicatorActivity(activity)
-            );
-          }
-      );
-    }
 
     if (Settings::value(Settings::Core::PreventSleep).toBool()) {
       m_powerManager.disableSleep();
@@ -842,9 +826,6 @@ void OSXComputer::enable()
 void OSXComputer::disable()
 {
   deskflow::input::setInputIndicatorLocal(false);
-  if (m_inputIndicatorRelay) {
-    m_inputIndicatorRelay->invalidate();
-  }
   if (deskflow::input::isInputIndicatorSubscribed()) {
     ipcSendInputIndicatorToClient(
         QLatin1String(deskflow::input::kInputIndicatorLocalCommand),
@@ -1695,9 +1676,6 @@ void OSXComputer::updateInputIndicatorLocalState()
   const bool local = m_isPrimary && m_isOnComputer && m_eventTapPort != nullptr && m_eventTapRLSR != nullptr &&
                      CGEventTapIsEnabled(m_eventTapPort);
   deskflow::input::setInputIndicatorLocal(local);
-  if (!local && m_inputIndicatorRelay) {
-    m_inputIndicatorRelay->invalidate();
-  }
   if (deskflow::input::isInputIndicatorSubscribed()) {
     ipcSendInputIndicatorToClient(
         QLatin1String(deskflow::input::kInputIndicatorLocalCommand),
@@ -1856,22 +1834,6 @@ OSXComputer::handleCGInputEventSecondary(CGEventTapProxy proxy, CGEventType type
 CGEventRef OSXComputer::handleCGInputEvent(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *refcon)
 {
   OSXComputer *computer = (OSXComputer *)refcon;
-
-  if (computer->m_inputIndicatorRelay) {
-    const bool click =
-        type == kCGEventLeftMouseDown || type == kCGEventRightMouseDown || type == kCGEventOtherMouseDown;
-    if (click) {
-      computer->m_inputIndicatorRelay->notify(
-          deskflow::input::InputIndicatorActivityKind::LocalPrimaryMouseClick, CGEventGetTimestamp(event),
-          computer->m_isPrimary, computer->m_isOnComputer
-      );
-    } else if (type == kCGEventKeyDown) {
-      computer->m_inputIndicatorRelay->notify(
-          deskflow::input::InputIndicatorActivityKind::LocalPrimaryKeyDown, CGEventGetTimestamp(event),
-          computer->m_isPrimary, computer->m_isOnComputer
-      );
-    }
-  }
 
   switch (type) {
   case kCGEventLeftMouseDown:

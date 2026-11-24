@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include "MacAccessibilityProbe.h"
+#include "InputIndicatorPolicy.h"
 #include "MacInputIndicatorPanel.h"
 #include "deskflow/ipc/InputIndicatorIpc.h"
 #include "platform/OSXInputSource.h"
@@ -15,22 +15,12 @@
 #include <QTimer>
 
 #include <chrono>
-#include <cstdint>
 #include <functional>
 #include <memory>
-#include <optional>
 
 struct MacInputIndicatorControllerTestAccess;
 
 namespace deskflow::gui::input {
-
-class MacInputFocusMonitor;
-
-enum class InputIndicatorUiTrigger
-{
-  CoreActivity,
-  InputSourceChanged
-};
 
 class MacInputIndicatorController : public QObject
 {
@@ -39,17 +29,12 @@ class MacInputIndicatorController : public QObject
 public:
   struct Dependencies
   {
-    std::function<std::optional<int64_t>()> frontmostApplicationPid;
-    std::function<bool()> accessibilityTrusted;
-    std::function<void(
-        uint64_t generation,
-        std::optional<int64_t> targetPid
-    )> probeRequest;
     std::function<deskflow::platform::OSXInputSourceSnapshot()>
         inputSource;
     std::function<bool(
         const MacInputIndicatorPanelOptions &options
     )> panelShow;
+    std::function<bool(InputIndicatorPosition)> panelMove;
     std::function<void()> panelHide;
     std::function<void(InputIndicatorVisibilityReason)> diagnosticEmitter;
   };
@@ -74,8 +59,7 @@ Q_SIGNALS:
 
 private Q_SLOTS:
   void settingsChanged(const QString &key);
-  void accessibilityCompleted(uint64_t generation, const MacAccessibilitySnapshot &snapshot);
-  void requestAccessibility();
+  void movePointerBadge();
 
 private:
   friend struct ::MacInputIndicatorControllerTestAccess;
@@ -84,46 +68,30 @@ private:
   void setEffectiveEnabled(bool enabled);
   void createMonitors();
   void destroyMonitors();
-  void focusChanged();
   void inputSourceChanged();
-  void trigger(InputIndicatorUiTrigger trigger);
+  void refreshVisibility(bool reconfigure);
   void hide();
   void reportHiddenReason(InputIndicatorVisibilityReason reason);
 
   bool m_effectiveEnabled = false;
   bool m_wantedEnabled = false;
-  bool m_coreConnected = false;
-  bool m_isOnComputer = false;
-  uint64_t m_generation = 0;
-  std::chrono::milliseconds m_dwell{1500};
+  bool m_isOnComputer = true;
+  bool m_panelConfigured = false;
+  bool m_panelVisible = false;
   InputIndicatorPosition m_position = InputIndicatorPosition::CursorBottomRight;
   int m_opacityPercent = 85;
   InputIndicatorTone m_tone = InputIndicatorTone::Automatic;
-  deskflow::input::InputIndicatorSource m_source = deskflow::input::InputIndicatorSource::Unknown;
-  std::optional<deskflow::input::InputIndicatorActivity> m_lastActivity;
-  std::optional<InputIndicatorUiTrigger> m_pendingTrigger;
-  std::optional<deskflow::input::InputIndicatorSource> m_pendingSource;
-  std::optional<int64_t> m_pendingTargetPid;
-  std::optional<InputIndicatorUiTrigger> m_visibleTrigger;
-
-  std::unique_ptr<MacAccessibilityProbe> m_probe;
-  std::unique_ptr<MacInputFocusMonitor> m_focusMonitor;
+  deskflow::platform::OSXInputSourceSnapshot m_sourceSnapshot;
   std::unique_ptr<deskflow::platform::OSXInputSourceMonitor> m_sourceMonitor;
   std::unique_ptr<MacInputIndicatorPanel> m_panel;
-  QTimer m_probeTimer;
-  QTimer m_dwellTimer;
+  QTimer m_pointerTimer;
   InputIndicatorDiagnosticThrottle m_diagnosticThrottle;
-  std::function<std::optional<int64_t>()> m_frontmostApplicationPid;
-  std::function<bool()> m_accessibilityTrusted;
-  std::function<void(
-      uint64_t generation,
-      std::optional<int64_t> targetPid
-  )> m_probeRequest;
   std::function<deskflow::platform::OSXInputSourceSnapshot()>
       m_inputSource;
   std::function<bool(
       const MacInputIndicatorPanelOptions &options
   )> m_panelShow;
+  std::function<bool(InputIndicatorPosition)> m_panelMove;
   std::function<void()> m_panelHide;
   std::function<void(InputIndicatorVisibilityReason)>
       m_diagnosticEmitter;

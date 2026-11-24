@@ -78,6 +78,13 @@ struct InputIndicatorVisibilityDecision
       InputIndicatorVisibilityReason::Disabled;
 };
 
+struct PersistentInputIndicatorPolicyInput
+{
+  bool enabled = false;
+  bool isOnComputer = true;
+  InputIndicatorSource source = InputIndicatorSource::Unknown;
+};
+
 const char *inputIndicatorVisibilityReasonText(
     InputIndicatorVisibilityReason reason
 );
@@ -99,6 +106,8 @@ private:
 class InputIndicatorPolicy
 {
 public:
+  static InputIndicatorVisibilityDecision
+  decidePersistent(const PersistentInputIndicatorPolicyInput &input);
   static InputIndicatorVisibilityDecision
   decide(const InputIndicatorPolicyInput &input, std::chrono::milliseconds dwell);
 };

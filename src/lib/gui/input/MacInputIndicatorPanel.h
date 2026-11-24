@@ -49,6 +49,7 @@ public:
   MacInputIndicatorPanel &operator=(const MacInputIndicatorPanel &) = delete;
 
   bool show(const MacInputIndicatorPanelOptions &options);
+  bool move(InputIndicatorPosition position);
   void hide();
 
 private:

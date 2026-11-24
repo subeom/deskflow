@@ -223,16 +223,8 @@ MainWindow::MainWindow()
       &m_coreProcess, &CoreProcess::setInputIndicatorEnabled
   );
   connect(
-      &m_coreProcess, &CoreProcess::inputIndicatorActivityReceived, m_inputIndicatorController,
-      &deskflow::gui::input::MacInputIndicatorController::inputIndicatorActivityReceived
-  );
-  connect(
       &m_coreProcess, &CoreProcess::inputIndicatorLocalChanged, m_inputIndicatorController,
       &deskflow::gui::input::MacInputIndicatorController::inputIndicatorLocalChanged
-  );
-  connect(
-      &m_coreProcess, &CoreProcess::inputIndicatorActivityInvalidated, m_inputIndicatorController,
-      &deskflow::gui::input::MacInputIndicatorController::inputIndicatorActivityInvalidated
   );
   connect(
       &m_coreProcess, &CoreProcess::inputIndicatorStateInvalidated, m_inputIndicatorController,

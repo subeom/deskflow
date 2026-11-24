@@ -48,7 +48,6 @@ class Mutex;
 namespace deskflow::platform {
 class OSXPointerHoldSystem;
 class OSXPointerHoldNotifications;
-class OSXInputIndicatorRelay;
 } // namespace deskflow::platform
 
 //! Implementation of IPlatformComputer for OS X
@@ -349,7 +348,6 @@ private:
   // display reconfiguration): the tap thread can end at any moment, and a run loop that is not retained ends with it
   std::mutex m_tapRunLoopMutex;
   CFRunLoopRef m_publishedTapRunLoop = nullptr;
-  std::unique_ptr<deskflow::platform::OSXInputIndicatorRelay> m_inputIndicatorRelay;
 
   // for double click coalescing.
   double m_lastClickTime;

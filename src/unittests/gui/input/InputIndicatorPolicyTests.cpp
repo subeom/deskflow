@@ -22,28 +22,30 @@ using Source = deskflow::input::InputIndicatorSource;
 #ifdef Q_OS_MACOS
 struct MacInputIndicatorControllerTestAccess
 {
+  static std::string sourceIdentifier(Source source)
+  {
+    switch (source) {
+    case Source::LatinABC:
+      return "com.apple.keylayout.ABC";
+    case Source::Korean2Set:
+      return "com.apple.inputmethod.Korean.2SetKorean";
+    case Source::Unknown:
+      return "com.apple.inputmethod.Unsupported";
+    }
+  }
+
   static void arm(
       MacInputIndicatorController &controller,
       Source source = Source::LatinABC
   )
   {
     controller.m_effectiveEnabled = true;
-    controller.m_coreConnected = true;
     controller.m_isOnComputer = true;
-    controller.m_source = source;
-  }
-
-  static void trigger(
-      MacInputIndicatorController &controller,
-      InputIndicatorUiTrigger trigger
-  )
-  {
-    controller.trigger(trigger);
-  }
-
-  static void focusChanged(MacInputIndicatorController &controller)
-  {
-    controller.focusChanged();
+    controller.m_sourceSnapshot = {
+        .identifier = sourceIdentifier(source),
+        .source = source
+    };
+    controller.refreshVisibility(true);
   }
 
   static void inputSourceChanged(
@@ -53,53 +55,84 @@ struct MacInputIndicatorControllerTestAccess
     controller.inputSourceChanged();
   }
 
-  static void requestAccessibility(
+  static void pointerTick(MacInputIndicatorController &controller)
+  {
+    controller.movePointerBadge();
+  }
+
+  static bool pointerTimerActive(
+      const MacInputIndicatorController &controller
+  )
+  {
+    return controller.m_pointerTimer.isActive();
+  }
+
+  static int pointerTimerInterval(
+      const MacInputIndicatorController &controller
+  )
+  {
+    return controller.m_pointerTimer.interval();
+  }
+
+  static void setEnabled(
+      MacInputIndicatorController &controller, bool enabled
+  )
+  {
+    controller.setEffectiveEnabled(enabled);
+  }
+
+  static void enableWithMonitor(
       MacInputIndicatorController &controller
   )
   {
-    controller.requestAccessibility();
+    controller.setEffectiveEnabled(true);
+    controller.refreshVisibility(true);
   }
 
-  static void accessibilityCompleted(
-      MacInputIndicatorController &controller,
-      uint64_t generation,
-      const MacAccessibilitySnapshot &snapshot
-  )
-  {
-    controller.accessibilityCompleted(generation, snapshot);
-  }
-
-  static std::optional<InputIndicatorUiTrigger> pendingTrigger(
+  static bool sourceMonitorActive(
       const MacInputIndicatorController &controller
   )
   {
-    return controller.m_pendingTrigger;
-  }
-
-  static std::optional<InputIndicatorUiTrigger> visibleTrigger(
-      const MacInputIndicatorController &controller
-  )
-  {
-    return controller.m_visibleTrigger;
-  }
-
-  static std::optional<int64_t> pendingTargetPid(
-      const MacInputIndicatorController &controller
-  )
-  {
-    return controller.m_pendingTargetPid;
-  }
-
-  static uint64_t generation(
-      const MacInputIndicatorController &controller
-  )
-  {
-    return controller.m_generation;
+    return controller.m_sourceMonitor != nullptr;
   }
 };
 #endif
 
 namespace {
+
+#ifdef Q_OS_MACOS
+struct PersistentControllerHarness
+{
+  Source source = Source::LatinABC;
+  std::string identifier = "com.apple.keylayout.ABC";
+  std::vector<MacInputIndicatorPanelOptions> presentations;
+  int moves = 0;
+  int hides = 0;
+  bool showResult = true;
+  bool moveResult = true;
+
+  MacInputIndicatorController::Dependencies dependencies()
+  {
+    MacInputIndicatorController::Dependencies result;
+    result.inputSource = [this] {
+      return deskflow::platform::OSXInputSourceSnapshot{
+          .identifier = identifier, .source = source
+      };
+    };
+    result.panelShow =
+        [this](const MacInputIndicatorPanelOptions &options) {
+          presentations.push_back(options);
+          return showResult;
+        };
+    result.panelMove = [this](InputIndicatorPosition) {
+      ++moves;
+      return moveResult;
+    };
+    result.panelHide = [this] { ++hides; };
+    return result;
+  }
+};
+#endif
 
 InputIndicatorPolicyInput safeInput()
 {
@@ -374,7 +407,7 @@ void InputIndicatorPolicyTests::accessibilitySnapshotAcceptsMatchingFrontmostPid
   QCOMPARE(current.applicationPid, snapshot.applicationPid);
 }
 
-void InputIndicatorPolicyTests::panelPresentationRequestsFrontRegardless()
+void InputIndicatorPolicyTests::panelPresentationNeverRequestsCursorMutation()
 {
   std::vector<MacInputIndicatorPanelOrderCommand> commands;
   requestMacInputIndicatorPanelPresentation(
@@ -391,385 +424,261 @@ void InputIndicatorPolicyTests::panelPresentationRequestsFrontRegardless()
   );
 }
 
-void InputIndicatorPolicyTests::focusChangeInvalidatesWithoutQueueingProbe()
+void InputIndicatorPolicyTests::persistentPolicyUsesOnlyEnabledLocalAndKnownSource()
 {
-  MacInputIndicatorController::Dependencies dependencies;
-  dependencies.inputSource = [] {
-    return deskflow::platform::OSXInputSourceSnapshot{
-        .source = Source::LatinABC
-    };
+  const PersistentInputIndicatorPolicyInput visible{
+      .enabled = true,
+      .isOnComputer = true,
+      .source = Source::LatinABC,
   };
-  MacInputIndicatorController controller(nullptr, std::move(dependencies));
-  MacInputIndicatorControllerTestAccess::arm(controller);
-  const auto generation =
-      MacInputIndicatorControllerTestAccess::generation(controller);
 
-  MacInputIndicatorControllerTestAccess::trigger(
-      controller, InputIndicatorUiTrigger::InputSourceChanged
-  );
-  QVERIFY(MacInputIndicatorControllerTestAccess::pendingTrigger(controller));
+  const auto decision =
+      InputIndicatorPolicy::decidePersistent(visible);
+  QVERIFY(decision.show);
+  QCOMPARE(decision.source, Source::LatinABC);
 
-  MacInputIndicatorControllerTestAccess::focusChanged(controller);
-
-  QVERIFY(!MacInputIndicatorControllerTestAccess::pendingTrigger(controller));
-  QVERIFY(
-      MacInputIndicatorControllerTestAccess::generation(controller) >
-      generation
-  );
-}
-
-void InputIndicatorPolicyTests::sourceTriggerWithoutActivityQueuesProbe()
-{
-  MacInputIndicatorController::Dependencies dependencies;
-  dependencies.inputSource = [] {
-    return deskflow::platform::OSXInputSourceSnapshot{
-        .source = Source::LatinABC
-    };
-  };
-  MacInputIndicatorController controller(nullptr, std::move(dependencies));
-  MacInputIndicatorControllerTestAccess::arm(controller);
-
-  MacInputIndicatorControllerTestAccess::trigger(
-      controller, InputIndicatorUiTrigger::InputSourceChanged
-  );
-
+  auto disabled = visible;
+  disabled.enabled = false;
   QCOMPARE(
-      MacInputIndicatorControllerTestAccess::pendingTrigger(controller),
-      std::optional<InputIndicatorUiTrigger>{
-          InputIndicatorUiTrigger::InputSourceChanged
-      }
+      InputIndicatorPolicy::decidePersistent(disabled).reason,
+      InputIndicatorVisibilityReason::Disabled
+  );
+
+  auto remote = visible;
+  remote.isOnComputer = false;
+  QCOMPARE(
+      InputIndicatorPolicy::decidePersistent(remote).reason,
+      InputIndicatorVisibilityReason::OffComputer
+  );
+
+  auto unknown = visible;
+  unknown.source = Source::Unknown;
+  QCOMPARE(
+      InputIndicatorPolicy::decidePersistent(unknown).reason,
+      InputIndicatorVisibilityReason::SourceUnknown
   );
 }
 
-void InputIndicatorPolicyTests::coreTriggerWithoutActivityDoesNotQueueProbe()
+void InputIndicatorPolicyTests::persistentKnownSourceShowsWithoutConnectivityOrAx()
 {
-  MacInputIndicatorController controller;
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
   MacInputIndicatorControllerTestAccess::arm(controller);
 
-  MacInputIndicatorControllerTestAccess::trigger(
-      controller, InputIndicatorUiTrigger::CoreActivity
-  );
+  controller.inputIndicatorStateInvalidated();
 
-  QVERIFY(!MacInputIndicatorControllerTestAccess::pendingTrigger(
+  QCOMPARE(harness.presentations.size(), size_t{1});
+  QCOMPARE(harness.presentations.front().source, Source::LatinABC);
+  QCOMPARE(harness.moves, 1);
+  QVERIFY(MacInputIndicatorControllerTestAccess::pointerTimerActive(
       controller
   ));
 }
 
-void InputIndicatorPolicyTests::duplicateSourceNotificationDoesNotQueueProbe()
+void InputIndicatorPolicyTests::persistentOffComputerHides()
 {
-  Source source = Source::LatinABC;
-  MacInputIndicatorController::Dependencies dependencies;
-  dependencies.inputSource = [&source] {
-    return deskflow::platform::OSXInputSourceSnapshot{
-        .source = source
-    };
-  };
-  MacInputIndicatorController controller(nullptr, std::move(dependencies));
-  MacInputIndicatorControllerTestAccess::arm(controller, Source::LatinABC);
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::arm(controller);
+
+  controller.inputIndicatorLocalChanged(false);
+
+  QVERIFY(harness.hides > 0);
+  QVERIFY(!MacInputIndicatorControllerTestAccess::pointerTimerActive(
+      controller
+  ));
+
+  controller.inputIndicatorLocalChanged(true);
+  QVERIFY(MacInputIndicatorControllerTestAccess::pointerTimerActive(
+      controller
+  ));
+  QCOMPARE(harness.presentations.size(), size_t{1});
+}
+
+void InputIndicatorPolicyTests::persistentLocalAndDisconnectedTransitionsShow()
+{
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::arm(controller);
+
+  controller.inputIndicatorLocalChanged(false);
+  const auto hides = harness.hides;
+  controller.inputIndicatorStateInvalidated();
+
+  QVERIFY(MacInputIndicatorControllerTestAccess::pointerTimerActive(
+      controller
+  ));
+  QCOMPARE(harness.presentations.size(), size_t{1});
+  QCOMPARE(harness.hides, hides);
+}
+
+void InputIndicatorPolicyTests::persistentUnknownSourceHidesWithoutStaleLabel()
+{
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::arm(controller);
+  harness.identifier = "com.apple.inputmethod.Unsupported";
+  harness.source = Source::Unknown;
 
   MacInputIndicatorControllerTestAccess::inputSourceChanged(controller);
 
-  QVERIFY(!MacInputIndicatorControllerTestAccess::pendingTrigger(
+  QVERIFY(harness.hides > 0);
+  QVERIFY(!MacInputIndicatorControllerTestAccess::pointerTimerActive(
       controller
   ));
+  QCOMPARE(harness.presentations.size(), size_t{1});
+
+  const auto moves = harness.moves;
+  controller.inputIndicatorStateInvalidated();
+  QCOMPARE(harness.moves, moves);
+  QCOMPARE(harness.presentations.size(), size_t{1});
 }
 
-void InputIndicatorPolicyTests::sourceTransitionQueuesProbe()
+void InputIndicatorPolicyTests::persistentPointerTicksMoveWithoutReconfigure()
 {
-  Source source = Source::LatinABC;
-  MacInputIndicatorController::Dependencies dependencies;
-  dependencies.inputSource = [&source] {
-    return deskflow::platform::OSXInputSourceSnapshot{
-        .source = source
-    };
-  };
-  MacInputIndicatorController controller(nullptr, std::move(dependencies));
-  MacInputIndicatorControllerTestAccess::arm(controller, Source::LatinABC);
-  source = Source::Korean2Set;
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::arm(controller);
+  const auto hides = harness.hides;
+
+  QCOMPARE(
+      MacInputIndicatorControllerTestAccess::pointerTimerInterval(controller),
+      16
+  );
+  MacInputIndicatorControllerTestAccess::pointerTick(controller);
+
+  QCOMPARE(harness.moves, 1);
+  QCOMPARE(harness.presentations.size(), size_t{1});
+  QCOMPARE(harness.hides, hides);
+}
+
+void InputIndicatorPolicyTests::persistentDuplicateSourceDoesNotReconfigure()
+{
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::arm(controller);
 
   MacInputIndicatorControllerTestAccess::inputSourceChanged(controller);
 
-  QCOMPARE(
-      MacInputIndicatorControllerTestAccess::pendingTrigger(controller),
-      std::optional<InputIndicatorUiTrigger>{
-          InputIndicatorUiTrigger::InputSourceChanged
-      }
-  );
+  QCOMPARE(harness.presentations.size(), size_t{1});
+  QCOMPARE(harness.moves, 0);
 }
 
-void InputIndicatorPolicyTests::unknownSourceTransitionHidesWithoutProbe()
+void InputIndicatorPolicyTests::persistentSourceChangesUpdateLabel()
 {
-  Source source = Source::Unknown;
-  int hidden = 0;
-  MacInputIndicatorController::Dependencies dependencies;
-  dependencies.inputSource = [&source] {
-    return deskflow::platform::OSXInputSourceSnapshot{
-        .source = source
-    };
-  };
-  dependencies.panelHide = [&hidden] { ++hidden; };
-  MacInputIndicatorController controller(nullptr, std::move(dependencies));
-  MacInputIndicatorControllerTestAccess::arm(controller, Source::LatinABC);
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::arm(controller);
+  harness.identifier = "com.apple.inputmethod.Korean.2SetKorean";
+  harness.source = Source::Korean2Set;
 
   MacInputIndicatorControllerTestAccess::inputSourceChanged(controller);
 
-  QVERIFY(!MacInputIndicatorControllerTestAccess::pendingTrigger(
-      controller
-  ));
-  QVERIFY(hidden > 0);
-}
-
-void InputIndicatorPolicyTests::unknownFocusCanShowAfterFreshCoreActivity()
-{
-  int shown = 0;
-  std::optional<std::pair<uint64_t, std::optional<int64_t>>> requested;
-  MacInputIndicatorController::Dependencies dependencies;
-  dependencies.frontmostApplicationPid = [] {
-    return std::optional<int64_t>{31337};
-  };
-  dependencies.accessibilityTrusted = [] { return true; };
-  dependencies.inputSource = [] {
-    return deskflow::platform::OSXInputSourceSnapshot{
-        .identifier = "com.apple.keylayout.ABC",
-        .source = Source::LatinABC
-    };
-  };
-  dependencies.probeRequest =
-      [&requested](uint64_t generation, std::optional<int64_t> pid) {
-        requested = std::pair{generation, pid};
-      };
-  dependencies.panelShow =
-      [&shown](const MacInputIndicatorPanelOptions &) {
-        ++shown;
-        return true;
-      };
-  dependencies.panelHide = [] {};
-  MacInputIndicatorController controller(nullptr, std::move(dependencies));
-  MacInputIndicatorControllerTestAccess::arm(controller);
-
-  controller.inputIndicatorActivityReceived({
-      .sequence = 1,
-      .eventTimestampMach = mach_absolute_time(),
-      .kind = deskflow::input::InputIndicatorActivityKind::LocalPrimaryKeyDown,
-  });
-  MacInputIndicatorControllerTestAccess::requestAccessibility(controller);
-  QVERIFY(requested);
-
-  MacInputIndicatorControllerTestAccess::accessibilityCompleted(
-      controller,
-      requested->first,
-      {
-          .state = EditableFocusState::Unknown,
-          .applicationPid = 31337
-      }
-  );
-
-  QCOMPARE(shown, 1);
+  QCOMPARE(harness.presentations.size(), size_t{2});
   QCOMPARE(
-      MacInputIndicatorControllerTestAccess::visibleTrigger(controller),
-      std::optional<InputIndicatorUiTrigger>{
-          InputIndicatorUiTrigger::CoreActivity
-      }
+      harness.presentations.back().source,
+      Source::Korean2Set
   );
+
+  harness.identifier = "com.apple.keylayout.ABC";
+  harness.source = Source::LatinABC;
+  MacInputIndicatorControllerTestAccess::inputSourceChanged(controller);
+  QCOMPARE(harness.presentations.size(), size_t{3});
+  QCOMPARE(harness.presentations.back().source, Source::LatinABC);
 }
 
-void InputIndicatorPolicyTests::secureFocusNeverShows()
+void InputIndicatorPolicyTests::persistentFeatureOffStopsAndHides()
 {
-  int shown = 0;
-  std::optional<std::pair<uint64_t, std::optional<int64_t>>> requested;
-  MacInputIndicatorController::Dependencies dependencies;
-  dependencies.frontmostApplicationPid = [] {
-    return std::optional<int64_t>{31337};
-  };
-  dependencies.accessibilityTrusted = [] { return true; };
-  dependencies.inputSource = [] {
-    return deskflow::platform::OSXInputSourceSnapshot{
-        .source = Source::Korean2Set
-    };
-  };
-  dependencies.probeRequest =
-      [&requested](uint64_t generation, std::optional<int64_t> pid) {
-        requested = std::pair{generation, pid};
-      };
-  dependencies.panelShow =
-      [&shown](const MacInputIndicatorPanelOptions &) {
-        ++shown;
-        return true;
-      };
-  dependencies.panelHide = [] {};
-  MacInputIndicatorController controller(nullptr, std::move(dependencies));
-  MacInputIndicatorControllerTestAccess::arm(
-      controller, Source::Korean2Set
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
   );
-
-  controller.inputIndicatorActivityReceived({
-      .sequence = 2,
-      .eventTimestampMach = mach_absolute_time(),
-      .kind = deskflow::input::InputIndicatorActivityKind::LocalPrimaryMouseClick,
-  });
-  MacInputIndicatorControllerTestAccess::requestAccessibility(controller);
-  QVERIFY(requested);
-  MacInputIndicatorControllerTestAccess::accessibilityCompleted(
-      controller,
-      requested->first,
-      {
-          .state = EditableFocusState::SecureOrProtected,
-          .applicationPid = 31337
-      }
-  );
-
-  QCOMPARE(shown, 0);
-  QVERIFY(!MacInputIndicatorControllerTestAccess::visibleTrigger(
+  MacInputIndicatorControllerTestAccess::enableWithMonitor(controller);
+  QVERIFY(MacInputIndicatorControllerTestAccess::pointerTimerActive(
       controller
   ));
-}
-
-void InputIndicatorPolicyTests::ownApplicationNeverRequestsProbe()
-{
-  bool requested = false;
-  MacInputIndicatorController::Dependencies dependencies;
-  dependencies.frontmostApplicationPid = [] {
-    return std::optional<int64_t>{
-        static_cast<int64_t>(QCoreApplication::applicationPid())
-    };
-  };
-  dependencies.accessibilityTrusted = [] { return true; };
-  dependencies.inputSource = [] {
-    return deskflow::platform::OSXInputSourceSnapshot{
-        .source = Source::LatinABC
-    };
-  };
-  dependencies.probeRequest =
-      [&requested](uint64_t, std::optional<int64_t>) {
-        requested = true;
-      };
-  dependencies.panelShow =
-      [](const MacInputIndicatorPanelOptions &) { return true; };
-  dependencies.panelHide = [] {};
-  MacInputIndicatorController controller(nullptr, std::move(dependencies));
-  MacInputIndicatorControllerTestAccess::arm(controller);
-  MacInputIndicatorControllerTestAccess::trigger(
-      controller, InputIndicatorUiTrigger::InputSourceChanged
-  );
-
-  MacInputIndicatorControllerTestAccess::requestAccessibility(controller);
-
-  QVERIFY(!requested);
-  QVERIFY(!MacInputIndicatorControllerTestAccess::pendingTargetPid(
+  QVERIFY(MacInputIndicatorControllerTestAccess::sourceMonitorActive(
       controller
   ));
+  const auto presentations = harness.presentations.size();
+
+  MacInputIndicatorControllerTestAccess::setEnabled(controller, false);
+
+  QVERIFY(harness.hides > 0);
+  QVERIFY(!MacInputIndicatorControllerTestAccess::pointerTimerActive(
+      controller
+  ));
+  QVERIFY(!MacInputIndicatorControllerTestAccess::sourceMonitorActive(
+      controller
+  ));
+  controller.inputIndicatorStateInvalidated();
+  QCOMPARE(harness.presentations.size(), presentations);
 }
 
-void InputIndicatorPolicyTests::staleProbeGenerationNeverShows()
+void InputIndicatorPolicyTests::persistentGeometryOrPanelFailureHides()
 {
-  int shown = 0;
-  std::optional<std::pair<uint64_t, std::optional<int64_t>>> requested;
-  MacInputIndicatorController::Dependencies dependencies;
-  dependencies.frontmostApplicationPid = [] {
-    return std::optional<int64_t>{31337};
-  };
-  dependencies.accessibilityTrusted = [] { return true; };
-  dependencies.inputSource = [] {
-    return deskflow::platform::OSXInputSourceSnapshot{
-        .source = Source::LatinABC
-    };
-  };
-  dependencies.probeRequest =
-      [&requested](uint64_t generation, std::optional<int64_t> pid) {
-        requested = std::pair{generation, pid};
-      };
-  dependencies.panelShow =
-      [&shown](const MacInputIndicatorPanelOptions &) {
-        ++shown;
-        return true;
-      };
-  dependencies.panelHide = [] {};
-  MacInputIndicatorController controller(nullptr, std::move(dependencies));
+  PersistentControllerHarness geometry;
+  MacInputIndicatorController controller(
+      nullptr, geometry.dependencies()
+  );
   MacInputIndicatorControllerTestAccess::arm(controller);
-  MacInputIndicatorControllerTestAccess::trigger(
-      controller, InputIndicatorUiTrigger::InputSourceChanged
-  );
-  MacInputIndicatorControllerTestAccess::requestAccessibility(controller);
-  QVERIFY(requested);
+  geometry.moveResult = false;
 
-  MacInputIndicatorControllerTestAccess::accessibilityCompleted(
-      controller,
-      requested->first + 1,
-      {
-          .state = EditableFocusState::Unknown,
-          .applicationPid = 31337
-      }
-  );
+  MacInputIndicatorControllerTestAccess::pointerTick(controller);
+  QVERIFY(geometry.hides > 0);
 
-  QCOMPARE(shown, 0);
+  PersistentControllerHarness unavailable;
+  unavailable.showResult = false;
+  MacInputIndicatorController failedPanel(
+      nullptr, unavailable.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::arm(failedPanel);
+
+  QCOMPARE(unavailable.presentations.size(), size_t{1});
+  QVERIFY(unavailable.hides > 0);
 }
 
-void InputIndicatorPolicyTests::mismatchedSnapshotPidNeverShows()
+void InputIndicatorPolicyTests::persistentActivityDoesNotGateVisibility()
 {
-  int shown = 0;
-  std::optional<std::pair<uint64_t, std::optional<int64_t>>> requested;
-  MacInputIndicatorController::Dependencies dependencies;
-  dependencies.frontmostApplicationPid = [] {
-    return std::optional<int64_t>{31337};
-  };
-  dependencies.accessibilityTrusted = [] { return true; };
-  dependencies.inputSource = [] {
-    return deskflow::platform::OSXInputSourceSnapshot{
-        .source = Source::LatinABC
-    };
-  };
-  dependencies.probeRequest =
-      [&requested](uint64_t generation, std::optional<int64_t> pid) {
-        requested = std::pair{generation, pid};
-      };
-  dependencies.panelShow =
-      [&shown](const MacInputIndicatorPanelOptions &) {
-        ++shown;
-        return true;
-      };
-  dependencies.panelHide = [] {};
-  MacInputIndicatorController controller(nullptr, std::move(dependencies));
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
   MacInputIndicatorControllerTestAccess::arm(controller);
-  MacInputIndicatorControllerTestAccess::trigger(
-      controller, InputIndicatorUiTrigger::InputSourceChanged
-  );
-  MacInputIndicatorControllerTestAccess::requestAccessibility(controller);
-  QVERIFY(requested);
+  const auto presentations = harness.presentations.size();
+  const auto moves = harness.moves;
+  const auto hides = harness.hides;
 
-  MacInputIndicatorControllerTestAccess::accessibilityCompleted(
-      controller,
-      requested->first,
-      {
-          .state = EditableFocusState::Unknown,
-          .applicationPid = 4242
-      }
-  );
-
-  QCOMPARE(shown, 0);
-}
-
-void InputIndicatorPolicyTests::invalidActivityDoesNotCancelSourceTrigger()
-{
-  MacInputIndicatorController::Dependencies dependencies;
-  dependencies.inputSource = [] {
-    return deskflow::platform::OSXInputSourceSnapshot{
-        .source = Source::LatinABC
-    };
-  };
-  MacInputIndicatorController controller(nullptr, std::move(dependencies));
-  MacInputIndicatorControllerTestAccess::arm(controller);
-  MacInputIndicatorControllerTestAccess::trigger(
-      controller, InputIndicatorUiTrigger::InputSourceChanged
-  );
-
+  controller.inputIndicatorActivityReceived({});
   controller.inputIndicatorActivityInvalidated();
+  QCOMPARE(harness.presentations.size(), presentations);
+  QCOMPARE(harness.moves, moves);
+  QCOMPARE(harness.hides, hides);
+  QVERIFY(MacInputIndicatorControllerTestAccess::pointerTimerActive(
+      controller
+  ));
 
-  QCOMPARE(
-      MacInputIndicatorControllerTestAccess::pendingTrigger(controller),
-      std::optional<InputIndicatorUiTrigger>{
-          InputIndicatorUiTrigger::InputSourceChanged
-      }
-  );
+  controller.inputIndicatorLocalChanged(false);
+  const auto remoteHides = harness.hides;
+  controller.inputIndicatorActivityReceived({});
+  QCOMPARE(harness.hides, remoteHides);
+  QVERIFY(!MacInputIndicatorControllerTestAccess::pointerTimerActive(
+      controller
+  ));
 }
 #endif
 

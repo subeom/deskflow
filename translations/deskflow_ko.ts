@@ -2848,8 +2848,16 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>입력 소스 표시기</translation>
     </message>
     <message>
+        <source>한/A always beside the mouse pointer while the pointer is local</source>
+        <translation>포인터가 로컬에 있을 때 마우스 포인터 옆에 한/A 상시 표시</translation>
+    </message>
+    <message>
+        <source>Shows the current input-source badge beside the local mouse pointer. It reads only the input-source identifier and pointer position; it does not read Accessibility focus or text, key input, caret contents, clipboard contents, application titles, URLs, selections, values, or screenshots.</source>
+        <translation>현재 입력 소스 배지를 로컬 마우스 포인터 옆에 표시. 입력 소스 식별자와 포인터 위치만 읽으며 Accessibility 초점·텍스트, 키 입력, 캐럿 내용, 클립보드, 앱 제목, URL, 선택 영역, 값, 화면 캡처는 읽지 않음.</translation>
+    </message>
+    <message>
         <source>한/A briefly beside the mouse pointer after input activity</source>
-        <translation>입력 활동 후 마우스 포인터 옆 한/A 짧게 표시</translation>
+        <translation type="vanished">입력 활동 후 마우스 포인터 옆 한/A 짧게 표시</translation>
     </message>
     <message>
         <source>Position from cursor</source>
@@ -2873,7 +2881,7 @@ Enabling this setting will disable the server config GUI.</source>
     </message>
     <message>
         <source>Display time</source>
-        <translation>표시 시간</translation>
+        <translation type="vanished">표시 시간</translation>
     </message>
     <message>
         <source>Badge opacity</source>
@@ -2893,7 +2901,7 @@ Enabling this setting will disable the server config GUI.</source>
     </message>
     <message>
         <source>Shown beside the mouse pointer only after a local input-source change, click, or key activity. Password and protected fields remain hidden; an unavailable Accessibility permission also hides it, but other unrecognized focus states do not block a valid event.</source>
-        <translation>로컬 입력 소스 변경, 클릭, 키 입력 뒤에만 마우스 포인터 옆에 표시. 비밀번호 및 보호 입력란, Accessibility 권한 불가 시 숨김. 그 외 인식되지 않은 초점은 유효한 입력 이벤트를 차단하지 않음.</translation>
+        <translation type="vanished">로컬 입력 소스 변경, 클릭, 키 입력 뒤에만 마우스 포인터 옆에 표시. 비밀번호 및 보호 입력란, Accessibility 권한 불가 시 숨김. 그 외 인식되지 않은 초점은 유효한 입력 이벤트를 차단하지 않음.</translation>
     </message>
     <message>
         <source>Background service</source>

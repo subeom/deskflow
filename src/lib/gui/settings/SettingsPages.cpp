@@ -1012,7 +1012,7 @@ SettingsPage *SettingsPages::buildKeyboard()
       tx(QT_TRANSLATE_NOOP("SettingsPages", "Input source indicator")),
       tx(QT_TRANSLATE_NOOP(
           "SettingsPages",
-          "한/A briefly beside the mouse pointer after input activity"
+          "한/A always beside the mouse pointer while the pointer is local"
       ))
   );
   indicatorEnabled->setObjectName(QStringLiteral("cbInputIndicator"));
@@ -1028,12 +1028,6 @@ SettingsPage *SettingsPages::buildKeyboard()
       }
   );
   indicatorPosition->setObjectName(QStringLiteral("comboInputIndicatorPosition"));
-  auto *indicatorDwell = addNumber(
-      page, m_binder, inputIndicator, Settings::Gui::InputIndicatorDwellMs,
-      tx(QT_TRANSLATE_NOOP("SettingsPages", "Display time")), 600, 3000
-  );
-  indicatorDwell->setSuffix(QStringLiteral(" ms"));
-  indicatorDwell->setObjectName(QStringLiteral("sbInputIndicatorDwell"));
   auto *indicatorOpacity = addNumber(
       page, m_binder, inputIndicator, Settings::Gui::InputIndicatorOpacityPercent,
       tx(QT_TRANSLATE_NOOP("SettingsPages", "Badge opacity")), 60, 100
@@ -1057,17 +1051,17 @@ SettingsPage *SettingsPages::buildKeyboard()
     indicatorNote->setText(
         QCoreApplication::translate(
             "SettingsPages",
-            "Shown beside the mouse pointer only after a local input-source change, click, or key activity. "
-            "Password and protected fields remain hidden; an unavailable Accessibility permission also hides it, "
-            "but other unrecognized focus states do not block a valid event."
+            "Shows the current input-source badge beside the local mouse pointer. "
+            "It reads only the input-source identifier and pointer position; it does not read Accessibility focus or "
+            "text, key input, caret contents, clipboard contents, application titles, URLs, selections, values, or "
+            "screenshots."
         )
     );
   });
   inputIndicator->addNote(indicatorNote);
-  m_binder->onRefresh([indicatorEnabled, indicatorPosition, indicatorDwell, indicatorOpacity, indicatorTone] {
+  m_binder->onRefresh([indicatorEnabled, indicatorPosition, indicatorOpacity, indicatorTone] {
     const bool enabled = Settings::isWritable() && indicatorEnabled->isChecked();
     indicatorPosition->setEnabled(enabled);
-    indicatorDwell->setEnabled(enabled);
     indicatorOpacity->setEnabled(enabled);
     indicatorTone->setEnabled(enabled);
   });
