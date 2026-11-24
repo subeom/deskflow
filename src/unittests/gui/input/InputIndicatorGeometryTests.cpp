@@ -154,18 +154,83 @@ void InputIndicatorGeometryTests::unknownOrInvalidGeometryHides()
 
 void InputIndicatorGeometryTests::compactPanelStyleUsesApprovedMetrics()
 {
-  const auto style = macInputIndicatorPanelStyle();
+  const auto cat =
+      macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat);
+  const auto dog =
+      macInputIndicatorPanelStyle(InputIndicatorCompanion::Dog);
+  const auto turtle =
+      macInputIndicatorPanelStyle(InputIndicatorCompanion::Turtle);
 
-  QCOMPARE(style.width, 24.0);
-  QCOMPARE(style.height, 20.0);
-  QCOMPARE(style.cursorGap, 6.0);
-  QCOMPARE(style.screenMargin, 6.0);
-  QCOMPARE(style.labelSize, 11.0);
-  QCOMPARE(style.cornerRadius, 7.0);
-  QCOMPARE(style.opacityPercent, 65);
+  QCOMPARE(cat.width, 28.0);
+  QCOMPARE(cat.height, 24.0);
+  QCOMPARE(dog.width, 28.0);
+  QCOMPARE(dog.height, 24.0);
+  QCOMPARE(turtle.width, 30.0);
+  QCOMPARE(turtle.height, 22.0);
+  QCOMPARE(cat.cursorGap, 6.0);
+  QCOMPARE(cat.screenMargin, 6.0);
+  QCOMPARE(cat.labelSize, 8.0);
+  QCOMPARE(cat.cornerRadius, 7.0);
+  QCOMPARE(cat.maximumLag, 8.0);
+  QCOMPARE(cat.maximumMotion, 8.0);
+  QCOMPARE(cat.transitionMilliseconds, 200.0);
+  QCOMPARE(cat.opacityPercent, 65);
 
   const MacInputIndicatorPanelOptions options;
   QCOMPARE(options.opacityPercent, 65);
+  QCOMPARE(options.companion, InputIndicatorCompanion::Cat);
+}
+
+void InputIndicatorGeometryTests::companionSettingDefaultsToCat()
+{
+  QCOMPARE(
+      inputIndicatorCompanionFromSetting(QStringLiteral("cat")),
+      InputIndicatorCompanion::Cat
+  );
+  QCOMPARE(
+      inputIndicatorCompanionFromSetting(QStringLiteral("dog")),
+      InputIndicatorCompanion::Dog
+  );
+  QCOMPARE(
+      inputIndicatorCompanionFromSetting(QStringLiteral("turtle")),
+      InputIndicatorCompanion::Turtle
+  );
+  QCOMPARE(
+      inputIndicatorCompanionFromSetting(QStringLiteral("other")),
+      InputIndicatorCompanion::Cat
+  );
+}
+
+void InputIndicatorGeometryTests::motionOffsetClampsAndRespectsReducedMotion()
+{
+  const auto shortMotion = inputIndicatorMotionOffset(
+      {.x = 10, .y = 10}, {.x = 13, .y = 10}, 8, false
+  );
+  QVERIFY(shortMotion);
+  QCOMPARE(shortMotion->x, 3.0);
+  QCOMPARE(shortMotion->y, 0.0);
+
+  const auto longMotion = inputIndicatorMotionOffset(
+      {.x = 0, .y = 0}, {.x = 100, .y = 0}, 8, false
+  );
+  QVERIFY(longMotion);
+  QCOMPARE(longMotion->x, 8.0);
+  QCOMPARE(longMotion->y, 0.0);
+
+  const auto reduced = inputIndicatorMotionOffset(
+      {.x = 0, .y = 0}, {.x = 100, .y = 100}, 8, true
+  );
+  QVERIFY(reduced);
+  QCOMPARE(reduced->x, 0.0);
+  QCOMPARE(reduced->y, 0.0);
+}
+
+void InputIndicatorGeometryTests::transitionProgressEasesAndRespectsReducedMotion()
+{
+  QCOMPARE(inputIndicatorTransitionProgress(0, 200, false), 0.0);
+  QCOMPARE(inputIndicatorTransitionProgress(100, 200, false), 0.5);
+  QCOMPARE(inputIndicatorTransitionProgress(200, 200, false), 1.0);
+  QCOMPARE(inputIndicatorTransitionProgress(100, 200, true), 1.0);
 }
 
 void InputIndicatorGeometryTests::followerCatchesUpWithoutOvershoot()

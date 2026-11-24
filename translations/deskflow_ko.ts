@@ -2848,12 +2848,36 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>입력 소스 표시기</translation>
     </message>
     <message>
+        <source>한/A companion follows the mouse pointer while the pointer is local</source>
+        <translation>포인터가 로컬에 있을 때 한/A 동반자가 마우스 포인터 따라가기</translation>
+    </message>
+    <message>
+        <source>Shows the current input-source tag on a small companion beside the local mouse pointer. It reads only the input-source identifier and pointer position; it does not read Accessibility focus or text, key input, caret contents, clipboard contents, application titles, URLs, selections, values, or screenshots.</source>
+        <translation>작은 동반자의 현재 입력 소스 태그를 로컬 마우스 포인터 옆에 표시. 입력 소스 식별자와 포인터 위치만 읽으며 Accessibility 초점·텍스트, 키 입력, 캐럿 내용, 클립보드, 앱 제목, URL, 선택 영역, 값, 화면 캡처는 읽지 않음.</translation>
+    </message>
+    <message>
         <source>한/A always beside the mouse pointer while the pointer is local</source>
-        <translation>포인터가 로컬에 있을 때 마우스 포인터 옆에 한/A 상시 표시</translation>
+        <translation type="vanished">포인터가 로컬에 있을 때 마우스 포인터 옆에 한/A 상시 표시</translation>
+    </message>
+    <message>
+        <source>Companion</source>
+        <translation>동반자</translation>
+    </message>
+    <message>
+        <source>Cat</source>
+        <translation>고양이</translation>
+    </message>
+    <message>
+        <source>Dog</source>
+        <translation>개</translation>
+    </message>
+    <message>
+        <source>Turtle</source>
+        <translation>거북이</translation>
     </message>
     <message>
         <source>Shows the current input-source badge beside the local mouse pointer. It reads only the input-source identifier and pointer position; it does not read Accessibility focus or text, key input, caret contents, clipboard contents, application titles, URLs, selections, values, or screenshots.</source>
-        <translation>현재 입력 소스 배지를 로컬 마우스 포인터 옆에 표시. 입력 소스 식별자와 포인터 위치만 읽으며 Accessibility 초점·텍스트, 키 입력, 캐럿 내용, 클립보드, 앱 제목, URL, 선택 영역, 값, 화면 캡처는 읽지 않음.</translation>
+        <translation type="vanished">현재 입력 소스 배지를 로컬 마우스 포인터 옆에 표시. 입력 소스 식별자와 포인터 위치만 읽으며 Accessibility 초점·텍스트, 키 입력, 캐럿 내용, 클립보드, 앱 제목, URL, 선택 영역, 값, 화면 캡처는 읽지 않음.</translation>
     </message>
     <message>
         <source>한/A briefly beside the mouse pointer after input activity</source>

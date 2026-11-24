@@ -49,4 +49,14 @@ std::optional<InputIndicatorPoint> followInputIndicator(
     double catchUpFactor, double maximumLag
 );
 
+std::optional<InputIndicatorPoint> inputIndicatorMotionOffset(
+    InputIndicatorPoint previousTarget, InputIndicatorPoint target,
+    double maximumLength, bool reducedMotion
+);
+
+double inputIndicatorTransitionProgress(
+    double elapsedMilliseconds, double durationMilliseconds,
+    bool reducedMotion
+);
+
 } // namespace deskflow::gui::input

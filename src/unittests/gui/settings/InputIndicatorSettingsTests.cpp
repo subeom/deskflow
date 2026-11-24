@@ -43,6 +43,7 @@ template <class T> T *must(const SettingsPages &pages, const char *name)
 void clearIndicatorSettings()
 {
   Settings::setValue(Settings::Gui::InputIndicatorEnabled);
+  Settings::setValue(Settings::Gui::InputIndicatorCompanion);
   Settings::setValue(Settings::Gui::InputIndicatorPosition);
   Settings::setValue(Settings::Gui::InputIndicatorDwellMs);
   Settings::setValue(Settings::Gui::InputIndicatorOpacityPercent);
@@ -67,12 +68,23 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
 {
   SettingsPages pages;
   auto *enabled = must<ToggleSwitch>(pages, "cbInputIndicator");
+  auto *companion = find<QComboBox>(
+      pages, "comboInputIndicatorCompanion"
+  );
   auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
   auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
   auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
   auto *note = must<InlineHint>(pages, "hintInputIndicatorSafety");
 
+  QVERIFY(companion);
   QVERIFY(!enabled->isChecked());
+  QCOMPARE(companion->currentData().toString(), QStringLiteral("cat"));
+  QVERIFY(companion->findData(QStringLiteral("dog")) >= 0);
+  QVERIFY(companion->findData(QStringLiteral("turtle")) >= 0);
+  QCOMPARE(
+      Settings::value(Settings::Gui::InputIndicatorCompanion).toString(),
+      QStringLiteral("cat")
+  );
   QCOMPARE(position->currentData().toString(), QStringLiteral("cursorBottomRight"));
   QCOMPARE(opacity->value(), 65);
   QCOMPARE(tone->currentData().toString(), QStringLiteral("automatic"));
@@ -86,7 +98,8 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
 
   for (const auto &key :
        {Settings::Gui::InputIndicatorEnabled, Settings::Gui::InputIndicatorPosition,
-        Settings::Gui::InputIndicatorDwellMs, Settings::Gui::InputIndicatorOpacityPercent,
+        Settings::Gui::InputIndicatorCompanion, Settings::Gui::InputIndicatorDwellMs,
+        Settings::Gui::InputIndicatorOpacityPercent,
         Settings::Gui::InputIndicatorTone}) {
     QCOMPARE(effectOf(key), std::optional<Effect>(Effect::Live));
   }
@@ -96,19 +109,34 @@ void InputIndicatorSettingsTests::dependencyControlsFollowTheToggle()
 {
   SettingsPages pages;
   auto *enabled = must<ToggleSwitch>(pages, "cbInputIndicator");
+  auto *companion = find<QComboBox>(
+      pages, "comboInputIndicatorCompanion"
+  );
   auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
   auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
   auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
 
+  QVERIFY(companion);
+  QVERIFY(!companion->isEnabled());
   QVERIFY(!position->isEnabled());
   QVERIFY(!opacity->isEnabled());
   QVERIFY(!tone->isEnabled());
 
   enabled->setChecked(true);
 
+  QVERIFY(companion->isEnabled());
   QVERIFY(position->isEnabled());
   QVERIFY(opacity->isEnabled());
   QVERIFY(tone->isEnabled());
+
+  const auto dog = companion->findData(QStringLiteral("dog"));
+  QVERIFY(dog >= 0);
+  companion->setCurrentIndex(dog);
+  Q_EMIT companion->activated(dog);
+  QCOMPARE(
+      Settings::value(Settings::Gui::InputIndicatorCompanion).toString(),
+      QStringLiteral("dog")
+  );
 }
 
 QTEST_MAIN(InputIndicatorSettingsTests)

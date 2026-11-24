@@ -113,4 +113,54 @@ std::optional<InputIndicatorPoint> followInputIndicator(
   };
 }
 
+std::optional<InputIndicatorPoint> inputIndicatorMotionOffset(
+    InputIndicatorPoint previousTarget, InputIndicatorPoint target,
+    double maximumLength, bool reducedMotion
+)
+{
+  if (!std::isfinite(previousTarget.x) ||
+      !std::isfinite(previousTarget.y) ||
+      !std::isfinite(target.x) || !std::isfinite(target.y) ||
+      !std::isfinite(maximumLength) || maximumLength < 0) {
+    return std::nullopt;
+  }
+  if (reducedMotion) {
+    return InputIndicatorPoint{};
+  }
+
+  const auto deltaX = target.x - previousTarget.x;
+  const auto deltaY = target.y - previousTarget.y;
+  const auto distance = std::hypot(deltaX, deltaY);
+  if (!std::isfinite(distance)) {
+    return std::nullopt;
+  }
+  if (distance <= maximumLength || distance == 0) {
+    return InputIndicatorPoint{.x = deltaX, .y = deltaY};
+  }
+  const auto scale = maximumLength / distance;
+  return InputIndicatorPoint{
+      .x = deltaX * scale,
+      .y = deltaY * scale,
+  };
+}
+
+double inputIndicatorTransitionProgress(
+    double elapsedMilliseconds, double durationMilliseconds,
+    bool reducedMotion
+)
+{
+  if (reducedMotion) {
+    return 1;
+  }
+  if (!std::isfinite(elapsedMilliseconds) ||
+      !std::isfinite(durationMilliseconds) ||
+      durationMilliseconds <= 0) {
+    return 1;
+  }
+  const auto progress = std::clamp(
+      elapsedMilliseconds / durationMilliseconds, 0.0, 1.0
+  );
+  return progress * progress * (3.0 - 2.0 * progress);
+}
+
 } // namespace deskflow::gui::input

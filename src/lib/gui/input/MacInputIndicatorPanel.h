@@ -9,9 +9,19 @@
 #include "InputIndicatorGeometry.h"
 #include "deskflow/ipc/InputIndicatorIpc.h"
 
+#include <QString>
+
+#include <functional>
 #include <memory>
 
 namespace deskflow::gui::input {
+
+enum class InputIndicatorCompanion
+{
+  Cat,
+  Dog,
+  Turtle
+};
 
 enum class InputIndicatorTone
 {
@@ -28,28 +38,58 @@ struct MacInputIndicatorPanelStyle
   double screenMargin = 0;
   double labelSize = 0;
   double cornerRadius = 0;
+  double maximumLag = 0;
+  double maximumMotion = 0;
+  double transitionMilliseconds = 0;
   int opacityPercent = 0;
 };
 
-constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle()
+constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
+    InputIndicatorCompanion companion = InputIndicatorCompanion::Cat
+)
 {
+  const bool turtle =
+      companion == InputIndicatorCompanion::Turtle;
   return {
-      .width = 24,
-      .height = 20,
+      .width = turtle ? 30.0 : 28.0,
+      .height = turtle ? 22.0 : 24.0,
       .cursorGap = 6,
       .screenMargin = 6,
-      .labelSize = 11,
+      .labelSize = 8,
       .cornerRadius = 7,
+      .maximumLag = 8,
+      .maximumMotion = 8,
+      .transitionMilliseconds = 200,
       .opacityPercent = 65,
   };
+}
+
+inline InputIndicatorCompanion inputIndicatorCompanionFromSetting(
+    const QString &value
+)
+{
+  if (value == QStringLiteral("dog")) {
+    return InputIndicatorCompanion::Dog;
+  }
+  if (value == QStringLiteral("turtle")) {
+    return InputIndicatorCompanion::Turtle;
+  }
+  return InputIndicatorCompanion::Cat;
 }
 
 struct MacInputIndicatorPanelOptions
 {
   deskflow::input::InputIndicatorSource source = deskflow::input::InputIndicatorSource::Unknown;
+  InputIndicatorCompanion companion = InputIndicatorCompanion::Cat;
   InputIndicatorPosition position = InputIndicatorPosition::CursorBottomRight;
   int opacityPercent = macInputIndicatorPanelStyle().opacityPercent;
   InputIndicatorTone tone = InputIndicatorTone::Automatic;
+};
+
+struct MacInputIndicatorPanelMoveResult
+{
+  bool visible = false;
+  bool animating = false;
 };
 
 constexpr bool macInputIndicatorPresentationNeeded(
@@ -73,14 +113,18 @@ void requestMacInputIndicatorPanelPresentation(Dispatch dispatch)
 class MacInputIndicatorPanel
 {
 public:
-  MacInputIndicatorPanel();
+  explicit MacInputIndicatorPanel(
+      std::function<void()> presentationInvalidated = {}
+  );
   ~MacInputIndicatorPanel();
 
   MacInputIndicatorPanel(const MacInputIndicatorPanel &) = delete;
   MacInputIndicatorPanel &operator=(const MacInputIndicatorPanel &) = delete;
 
   bool show(const MacInputIndicatorPanelOptions &options);
-  bool move(InputIndicatorPosition position);
+  MacInputIndicatorPanelMoveResult move(
+      InputIndicatorPosition position
+  );
   void hide();
 
 private:

@@ -8,6 +8,7 @@
 
 #include "InputIndicatorPolicy.h"
 #include "MacInputIndicatorPanel.h"
+#include "MacInputPointerMonitor.h"
 #include "deskflow/ipc/InputIndicatorIpc.h"
 #include "platform/OSXInputSource.h"
 
@@ -34,8 +35,13 @@ public:
     std::function<bool(
         const MacInputIndicatorPanelOptions &options
     )> panelShow;
-    std::function<bool(InputIndicatorPosition)> panelMove;
+    std::function<MacInputIndicatorPanelMoveResult(
+        InputIndicatorPosition
+    )> panelMove;
     std::function<void()> panelHide;
+    std::function<MacInputPointerMonitorHandle(
+        std::function<void()>
+    )> pointerMonitorStart;
     std::function<void(InputIndicatorVisibilityReason)> diagnosticEmitter;
   };
 
@@ -69,6 +75,7 @@ private:
   void createMonitors();
   void destroyMonitors();
   void inputSourceChanged();
+  void pointerTargetChanged();
   void refreshVisibility(bool reconfigure);
   void hide();
   void reportHiddenReason(InputIndicatorVisibilityReason reason);
@@ -78,21 +85,31 @@ private:
   bool m_isOnComputer = true;
   bool m_panelConfigured = false;
   bool m_panelVisible = false;
+  bool m_pointerMonitorComplete = false;
+  InputIndicatorCompanion m_companion =
+      InputIndicatorCompanion::Cat;
   InputIndicatorPosition m_position = InputIndicatorPosition::CursorBottomRight;
   int m_opacityPercent = macInputIndicatorPanelStyle().opacityPercent;
   InputIndicatorTone m_tone = InputIndicatorTone::Automatic;
   deskflow::platform::OSXInputSourceSnapshot m_sourceSnapshot;
   std::unique_ptr<deskflow::platform::OSXInputSourceMonitor> m_sourceMonitor;
   std::unique_ptr<MacInputIndicatorPanel> m_panel;
-  QTimer m_pointerTimer;
+  QTimer m_renderTimer;
+  QTimer m_fallbackTimer;
   InputIndicatorDiagnosticThrottle m_diagnosticThrottle;
   std::function<deskflow::platform::OSXInputSourceSnapshot()>
       m_inputSource;
   std::function<bool(
       const MacInputIndicatorPanelOptions &options
   )> m_panelShow;
-  std::function<bool(InputIndicatorPosition)> m_panelMove;
+  std::function<MacInputIndicatorPanelMoveResult(
+      InputIndicatorPosition
+  )> m_panelMove;
   std::function<void()> m_panelHide;
+  std::function<MacInputPointerMonitorHandle(
+      std::function<void()>
+  )> m_pointerMonitorStart;
+  std::function<void()> m_pointerMonitorStop;
   std::function<void(InputIndicatorVisibilityReason)>
       m_diagnosticEmitter;
 

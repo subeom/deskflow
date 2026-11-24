@@ -235,10 +235,14 @@ void TranslationFileTests::file_hasTheTextsThatTheRedesignAdded()
       {QStringLiteral("SettingsPages"), QStringLiteral("Text size")},
       {QStringLiteral("SettingsPages"), QStringLiteral("Input source indicator")},
       {QStringLiteral("SettingsPages"),
-       QStringLiteral("한/A always beside the mouse pointer while the pointer is local")},
+       QStringLiteral("한/A companion follows the mouse pointer while the pointer is local")},
+      {QStringLiteral("SettingsPages"), QStringLiteral("Companion")},
+      {QStringLiteral("SettingsPages"), QStringLiteral("Cat")},
+      {QStringLiteral("SettingsPages"), QStringLiteral("Dog")},
+      {QStringLiteral("SettingsPages"), QStringLiteral("Turtle")},
       {QStringLiteral("SettingsPages"), QStringLiteral("Position from cursor")},
       {QStringLiteral("SettingsPages"),
-       QStringLiteral("Shows the current input-source badge beside the local mouse pointer. "
+       QStringLiteral("Shows the current input-source tag on a small companion beside the local mouse pointer. "
                       "It reads only the input-source identifier and pointer position; it does not read Accessibility "
                       "focus or text, key input, caret contents, clipboard contents, application titles, URLs, "
                       "selections, values, or screenshots.")},

@@ -40,9 +40,13 @@ private Q_SLOTS:
   void persistentPointerTicksMoveWithoutReconfigure();
   void persistentDuplicateSourceDoesNotReconfigure();
   void persistentSourceChangesUpdateLabel();
+  void persistentCompanionChoiceUpdatesPanel();
   void persistentFeatureOffStopsAndHides();
   void persistentGeometryOrPanelFailureHides();
   void persistentActivityDoesNotGateVisibility();
+  void completePointerMonitorUsesEventRendering();
+  void incompletePointerMonitorKeepsFallbackTimer();
+  void pointerEventsCoalesceWhileRenderTimerIsActive();
 #endif
   void visibilityDecisionReportsHideReason();
   void diagnosticThrottleLimitsToOnePerFiveSeconds();

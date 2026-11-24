@@ -366,6 +366,9 @@ QVariant Settings::defaultValue(const QString &key)
   if (key == Gui::InputIndicatorPosition)
     return QStringLiteral("cursorBottomRight");
 
+  if (key == Gui::InputIndicatorCompanion)
+    return QStringLiteral("cat");
+
   if (key == Gui::InputIndicatorDwellMs)
     return 1500;
 

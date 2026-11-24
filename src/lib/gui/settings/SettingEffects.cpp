@@ -36,6 +36,7 @@ const QHash<QString, Effect> &table()
     // the size of text follows at once (TextSize listens to the setting)
     live(S::Gui::TextSize);
     live(S::Gui::InputIndicatorEnabled);
+    live(S::Gui::InputIndicatorCompanion);
     live(S::Gui::InputIndicatorPosition);
     live(S::Gui::InputIndicatorDwellMs);
     live(S::Gui::InputIndicatorOpacityPercent);

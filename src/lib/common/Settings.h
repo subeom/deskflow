@@ -130,6 +130,7 @@ public:
     inline static const auto ShowVersionInTitle = QStringLiteral("gui/showVersionInTitle");
     inline static const auto IgnoreMissingKeyboardLayouts = QStringLiteral("gui/ignoreMissingKeyboardLayouts");
     inline static const auto InputIndicatorEnabled = QStringLiteral("gui/inputIndicatorEnabled");
+    inline static const auto InputIndicatorCompanion = QStringLiteral("gui/inputIndicatorCompanion");
     inline static const auto InputIndicatorPosition = QStringLiteral("gui/inputIndicatorPosition");
     inline static const auto InputIndicatorDwellMs = QStringLiteral("gui/inputIndicatorDwellMs");
     inline static const auto InputIndicatorOpacityPercent = QStringLiteral("gui/inputIndicatorOpacityPercent");
@@ -418,6 +419,7 @@ private:
     , Gui::ShowVersionInTitle
     , Gui::IgnoreMissingKeyboardLayouts
     , Gui::InputIndicatorEnabled
+    , Gui::InputIndicatorCompanion
     , Gui::InputIndicatorPosition
     , Gui::InputIndicatorDwellMs
     , Gui::InputIndicatorOpacityPercent

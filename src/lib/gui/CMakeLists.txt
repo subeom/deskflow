@@ -18,6 +18,8 @@ if(APPLE)
     input/MacInputIndicatorController.mm
     input/MacInputIndicatorPanel.h
     input/MacInputIndicatorPanel.mm
+    input/MacInputPointerMonitor.h
+    input/MacInputPointerMonitor.mm
     MacUpdateInstaller.cpp
     MacUpdateInstaller.h
     MacUpdateVerifier.cpp

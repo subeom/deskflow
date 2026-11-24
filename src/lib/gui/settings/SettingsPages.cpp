@@ -1012,10 +1012,23 @@ SettingsPage *SettingsPages::buildKeyboard()
       tx(QT_TRANSLATE_NOOP("SettingsPages", "Input source indicator")),
       tx(QT_TRANSLATE_NOOP(
           "SettingsPages",
-          "한/A always beside the mouse pointer while the pointer is local"
+          "한/A companion follows the mouse pointer while the pointer is local"
       ))
   );
   indicatorEnabled->setObjectName(QStringLiteral("cbInputIndicator"));
+  auto *indicatorCompanion = addChoice(
+      page, m_binder, inputIndicator, Settings::Gui::InputIndicatorCompanion,
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Companion")),
+      {},
+      {
+          {tx(QT_TRANSLATE_NOOP("SettingsPages", "Cat")), QStringLiteral("cat")},
+          {tx(QT_TRANSLATE_NOOP("SettingsPages", "Dog")), QStringLiteral("dog")},
+          {tx(QT_TRANSLATE_NOOP("SettingsPages", "Turtle")), QStringLiteral("turtle")},
+      }
+  );
+  indicatorCompanion->setObjectName(
+      QStringLiteral("comboInputIndicatorCompanion")
+  );
   auto *indicatorPosition = addChoice(
       page, m_binder, inputIndicator, Settings::Gui::InputIndicatorPosition,
       tx(QT_TRANSLATE_NOOP("SettingsPages", "Position from cursor")),
@@ -1051,7 +1064,7 @@ SettingsPage *SettingsPages::buildKeyboard()
     indicatorNote->setText(
         QCoreApplication::translate(
             "SettingsPages",
-            "Shows the current input-source badge beside the local mouse pointer. "
+            "Shows the current input-source tag on a small companion beside the local mouse pointer. "
             "It reads only the input-source identifier and pointer position; it does not read Accessibility focus or "
             "text, key input, caret contents, clipboard contents, application titles, URLs, selections, values, or "
             "screenshots."
@@ -1059,8 +1072,9 @@ SettingsPage *SettingsPages::buildKeyboard()
     );
   });
   inputIndicator->addNote(indicatorNote);
-  m_binder->onRefresh([indicatorEnabled, indicatorPosition, indicatorOpacity, indicatorTone] {
+  m_binder->onRefresh([indicatorEnabled, indicatorCompanion, indicatorPosition, indicatorOpacity, indicatorTone] {
     const bool enabled = Settings::isWritable() && indicatorEnabled->isChecked();
+    indicatorCompanion->setEnabled(enabled);
     indicatorPosition->setEnabled(enabled);
     indicatorOpacity->setEnabled(enabled);
     indicatorTone->setEnabled(enabled);

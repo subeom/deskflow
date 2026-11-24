@@ -59,6 +59,7 @@ struct MacInputIndicatorControllerTestAccess
   {
     controller.m_effectiveEnabled = true;
     controller.m_isOnComputer = true;
+    controller.m_pointerMonitorComplete = true;
     controller.m_sourceSnapshot = {
         .identifier = "com.apple.keylayout.ABC",
         .source = deskflow::input::InputIndicatorSource::LatinABC
@@ -75,7 +76,8 @@ struct MacInputIndicatorControllerTestAccess
       const MacInputIndicatorController &controller
   )
   {
-    return controller.m_pointerTimer.isActive();
+    return controller.m_renderTimer.isActive() ||
+           controller.m_fallbackTimer.isActive();
   }
 };
 #endif
@@ -1232,7 +1234,10 @@ void ServerConfigDialogTests::indicatorController_duringAccessibleDialogStaysInd
     dependencies.panelMove =
         [&moves](deskflow::gui::input::InputIndicatorPosition) {
           ++moves;
-          return true;
+          return deskflow::gui::input::
+              MacInputIndicatorPanelMoveResult{
+                  .visible = true
+              };
         };
     dependencies.panelHide = [&hides] { ++hides; };
     MacInputIndicatorController controller(nullptr, dependencies);
@@ -1249,7 +1254,7 @@ void ServerConfigDialogTests::indicatorController_duringAccessibleDialogStaysInd
       controller.inputIndicatorStateInvalidated();
       persistentStateUnchanged =
           presentations == 1 && moves > 0 && hides == 0 &&
-          MacInputIndicatorControllerTestAccess::pointerTimerActive(
+          !MacInputIndicatorControllerTestAccess::pointerTimerActive(
               controller
           );
     });
