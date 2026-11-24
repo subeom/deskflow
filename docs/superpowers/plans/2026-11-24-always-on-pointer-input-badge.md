@@ -2172,16 +2172,28 @@ Define a pure render color model with body, edge, `A`, and `한` RGB values.
 Assert:
 
 ```text
-body remains #F2F3F5-class off-white
-body/edge are source-independent
-A is dark cool blue and 한 is deep coral/rose
+body remains #F2F3F5-class off-white and source tint is <=8%
+A is muted steel/slate blue and 한 is dusty mauve/rose
 Automatic/Light/Dark glyph/body contrast >= 4.5
 body alpha == configured alpha
 glyph alpha == body + <=10 points
 languageMirrorsWithSilhouette == false
 ```
 
-- [ ] **Step 5: Capture RED**
+- [ ] **Step 5: Add halo-wave tests**
+
+Define a fixed-cap pulse helper and deterministic frame model. Assert:
+
+```text
+starts within 50 ms are rejected/coalesced
+at most 3 newest waves remain
+alternating A/한 sources remain ordered
+280 ms frames scale <=1.25 and alpha is bounded
+alpha blooms then decays with no abrupt end
+Reduced Motion produces no frame
+```
+
+- [ ] **Step 6: Capture RED**
 
 Build `InputIndicatorGeometryTests`. Expected failure is limited to the new
 distance inputs, Cat pose API, straightness input, language-mirror flag, and
@@ -2216,10 +2228,20 @@ motion; the language glyph remains upright at stable bounds.
 
 - [ ] **Step 4: Apply off-white body and source glyph colors**
 
-Remove whole-body blue/coral source tinting. Fill Cat, Dog, and Turtle from the
-neutral body color, stroke each silhouette with the subtle edge, and choose
-source-specific `A`/`한` glyph color for the 200 ms crossfade. Keep body opacity
-at the configured value and glyph alpha at the existing detail bound.
+Remove whole-body blue/coral source tinting. Fill Cat, Dog, and Turtle with
+only an <=8% source blend on the neutral body, stroke each silhouette with the
+subtle edge, and choose source-specific `A`/`한` glyph color for the 200 ms
+crossfade. Keep body opacity at the configured value and glyph alpha at the
+existing detail bound.
+
+- [ ] **Step 5: Add ambient and pulsed Cat halo**
+
+Draw a low-alpha source-colored ambient halo behind the Cat body. On exact
+source change, accept at most one wave per 50 ms, preserve only the three newest
+waves, and render each behind the body for 280 ms with eased expansion, bloom,
+and decay. Rapid latest requests remain pending rather than accumulating
+timers. Reduced Motion and hidden states clear/bypass the halo and never extend
+the timer.
 
 ### Task 35: Verify and Self-Review
 
@@ -2237,8 +2259,8 @@ Build all targets and run 157 eligible CTests, excluding only
 - [ ] **Step 3: Inspect visual invariants**
 
 Confirm no native cursor API, new monitor, coordinate IPC/logging, tile, face
-primitive, glyph mirror, or body source tint exists. Confirm Run does not change
-the follower contract and every pose remains inside the panel.
+primitive, glyph mirror, or body source tint above 8% exists. Confirm Run does
+not change the follower contract and every pose remains inside the panel.
 
 ### Task 36: Commit, Package, and Audit
 

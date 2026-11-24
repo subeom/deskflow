@@ -41,14 +41,19 @@ non-activating `NSPanel` near it:
   (default 65%, clamped to 60-100%). The body is a neutral translucent
   off-white close to the macOS cursor (`#F2F3F5`), with a subtle dark-neutral
   edge on light backgrounds and a strong silhouette/body boundary on dark
-  backgrounds. The language color moves to the glyph: `A` uses dark cool blue
-  and `한` uses deep coral/rose. The glyph remains at most 10 percentage
-  points above body opacity and each Light/Dark tone variant maintains at
-  least 4.5:1 contrast against the off-white body. There is no solid sticker,
-  tile, large shadow, or layout overlay.
-- The body never changes between blue and coral by input source. Source changes
-  crossfade the `A`/`한` glyph and its source color over 160-220 ms; a subtle
-  <=10% source transition still may affect body/ear pose.
+  backgrounds. The language color moves to the glyph: `A` uses muted steel/
+  slate blue and `한` uses dusty mauve/rose. The glyph remains at most 10
+  percentage points above body opacity and each Light/Dark tone variant
+  maintains at least 4.5:1 contrast against the off-white body. There is no
+  solid sticker, tile, large shadow, or layout overlay.
+- The body remains fundamentally off-white: source tint contributes no more
+  than 8% to the body blend. The same muted source palette powers a low-alpha
+  ambient halo around the Cat. An exact ABC/Korean transition emits one soft
+  280 ms halo pulse with a <=1.25x ease-out expansion, bloom then decay, and no
+  hard zoom. Rapid starts are staggered to at least 50 ms and retain at most
+  the three newest waves, so cool/warm afterimages merge like a restrained
+  wave rather than strobe. The halo is drawn behind the body and never covers
+  the glyph. Source label and glyph crossfade remains 160-220 ms.
 
 This is preferable to replacing the native cursor image because cursor image
 replacement loses application-specific cursor shapes and would require fragile
@@ -164,8 +169,9 @@ that direction through stationary frames; only the silhouette mirrors, so
 seated Cat and fixed curled tail, with no gait phase.
 
 `isOSXReduceMotion()` disables idle tail, walk/run pose, follower easing, and
-source morphing: the stable companion moves directly to the target and starts
-no animation timer.
+source morphing: the stable companion moves directly to the target, uses the
+neutral seated Cat, and starts no animation timer. Reduced Motion draws no
+ambient halo, pulse, afterimage, or trail.
 
 ## Retained and Disconnected Work
 
@@ -226,9 +232,11 @@ Focused tests cover:
 - the language glyph bounds remain inside every body pose, and its render plan
   explicitly never mirrors with the silhouette;
 - two-segment Cat tail continuity, phase lag, root anchor, and max-bend bounds;
-- neutral off-white body/edge values independent of input source, dark cool
-  blue for `A`, deep coral/rose for `한`, and at least 4.5:1 glyph/body
-  contrast in Automatic/Light/Dark tones;
+- neutral off-white body/edge values with at most an 8% source blend, muted
+  steel/slate blue for `A`, dusty mauve/rose for `한`, and at least 4.5:1
+  glyph/body contrast in Automatic/Light/Dark tones;
+- deterministic halo frame scale/alpha bounds, <=50 ms start cadence, at most
+  three alternating source waves, smooth decay, and Reduced Motion bypass;
 - every body part uses clamped configured body alpha and glyph alpha stays
   within 10 percentage points;
 - companion setting persistence and Cat default;
@@ -237,7 +245,8 @@ Focused tests cover:
 - 4-8 pt motion pose clamp and Reduced Motion direct-to-target behavior;
 - deterministic Idle/Walk/Run thresholds and deterministic phase wrap;
 - hidden and Reduced Motion states have no render/fallback timer;
-- 200 ms source glyph-color/label transition without whole-body source tint;
+- 200 ms source glyph-color/label transition, at most 8% body tint, and a
+  capped soft halo pulse;
 - duplicate exact TIS snapshot notifications do not reconfigure the panel;
 - ABC and Korean source changes update the label;
 - feature off hides and stops all indicator monitors/timers;
