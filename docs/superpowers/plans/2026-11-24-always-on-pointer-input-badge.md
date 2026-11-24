@@ -1823,3 +1823,140 @@ Do not install or stable-sign.
 Expected: clean ancestry from
 `28cd0c13e6db15bc652e627e295250e750d31f2f`, no tag/push/merge/release/PR,
 and no source change outside the render model.
+
+---
+
+## Revision 6: Eye-Free In-Body Cat Silhouette
+
+### Task 26: Record Silhouette Render-Model RED
+
+**Files:**
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+
+- [ ] **Step 1: Add a pure render plan**
+
+Define:
+
+```cpp
+enum class InputIndicatorRenderPrimitive
+{
+  Tile,
+  SilhouetteUnion,
+  LanguageGlyph
+};
+
+struct MacInputIndicatorRenderModel
+{
+  InputIndicatorCompanion companion;
+  InputIndicatorRenderPrimitive silhouette =
+      InputIndicatorRenderPrimitive::SilhouetteUnion;
+  bool usesEyePrimitives = false;
+  double tileWidth = 24;
+  double tileHeight = 24;
+  double totalWidth = 30;
+  double totalHeight = 28;
+  InputIndicatorRect languageBounds;
+};
+
+constexpr MacInputIndicatorRenderModel
+macInputIndicatorRenderModel(InputIndicatorCompanion companion);
+```
+
+- [ ] **Step 2: Assert the silhouette contract**
+
+For Cat, Dog, and Turtle assert:
+
+```text
+usesEyePrimitives == false
+silhouette == SilhouetteUnion
+tileWidth/height == 24
+totalWidth <= 30, totalHeight <= 28
+languageBounds stays wholly inside the companion body/shell bounds
+```
+
+Cat's bounds are the torso under the head; Dog's bounds are centered in the
+body; Turtle's are centered in the shell. The external-corner badge concept is
+not valid.
+
+- [ ] **Step 3: Capture RED**
+
+Run `InputIndicatorGeometryTests`. Expected: compile failure because
+`MacInputIndicatorRenderModel` and
+`macInputIndicatorRenderModel` do not exist.
+
+### Task 27: Replace Faces with Unified Silhouettes
+
+**Files:**
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+
+- [ ] **Step 1: Implement the render model**
+
+Return the one render plan per companion. Cat has `SilhouetteUnion`; Dog and
+Turtle use the same primitive with their own bounds. The plan never contains
+an eye primitive.
+
+- [ ] **Step 2: Replace Cat drawing**
+
+Build one filled Cat path from a compact sitting/walking profile:
+
+- rounded torso;
+- two pointed ears integrated into the upper silhouette;
+- curved tail joined to the body side;
+- lower paw notches that follow walk/run phase.
+
+Do not append or draw eye, pupil, mouth, or whisker paths. Use a dark/cool
+source-tinted silhouette alpha at detail opacity on a subtle translucent tile.
+
+- [ ] **Step 3: Replace Dog and Turtle drawing**
+
+Dog uses one floppy-ear/body/tail silhouette. Turtle uses one shell/head/tail
+silhouette. Both receive the same alpha and motion model but remain visually
+distinct at <=30 x 28.
+
+- [ ] **Step 4: Move the language glyph inside**
+
+Remove the separate lower/corner tag background. Draw `A`/`한` at the
+`languageBounds` returned by the render model, inside the torso/shell. Keep a
+small high-contrast glyph/optional translucent underlay without facial
+elements.
+
+- [ ] **Step 5: Keep natural motion**
+
+Idle uses only tail sway and no face change. Walk uses alternating paw/foot
+contours, <=1-2 pt body displacement, and <=5 degree lean. Run remains
+velocity-gated, with <=0.9 pt bob and <=8%/8 degree deformation. Reduced Motion
+draws the stable silhouette directly.
+
+- [ ] **Step 6: Verify focused GREEN**
+
+Run the existing nine focused targets. Expected: 9/9 pass; geometry proves no
+eye primitive, one silhouette primitive, in-body glyph bounds, tile/total
+size, and alpha bounds.
+
+### Task 28: Commit, Full Gate, and Package
+
+- [ ] **Step 1: Commit docs and implementation separately**
+
+Preserve the mandatory trailer; do not amend the prior transparency or
+locomotion commits.
+
+- [ ] **Step 2: Build and run the full Release gate**
+
+Build 158 targets and run 157 eligible CTests with only the existing two
+exclusions.
+
+- [ ] **Step 3: Package**
+
+Build a clean `build/pointer-badge-silhouette/deskflow-2.0.9.0-macos-arm64.dmg`,
+record metadata, SHA-256, signature/CDHash/tool state, and do not install or
+stable-sign.
+
+- [ ] **Step 4: Verify state**
+
+Expected: direct ancestry from
+`396258834879ffc0f0419f47411489cbd72edef5`, clean branch, no tag/push/merge/
+release/PR, and actual silhouette cuteness remains a visual-only live check.

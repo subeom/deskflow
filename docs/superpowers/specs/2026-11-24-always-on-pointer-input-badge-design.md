@@ -2,15 +2,15 @@
 
 **Date:** 2026-11-24  
 **Status:** Approved for implementation  
-**Revision base:** `4f508481f3200dce827939197040cd0642e19349`
+**Revision base:** `396258834879ffc0f0419f47411489cbd72edef5`
 
 ## Goal
 
 Replace the transient macOS input-source indicator with a persistent original
 companion attached to the native mouse pointer. Cat is the default companion;
 Dog and Turtle are alternatives. Every companion carries a tiny `A` or `한`
-tag for the exact current macOS input-source ID while Deskflow believes the
-pointer is local.
+inside its torso or shell for the exact current macOS input-source ID while
+Deskflow believes the pointer is local.
 
 "Caret" means the mouse pointer location here. Decorating an arbitrary
 application's text caret is intentionally out of scope.
@@ -26,16 +26,20 @@ non-activating `NSPanel` near it:
 - No `NSCursor`, cursor image, cursor hide/show, or cursor warp API is used.
 - The native arrow, I-beam, resize, and other cursor shape remains the
   operating system's responsibility.
-- Cat and Dog are approximately 28 x 24 pt; Turtle is at most 30 x 22 pt.
-  Each uses an 8 pt semibold language tag, 6 pt pointer gap, and 6 pt screen
-  margin.
-- Cat uses a rounded head/body, triangular ears, and curled tail. Dog uses
-  floppy ears and a tail. Turtle uses an oval shell and tiny head/tail. All are
-  original in-code vector drawings with no stock asset or external dependency.
+- The companion uses a subtle 24 x 24 pt rounded tile when needed for contrast;
+  the full visual stays inside 30 x 28 pt. It keeps a 6 pt pointer gap and
+  6 pt screen margin.
+- Cat, Dog, and Turtle are unified filled silhouette paths, not illustrated
+  faces. Cat has a compact profile, pointed ears, and curled tail; Dog has
+  floppy ears and a tail; Turtle has a shell and tiny head/tail. All are
+  original in-code drawings with no stock asset or external dependency.
+- The 8 pt semibold `A`/`한` is a negative/highlight glyph inside the torso or
+  shell. There are no eye dots, pupils, mouth, whiskers, face marks, or
+  external corner language badge.
 - Bodies, ears, shell, tail, and paws use the configured opacity directly
   (default 65%, clamped to 60-100%). The 1 pt highlight and `A`/`한` glyph may
-  be at most 10 percentage points above body opacity; tag background stays at
-  body opacity. There is no solid sticker, large shadow, or layout overlay.
+  be at most 10 percentage points above body opacity; the tile stays at body
+  opacity. There is no solid sticker, large shadow, or layout overlay.
   Explicit light and dark tones remain available.
 - English uses a cool tint and Korean uses a warm tint. Source changes morph the
   tint, a subtle <=10% body/ear pose, and the label over 160-220 ms.
@@ -125,11 +129,12 @@ The panel has no pulse, blink, zoom, spring-back, slide-in, or occluding
 animation. At screen edges, the geometry helper first clamps the exact target
 to a valid screen, then the follower approaches that valid target.
 
-Pet motion derives only from successive local pointer positions. A speed pose
-deforms the ears/tail/body by 4-8 pt, then eases to neutral when movement
-settles. Idle tail sway, walk/run phase, and body bob are bounded inside the
-companion and never change the target position. Source transition uses an
-eased 200 ms tint/pose/label crossfade.
+Pet motion derives only from successive local pointer positions. Idle has a
+gentle tail sway with an otherwise steady silhouette. Walk begins with a soft
+one- or two-point waddle, alternating paws, and a small head/body lean. Only
+genuinely fast motion enters Run; even then body bob stays <=0.9 pt and
+lean/stretch stays <=8%. The target never follows the pose. Source transition
+uses an eased 200 ms tint/label crossfade.
 
 `isOSXReduceMotion()` disables idle tail, walk/run pose, follower easing, and
 source morphing: the stable companion moves directly to the target and starts
@@ -181,6 +186,8 @@ Focused tests cover:
 - unknown source hides and cannot leave stale `A` or `한`;
 - repeated pointer ticks move only, without source redraw;
 - compact Cat/Dog/Turtle metrics and low-emphasis automatic opacity;
+- a silhouette-union render plan with no eye primitives;
+- the language glyph bounds remain inside the body/shell;
 - every body part uses clamped configured body alpha and glyph/outline alpha
   stays within 10 percentage points;
 - companion setting persistence and Cat default;
