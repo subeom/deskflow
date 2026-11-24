@@ -11,8 +11,11 @@
 
 #include <QString>
 
+#include <algorithm>
+#include <cmath>
 #include <functional>
 #include <memory>
+#include <vector>
 
 namespace deskflow::gui::input {
 
@@ -40,6 +43,7 @@ struct MacInputIndicatorRenderModel
   bool usesEyePrimitives = false;
   bool usesSideProfile = false;
   bool mirrorsWithMotion = false;
+  bool languageMirrorsWithSilhouette = false;
   double totalWidth = 30;
   double totalHeight = 28;
   InputIndicatorRect silhouetteBounds;
@@ -56,6 +60,247 @@ enum class InputIndicatorTone
   Light,
   Dark
 };
+
+struct MacInputIndicatorRgb
+{
+  double red = 0;
+  double green = 0;
+  double blue = 0;
+};
+
+struct MacInputIndicatorColorModel
+{
+  MacInputIndicatorRgb body;
+  MacInputIndicatorRgb edge;
+  MacInputIndicatorRgb latinGlyph;
+  MacInputIndicatorRgb koreanGlyph;
+};
+
+constexpr MacInputIndicatorRgb macInputIndicatorBlendColor(
+    MacInputIndicatorRgb from,
+    MacInputIndicatorRgb to,
+    double fraction
+)
+{
+  fraction = std::clamp(fraction, 0.0, 1.0);
+  return {
+      .red = from.red + (to.red - from.red) * fraction,
+      .green = from.green + (to.green - from.green) * fraction,
+      .blue = from.blue + (to.blue - from.blue) * fraction,
+  };
+}
+
+constexpr MacInputIndicatorColorModel macInputIndicatorColorModel(
+    InputIndicatorTone tone
+)
+{
+  constexpr MacInputIndicatorRgb body{
+      .red = 242.0 / 255.0,
+      .green = 243.0 / 255.0,
+      .blue = 245.0 / 255.0,
+  };
+  constexpr MacInputIndicatorRgb edge{
+      .red = 68.0 / 255.0,
+      .green = 80.0 / 255.0,
+      .blue = 95.0 / 255.0,
+  };
+  switch (tone) {
+  case InputIndicatorTone::Light:
+    return {
+        .body = body,
+        .edge = edge,
+        .latinGlyph = {
+            .red = 55.0 / 255.0,
+            .green = 78.0 / 255.0,
+            .blue = 105.0 / 255.0,
+        },
+        .koreanGlyph = {
+            .red = 122.0 / 255.0,
+            .green = 62.0 / 255.0,
+            .blue = 82.0 / 255.0,
+        },
+    };
+  case InputIndicatorTone::Dark:
+    return {
+        .body = body,
+        .edge = edge,
+        .latinGlyph = {
+            .red = 48.0 / 255.0,
+            .green = 66.0 / 255.0,
+            .blue = 90.0 / 255.0,
+        },
+        .koreanGlyph = {
+            .red = 102.0 / 255.0,
+            .green = 49.0 / 255.0,
+            .blue = 68.0 / 255.0,
+        },
+    };
+  case InputIndicatorTone::Automatic:
+    return {
+        .body = body,
+        .edge = edge,
+        .latinGlyph = {
+            .red = 74.0 / 255.0,
+            .green = 96.0 / 255.0,
+            .blue = 125.0 / 255.0,
+        },
+        .koreanGlyph = {
+            .red = 136.0 / 255.0,
+            .green = 78.0 / 255.0,
+            .blue = 98.0 / 255.0,
+        },
+    };
+  }
+}
+
+constexpr MacInputIndicatorRgb macInputIndicatorGlyphColor(
+    deskflow::input::InputIndicatorSource source,
+    InputIndicatorTone tone
+)
+{
+  const auto model =
+      macInputIndicatorColorModel(tone);
+  return source == deskflow::input::InputIndicatorSource::Korean2Set
+      ? model.koreanGlyph
+      : model.latinGlyph;
+}
+
+constexpr MacInputIndicatorRgb macInputIndicatorBodyColor(
+    deskflow::input::InputIndicatorSource source,
+    InputIndicatorTone tone
+)
+{
+  const auto model =
+      macInputIndicatorColorModel(tone);
+  return macInputIndicatorBlendColor(
+      model.body,
+      macInputIndicatorGlyphColor(source, tone),
+      0.08
+  );
+}
+
+struct MacInputIndicatorHaloPulse
+{
+  deskflow::input::InputIndicatorSource source =
+      deskflow::input::InputIndicatorSource::Unknown;
+  double startedMilliseconds = 0;
+};
+
+struct MacInputIndicatorHaloFrame
+{
+  deskflow::input::InputIndicatorSource source =
+      deskflow::input::InputIndicatorSource::Unknown;
+  double scale = 1;
+  double alpha = 0;
+  bool active = false;
+};
+
+inline constexpr double kMacInputIndicatorHaloDurationMilliseconds =
+    280;
+inline constexpr double kMacInputIndicatorHaloMinimumStartInterval =
+    50;
+inline constexpr size_t kMacInputIndicatorMaximumHaloWaves = 3;
+
+inline bool macInputIndicatorAppendHaloPulse(
+    std::vector<MacInputIndicatorHaloPulse> &pulses,
+    deskflow::input::InputIndicatorSource source,
+    double startedMilliseconds
+)
+{
+  if (!std::isfinite(startedMilliseconds) ||
+      startedMilliseconds < 0) {
+    return false;
+  }
+  if (!pulses.empty() &&
+      startedMilliseconds - pulses.back().startedMilliseconds <
+          kMacInputIndicatorHaloMinimumStartInterval) {
+    return false;
+  }
+  pulses.push_back({
+      .source = source,
+      .startedMilliseconds = startedMilliseconds,
+  });
+  if (pulses.size() > kMacInputIndicatorMaximumHaloWaves) {
+    pulses.erase(
+        pulses.begin(),
+        pulses.begin() +
+            static_cast<std::ptrdiff_t>(
+                pulses.size() -
+                kMacInputIndicatorMaximumHaloWaves
+            )
+    );
+  }
+  return true;
+}
+
+inline MacInputIndicatorHaloFrame macInputIndicatorHaloFrame(
+    const MacInputIndicatorHaloPulse &pulse,
+    double nowMilliseconds,
+    bool reducedMotion
+)
+{
+  if (reducedMotion ||
+      !std::isfinite(nowMilliseconds) ||
+      !std::isfinite(pulse.startedMilliseconds)) {
+    return {};
+  }
+  const double age =
+      nowMilliseconds - pulse.startedMilliseconds;
+  if (age < 0 ||
+      age >= kMacInputIndicatorHaloDurationMilliseconds) {
+    return {};
+  }
+  constexpr double kPeakProgress = 0.18;
+  constexpr double kMaximumAlpha = 0.34;
+  constexpr double kMaximumScale = 1.22;
+  constexpr double kPi = 3.14159265358979323846;
+  const double progress =
+      age / kMacInputIndicatorHaloDurationMilliseconds;
+  const double easeOut =
+      1.0 - std::pow(1.0 - progress, 3.0);
+  const double alpha =
+      progress < kPeakProgress
+          ? kMaximumAlpha *
+                std::sin(
+                    (progress / kPeakProgress) *
+                    kPi / 2.0
+                )
+          : kMaximumAlpha *
+                std::pow(
+                    1.0 -
+                        (progress - kPeakProgress) /
+                            (1.0 - kPeakProgress),
+                    2.0
+                );
+  return {
+      .source = pulse.source,
+      .scale =
+          1.0 + (kMaximumScale - 1.0) * easeOut,
+      .alpha = alpha,
+      .active = true,
+  };
+}
+
+inline std::vector<MacInputIndicatorHaloFrame>
+macInputIndicatorActiveHaloFrames(
+    const std::vector<MacInputIndicatorHaloPulse> &pulses,
+    double nowMilliseconds,
+    bool reducedMotion
+)
+{
+  std::vector<MacInputIndicatorHaloFrame> result;
+  result.reserve(kMacInputIndicatorMaximumHaloWaves);
+  for (const auto &pulse : pulses) {
+    const auto frame =
+        macInputIndicatorHaloFrame(
+            pulse, nowMilliseconds, reducedMotion
+        );
+    if (frame.active) {
+      result.push_back(frame);
+    }
+  }
+  return result;
+}
 
 struct MacInputIndicatorPanelStyle
 {
@@ -127,10 +372,10 @@ constexpr MacInputIndicatorRenderModel macInputIndicatorRenderModel(
             .x = 0.5, .y = 11.5, .width = 11.5, .height = 14.5
         },
         .torsoBounds = {
-            .x = 7, .y = 5, .width = 16, .height = 14.5
+            .x = 6, .y = 4.5, .width = 20, .height = 15.5
         },
         .pawBounds = {
-            .x = 7, .y = 3.5, .width = 16.5, .height = 3.5
+            .x = 3.5, .y = 2.5, .width = 23, .height = 5.5
         },
         .tailBounds = {
             .x = 20, .y = 8, .width = 10, .height = 10

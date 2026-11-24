@@ -10,6 +10,8 @@
 
 #include <QTest>
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 
 using namespace deskflow::gui::input;
@@ -19,6 +21,38 @@ namespace {
 std::vector<InputIndicatorRect> oneScreen(double width = 1920, double height = 1080)
 {
   return {{.x = 0, .y = 0, .width = width, .height = height}};
+}
+
+double linearChannel(double channel)
+{
+  return channel <= 0.04045
+      ? channel / 12.92
+      : std::pow((channel + 0.055) / 1.055, 2.4);
+}
+
+double relativeLuminance(MacInputIndicatorRgb color)
+{
+  return 0.2126 * linearChannel(color.red) +
+      0.7152 * linearChannel(color.green) +
+      0.0722 * linearChannel(color.blue);
+}
+
+double contrastRatio(
+    MacInputIndicatorRgb foreground,
+    MacInputIndicatorRgb background
+)
+{
+  const auto foregroundLuminance =
+      relativeLuminance(foreground);
+  const auto backgroundLuminance =
+      relativeLuminance(background);
+  return (
+      std::max(foregroundLuminance, backgroundLuminance) +
+      0.05
+  ) / (
+      std::min(foregroundLuminance, backgroundLuminance) +
+      0.05
+  );
 }
 
 } // namespace
@@ -191,6 +225,7 @@ void InputIndicatorGeometryTests::companionRenderModelUsesUnifiedSilhouetteAndIn
   for (const auto companion : companions) {
     const auto model = macInputIndicatorRenderModel(companion);
     QVERIFY(!model.usesEyePrimitives);
+    QVERIFY(!model.languageMirrorsWithSilhouette);
     QCOMPARE(
         model.silhouettePrimitive,
         InputIndicatorRenderPrimitive::SilhouetteUnion
@@ -260,6 +295,206 @@ void InputIndicatorGeometryTests::catRenderModelUsesSideProfileAndPersistentFaci
   ));
 }
 
+void InputIndicatorGeometryTests::catPoseUsesDistinctSeatedWalkRunGeometry()
+{
+  const auto model =
+      macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
+  const auto idle = inputIndicatorCatPose(
+      InputIndicatorMotionState::Idle, 0.25, false
+  );
+  const auto walk = inputIndicatorCatPose(
+      InputIndicatorMotionState::Walk, 0.25, false
+  );
+  const auto run = inputIndicatorCatPose(
+      InputIndicatorMotionState::Run, 0.25, false
+  );
+
+  QVERIFY(idle.torsoBounds.height > walk.torsoBounds.height);
+  QVERIFY(walk.torsoBounds.width > idle.torsoBounds.width);
+  QVERIFY(run.torsoBounds.width > walk.torsoBounds.width);
+  QVERIFY(run.torsoBounds.height < walk.torsoBounds.height);
+  QVERIFY(
+      run.torsoBounds.y + run.torsoBounds.height / 2 <
+      walk.torsoBounds.y + walk.torsoBounds.height / 2
+  );
+  QVERIFY(std::abs(idle.bodyAngleDegrees) < 1e-9);
+  QVERIFY(std::abs(walk.bodyAngleDegrees) < 1e-9);
+  QVERIFY(std::abs(run.bodyAngleDegrees) > 0);
+  QVERIFY(std::abs(run.bodyAngleDegrees) <= 8.0);
+  QVERIFY(run.frontPawBounds.x < walk.frontPawBounds.x);
+  QVERIFY(run.rearPawBounds.x > walk.rearPawBounds.x);
+  QVERIFY(walk.tailStraightness > idle.tailStraightness);
+  QVERIFY(run.tailStraightness > walk.tailStraightness);
+
+  const auto insideSilhouette =
+      [silhouette = model.silhouetteBounds](
+          const InputIndicatorRect &bounds
+      ) {
+        return bounds.x >= silhouette.x &&
+               bounds.y >= silhouette.y &&
+               bounds.x + bounds.width <=
+                   silhouette.x + silhouette.width &&
+               bounds.y + bounds.height <=
+                   silhouette.y + silhouette.height;
+      };
+  const InputIndicatorCatPose poses[] = {idle, walk, run};
+  for (const auto &pose : poses) {
+    QVERIFY(insideSilhouette(pose.headBounds));
+    QVERIFY(insideSilhouette(pose.torsoBounds));
+    QVERIFY(insideSilhouette(pose.frontPawBounds));
+    QVERIFY(insideSilhouette(pose.rearPawBounds));
+    QVERIFY(
+        model.languageBounds.x >= pose.torsoBounds.x &&
+        model.languageBounds.y >= pose.torsoBounds.y &&
+        model.languageBounds.x + model.languageBounds.width <=
+            pose.torsoBounds.x + pose.torsoBounds.width &&
+        model.languageBounds.y + model.languageBounds.height <=
+            pose.torsoBounds.y + pose.torsoBounds.height
+    );
+  }
+
+  const auto reduced = inputIndicatorCatPose(
+      InputIndicatorMotionState::Run, 0.75, true
+  );
+  QCOMPARE(reduced.torsoBounds.x, idle.torsoBounds.x);
+  QCOMPARE(reduced.torsoBounds.y, idle.torsoBounds.y);
+  QCOMPARE(reduced.torsoBounds.width, idle.torsoBounds.width);
+  QCOMPARE(reduced.torsoBounds.height, idle.torsoBounds.height);
+  QCOMPARE(reduced.frontPawBounds.x, idle.frontPawBounds.x);
+  QCOMPARE(reduced.rearPawBounds.x, idle.rearPawBounds.x);
+  QCOMPARE(reduced.bodyAngleDegrees, 0.0);
+  QCOMPARE(reduced.tailStraightness, idle.tailStraightness);
+}
+
+void InputIndicatorGeometryTests::companionPaletteUsesNeutralBodyAndReadableGlyph()
+{
+  const auto automatic =
+      macInputIndicatorColorModel(InputIndicatorTone::Automatic);
+  const auto light =
+      macInputIndicatorColorModel(InputIndicatorTone::Light);
+  const auto dark =
+      macInputIndicatorColorModel(InputIndicatorTone::Dark);
+
+  const MacInputIndicatorColorModel colors[] = {
+      automatic, light, dark
+  };
+  for (const auto &color : colors) {
+    QCOMPARE(color.body.red, 242.0 / 255.0);
+    QCOMPARE(color.body.green, 243.0 / 255.0);
+    QCOMPARE(color.body.blue, 245.0 / 255.0);
+    QVERIFY(color.latinGlyph.blue > color.latinGlyph.red);
+    QVERIFY(color.koreanGlyph.red > color.koreanGlyph.blue);
+    QVERIFY(contrastRatio(color.latinGlyph, color.body) >= 4.5);
+    QVERIFY(contrastRatio(color.koreanGlyph, color.body) >= 4.5);
+    QVERIFY(color.latinGlyph.red < 0.75);
+    QVERIFY(color.koreanGlyph.red < 0.75);
+  }
+  QCOMPARE(light.body.red, automatic.body.red);
+  QCOMPARE(dark.body.red, automatic.body.red);
+  QCOMPARE(light.edge.green, automatic.edge.green);
+  QCOMPARE(dark.edge.green, automatic.edge.green);
+
+  const InputIndicatorTone tones[] = {
+      InputIndicatorTone::Automatic,
+      InputIndicatorTone::Light,
+      InputIndicatorTone::Dark,
+  };
+  for (const auto tone : tones) {
+    const auto palette = macInputIndicatorColorModel(tone);
+    const auto tintedLatinBody = macInputIndicatorBodyColor(
+        deskflow::input::InputIndicatorSource::LatinABC, tone
+    );
+    const auto tintedKoreanBody = macInputIndicatorBodyColor(
+        deskflow::input::InputIndicatorSource::Korean2Set, tone
+    );
+    QVERIFY(contrastRatio(
+        palette.latinGlyph, tintedLatinBody
+    ) >= 4.5);
+    QVERIFY(contrastRatio(
+        palette.koreanGlyph, tintedKoreanBody
+    ) >= 4.5);
+  }
+
+  const auto latinBody = macInputIndicatorBodyColor(
+      deskflow::input::InputIndicatorSource::LatinABC,
+      InputIndicatorTone::Automatic
+  );
+  const auto koreanBody = macInputIndicatorBodyColor(
+      deskflow::input::InputIndicatorSource::Korean2Set,
+      InputIndicatorTone::Automatic
+  );
+  QVERIFY(std::abs(
+      latinBody.red - automatic.body.red
+  ) <= std::abs(
+      automatic.latinGlyph.red - automatic.body.red
+  ) * 0.08 + 1e-12);
+  QVERIFY(std::abs(
+      koreanBody.blue - automatic.body.blue
+  ) <= std::abs(
+      automatic.koreanGlyph.blue - automatic.body.blue
+  ) * 0.08 + 1e-12);
+}
+
+void InputIndicatorGeometryTests::companionHaloPulsesStayBoundedAndReducedMotionSafe()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  std::vector<MacInputIndicatorHaloPulse> pulses;
+
+  QVERIFY(macInputIndicatorAppendHaloPulse(
+      pulses, Source::LatinABC, 0
+  ));
+  QVERIFY(!macInputIndicatorAppendHaloPulse(
+      pulses, Source::Korean2Set, 49
+  ));
+  QVERIFY(macInputIndicatorAppendHaloPulse(
+      pulses, Source::Korean2Set, 50
+  ));
+  QVERIFY(macInputIndicatorAppendHaloPulse(
+      pulses, Source::LatinABC, 100
+  ));
+  QVERIFY(macInputIndicatorAppendHaloPulse(
+      pulses, Source::Korean2Set, 150
+  ));
+  QCOMPARE(
+      pulses.size(), kMacInputIndicatorMaximumHaloWaves
+  );
+  QCOMPARE(pulses[0].source, Source::Korean2Set);
+  QCOMPARE(pulses[1].source, Source::LatinABC);
+  QCOMPARE(pulses[2].source, Source::Korean2Set);
+
+  const auto early = macInputIndicatorHaloFrame(
+      pulses.back(), 160, false
+  );
+  const auto peak = macInputIndicatorHaloFrame(
+      pulses.back(), 200, false
+  );
+  const auto decay = macInputIndicatorHaloFrame(
+      pulses.back(), 360, false
+  );
+  const auto ended = macInputIndicatorHaloFrame(
+      pulses.back(), 430, false
+  );
+  const auto reduced = macInputIndicatorHaloFrame(
+      pulses.back(), 200, true
+  );
+
+  QVERIFY(early.active);
+  QVERIFY(peak.active);
+  QVERIFY(decay.active);
+  QVERIFY(!ended.active);
+  QVERIFY(!reduced.active);
+  QVERIFY(peak.scale <= 1.25);
+  QVERIFY(peak.alpha <= 0.34);
+  QVERIFY(decay.alpha < peak.alpha);
+  QCOMPARE(
+      macInputIndicatorActiveHaloFrames(
+          pulses, 200, true
+      ).size(),
+      size_t{0}
+  );
+}
+
 void InputIndicatorGeometryTests::companionRenderAlphaFollowsSettingAndBoundsDetail()
 {
   const auto minimum =
@@ -288,22 +523,25 @@ void InputIndicatorGeometryTests::catTailUsesContinuousPhaseLaggedCurve()
 {
   const InputIndicatorPoint root{.x = 3, .y = 8};
   const auto neutral = inputIndicatorCatTailPose(
-      root, 10, 0, 0, true
+      root, 10, 0, 0, 0.15, true
   );
   const auto atZero = inputIndicatorCatTailPose(
-      root, 10, 0, 0, false
+      root, 10, 0, 0, 0.15, false
   );
   const auto atQuarter = inputIndicatorCatTailPose(
-      root, 10, 0.25, 0, false
+      root, 10, 0.25, 0, 0.15, false
   );
   const auto positiveVelocity = inputIndicatorCatTailPose(
-      root, 10, 0.25, 8, false
+      root, 10, 0.25, 8, 0.15, false
   );
   const auto negativeVelocity = inputIndicatorCatTailPose(
-      root, 10, 0.25, -8, false
+      root, 10, 0.25, -8, 0.15, false
   );
   const auto reducedFast = inputIndicatorCatTailPose(
-      root, 10, 0.25, 8, true
+      root, 10, 0.25, 8, 0.15, true
+  );
+  const auto runTail = inputIndicatorCatTailPose(
+      root, 10, 0.25, 8, 0.85, false
   );
 
   QCOMPARE(positiveVelocity.root.x, root.x);
@@ -330,6 +568,10 @@ void InputIndicatorGeometryTests::catTailUsesContinuousPhaseLaggedCurve()
   QVERIFY(negativeVelocity.tip.y > atQuarter.tip.y);
 
   QVERIFY(std::abs(positiveVelocity.tip.y - root.y) <= 6.0);
+  QVERIFY(
+      std::abs(runTail.tip.y - runTail.middle.y) <
+      std::abs(positiveVelocity.tip.y - positiveVelocity.middle.y)
+  );
   QVERIFY(positiveVelocity.tip.x >= root.x);
   QVERIFY(positiveVelocity.tip.x <= root.x + 10.5);
   QCOMPARE(reducedFast.middle.x, neutral.middle.x);
@@ -394,31 +636,49 @@ void InputIndicatorGeometryTests::companionMotionStateClassifiesIdleWalkRun()
 {
   QCOMPARE(
       inputIndicatorMotionState(
-          InputIndicatorMotionState::Idle, 0, 180, false
+          InputIndicatorMotionState::Idle, 0, 0, 0, 180, false
       ),
       InputIndicatorMotionState::Idle
   );
   QCOMPARE(
       inputIndicatorMotionState(
-          InputIndicatorMotionState::Idle, 30, 0, false
+          InputIndicatorMotionState::Idle, 30, 0, 0, 0, false
       ),
       InputIndicatorMotionState::Walk
   );
   QCOMPARE(
       inputIndicatorMotionState(
-          InputIndicatorMotionState::Walk, 650, 0, false
+          InputIndicatorMotionState::Idle, 0, 3, 0, 0, false
+      ),
+      InputIndicatorMotionState::Walk
+  );
+  QCOMPARE(
+      inputIndicatorMotionState(
+          InputIndicatorMotionState::Walk, 650, 0, 0, 0, false
       ),
       InputIndicatorMotionState::Run
   );
   QCOMPARE(
       inputIndicatorMotionState(
-          InputIndicatorMotionState::Run, 900, 0, false
+          InputIndicatorMotionState::Walk, 0, 48, 0, 0, false
       ),
       InputIndicatorMotionState::Run
   );
   QCOMPARE(
       inputIndicatorMotionState(
-          InputIndicatorMotionState::Run, 900, 0, true
+          InputIndicatorMotionState::Walk, 0, 0, 24, 0, false
+      ),
+      InputIndicatorMotionState::Run
+  );
+  QCOMPARE(
+      inputIndicatorMotionState(
+          InputIndicatorMotionState::Run, 900, 0, 0, 0, false
+      ),
+      InputIndicatorMotionState::Run
+  );
+  QCOMPARE(
+      inputIndicatorMotionState(
+          InputIndicatorMotionState::Run, 900, 48, 24, 0, true
       ),
       InputIndicatorMotionState::Idle
   );
@@ -428,19 +688,19 @@ void InputIndicatorGeometryTests::companionMotionStateKeepsMovingForSettleDelay(
 {
   QCOMPARE(
       inputIndicatorMotionState(
-          InputIndicatorMotionState::Run, 0, 179, false
+          InputIndicatorMotionState::Run, 0, 0, 0, 179, false
       ),
       InputIndicatorMotionState::Run
   );
   QCOMPARE(
       inputIndicatorMotionState(
-          InputIndicatorMotionState::Run, 0, 180, false
+          InputIndicatorMotionState::Run, 0, 0, 0, 180, false
       ),
       InputIndicatorMotionState::Idle
   );
   QCOMPARE(
       inputIndicatorMotionState(
-          InputIndicatorMotionState::Walk, 0, 179, false
+          InputIndicatorMotionState::Walk, 0, 0, 0, 179, false
       ),
       InputIndicatorMotionState::Walk
   );

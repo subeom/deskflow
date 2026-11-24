@@ -53,6 +53,17 @@ struct InputIndicatorMotionPose
   double tailSway = 0;
 };
 
+struct InputIndicatorCatPose
+{
+  InputIndicatorRect torsoBounds;
+  InputIndicatorRect headBounds;
+  InputIndicatorRect frontPawBounds;
+  InputIndicatorRect rearPawBounds;
+  double bodyAngleDegrees = 0;
+  double tailLength = 0;
+  double tailStraightness = 0;
+};
+
 struct InputIndicatorTailPose
 {
   InputIndicatorPoint root;
@@ -92,6 +103,8 @@ double inputIndicatorTransitionProgress(
 InputIndicatorMotionState inputIndicatorMotionState(
     InputIndicatorMotionState previous,
     double pointerSpeedPointsPerSecond,
+    double pointerDistance,
+    double followerLag,
     double stoppedMilliseconds,
     bool reducedMotion
 );
@@ -112,11 +125,18 @@ InputIndicatorMotionPose inputIndicatorMotionPose(
     bool reducedMotion
 );
 
+InputIndicatorCatPose inputIndicatorCatPose(
+    InputIndicatorMotionState state,
+    double phase,
+    bool reducedMotion
+);
+
 InputIndicatorTailPose inputIndicatorCatTailPose(
     InputIndicatorPoint root,
     double length,
     double phase,
     double velocityX,
+    double straightness,
     bool reducedMotion
 );
 

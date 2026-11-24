@@ -22,6 +22,9 @@ private Q_SLOTS:
   void compactPanelStyleUsesApprovedMetrics();
   void companionRenderModelUsesUnifiedSilhouetteAndInternalLabel();
   void catRenderModelUsesSideProfileAndPersistentFacing();
+  void catPoseUsesDistinctSeatedWalkRunGeometry();
+  void companionPaletteUsesNeutralBodyAndReadableGlyph();
+  void companionHaloPulsesStayBoundedAndReducedMotionSafe();
   void companionRenderAlphaFollowsSettingAndBoundsDetail();
   void catTailUsesContinuousPhaseLaggedCurve();
   void companionSettingDefaultsToCat();

@@ -181,6 +181,8 @@ double inputIndicatorTransitionProgress(
 InputIndicatorMotionState inputIndicatorMotionState(
     InputIndicatorMotionState previous,
     double pointerSpeedPointsPerSecond,
+    double pointerDistance,
+    double followerLag,
     double stoppedMilliseconds,
     bool reducedMotion
 )
@@ -191,16 +193,28 @@ InputIndicatorMotionState inputIndicatorMotionState(
   if (!std::isfinite(pointerSpeedPointsPerSecond)) {
     pointerSpeedPointsPerSecond = 0;
   }
+  if (!std::isfinite(pointerDistance)) {
+    pointerDistance = 0;
+  }
+  if (!std::isfinite(followerLag)) {
+    followerLag = 0;
+  }
   if (!std::isfinite(stoppedMilliseconds)) {
     stoppedMilliseconds = 0;
   }
   constexpr double kWalkSpeed = 30;
   constexpr double kRunSpeed = 650;
+  constexpr double kWalkDistance = 3;
+  constexpr double kRunDistance = 48;
+  constexpr double kRunFollowerLag = 24;
   constexpr double kSettleMilliseconds = 180;
-  if (pointerSpeedPointsPerSecond >= kRunSpeed) {
+  if (pointerSpeedPointsPerSecond >= kRunSpeed ||
+      pointerDistance >= kRunDistance ||
+      followerLag >= kRunFollowerLag) {
     return InputIndicatorMotionState::Run;
   }
-  if (pointerSpeedPointsPerSecond >= kWalkSpeed) {
+  if (pointerSpeedPointsPerSecond >= kWalkSpeed ||
+      pointerDistance >= kWalkDistance) {
     return InputIndicatorMotionState::Walk;
   }
   if (stoppedMilliseconds >= kSettleMilliseconds) {
@@ -273,11 +287,103 @@ InputIndicatorMotionPose inputIndicatorMotionPose(
   }
 }
 
+InputIndicatorCatPose inputIndicatorCatPose(
+    InputIndicatorMotionState state,
+    double phase,
+    bool reducedMotion
+)
+{
+  if (reducedMotion ||
+      !std::isfinite(phase)) {
+    state = InputIndicatorMotionState::Idle;
+    phase = 0;
+  }
+  phase =
+      std::fmod(std::fmod(phase, 1.0) + 1.0, 1.0);
+  const double angle = phase * 2.0 * M_PI;
+  const double stride = std::sin(angle);
+  switch (state) {
+  case InputIndicatorMotionState::Idle:
+    return {
+        .torsoBounds = {
+            .x = 7.0, .y = 4.5, .width = 15.5, .height = 15.0
+        },
+        .headBounds = {
+            .x = 0.5, .y = 12.5, .width = 11.5, .height = 11.0
+        },
+        .frontPawBounds = {
+            .x = 8.0, .y = 3.7, .width = 5.5, .height = 3.0
+        },
+        .rearPawBounds = {
+            .x = 16.5, .y = 4.2, .width = 5.5, .height = 3.0
+        },
+        .tailLength = 8.0,
+        .tailStraightness = 0.15,
+    };
+  case InputIndicatorMotionState::Walk: {
+    const double bob = stride * 0.45;
+    return {
+        .torsoBounds = {
+            .x = 6.5, .y = 6.8 + bob,
+            .width = 17.5, .height = 10.5
+        },
+        .headBounds = {
+            .x = 0.5, .y = 12.8 + bob,
+            .width = 11.5, .height = 10.0
+        },
+        .frontPawBounds = {
+            .x = 6.0 + stride * 1.3,
+            .y = 3.0 + std::max(-stride, 0.0) * 0.5,
+            .width = 5.5,
+            .height = 3.0,
+        },
+        .rearPawBounds = {
+            .x = 19.0 - stride * 1.3,
+            .y = 3.0 + std::max(stride, 0.0) * 0.5,
+            .width = 5.5,
+            .height = 3.0,
+        },
+        .tailLength = 8.5,
+        .tailStraightness = 0.45,
+    };
+  }
+  case InputIndicatorMotionState::Run: {
+    const double leap = (1.0 + stride) * 0.45;
+    return {
+        .torsoBounds = {
+            .x = 6.0, .y = 6.8 + leap,
+            .width = 19.5, .height = 9.2
+        },
+        .headBounds = {
+            .x = 0.5, .y = 12.6 + leap,
+            .width = 11.5, .height = 9.5
+        },
+        .frontPawBounds = {
+            .x = 4.2 + stride * 1.8,
+            .y = 2.8 + std::max(-stride, 0.0) * 0.8,
+            .width = 5.5,
+            .height = 3.0,
+        },
+        .rearPawBounds = {
+            .x = 21.0 - stride * 1.8,
+            .y = 2.8 + std::max(stride, 0.0) * 0.8,
+            .width = 5.5,
+            .height = 3.0,
+        },
+        .bodyAngleDegrees = -4.5,
+        .tailLength = 9.0,
+        .tailStraightness = 0.85,
+    };
+  }
+  }
+}
+
 InputIndicatorTailPose inputIndicatorCatTailPose(
     InputIndicatorPoint root,
     double length,
     double phase,
     double velocityX,
+    double straightness,
     bool reducedMotion
 )
 {
@@ -294,20 +400,32 @@ InputIndicatorTailPose inputIndicatorCatTailPose(
   if (!std::isfinite(velocityX)) {
     velocityX = 0;
   }
+  if (!std::isfinite(straightness)) {
+    straightness = 0.15;
+  }
   phase = std::fmod(std::fmod(phase, 1.0) + 1.0, 1.0);
   velocityX = std::clamp(velocityX, -8.0, 8.0);
+  straightness = std::clamp(straightness, 0.0, 1.0);
+  const double curl = 1.0 - straightness;
   const double angle = phase * 2.0 * M_PI;
   const double middleSway =
-      reducedMotion ? 0 : std::sin(angle) * 1.2;
+      reducedMotion
+          ? 0
+          : std::sin(angle) * (0.25 + curl * 0.95);
   const double tipSway =
       reducedMotion
           ? 0
-          : std::sin((phase - 0.18) * 2.0 * M_PI) * 0.8;
+          : std::sin((phase - 0.18) * 2.0 * M_PI) *
+                (0.2 + curl * 0.6);
   const double inertia =
-      reducedMotion ? 0 : -velocityX * 0.12;
+      reducedMotion
+          ? 0
+          : -velocityX * (0.05 + curl * 0.07);
+  const double middleLift = 0.6 + curl * 1.2;
+  const double tipLift = 0.9 + curl * 2.1;
   const auto middle = InputIndicatorPoint{
       .x = root.x + length * 0.52,
-      .y = root.y + 1.8 + middleSway,
+      .y = root.y + middleLift + middleSway,
   };
   const auto incomingOffset = InputIndicatorPoint{
       .x = length * 0.18,
@@ -315,7 +433,7 @@ InputIndicatorTailPose inputIndicatorCatTailPose(
   };
   const auto tip = InputIndicatorPoint{
       .x = root.x + length,
-      .y = root.y + 3.0 + tipSway + inertia,
+      .y = root.y + tipLift + tipSway + inertia,
   };
   return {
       .root = root,
