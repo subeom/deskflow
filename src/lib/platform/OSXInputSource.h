@@ -29,6 +29,7 @@ bool shouldActivateMacInputSourceTransition(
     deskflow::input::InputIndicatorSource previous,
     deskflow::input::InputIndicatorSource current
 );
+OSXInputSourceSnapshot makeMacInputSourceSnapshot(std::string identifier);
 OSXInputSourceSnapshot copyCurrentMacInputSource();
 
 class OSXInputSourceMonitor

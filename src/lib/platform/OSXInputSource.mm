@@ -34,6 +34,12 @@ bool shouldActivateMacInputSourceTransition(
          current != deskflow::input::InputIndicatorSource::Unknown;
 }
 
+OSXInputSourceSnapshot makeMacInputSourceSnapshot(std::string identifier)
+{
+  const auto source = classifyMacInputSourceId(identifier);
+  return {.identifier = std::move(identifier), .source = source};
+}
+
 OSXInputSourceSnapshot copyCurrentMacInputSource()
 {
   std::string identifier;
@@ -49,7 +55,7 @@ OSXInputSourceSnapshot copyCurrentMacInputSource()
       }
     }
   }
-  return {.identifier = std::move(identifier), .source = classifyMacInputSourceId(identifier)};
+  return makeMacInputSourceSnapshot(std::move(identifier));
 }
 
 struct OSXInputSourceMonitor::Impl

@@ -23,6 +23,27 @@ void OSXInputSourceTests::exactIdsAreClassified()
   );
 }
 
+void OSXInputSourceTests::supportedSnapshotsPreserveIdentifierAndClassification()
+{
+  struct TestCase
+  {
+    const char *identifier;
+    InputIndicatorSource source;
+  };
+  const TestCase testCases[] = {
+      {"com.apple.keylayout.ABC", InputIndicatorSource::LatinABC},
+      {"com.apple.inputmethod.Korean.2SetKorean", InputIndicatorSource::Korean2Set},
+  };
+
+  for (const auto &testCase : testCases) {
+    const auto snapshot =
+        deskflow::platform::makeMacInputSourceSnapshot(testCase.identifier);
+
+    QCOMPARE(snapshot.identifier, std::string(testCase.identifier));
+    QCOMPARE(snapshot.source, testCase.source);
+  }
+}
+
 void OSXInputSourceTests::otherValuesAreUnknown()
 {
   const char *unsupported[] = {
