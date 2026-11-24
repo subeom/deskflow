@@ -136,6 +136,15 @@ genuinely fast motion enters Run; even then body bob stays <=0.9 pt and
 lean/stretch stays <=8%. The target never follows the pose. Source transition
 uses an eased 200 ms tint/label crossfade.
 
+The Cat tail is one natural two-segment cubic curve with an anchored root, a
+continuous proximal/mid tangent, and a tip that lags the root by one phase
+offset. Idle uses a gentle compound sine so the tip curls slowly rather than
+snapping or rotating like a pendulum. Pointer velocity adds opposite-direction
+inertia to the tip, but the complete bend is clamped to preserve the
+silhouette. Cat tail thickness tapers toward the tip. Dog uses the same
+continuity principle without the Cat curl; Turtle keeps a subtle head/tail
+settle. Reduced Motion freezes a neutral curled Cat tail.
+
 `isOSXReduceMotion()` disables idle tail, walk/run pose, follower easing, and
 source morphing: the stable companion moves directly to the target and starts
 no animation timer.
@@ -188,6 +197,7 @@ Focused tests cover:
 - compact Cat/Dog/Turtle metrics and low-emphasis automatic opacity;
 - a silhouette-union render plan with no eye primitives;
 - the language glyph bounds remain inside the body/shell;
+- two-segment Cat tail continuity, phase lag, root anchor, and max-bend bounds;
 - every body part uses clamped configured body alpha and glyph/outline alpha
   stays within 10 percentage points;
 - companion setting persistence and Cat default;

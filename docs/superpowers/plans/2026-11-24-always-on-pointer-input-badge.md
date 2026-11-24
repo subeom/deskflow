@@ -886,7 +886,7 @@ QCOMPARE(bounded->x, 82.0);
 Add invalid rows for NaN coordinates, follow factor outside 0-1, negative
 maximum lag, and zero catch-up factor with a target farther than the cap.
 
-- [ ] **Step 3: Capture RED**
+- [ ] **Step 4: Capture RED**
 
 ```bash
 cmake --build build --config Release --parallel 8 \
@@ -937,7 +937,7 @@ actual `NSPanel.isVisible`. The result is true when the panel should call
 In the controller harness, verify a Space-invalidated panel move still uses
 `move` only and never source reconfiguration or native cursor commands.
 
-- [ ] **Step 3: Capture RED**
+- [ ] **Step 4: Capture RED**
 
 Run `InputIndicatorPolicyTests` with the focused command. Expected: compile
 failure because `macInputIndicatorPresentationNeeded` does not exist.
@@ -1880,7 +1880,34 @@ Cat's bounds are the torso under the head; Dog's bounds are centered in the
 body; Turtle's are centered in the shell. The external-corner badge concept is
 not valid.
 
-- [ ] **Step 3: Capture RED**
+- [ ] **Step 3: Add two-segment Cat-tail pose assertions**
+
+Define:
+
+```cpp
+struct InputIndicatorTailPose
+{
+  InputIndicatorPoint root;
+  InputIndicatorPoint proximalControl;
+  InputIndicatorPoint middleIncomingControl;
+  InputIndicatorPoint middle;
+  InputIndicatorPoint middleOutgoingControl;
+  InputIndicatorPoint tipControl;
+  InputIndicatorPoint tip;
+};
+
+InputIndicatorTailPose inputIndicatorCatTailPose(
+    InputIndicatorPoint root, double length, double phase,
+    double velocityX, bool reducedMotion
+);
+```
+
+Assert the root equals the supplied anchor, incoming/outgoing middle
+controls share one tangent, the complete bend stays bounded, the tip has
+phase lag relative to the middle, and Reduced Motion returns the fixed neutral
+curl.
+
+- [ ] **Step 4: Capture RED**
 
 Run `InputIndicatorGeometryTests`. Expected: compile failure because
 `MacInputIndicatorRenderModel` and
@@ -1931,11 +1958,17 @@ contours, <=1-2 pt body displacement, and <=5 degree lean. Run remains
 velocity-gated, with <=0.9 pt bob and <=8%/8 degree deformation. Reduced Motion
 draws the stable silhouette directly.
 
+The Cat tail uses the pure two-segment pose: one root-anchored cubic into the
+middle and one tangent-continuous cubic to the tip. A tapered root/thinner tip
+and opposite-direction velocity influence make the tip follow with inertia
+without becoming a rigid pole or detached segment.
+
 - [ ] **Step 6: Verify focused GREEN**
 
 Run the existing nine focused targets. Expected: 9/9 pass; geometry proves no
 eye primitive, one silhouette primitive, in-body glyph bounds, tile/total
-size, and alpha bounds.
+size, alpha bounds, root/tangent continuity, tail phase lag, and reduced
+neutral pose.
 
 ### Task 28: Commit, Full Gate, and Package
 
