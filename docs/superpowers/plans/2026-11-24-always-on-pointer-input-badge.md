@@ -2118,3 +2118,143 @@ install, stable-sign, push, merge, tag, release, or open a PR.
 Expected: direct ancestry from
 `2724a5794f711ebd6503191f4ad0537278c77cef`, a clean worktree, and only the
 live visual feel remaining as a non-automated check.
+
+---
+
+## Revision 8: Seated, Walk, Run Cat and Glyph Palette
+
+### Task 33: Record Pose and Palette RED
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+
+- [ ] **Step 1: Add pose-selection tests**
+
+Extend the pure motion-state test input with raw pointer movement and
+pre-catch-up follower lag. Assert:
+
+```text
+Idle + 30 pt/s or 3 pt movement -> Walk
+Walk + 650 pt/s -> Run
+Walk + 48 pt movement -> Run
+Walk + 24 pt follower lag -> Run
+Run preserves direction for the 180 ms settle delay
+Reduced Motion always returns Idle
+```
+
+- [ ] **Step 2: Add pure Cat geometry tests**
+
+Define a `InputIndicatorCatPose` containing torso, head, front paw, rear paw,
+body angle, tail length, and tail straightness. Assert:
+
+```text
+Idle torso is seated/upright
+Walk torso is lower/wider and level
+Run torso is widest/lowest and leans <=8 degrees
+Run front paw moves forward and rear paw moves backward
+all posed regions stay inside the 30 x 28 silhouette model
+language bounds stay in every torso pose
+Reduced Motion reproduces the neutral seated pose
+```
+
+- [ ] **Step 3: Add tail-straightness assertions**
+
+Reuse the root/tangent/phase-lag tail tests while asserting Run straightness
+has less vertical deviation and controlled inertia than Idle. The common
+two-segment continuity and clamp contracts remain unchanged.
+
+- [ ] **Step 4: Add palette and mirror tests**
+
+Define a pure render color model with body, edge, `A`, and `한` RGB values.
+Assert:
+
+```text
+body remains #F2F3F5-class off-white
+body/edge are source-independent
+A is dark cool blue and 한 is deep coral/rose
+Automatic/Light/Dark glyph/body contrast >= 4.5
+body alpha == configured alpha
+glyph alpha == body + <=10 points
+languageMirrorsWithSilhouette == false
+```
+
+- [ ] **Step 5: Capture RED**
+
+Build `InputIndicatorGeometryTests`. Expected failure is limited to the new
+distance inputs, Cat pose API, straightness input, language-mirror flag, and
+color model.
+
+### Task 34: Draw Three Cat Gaits and Neutral Palette
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.cpp`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+
+- [ ] **Step 1: Feed escape distance into the state selector**
+
+Capture raw pointer distance from the prior exact target and companion/target
+lag before follower catch-up. Preserve speed as a signal; Run when any
+high-speed, large-step, or escape-lag threshold is met. The follower remains
+bounded/no-overshoot with an 8 pt maximum lag.
+
+- [ ] **Step 2: Implement pure Cat pose geometry**
+
+Return state-specific torso/head/paw/angle/tail values. Idle is seated, Walk is
+a horizontal standing gait, and Run is an elongated leap pose. Reduced Motion
+returns the fixed Idle pose and no paw displacement.
+
+- [ ] **Step 3: Replace the legs-only Cat drawing**
+
+Draw the Cat from the selected pose rather than perturbing one fixed body.
+Keep head/ear/muzzle in profile, preserve the anchored tapered tail, and apply
+pose angle only inside the silhouetted path. Only the silhouette mirrors with
+motion; the language glyph remains upright at stable bounds.
+
+- [ ] **Step 4: Apply off-white body and source glyph colors**
+
+Remove whole-body blue/coral source tinting. Fill Cat, Dog, and Turtle from the
+neutral body color, stroke each silhouette with the subtle edge, and choose
+source-specific `A`/`한` glyph color for the 200 ms crossfade. Keep body opacity
+at the configured value and glyph alpha at the existing detail bound.
+
+### Task 35: Verify and Self-Review
+
+- [ ] **Step 1: Run focused GREEN**
+
+Build and run the existing nine focused suites. Expected: 9/9 pass with pose,
+distance, palette contrast, alpha, mirroring, tail, controller, and settings
+coverage.
+
+- [ ] **Step 2: Run the full Release gate**
+
+Build all targets and run 157 eligible CTests, excluding only
+`OSXClipboardTests` and `OSXKeyStateTests`.
+
+- [ ] **Step 3: Inspect visual invariants**
+
+Confirm no native cursor API, new monitor, coordinate IPC/logging, tile, face
+primitive, glyph mirror, or body source tint exists. Confirm Run does not change
+the follower contract and every pose remains inside the panel.
+
+### Task 36: Commit, Package, and Audit
+
+- [ ] **Step 1: Commit docs and implementation separately**
+
+Use the standard trailer and do not amend the Revision 7 commits.
+
+- [ ] **Step 2: Package**
+
+Build a clean
+`build/pointer-badge-gait/deskflow-2.0.9.0-macos-arm64.dmg`, verify metadata,
+SHA-256, arm64, CDHash, signature, and package diagnostics. Do not install or
+stable-sign.
+
+- [ ] **Step 3: Verify final state**
+
+Expected: direct ancestry from
+`732b06ac4cab581b59a052cda47c55104d1407fa`, clean worktree, no tag, push,
+merge, release, PR, or install.
