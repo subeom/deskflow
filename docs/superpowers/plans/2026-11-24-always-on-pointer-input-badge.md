@@ -814,3 +814,299 @@ git tag --points-at HEAD
 Expected: clean branch, ancestry
 `8bd772e8 -> spec commit -> plan commit -> implementation commit`, no HEAD tag,
 and no push, merge, release, PR, install, or `/Applications` change.
+
+---
+
+## Revision 2: Compact Trailing Badge and Active-Space Presentation
+
+### Task 10: Record Compact Geometry and Motion RED
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.cpp`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+- Modify: `src/unittests/gui/settings/InputIndicatorSettingsTests.cpp`
+- Modify: `src/unittests/gui/settings/SettingsPagesTests.cpp`
+
+- [ ] **Step 1: Add compact style expectations**
+
+Add these test slots:
+
+```cpp
+void compactPanelStyleUsesApprovedMetrics();
+void followerCatchesUpWithoutOvershoot();
+void followerCapsTrailingLag();
+void followerRejectsInvalidInput();
+```
+
+Assert the production style helper:
+
+```cpp
+const auto style = macInputIndicatorPanelStyle();
+QCOMPARE(style.width, 24.0);
+QCOMPARE(style.height, 20.0);
+QCOMPARE(style.cursorGap, 6.0);
+QCOMPARE(style.screenMargin, 6.0);
+QCOMPARE(style.labelSize, 11.0);
+QCOMPARE(style.cornerRadius, 7.0);
+QCOMPARE(style.opacityPercent, 65);
+```
+
+Change settings expectations from 85 to 65 while preserving the 60-100
+control range.
+
+- [ ] **Step 2: Add follower expectations**
+
+```cpp
+const auto first = followInputIndicator(
+    {.x = 0, .y = 0}, {.x = 10, .y = 0}, 0.5, 18
+);
+QVERIFY(first);
+QCOMPARE(first->x, 5.0);
+QCOMPARE(first->y, 0.0);
+
+auto current = *first;
+current = *followInputIndicator(current, {10, 0}, 0.5, 18);
+QCOMPARE(current.x, 7.5);
+current = *followInputIndicator(current, {10, 0}, 0.5, 18);
+QCOMPARE(current.x, 8.75);
+QVERIFY(current.x <= 10.0);
+```
+
+For a far target, assert:
+
+```cpp
+const auto bounded =
+    followInputIndicator({0, 0}, {100, 0}, 0.5, 18);
+QCOMPARE(bounded->x, 82.0);
+```
+
+Add invalid rows for NaN coordinates, follow factor outside 0-1, negative
+maximum lag, and zero catch-up factor with a target farther than the cap.
+
+- [ ] **Step 3: Capture RED**
+
+```bash
+cmake --build build --config Release --parallel 8 \
+  --target InputIndicatorGeometryTests InputIndicatorSettingsTests SettingsPagesTests
+env QT_QPA_PLATFORM=offscreen \
+  HOME="$PWD/build/scratch/home" \
+  XDG_CACHE_HOME="$PWD/build/scratch/cache" \
+  XDG_CONFIG_HOME="$PWD/build/scratch/config" \
+  TMPDIR="$PWD/build/scratch/tmp" \
+  ctest --test-dir build/src/unittests \
+    -R '^(InputIndicatorGeometryTests|InputIndicatorSettingsTests|SettingsPagesTests)$' \
+    --output-on-failure
+```
+
+Expected: compile failure for the missing style/follower helpers and value
+failures for the old 85% default.
+
+### Task 11: Record Active-Space Presentation RED
+
+**Files:**
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/unittests/gui/input/InputIndicatorPolicyTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorPolicyTests.cpp`
+
+- [ ] **Step 1: Add the presentation-state test**
+
+Add:
+
+```cpp
+void panelPresentationNeededAfterActiveSpaceChange();
+```
+
+Assert a pure helper:
+
+```cpp
+QVERIFY(!macInputIndicatorPresentationNeeded(false, true));
+QVERIFY(macInputIndicatorPresentationNeeded(true, true));
+QVERIFY(macInputIndicatorPresentationNeeded(false, false));
+QVERIFY(macInputIndicatorPresentationNeeded(true, false));
+```
+
+The helper's first argument is an active-Space invalidation and its second is
+actual `NSPanel.isVisible`. The result is true when the panel should call
+`orderFrontRegardless`.
+
+- [ ] **Step 2: Extend pointer movement assertions**
+
+In the controller harness, verify a Space-invalidated panel move still uses
+`move` only and never source reconfiguration or native cursor commands.
+
+- [ ] **Step 3: Capture RED**
+
+Run `InputIndicatorPolicyTests` with the focused command. Expected: compile
+failure because `macInputIndicatorPresentationNeeded` does not exist.
+
+### Task 12: Implement Compact Follower and Space Recovery
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.cpp`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+- Modify: `src/lib/gui/input/MacInputIndicatorController.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorController.mm`
+- Modify: `src/lib/common/Settings.cpp`
+
+- [ ] **Step 1: Add pure panel metrics and follower**
+
+Declare:
+
+```cpp
+struct MacInputIndicatorPanelStyle
+{
+  double width;
+  double height;
+  double cursorGap;
+  double screenMargin;
+  double labelSize;
+  double cornerRadius;
+  int opacityPercent;
+};
+
+constexpr MacInputIndicatorPanelStyle
+macInputIndicatorPanelStyle()
+{
+  return {
+      .width = 24,
+      .height = 20,
+      .cursorGap = 6,
+      .screenMargin = 6,
+      .labelSize = 11,
+      .cornerRadius = 7,
+      .opacityPercent = 65,
+  };
+}
+```
+
+Declare in `InputIndicatorGeometry.h`:
+
+```cpp
+std::optional<InputIndicatorPoint> followInputIndicator(
+    InputIndicatorPoint previous, InputIndicatorPoint target,
+    double catchUpFactor, double maximumLag
+);
+```
+
+Implementation computes the Euclidean distance, returns null for invalid
+values, advances by `catchUpFactor`, and if the remaining distance exceeds the
+cap returns `target - unitVector * maximumLag`. It never overshoots.
+
+- [ ] **Step 2: Add the panel presentation helper**
+
+Declare:
+
+```cpp
+constexpr bool macInputIndicatorPresentationNeeded(
+    bool activeSpaceChanged, bool visible
+)
+{
+  return activeSpaceChanged || !visible;
+}
+```
+
+Use only `orderFrontRegardless` as the presentation command. Keep the existing
+window level and collection behavior.
+
+- [ ] **Step 3: Implement the Space observer**
+
+In `MacInputIndicatorPanel::Impl`, add:
+
+```cpp
+bool activeSpaceChanged = false;
+bool followerInitialized = false;
+InputIndicatorPoint follower;
+id activeSpaceToken = nil;
+```
+
+Subscribe to `NSWorkspaceActiveSpaceDidChangeNotification` through the
+workspace notification center on the main queue. The callback marks
+`activeSpaceChanged = true` and `followerInitialized = false`; it reads no
+window title, PID, content, or accessibility data.
+
+Remove the observer before the panel closes. The observer uses the existing
+shared-lifetime guard pattern from the disconnected focus monitor so a queued
+block cannot dereference a destroyed `Impl`.
+
+- [ ] **Step 4: Configure and follow with the compact style**
+
+Update the panel view to use the style helper for panel dimensions, font size,
+and radius. For automatic tone, use the current `controlAccentColor` only as a
+subtle tint and draw text with the system label color; preserve explicit light
+and dark treatments.
+
+`show(options)` resets `followerInitialized` and marks presentation needed.
+`move(position)`:
+
+1. computes the exact target with 6 pt gap/margin;
+2. returns false and hides for invalid geometry;
+3. snaps target when `followerInitialized` is false, otherwise calls
+   `followInputIndicator(..., 0.5, 18)`;
+4. updates only the panel frame;
+5. calls `orderFrontRegardless` when
+   `macInputIndicatorPresentationNeeded(activeSpaceChanged, isVisible)` is
+   true;
+6. clears `activeSpaceChanged` only after the panel reports visible.
+
+- [ ] **Step 5: Change the default opacity**
+
+Change `Settings::Gui::InputIndicatorOpacityPercent` default from 85 to 65 and
+the controller/panel option defaults to 65. Do not remove or change the 60-100
+range.
+
+- [ ] **Step 6: Verify focused GREEN**
+
+Build and run:
+
+```bash
+InputIndicatorGeometryTests
+InputIndicatorPolicyTests
+InputIndicatorSettingsTests
+SettingsPagesTests
+TranslationFileTests
+OSXInputSourceTests
+OSXInputIndicatorRelayTests
+CoreProcessInputIndicatorTests
+ServerConfigDialogTests
+```
+
+Expected: 9/9 focused CTest executables pass.
+
+### Task 13: Commit, Run the Full Gate, and Package
+
+- [ ] **Step 1: Commit the implementation**
+
+Commit only the geometry/panel/controller/settings/test files and updated
+Korean/default metadata required by the focused tests. Preserve the mandatory
+Co-authored-by trailer. Do not amend the earlier persistent-badge commits.
+
+- [ ] **Step 2: Build and run the full Release gate**
+
+Repeat the exact target enumeration from Task 8 and run CTest with only:
+
+```text
+-E '^(OSXClipboardTests|OSXKeyStateTests)$'
+```
+
+Expected: 158 executable targets build and all 157 eligible tests pass.
+
+- [ ] **Step 3: Package to a clean path**
+
+Configure `build/pointer-badge-trail-package`, package
+`deskflow-2.0.9.0-macos-arm64.dmg`, and copy it to
+`build/pointer-badge-trail/`. Recheck 2.0.9.0 metadata, arm64, SHA-256,
+`hdiutil verify`, deep/strict codesign, TeamIdentifier, and CDHash. Stable sign
+only if a valid identity exists; otherwise record ad-hoc state and the
+Homebrew packaging diagnostics.
+
+- [ ] **Step 4: Verify final ancestry and state**
+
+Expected: clean named branch; direct ancestry from
+`58069ddaac60648528df19c40de92b93e425d398` through the revision docs and
+implementation commit; no HEAD tag, push, merge, release, PR, install, or
+system UI change.
