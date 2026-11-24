@@ -1488,3 +1488,248 @@ Expected: clean branch with direct ancestry from
 `a0db752a36ad254824f478fd96e97d7463509877`, no tag/push/merge/release/PR, and
 the final report identifies visual feel, live full-screen transition, and
 peripheral latency as residual visual-only checks not automated by CTest.
+
+---
+
+## Revision 4: Idle, Walk, and Run Pet Motion
+
+### Task 19: Record Deterministic Motion-State RED
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.cpp`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+
+- [ ] **Step 1: Add state, phase, and timing tests**
+
+Add these slots:
+
+```cpp
+void companionMotionStateClassifiesIdleWalkRun();
+void companionMotionStateKeepsMovingForSettleDelay();
+void companionMotionPhaseWrapsPerState();
+void companionMotionFrameIntervalsStayLowDuty();
+```
+
+Define the desired pure API:
+
+```cpp
+enum class InputIndicatorMotionState
+{
+  Idle,
+  Walk,
+  Run
+};
+
+InputIndicatorMotionState inputIndicatorMotionState(
+    InputIndicatorMotionState previous,
+    double pointerSpeedPointsPerSecond,
+    double stoppedMilliseconds,
+    bool reducedMotion
+);
+
+double inputIndicatorMotionPhase(
+    InputIndicatorMotionState state,
+    double elapsedMilliseconds
+);
+
+int inputIndicatorMotionFrameInterval(
+    InputIndicatorMotionState state,
+    bool reducedMotion
+);
+```
+
+- [ ] **Step 2: Fix the threshold rows**
+
+Assert:
+
+```text
+speed 0, stopped >= 180 -> Idle
+speed 30, previous Idle -> Walk
+speed 650, previous Walk -> Run
+speed 0, stopped 179, previous Run -> Run
+speed 0, stopped 180, previous Run -> Idle
+reduced motion -> Idle with frame interval 0
+```
+
+Choose exact thresholds in one constant:
+
+```cpp
+walk = 30 pt/s
+run = 650 pt/s
+settle = 180 ms
+idle interval = 75 ms
+walk/run interval = 8 ms
+```
+
+- [ ] **Step 3: Assert phase wrap**
+
+Idle phase is 0.0 at 0 ms, 0.5 at 600 ms, and 0.0 at 1200 ms. Walk uses
+250 ms and Run uses approximately 143 ms for 4 Hz and 7 Hz, respectively.
+Invalid/non-finite input returns phase 0.
+
+- [ ] **Step 4: Capture RED**
+
+Build and run `InputIndicatorGeometryTests`. Expected: compile failure for the
+missing motion-state API.
+
+### Task 20: Record Controller and Panel Duty-Cycle RED
+
+**Files:**
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/unittests/gui/input/InputIndicatorPolicyTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorPolicyTests.cpp`
+
+- [ ] **Step 1: Extend panel move results**
+
+The test-facing result contains:
+
+```cpp
+struct MacInputIndicatorPanelMoveResult
+{
+  bool visible = false;
+  bool animating = false;
+  bool reducedMotion = false;
+  int frameIntervalMilliseconds = 0;
+};
+```
+
+- [ ] **Step 2: Add controller timer tests**
+
+Add:
+
+```cpp
+void persistentIdleCompanionUsesLowDutyTimer();
+void persistentWalkCompanionUsesRenderTimer();
+void persistentRunCompanionUsesRenderTimer();
+void persistentHiddenAndReducedMotionStopTimers();
+```
+
+Harness rows set `frameIntervalMilliseconds` to 75 or 8 and
+`reducedMotion` true/false. Assert:
+
+```text
+Idle visible result -> render timer 75 ms
+Walk/Run visible result -> render timer 8 ms
+reduced result -> render and fallback timers stopped
+hidden result -> render stopped
+```
+
+Add a panel/state test that source changes and companion changes do not change
+the current `InputIndicatorMotionState` contract.
+
+- [ ] **Step 3: Capture RED**
+
+Run `InputIndicatorPolicyTests`. Expected: the old move result has no
+interval/reduced fields and the controller never changes its 8 ms interval to
+75 ms.
+
+### Task 21: Implement Idle, Walk, and Run
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.cpp`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+- Modify: `src/lib/gui/input/MacInputIndicatorController.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorController.mm`
+
+- [ ] **Step 1: Add pure state and phase helpers**
+
+Implement the API from Task 19 with finite-value guards. Run is selected at
+650 pt/s, Walk at 30 pt/s, and Idle starts only after 180 ms below the Walk
+threshold. Reduced Motion always returns Idle and interval 0.
+
+- [ ] **Step 2: Track pointer velocity inside the panel**
+
+Extend `MacInputIndicatorPanel::Impl` with:
+
+```cpp
+InputIndicatorMotionState motionState = InputIndicatorMotionState::Idle;
+std::chrono::steady_clock::time_point motionStateStarted;
+std::chrono::steady_clock::time_point lastPointerMovement;
+std::chrono::steady_clock::time_point previousTargetTime;
+```
+
+On each `move`, calculate speed from the target frame delta and elapsed
+monotonic time. Mark `lastPointerMovement` only for a real target delta above
+the settled tolerance. Transition state using the pure helper.
+
+- [ ] **Step 3: Render Cat motion**
+
+Add `motionState` and `motionPhase` properties to the AppKit view.
+
+- Idle: body fixed, tail sway with a 1200 ms sine cycle; no blink required.
+- Walk: use a 250 ms phase, alternating paw/leg offsets and <=0.45 pt body
+  bob.
+- Run: use a 143 ms phase, <=0.9 pt body bob, 6-8% body/ear response, and
+  stronger tail pose.
+
+Tail/leg motion stays inside the panel bounds and never changes the target
+frame. Keep the tag stationary and source crossfade independent.
+
+- [ ] **Step 4: Give Dog and Turtle analogous bounded motion**
+
+Use the same state/phase machinery with Dog tail/ear and paw motion and
+Turtle head/feet/shell bob. Keep the Turtle shell/body stretch within the same
+limits. Do not create new controls or assets.
+
+- [ ] **Step 5: Apply timer duty**
+
+Return the desired frame interval from `MacInputIndicatorPanel::move`:
+
+```text
+Idle -> 75 ms
+Walk/Run -> 8 ms
+source morph active -> 8 ms
+Reduced Motion -> 0 and animating=false
+```
+
+In `MacInputIndicatorController`, set `m_renderTimer` to the returned interval
+whenever it changes. Stop it for hidden/panel failure/reduced states. The
+16 ms fallback still operates only when event-monitor setup is incomplete and
+motion is not Reduced.
+
+- [ ] **Step 6: Verify focused GREEN**
+
+Run:
+
+```text
+InputIndicatorGeometryTests
+InputIndicatorPolicyTests
+InputIndicatorSettingsTests
+SettingsPagesTests
+TranslationFileTests
+OSXInputSourceTests
+OSXInputIndicatorRelayTests
+CoreProcessInputIndicatorTests
+ServerConfigDialogTests
+```
+
+Expected: 9/9 pass, including phase/state and timer-duty assertions.
+
+### Task 22: Commit, Full Gate, and Package
+
+- [ ] **Step 1: Commit docs and implementation separately**
+
+Preserve the mandatory Co-authored-by trailer and do not amend earlier
+commits.
+
+- [ ] **Step 2: Build 158 targets and run 157 eligible tests**
+
+Use Release Qt 6.12 with warnings as errors and exclude only
+`OSXClipboardTests` and `OSXKeyStateTests`.
+
+- [ ] **Step 3: Package**
+
+Build a clean `build/pointer-badge-motion/deskflow-2.0.9.0-macos-arm64.dmg`.
+Record hash, exact metadata, architecture, signature/CDHash and tooling state.
+Do not install or stable-sign.
+
+- [ ] **Step 4: Verify final ancestry and state**
+
+Expected: clean named branch with direct ancestry from
+`4f508481f3200dce827939197040cd0642e19349`, no tag/push/merge/release/PR,
+and visual feel/full-screen Space/physical-device smoothness reported as
+residual live checks.

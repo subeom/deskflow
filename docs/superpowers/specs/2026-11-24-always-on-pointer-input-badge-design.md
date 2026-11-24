@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-24  
 **Status:** Approved for implementation  
-**Revision base:** `a0db752a36ad254824f478fd96e97d7463509877`
+**Revision base:** `4f508481f3200dce827939197040cd0642e19349`
 
 ## Goal
 
@@ -68,9 +68,9 @@ required for visibility.
 1. The existing core subscription remains because it carries local/off-computer
    routing state. Its wire protocol is unchanged.
 2. `MacInputIndicatorController` owns one TIS source monitor, local and global
-   `NSEvent` mouse-move/drag monitors, and a precise 120 Hz/8 ms render timer
-   that runs only for pointer or source animation. The controller still has no
-   pointer-movement IPC.
+   `NSEvent` mouse-move/drag monitors, and a precise render timer whose duty
+   follows the companion state: 75 ms for idle and 8 ms for walk/run or source
+   transition. The controller still has no pointer-movement IPC.
 3. Enabling the feature reads a full `OSXInputSourceSnapshot`, including the
    exact identifier. A known source is presented immediately even if the core
    is disconnected.
@@ -102,6 +102,15 @@ required for visibility.
 
 ## Motion
 
+Companion pose uses a deterministic four-state machine:
+
+| State | Entry | Render duty | Visible behavior |
+| --- | --- | --- | --- |
+| Hidden | feature off, off-computer, or source unknown | no timer | panel hidden |
+| Idle | no qualifying pointer movement for 180 ms | 75 ms / 13.3 Hz | slow tail sway, 1.2 s cycle; body fixed |
+| Walk | cursor speed >= 30 pt/s and < 650 pt/s | 8 ms / 120 Hz | 4 Hz paw/leg phase, <=0.45 pt bob, small ear/tail response |
+| Run | cursor speed >= 650 pt/s | 8 ms / 120 Hz | 7 Hz paw/leg phase, <=0.9 pt bob, 6-8% lean/stretch |
+
 The follower uses deterministic local easing, not AppKit animation:
 
 - calculate the current cursor-relative target frame;
@@ -116,9 +125,13 @@ to a valid screen, then the follower approaches that valid target.
 
 Pet motion derives only from successive local pointer positions. A speed pose
 deforms the ears/tail/body by 4-8 pt, then eases to neutral when movement
-settles. Source transition uses an eased 200 ms tint/pose/label crossfade.
-`isOSXReduceMotion()` disables follower easing, tail deformation, and source
-morphing: the stable companion moves directly to the target.
+settles. Idle tail sway, walk/run phase, and body bob are bounded inside the
+companion and never change the target position. Source transition uses an
+eased 200 ms tint/pose/label crossfade.
+
+`isOSXReduceMotion()` disables idle tail, walk/run pose, follower easing, and
+source morphing: the stable companion moves directly to the target and starts
+no animation timer.
 
 ## Retained and Disconnected Work
 
@@ -147,14 +160,15 @@ The feature reads only:
 
 - the exact macOS TIS input-source identifier;
 - local/global mouse-move or drag notifications and the global pointer
-  position for a local frame update;
+  position for a local frame update and velocity estimate;
 - the existing core local/off-computer boolean.
 
 It writes no input and changes no native cursor state. While logically hidden,
 the pointer timer is stopped for feature-off, unknown-source, and
-off-computer states. The 120 Hz render timer stops on settlement; a 60 Hz
-timer exists only as a fallback for an incomplete monitor setup. No pointer
-coordinate is persisted, transmitted, or logged.
+off-computer states. Reduce Motion and hidden states have no active timer. Idle
+uses one low-duty 75 ms timer; walk/run and source morph use one 8 ms timer.
+A 60 Hz timer exists only as a fallback for an incomplete monitor setup. No
+pointer coordinate is persisted, transmitted, or logged.
 
 ## Test Contract
 
@@ -169,6 +183,8 @@ Focused tests cover:
 - bounded follower convergence without overshoot or more than 8 pt lag;
 - local/global event seams, fallback registration, and render-timer stop;
 - 4-8 pt motion pose clamp and Reduced Motion direct-to-target behavior;
+- deterministic Idle/Walk/Run thresholds and deterministic phase wrap;
+- hidden and Reduced Motion states have no render/fallback timer;
 - 200 ms source color/shape/label transition;
 - duplicate exact TIS snapshot notifications do not reconfigure the panel;
 - ABC and Korean source changes update the label;
