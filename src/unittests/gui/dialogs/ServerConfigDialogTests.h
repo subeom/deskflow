@@ -50,7 +50,7 @@ private Q_SLOTS:
   void systemLook_theToolbarOfTheArrangementIsWhatItWas();
   void accessibilityActive_repeatedShowAndCloseKeepsInterfacesValid();
 #if defined(Q_OS_MACOS)
-  void indicatorController_duringAccessibleDialogBlocksOwnProbe();
+  void indicatorController_duringAccessibleDialogStaysIndependentOfFocus();
 #endif
 
   // the grid of the classic arrangement builds the option of its cells from a widget that it deletes

@@ -49,10 +49,7 @@
 #include <vector>
 
 #if defined(Q_OS_MACOS)
-using deskflow::gui::input::InputIndicatorUiTrigger;
-using deskflow::gui::input::InputIndicatorVisibilityReason;
 using deskflow::gui::input::MacInputIndicatorController;
-using deskflow::gui::input::macAccessibilityProbeTargetPid;
 
 struct MacInputIndicatorControllerTestAccess
 {
@@ -61,35 +58,24 @@ struct MacInputIndicatorControllerTestAccess
   )
   {
     controller.m_effectiveEnabled = true;
-    controller.m_coreConnected = true;
     controller.m_isOnComputer = true;
+    controller.m_sourceSnapshot = {
+        .identifier = "com.apple.keylayout.ABC",
+        .source = deskflow::input::InputIndicatorSource::LatinABC
+    };
+    controller.refreshVisibility(true);
   }
 
-  static void trigger(
-      MacInputIndicatorController &controller,
-      InputIndicatorUiTrigger trigger
-  )
+  static void pointerTick(MacInputIndicatorController &controller)
   {
-    controller.trigger(trigger);
+    controller.movePointerBadge();
   }
 
-  static void request(MacInputIndicatorController &controller)
-  {
-    controller.requestAccessibility();
-  }
-
-  static std::optional<InputIndicatorUiTrigger> pendingTrigger(
+  static bool pointerTimerActive(
       const MacInputIndicatorController &controller
   )
   {
-    return controller.m_pendingTrigger;
-  }
-
-  static bool probeTimerActive(
-      const MacInputIndicatorController &controller
-  )
-  {
-    return controller.m_probeTimer.isActive();
+    return controller.m_pointerTimer.isActive();
   }
 };
 #endif
@@ -1205,7 +1191,7 @@ void ServerConfigDialogTests::accessibilityActive_repeatedShowAndCloseKeepsInter
 }
 
 #if defined(Q_OS_MACOS)
-void ServerConfigDialogTests::indicatorController_duringAccessibleDialogBlocksOwnProbe()
+void ServerConfigDialogTests::indicatorController_duringAccessibleDialogStaysIndependentOfFocus()
 {
   QAccessible::setActive(true);
   const auto deactivate = qScopeGuard([] { QAccessible::setActive(false); });
@@ -1222,93 +1208,54 @@ void ServerConfigDialogTests::indicatorController_duringAccessibleDialogBlocksOw
   });
 
   DeskflowLook look;
-  for (int cycle = 0; cycle < 20; ++cycle) {
+  for (int cycle = 0; cycle < 10; ++cycle) {
     ServerConfig config;
     ServerConfigDialog dialog(nullptr, config);
-    const int64_t ownPid =
-        static_cast<int64_t>(QCoreApplication::applicationPid());
-    std::optional<int64_t> frontmostPid = ownPid;
-    int probeRequests = 0;
-    std::optional<int64_t> probedPid;
-    QList<InputIndicatorVisibilityReason> diagnostics;
+    int presentations = 0;
+    int moves = 0;
+    int hides = 0;
     MacInputIndicatorController::Dependencies dependencies;
-    dependencies.frontmostApplicationPid = [&frontmostPid] {
-      return frontmostPid;
-    };
-    dependencies.accessibilityTrusted = [] { return true; };
     dependencies.inputSource = [] {
       return deskflow::platform::OSXInputSourceSnapshot{
+          .identifier = "com.apple.keylayout.ABC",
           .source =
               deskflow::input::InputIndicatorSource::LatinABC
       };
     };
-    dependencies.probeRequest =
-        [&probeRequests, &probedPid](
-            uint64_t, const std::optional<int64_t> pid
+    dependencies.panelShow =
+        [&presentations](
+            const deskflow::gui::input::MacInputIndicatorPanelOptions &
         ) {
-          ++probeRequests;
-          probedPid = pid;
+          ++presentations;
+          return true;
         };
-    dependencies.diagnosticEmitter =
-        [&diagnostics](InputIndicatorVisibilityReason reason) {
-          diagnostics.push_back(reason);
+    dependencies.panelMove =
+        [&moves](deskflow::gui::input::InputIndicatorPosition) {
+          ++moves;
+          return true;
         };
+    dependencies.panelHide = [&hides] { ++hides; };
     MacInputIndicatorController controller(nullptr, dependencies);
     MacInputIndicatorControllerTestAccess::arm(controller);
 
     bool callbackRan = false;
-    bool ownProbeBlocked = false;
-    bool ownPendingCleared = false;
-    bool ownProbeTimerStopped = false;
-    bool ownDiagnosticThrottled = false;
-    bool externalProbeScheduled = false;
+    bool persistentStateUnchanged = false;
     QTimer::singleShot(2000, &dialog, &QDialog::reject);
     QTimer::singleShot(0, &dialog, [&] {
       const auto closeDialog =
           qScopeGuard([&dialog] { dialog.reject(); });
       callbackRan = true;
-
-      ownProbeBlocked = !macAccessibilityProbeTargetPid(
-          std::optional<int64_t>{ownPid}, ownPid
-      );
-      MacInputIndicatorControllerTestAccess::trigger(
-          controller, InputIndicatorUiTrigger::InputSourceChanged
-      );
-      MacInputIndicatorControllerTestAccess::request(controller);
-      ownPendingCleared =
-          !MacInputIndicatorControllerTestAccess::pendingTrigger(
+      MacInputIndicatorControllerTestAccess::pointerTick(controller);
+      controller.inputIndicatorStateInvalidated();
+      persistentStateUnchanged =
+          presentations == 1 && moves > 0 && hides == 0 &&
+          MacInputIndicatorControllerTestAccess::pointerTimerActive(
               controller
           );
-      ownProbeTimerStopped =
-          !MacInputIndicatorControllerTestAccess::probeTimerActive(
-              controller
-          ) &&
-          probeRequests == 0;
-
-      MacInputIndicatorControllerTestAccess::trigger(
-          controller, InputIndicatorUiTrigger::InputSourceChanged
-      );
-      MacInputIndicatorControllerTestAccess::request(controller);
-      ownDiagnosticThrottled =
-          diagnostics.size() == 1 &&
-          diagnostics.constFirst() ==
-              InputIndicatorVisibilityReason::OwnApplication;
-
-      frontmostPid = ownPid + 1;
-      MacInputIndicatorControllerTestAccess::trigger(
-          controller, InputIndicatorUiTrigger::InputSourceChanged
-      );
-      MacInputIndicatorControllerTestAccess::request(controller);
-      externalProbeScheduled =
-          probeRequests == 1 && probedPid == frontmostPid;
     });
     dialog.exec();
     QVERIFY(callbackRan);
-    QVERIFY(ownProbeBlocked);
-    QVERIFY(ownPendingCleared);
-    QVERIFY(ownProbeTimerStopped);
-    QVERIFY(ownDiagnosticThrottled);
-    QVERIFY(externalProbeScheduled);
+    QVERIFY(persistentStateUnchanged);
   }
 }
 #endif
