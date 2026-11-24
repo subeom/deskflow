@@ -181,6 +181,30 @@ void InputIndicatorGeometryTests::compactPanelStyleUsesApprovedMetrics()
   QCOMPARE(options.companion, InputIndicatorCompanion::Cat);
 }
 
+void InputIndicatorGeometryTests::companionRenderAlphaFollowsSettingAndBoundsDetail()
+{
+  const auto minimum =
+      macInputIndicatorRenderAlpha(59);
+  QCOMPARE(minimum.body, 0.6);
+  QCOMPARE(minimum.detail, 0.7);
+
+  const auto normal =
+      macInputIndicatorRenderAlpha(65);
+  QCOMPARE(normal.body, 0.65);
+  QCOMPARE(normal.detail, 0.75);
+
+  const auto maximum =
+      macInputIndicatorRenderAlpha(101);
+  QCOMPARE(maximum.body, 1.0);
+  QCOMPARE(maximum.detail, 1.0);
+
+  for (const auto &alpha :
+       {minimum, normal, maximum}) {
+    QVERIFY(alpha.detail >= alpha.body);
+    QVERIFY(alpha.detail - alpha.body <= 0.10000001);
+  }
+}
+
 void InputIndicatorGeometryTests::companionSettingDefaultsToCat()
 {
   QCOMPARE(

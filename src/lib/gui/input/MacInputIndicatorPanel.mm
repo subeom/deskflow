@@ -80,7 +80,12 @@ void fillAndHighlight(NSBezierPath *path, NSColor *fill)
 {
   [fill setFill];
   [path fill];
-  [[NSColor colorWithWhite:1 alpha:0.55] setStroke];
+  const auto alpha = macInputIndicatorRenderAlpha(
+      static_cast<int>(std::lround(
+          fill.alphaComponent * 100.0
+      ))
+  );
+  [[NSColor colorWithWhite:1 alpha:alpha.detail] setStroke];
   [path setLineWidth:1];
   [path stroke];
 }
@@ -139,8 +144,7 @@ void drawCat(
                           bounds.size.width + tailSwayAmount,
                           13 + tailSwayAmount
                       )];
-  [[fill colorWithAlphaComponent:std::max(
-      0.25, static_cast<double>(fill.alphaComponent))] setStroke];
+  [fill setStroke];
   [tail setLineWidth:2.5];
   [tail setLineCapStyle:NSLineCapStyleRound];
   [tail stroke];
@@ -234,8 +238,7 @@ void drawDog(
        controlPoint2:NSMakePoint(
                           bounds.size.width + tailSwayAmount, 16
                       )];
-  [[fill colorWithAlphaComponent:std::max(
-      0.25, static_cast<double>(fill.alphaComponent))] setStroke];
+  [fill setStroke];
   [tail setLineWidth:2.5];
   [tail setLineCapStyle:NSLineCapStyleRound];
   [tail stroke];
@@ -375,13 +378,14 @@ void drawFaceAndTag(
     deskflow::input::InputIndicatorSource source,
     double transitionProgress,
     InputIndicatorTone tone,
-    double bodyOffset
+    double bodyOffset,
+    MacInputIndicatorRenderAlpha alpha
 )
 {
   const auto textColor = indicatorTextColor(tone);
   const double center = NSMidX(bounds);
   if (companion != InputIndicatorCompanion::Turtle) {
-    [[textColor colorWithAlphaComponent:0.72] setFill];
+    [[textColor colorWithAlphaComponent:alpha.detail] setFill];
     NSRectFill(NSMakeRect(
         center - 5.5, 15 + bodyOffset, 1.5, 1.5
     ));
@@ -396,9 +400,10 @@ void drawFaceAndTag(
                                      xRadius:4.5
                                      yRadius:4.5];
   [[[NSColor windowBackgroundColor]
-      colorWithAlphaComponent:0.78] setFill];
+      colorWithAlphaComponent:alpha.body] setFill];
   [tag fill];
-  [[NSColor separatorColor] setStroke];
+  [[[NSColor separatorColor]
+      colorWithAlphaComponent:alpha.detail] setStroke];
   [tag setLineWidth:0.5];
   [tag stroke];
 
@@ -409,18 +414,19 @@ void drawFaceAndTag(
       [NSFont systemFontOfSize:macInputIndicatorPanelStyle(companion).labelSize
                         weight:NSFontWeightSemibold];
   const auto drawLabel =
-      [paragraph, font, textColor, tagRect](
+      [paragraph, font, textColor, tagRect, alpha](
           deskflow::input::InputIndicatorSource labelSource,
-          double alpha
+          double transitionAlpha
       ) {
         NSString *label = indicatorLabel(labelSource);
-        if (!label || alpha <= 0) {
+        if (!label || transitionAlpha <= 0) {
           return;
         }
         NSDictionary *attributes = @{
           NSFontAttributeName : font,
           NSForegroundColorAttributeName :
-              [textColor colorWithAlphaComponent:alpha],
+              [textColor colorWithAlphaComponent:
+                  alpha.detail * transitionAlpha],
           NSParagraphStyleAttributeName : paragraph
         };
         [label drawInRect:tagRect withAttributes:attributes];
@@ -492,11 +498,15 @@ void drawFaceAndTag(
       static_cast<deskflow::gui::input::InputIndicatorMotionState>(
           self.motionState
       );
+  const auto alpha = deskflow::gui::input::
+      macInputIndicatorRenderAlpha(
+          static_cast<int>(std::lround(self.opacity * 100.0))
+      );
   NSColor *from = deskflow::gui::input::indicatorTint(
-      previousSource, tone, self.opacity
+      previousSource, tone, alpha.body
   );
   NSColor *to = deskflow::gui::input::indicatorTint(
-      source, tone, self.opacity
+      source, tone, alpha.body
   );
   NSColor *fill =
       [from blendedColorWithFraction:self.transitionProgress
@@ -542,7 +552,8 @@ void drawFaceAndTag(
           motionState,
           self.motionPhase,
           self.reducedMotion
-      ).bodyBob
+      ).bodyBob,
+      alpha
   );
 }
 

@@ -44,6 +44,29 @@ struct MacInputIndicatorPanelStyle
   int opacityPercent = 0;
 };
 
+struct MacInputIndicatorRenderAlpha
+{
+  double body = 0;
+  double detail = 0;
+};
+
+constexpr MacInputIndicatorRenderAlpha macInputIndicatorRenderAlpha(
+    int opacityPercent
+)
+{
+  const int clamped =
+      opacityPercent < 60
+          ? 60
+          : opacityPercent > 100
+                ? 100
+                : opacityPercent;
+  const double body = clamped / 100.0;
+  return {
+      .body = body,
+      .detail = body + 0.1 > 1.0 ? 1.0 : body + 0.1,
+  };
+}
+
 constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
     InputIndicatorCompanion companion = InputIndicatorCompanion::Cat
 )
