@@ -23,6 +23,28 @@ enum class InputIndicatorCompanion
   Turtle
 };
 
+enum class InputIndicatorRenderPrimitive
+{
+  Tile,
+  SilhouetteUnion,
+  LanguageGlyph
+};
+
+struct MacInputIndicatorRenderModel
+{
+  InputIndicatorCompanion companion =
+      InputIndicatorCompanion::Cat;
+  InputIndicatorRenderPrimitive silhouettePrimitive =
+      InputIndicatorRenderPrimitive::SilhouetteUnion;
+  bool usesEyePrimitives = false;
+  double tileWidth = 24;
+  double tileHeight = 24;
+  double totalWidth = 30;
+  double totalHeight = 28;
+  InputIndicatorRect silhouetteBounds;
+  InputIndicatorRect languageBounds;
+};
+
 enum class InputIndicatorTone
 {
   Automatic,
@@ -71,11 +93,9 @@ constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
     InputIndicatorCompanion companion = InputIndicatorCompanion::Cat
 )
 {
-  const bool turtle =
-      companion == InputIndicatorCompanion::Turtle;
   return {
-      .width = turtle ? 30.0 : 28.0,
-      .height = turtle ? 22.0 : 24.0,
+      .width = 30,
+      .height = 28,
       .cursorGap = 6,
       .screenMargin = 6,
       .labelSize = 8,
@@ -85,6 +105,44 @@ constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
       .transitionMilliseconds = 200,
       .opacityPercent = 65,
   };
+}
+
+constexpr MacInputIndicatorRenderModel macInputIndicatorRenderModel(
+    InputIndicatorCompanion companion
+)
+{
+  switch (companion) {
+  case InputIndicatorCompanion::Cat:
+    return {
+        .companion = InputIndicatorCompanion::Cat,
+        .silhouetteBounds = {
+            .x = 1, .y = 3, .width = 25, .height = 21
+        },
+        .languageBounds = {
+            .x = 9, .y = 7, .width = 10, .height = 8
+        },
+    };
+  case InputIndicatorCompanion::Dog:
+    return {
+        .companion = InputIndicatorCompanion::Dog,
+        .silhouetteBounds = {
+            .x = 1, .y = 3, .width = 25, .height = 21
+        },
+        .languageBounds = {
+            .x = 9, .y = 7, .width = 10, .height = 8
+        },
+    };
+  case InputIndicatorCompanion::Turtle:
+    return {
+        .companion = InputIndicatorCompanion::Turtle,
+        .silhouetteBounds = {
+            .x = 1, .y = 5, .width = 28, .height = 17
+        },
+        .languageBounds = {
+            .x = 9, .y = 8, .width = 10, .height = 8
+        },
+    };
+  }
 }
 
 inline InputIndicatorCompanion inputIndicatorCompanionFromSetting(

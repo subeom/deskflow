@@ -258,4 +258,71 @@ InputIndicatorMotionPose inputIndicatorMotionPose(
   }
 }
 
+InputIndicatorTailPose inputIndicatorCatTailPose(
+    InputIndicatorPoint root,
+    double length,
+    double phase,
+    double velocityX,
+    bool reducedMotion
+)
+{
+  if (!std::isfinite(root.x) ||
+      !std::isfinite(root.y)) {
+    return {};
+  }
+  if (!std::isfinite(length) || length <= 0) {
+    length = 10;
+  }
+  if (!std::isfinite(phase)) {
+    phase = 0;
+  }
+  if (!std::isfinite(velocityX)) {
+    velocityX = 0;
+  }
+  phase = std::fmod(std::fmod(phase, 1.0) + 1.0, 1.0);
+  velocityX = std::clamp(velocityX, -8.0, 8.0);
+  const double angle = phase * 2.0 * M_PI;
+  const double middleSway =
+      reducedMotion ? 0 : std::sin(angle) * 1.2;
+  const double tipSway =
+      reducedMotion
+          ? 0
+          : std::sin((phase - 0.18) * 2.0 * M_PI) * 0.8;
+  const double inertia =
+      reducedMotion ? 0 : -velocityX * 0.12;
+  const auto middle = InputIndicatorPoint{
+      .x = root.x + length * 0.52,
+      .y = root.y + 1.8 + middleSway,
+  };
+  const auto incomingOffset = InputIndicatorPoint{
+      .x = length * 0.18,
+      .y = 0.6 + middleSway * 0.2,
+  };
+  const auto tip = InputIndicatorPoint{
+      .x = root.x + length,
+      .y = root.y + 3.0 + tipSway + inertia,
+  };
+  return {
+      .root = root,
+      .proximalControl = {
+          .x = root.x + length * 0.2,
+          .y = root.y + 0.5 + middleSway * 0.5,
+      },
+      .middleIncomingControl = {
+          .x = middle.x - incomingOffset.x,
+          .y = middle.y - incomingOffset.y,
+      },
+      .middle = middle,
+      .middleOutgoingControl = {
+          .x = middle.x + incomingOffset.x,
+          .y = middle.y + incomingOffset.y,
+      },
+      .tipControl = {
+          .x = tip.x - length * 0.18,
+          .y = tip.y - 0.8 - tipSway * 0.15,
+      },
+      .tip = tip,
+  };
+}
+
 } // namespace deskflow::gui::input

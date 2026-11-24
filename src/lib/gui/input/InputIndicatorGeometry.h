@@ -53,6 +53,17 @@ struct InputIndicatorMotionPose
   double tailSway = 0;
 };
 
+struct InputIndicatorTailPose
+{
+  InputIndicatorPoint root;
+  InputIndicatorPoint proximalControl;
+  InputIndicatorPoint middleIncomingControl;
+  InputIndicatorPoint middle;
+  InputIndicatorPoint middleOutgoingControl;
+  InputIndicatorPoint tipControl;
+  InputIndicatorPoint tip;
+};
+
 std::optional<InputIndicatorPoint> positionInputIndicator(
     InputIndicatorPoint cursor, InputIndicatorSize badge, const std::vector<InputIndicatorRect> &screens,
     InputIndicatorPosition position, double gap, double margin
@@ -93,6 +104,14 @@ int inputIndicatorMotionFrameInterval(
 InputIndicatorMotionPose inputIndicatorMotionPose(
     InputIndicatorMotionState state,
     double phase,
+    bool reducedMotion
+);
+
+InputIndicatorTailPose inputIndicatorCatTailPose(
+    InputIndicatorPoint root,
+    double length,
+    double phase,
+    double velocityX,
     bool reducedMotion
 );
 

@@ -161,12 +161,12 @@ void InputIndicatorGeometryTests::compactPanelStyleUsesApprovedMetrics()
   const auto turtle =
       macInputIndicatorPanelStyle(InputIndicatorCompanion::Turtle);
 
-  QCOMPARE(cat.width, 28.0);
-  QCOMPARE(cat.height, 24.0);
-  QCOMPARE(dog.width, 28.0);
-  QCOMPARE(dog.height, 24.0);
+  QCOMPARE(cat.width, 30.0);
+  QCOMPARE(cat.height, 28.0);
+  QCOMPARE(dog.width, 30.0);
+  QCOMPARE(dog.height, 28.0);
   QCOMPARE(turtle.width, 30.0);
-  QCOMPARE(turtle.height, 22.0);
+  QCOMPARE(turtle.height, 28.0);
   QCOMPARE(cat.cursorGap, 6.0);
   QCOMPARE(cat.screenMargin, 6.0);
   QCOMPARE(cat.labelSize, 8.0);
@@ -179,6 +179,38 @@ void InputIndicatorGeometryTests::compactPanelStyleUsesApprovedMetrics()
   const MacInputIndicatorPanelOptions options;
   QCOMPARE(options.opacityPercent, 65);
   QCOMPARE(options.companion, InputIndicatorCompanion::Cat);
+}
+
+void InputIndicatorGeometryTests::companionRenderModelUsesUnifiedSilhouetteAndInternalLabel()
+{
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+
+  for (const auto companion : companions) {
+    const auto model = macInputIndicatorRenderModel(companion);
+    QVERIFY(!model.usesEyePrimitives);
+    QCOMPARE(
+        model.silhouettePrimitive,
+        InputIndicatorRenderPrimitive::SilhouetteUnion
+    );
+    QCOMPARE(model.tileWidth, 24.0);
+    QCOMPARE(model.tileHeight, 24.0);
+    QVERIFY(model.totalWidth <= 30.0);
+    QVERIFY(model.totalHeight <= 28.0);
+    QVERIFY(model.languageBounds.x >= model.silhouetteBounds.x);
+    QVERIFY(model.languageBounds.y >= model.silhouetteBounds.y);
+    QVERIFY(
+        model.languageBounds.x + model.languageBounds.width <=
+        model.silhouetteBounds.x + model.silhouetteBounds.width
+    );
+    QVERIFY(
+        model.languageBounds.y + model.languageBounds.height <=
+        model.silhouetteBounds.y + model.silhouetteBounds.height
+    );
+  }
 }
 
 void InputIndicatorGeometryTests::companionRenderAlphaFollowsSettingAndBoundsDetail()
@@ -203,6 +235,60 @@ void InputIndicatorGeometryTests::companionRenderAlphaFollowsSettingAndBoundsDet
     QVERIFY(alpha.detail >= alpha.body);
     QVERIFY(alpha.detail - alpha.body <= 0.10000001);
   }
+}
+
+void InputIndicatorGeometryTests::catTailUsesContinuousPhaseLaggedCurve()
+{
+  const InputIndicatorPoint root{.x = 3, .y = 8};
+  const auto neutral = inputIndicatorCatTailPose(
+      root, 10, 0, 0, true
+  );
+  const auto atZero = inputIndicatorCatTailPose(
+      root, 10, 0, 0, false
+  );
+  const auto atQuarter = inputIndicatorCatTailPose(
+      root, 10, 0.25, 0, false
+  );
+  const auto positiveVelocity = inputIndicatorCatTailPose(
+      root, 10, 0.25, 8, false
+  );
+  const auto negativeVelocity = inputIndicatorCatTailPose(
+      root, 10, 0.25, -8, false
+  );
+  const auto reducedFast = inputIndicatorCatTailPose(
+      root, 10, 0.25, 8, true
+  );
+
+  QCOMPARE(positiveVelocity.root.x, root.x);
+  QCOMPARE(positiveVelocity.root.y, root.y);
+  QVERIFY(std::abs(
+      (positiveVelocity.middle.x -
+       positiveVelocity.middleIncomingControl.x) -
+      (positiveVelocity.middleOutgoingControl.x -
+       positiveVelocity.middle.x)
+  ) < 1e-9);
+  QVERIFY(std::abs(
+      (positiveVelocity.middle.y -
+       positiveVelocity.middleIncomingControl.y) -
+      (positiveVelocity.middleOutgoingControl.y -
+       positiveVelocity.middle.y)
+  ) < 1e-9);
+
+  const auto middleDelta =
+      atQuarter.middle.y - atZero.middle.y;
+  const auto tipDelta =
+      atQuarter.tip.y - atZero.tip.y;
+  QVERIFY(tipDelta < middleDelta);
+  QVERIFY(positiveVelocity.tip.y < atQuarter.tip.y);
+  QVERIFY(negativeVelocity.tip.y > atQuarter.tip.y);
+
+  QVERIFY(std::abs(positiveVelocity.tip.y - root.y) <= 6.0);
+  QVERIFY(positiveVelocity.tip.x >= root.x);
+  QVERIFY(positiveVelocity.tip.x <= root.x + 10.5);
+  QCOMPARE(reducedFast.middle.x, neutral.middle.x);
+  QCOMPARE(reducedFast.middle.y, neutral.middle.y);
+  QCOMPARE(reducedFast.tip.x, neutral.tip.x);
+  QCOMPARE(reducedFast.tip.y, neutral.tip.y);
 }
 
 void InputIndicatorGeometryTests::companionSettingDefaultsToCat()
