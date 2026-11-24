@@ -292,10 +292,14 @@ void MacInputIndicatorController::pointerTargetChanged()
           deskflow::input::InputIndicatorSource::Unknown) {
     return;
   }
-  if (m_renderTimer.isActive()) {
+  if (m_renderTimer.isActive() &&
+      m_renderTimer.interval() <= kRenderFrameIntervalMs) {
     return;
   }
-  m_renderTimer.start(kRenderFrameIntervalMs);
+  m_renderTimer.setInterval(kRenderFrameIntervalMs);
+  if (!m_renderTimer.isActive()) {
+    m_renderTimer.start();
+  }
   movePointerBadge();
 }
 
@@ -321,12 +325,35 @@ void MacInputIndicatorController::movePointerBadge()
     return;
   }
   m_panelVisible = true;
-  if (result.animating) {
+  if (result.reducedMotion) {
+    m_renderTimer.stop();
+    m_fallbackTimer.stop();
+    return;
+  }
+
+  if (result.animating && result.frameIntervalMilliseconds > 0) {
+    if (!m_pointerMonitorComplete &&
+        result.frameIntervalMilliseconds >
+            kRenderFrameIntervalMs) {
+      m_renderTimer.stop();
+      if (!m_fallbackTimer.isActive()) {
+        m_fallbackTimer.start(kFallbackFrameIntervalMs);
+      }
+      return;
+    }
+    m_fallbackTimer.stop();
+    m_renderTimer.setInterval(
+        result.frameIntervalMilliseconds
+    );
     if (!m_renderTimer.isActive()) {
-      m_renderTimer.start(kRenderFrameIntervalMs);
+      m_renderTimer.start();
     }
   } else {
     m_renderTimer.stop();
+    if (!m_pointerMonitorComplete &&
+        !m_fallbackTimer.isActive()) {
+      m_fallbackTimer.start(kFallbackFrameIntervalMs);
+    }
   }
 }
 

@@ -147,6 +147,8 @@ struct PersistentControllerHarness
   bool showResult = true;
   bool moveResult = true;
   bool moveAnimating = false;
+  bool moveReducedMotion = false;
+  int moveFrameInterval = 0;
   bool pointerMonitorComplete = true;
   int pointerMonitorStarts = 0;
   int pointerMonitorStops = 0;
@@ -170,6 +172,8 @@ struct PersistentControllerHarness
       return MacInputIndicatorPanelMoveResult{
           .visible = moveResult,
           .animating = moveAnimating,
+          .reducedMotion = moveReducedMotion,
+          .frameIntervalMilliseconds = moveFrameInterval,
       };
     };
     result.panelHide = [this] { ++hides; };
@@ -800,6 +804,7 @@ void InputIndicatorPolicyTests::completePointerMonitorUsesEventRendering()
 
   const auto moves = harness.moves;
   harness.moveAnimating = true;
+  harness.moveFrameInterval = 8;
   harness.pointerMoved();
   QCOMPARE(harness.moves, moves + 1);
   QVERIFY(MacInputIndicatorControllerTestAccess::renderTimerActive(
@@ -835,6 +840,7 @@ void InputIndicatorPolicyTests::pointerEventsCoalesceWhileRenderTimerIsActive()
   );
   MacInputIndicatorControllerTestAccess::enableWithMonitor(controller);
   harness.moveAnimating = true;
+  harness.moveFrameInterval = 8;
 
   const auto moves = harness.moves;
   harness.pointerMoved();
@@ -847,6 +853,75 @@ void InputIndicatorPolicyTests::pointerEventsCoalesceWhileRenderTimerIsActive()
   harness.moveAnimating = false;
   MacInputIndicatorControllerTestAccess::renderTick(controller);
   QVERIFY(!MacInputIndicatorControllerTestAccess::renderTimerActive(
+      controller
+  ));
+}
+
+void InputIndicatorPolicyTests::persistentIdleCompanionUsesLowDutyTimer()
+{
+  PersistentControllerHarness harness;
+  harness.moveAnimating = true;
+  harness.moveFrameInterval = 75;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::enableWithMonitor(controller);
+
+  QVERIFY(MacInputIndicatorControllerTestAccess::renderTimerActive(
+      controller
+  ));
+  QCOMPARE(
+      MacInputIndicatorControllerTestAccess::renderTimerInterval(
+          controller
+      ),
+      75
+  );
+}
+
+void InputIndicatorPolicyTests::persistentWalkAndRunUseRenderTimer()
+{
+  PersistentControllerHarness harness;
+  harness.moveAnimating = true;
+  harness.moveFrameInterval = 8;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::enableWithMonitor(controller);
+
+  QVERIFY(MacInputIndicatorControllerTestAccess::renderTimerActive(
+      controller
+  ));
+  QCOMPARE(
+      MacInputIndicatorControllerTestAccess::renderTimerInterval(
+          controller
+      ),
+      8
+  );
+}
+
+void InputIndicatorPolicyTests::persistentHiddenAndReducedMotionStopTimers()
+{
+  PersistentControllerHarness harness;
+  harness.moveReducedMotion = true;
+  harness.pointerMonitorComplete = false;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::enableWithMonitor(controller);
+
+  QVERIFY(!MacInputIndicatorControllerTestAccess::renderTimerActive(
+      controller
+  ));
+  QVERIFY(!MacInputIndicatorControllerTestAccess::fallbackTimerActive(
+      controller
+  ));
+
+  harness.moveReducedMotion = false;
+  controller.inputIndicatorLocalChanged(false);
+  QVERIFY(!MacInputIndicatorControllerTestAccess::renderTimerActive(
+      controller
+  ));
+  QVERIFY(!MacInputIndicatorControllerTestAccess::fallbackTimerActive(
       controller
   ));
 }

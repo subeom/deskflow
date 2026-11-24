@@ -47,6 +47,9 @@ private Q_SLOTS:
   void completePointerMonitorUsesEventRendering();
   void incompletePointerMonitorKeepsFallbackTimer();
   void pointerEventsCoalesceWhileRenderTimerIsActive();
+  void persistentIdleCompanionUsesLowDutyTimer();
+  void persistentWalkAndRunUseRenderTimer();
+  void persistentHiddenAndReducedMotionStopTimers();
 #endif
   void visibilityDecisionReportsHideReason();
   void diagnosticThrottleLimitsToOnePerFiveSeconds();

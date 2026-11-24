@@ -163,4 +163,99 @@ double inputIndicatorTransitionProgress(
   return progress * progress * (3.0 - 2.0 * progress);
 }
 
+InputIndicatorMotionState inputIndicatorMotionState(
+    InputIndicatorMotionState previous,
+    double pointerSpeedPointsPerSecond,
+    double stoppedMilliseconds,
+    bool reducedMotion
+)
+{
+  if (reducedMotion) {
+    return InputIndicatorMotionState::Idle;
+  }
+  if (!std::isfinite(pointerSpeedPointsPerSecond)) {
+    pointerSpeedPointsPerSecond = 0;
+  }
+  if (!std::isfinite(stoppedMilliseconds)) {
+    stoppedMilliseconds = 0;
+  }
+  constexpr double kWalkSpeed = 30;
+  constexpr double kRunSpeed = 650;
+  constexpr double kSettleMilliseconds = 180;
+  if (pointerSpeedPointsPerSecond >= kRunSpeed) {
+    return InputIndicatorMotionState::Run;
+  }
+  if (pointerSpeedPointsPerSecond >= kWalkSpeed) {
+    return InputIndicatorMotionState::Walk;
+  }
+  if (stoppedMilliseconds >= kSettleMilliseconds) {
+    return InputIndicatorMotionState::Idle;
+  }
+  return previous;
+}
+
+double inputIndicatorMotionPhase(
+    InputIndicatorMotionState state,
+    double elapsedMilliseconds
+)
+{
+  if (!std::isfinite(elapsedMilliseconds)) {
+    return 0;
+  }
+  double period = 1200;
+  switch (state) {
+  case InputIndicatorMotionState::Idle:
+    period = 1200;
+    break;
+  case InputIndicatorMotionState::Walk:
+    period = 250;
+    break;
+  case InputIndicatorMotionState::Run:
+    period = 1000.0 / 7.0;
+    break;
+  }
+  return std::fmod(std::max(elapsedMilliseconds, 0.0), period) /
+         period;
+}
+
+int inputIndicatorMotionFrameInterval(
+    InputIndicatorMotionState state,
+    bool reducedMotion
+)
+{
+  if (reducedMotion) {
+    return 0;
+  }
+  return state == InputIndicatorMotionState::Idle ? 75 : 8;
+}
+
+InputIndicatorMotionPose inputIndicatorMotionPose(
+    InputIndicatorMotionState state,
+    double phase,
+    bool reducedMotion
+)
+{
+  if (reducedMotion ||
+      !std::isfinite(phase)) {
+    return {};
+  }
+  const auto angle =
+      std::clamp(phase, 0.0, 1.0) * 2.0 * M_PI;
+  const auto sinPhase = std::sin(angle);
+  switch (state) {
+  case InputIndicatorMotionState::Idle:
+    return {.tailSway = sinPhase * 2.0};
+  case InputIndicatorMotionState::Walk:
+    return {
+        .bodyBob = sinPhase * 0.45,
+        .bodyStretch = std::abs(sinPhase) * 0.025,
+    };
+  case InputIndicatorMotionState::Run:
+    return {
+        .bodyBob = sinPhase * 0.9,
+        .bodyStretch = std::abs(sinPhase) * 0.07,
+    };
+  }
+}
+
 } // namespace deskflow::gui::input

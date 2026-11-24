@@ -23,6 +23,11 @@ private Q_SLOTS:
   void companionSettingDefaultsToCat();
   void motionOffsetClampsAndRespectsReducedMotion();
   void transitionProgressEasesAndRespectsReducedMotion();
+  void companionMotionStateClassifiesIdleWalkRun();
+  void companionMotionStateKeepsMovingForSettleDelay();
+  void companionMotionPhaseWrapsPerState();
+  void companionMotionPoseHonorsBounds();
+  void companionMotionFrameIntervalsStayLowDuty();
   void followerCatchesUpWithoutOvershoot();
   void followerCapsTrailingLag();
   void followerRejectsInvalidInput();

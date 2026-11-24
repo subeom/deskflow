@@ -90,6 +90,8 @@ struct MacInputIndicatorPanelMoveResult
 {
   bool visible = false;
   bool animating = false;
+  bool reducedMotion = false;
+  int frameIntervalMilliseconds = 0;
 };
 
 constexpr bool macInputIndicatorPresentationNeeded(

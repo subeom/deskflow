@@ -39,6 +39,20 @@ struct InputIndicatorRect
   double height = 0;
 };
 
+enum class InputIndicatorMotionState
+{
+  Idle,
+  Walk,
+  Run
+};
+
+struct InputIndicatorMotionPose
+{
+  double bodyBob = 0;
+  double bodyStretch = 0;
+  double tailSway = 0;
+};
+
 std::optional<InputIndicatorPoint> positionInputIndicator(
     InputIndicatorPoint cursor, InputIndicatorSize badge, const std::vector<InputIndicatorRect> &screens,
     InputIndicatorPosition position, double gap, double margin
@@ -56,6 +70,29 @@ std::optional<InputIndicatorPoint> inputIndicatorMotionOffset(
 
 double inputIndicatorTransitionProgress(
     double elapsedMilliseconds, double durationMilliseconds,
+    bool reducedMotion
+);
+
+InputIndicatorMotionState inputIndicatorMotionState(
+    InputIndicatorMotionState previous,
+    double pointerSpeedPointsPerSecond,
+    double stoppedMilliseconds,
+    bool reducedMotion
+);
+
+double inputIndicatorMotionPhase(
+    InputIndicatorMotionState state,
+    double elapsedMilliseconds
+);
+
+int inputIndicatorMotionFrameInterval(
+    InputIndicatorMotionState state,
+    bool reducedMotion
+);
+
+InputIndicatorMotionPose inputIndicatorMotionPose(
+    InputIndicatorMotionState state,
+    double phase,
     bool reducedMotion
 );
 

@@ -233,6 +233,168 @@ void InputIndicatorGeometryTests::transitionProgressEasesAndRespectsReducedMotio
   QCOMPARE(inputIndicatorTransitionProgress(100, 200, true), 1.0);
 }
 
+void InputIndicatorGeometryTests::companionMotionStateClassifiesIdleWalkRun()
+{
+  QCOMPARE(
+      inputIndicatorMotionState(
+          InputIndicatorMotionState::Idle, 0, 180, false
+      ),
+      InputIndicatorMotionState::Idle
+  );
+  QCOMPARE(
+      inputIndicatorMotionState(
+          InputIndicatorMotionState::Idle, 30, 0, false
+      ),
+      InputIndicatorMotionState::Walk
+  );
+  QCOMPARE(
+      inputIndicatorMotionState(
+          InputIndicatorMotionState::Walk, 650, 0, false
+      ),
+      InputIndicatorMotionState::Run
+  );
+  QCOMPARE(
+      inputIndicatorMotionState(
+          InputIndicatorMotionState::Run, 900, 0, false
+      ),
+      InputIndicatorMotionState::Run
+  );
+  QCOMPARE(
+      inputIndicatorMotionState(
+          InputIndicatorMotionState::Run, 900, 0, true
+      ),
+      InputIndicatorMotionState::Idle
+  );
+}
+
+void InputIndicatorGeometryTests::companionMotionStateKeepsMovingForSettleDelay()
+{
+  QCOMPARE(
+      inputIndicatorMotionState(
+          InputIndicatorMotionState::Run, 0, 179, false
+      ),
+      InputIndicatorMotionState::Run
+  );
+  QCOMPARE(
+      inputIndicatorMotionState(
+          InputIndicatorMotionState::Run, 0, 180, false
+      ),
+      InputIndicatorMotionState::Idle
+  );
+  QCOMPARE(
+      inputIndicatorMotionState(
+          InputIndicatorMotionState::Walk, 0, 179, false
+      ),
+      InputIndicatorMotionState::Walk
+  );
+}
+
+void InputIndicatorGeometryTests::companionMotionPhaseWrapsPerState()
+{
+  QCOMPARE(
+      inputIndicatorMotionPhase(
+          InputIndicatorMotionState::Idle, 0
+      ),
+      0.0
+  );
+  QCOMPARE(
+      inputIndicatorMotionPhase(
+          InputIndicatorMotionState::Idle, 600
+      ),
+      0.5
+  );
+  QCOMPARE(
+      inputIndicatorMotionPhase(
+          InputIndicatorMotionState::Idle, 1200
+      ),
+      0.0
+  );
+  QCOMPARE(
+      inputIndicatorMotionPhase(
+          InputIndicatorMotionState::Walk, 125
+      ),
+      0.5
+  );
+  QVERIFY(std::abs(
+      inputIndicatorMotionPhase(
+          InputIndicatorMotionState::Run,
+          1000.0 / 14.0
+      ) - 0.5
+  ) < 1e-9);
+  QCOMPARE(
+      inputIndicatorMotionPhase(
+          InputIndicatorMotionState::Run,
+          std::numeric_limits<double>::quiet_NaN()
+      ),
+      0.0
+  );
+}
+
+void InputIndicatorGeometryTests::companionMotionPoseHonorsBounds()
+{
+  const auto idle = inputIndicatorMotionPose(
+      InputIndicatorMotionState::Idle, 0.25, false
+  );
+  QCOMPARE(idle.bodyBob, 0.0);
+  QCOMPARE(idle.bodyStretch, 0.0);
+  QCOMPARE(idle.tailSway, 2.0);
+
+  const auto walk = inputIndicatorMotionPose(
+      InputIndicatorMotionState::Walk, 0.25, false
+  );
+  QCOMPARE(walk.bodyBob, 0.45);
+  QCOMPARE(walk.bodyStretch, 0.025);
+  QCOMPARE(walk.tailSway, 0.0);
+
+  const auto run = inputIndicatorMotionPose(
+      InputIndicatorMotionState::Run, 0.25, false
+  );
+  QCOMPARE(run.bodyBob, 0.9);
+  QCOMPARE(run.bodyStretch, 0.07);
+  QCOMPARE(run.tailSway, 0.0);
+
+  const auto reduced = inputIndicatorMotionPose(
+      InputIndicatorMotionState::Run, 0.25, true
+  );
+  QCOMPARE(reduced.bodyBob, 0.0);
+  QCOMPARE(reduced.bodyStretch, 0.0);
+  QCOMPARE(reduced.tailSway, 0.0);
+}
+
+void InputIndicatorGeometryTests::companionMotionFrameIntervalsStayLowDuty()
+{
+  QCOMPARE(
+      inputIndicatorMotionFrameInterval(
+          InputIndicatorMotionState::Idle, false
+      ),
+      75
+  );
+  QCOMPARE(
+      inputIndicatorMotionFrameInterval(
+          InputIndicatorMotionState::Walk, false
+      ),
+      8
+  );
+  QCOMPARE(
+      inputIndicatorMotionFrameInterval(
+          InputIndicatorMotionState::Run, false
+      ),
+      8
+  );
+  QCOMPARE(
+      inputIndicatorMotionFrameInterval(
+          InputIndicatorMotionState::Idle, true
+      ),
+      0
+  );
+  QCOMPARE(
+      inputIndicatorMotionFrameInterval(
+          InputIndicatorMotionState::Run, true
+      ),
+      0
+  );
+}
+
 void InputIndicatorGeometryTests::followerCatchesUpWithoutOvershoot()
 {
   const auto first = followInputIndicator(
