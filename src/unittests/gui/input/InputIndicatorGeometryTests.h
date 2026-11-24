@@ -19,4 +19,8 @@ private Q_SLOTS:
   void everyPositionIsPointerRelative();
   void unknownOrInvalidGeometryHides_data();
   void unknownOrInvalidGeometryHides();
+  void compactPanelStyleUsesApprovedMetrics();
+  void followerCatchesUpWithoutOvershoot();
+  void followerCapsTrailingLag();
+  void followerRejectsInvalidInput();
 };

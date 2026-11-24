@@ -6,8 +6,11 @@
 #include "InputIndicatorGeometryTests.h"
 
 #include "gui/input/InputIndicatorGeometry.h"
+#include "gui/input/MacInputIndicatorPanel.h"
 
 #include <QTest>
+
+#include <limits>
 
 using namespace deskflow::gui::input;
 
@@ -147,6 +150,85 @@ void InputIndicatorGeometryTests::unknownOrInvalidGeometryHides()
   QVERIFY(!positionInputIndicator(
                cursor, badge, screens, InputIndicatorPosition::CursorBottomRight, 8, 8
   ).has_value());
+}
+
+void InputIndicatorGeometryTests::compactPanelStyleUsesApprovedMetrics()
+{
+  const auto style = macInputIndicatorPanelStyle();
+
+  QCOMPARE(style.width, 24.0);
+  QCOMPARE(style.height, 20.0);
+  QCOMPARE(style.cursorGap, 6.0);
+  QCOMPARE(style.screenMargin, 6.0);
+  QCOMPARE(style.labelSize, 11.0);
+  QCOMPARE(style.cornerRadius, 7.0);
+  QCOMPARE(style.opacityPercent, 65);
+
+  const MacInputIndicatorPanelOptions options;
+  QCOMPARE(options.opacityPercent, 65);
+}
+
+void InputIndicatorGeometryTests::followerCatchesUpWithoutOvershoot()
+{
+  const auto first = followInputIndicator(
+      {.x = 0, .y = 0}, {.x = 10, .y = 0}, 0.5, 18
+  );
+  QVERIFY(first);
+  QCOMPARE(first->x, 5.0);
+  QCOMPARE(first->y, 0.0);
+
+  auto current = *first;
+  current = *followInputIndicator(
+      current, {.x = 10, .y = 0}, 0.5, 18
+  );
+  QCOMPARE(current.x, 7.5);
+  current = *followInputIndicator(
+      current, {.x = 10, .y = 0}, 0.5, 18
+  );
+  QCOMPARE(current.x, 8.75);
+  QVERIFY(current.x <= 10.0);
+
+  const auto approachingFromAhead = followInputIndicator(
+      {.x = 12, .y = 0}, {.x = 10, .y = 0}, 0.5, 18
+  );
+  QVERIFY(approachingFromAhead);
+  QCOMPARE(approachingFromAhead->x, 11.0);
+  QVERIFY(approachingFromAhead->x >= 10.0);
+}
+
+void InputIndicatorGeometryTests::followerCapsTrailingLag()
+{
+  const auto result = followInputIndicator(
+      {.x = 0, .y = 0}, {.x = 100, .y = 0}, 0.5, 18
+  );
+
+  QVERIFY(result);
+  QCOMPARE(result->x, 82.0);
+  QCOMPARE(result->y, 0.0);
+}
+
+void InputIndicatorGeometryTests::followerRejectsInvalidInput()
+{
+  const auto nan = std::numeric_limits<double>::quiet_NaN();
+
+  QVERIFY(!followInputIndicator(
+      {.x = nan, .y = 0}, {.x = 10, .y = 0}, 0.5, 18
+  ));
+  QVERIFY(!followInputIndicator(
+      {.x = 0, .y = 0}, {.x = 10, .y = nan}, 0.5, 18
+  ));
+  QVERIFY(!followInputIndicator(
+      {.x = 0, .y = 0}, {.x = 100, .y = 0}, 0, 18
+  ));
+  QVERIFY(!followInputIndicator(
+      {.x = 0, .y = 0}, {.x = 100, .y = 0}, -0.1, 18
+  ));
+  QVERIFY(!followInputIndicator(
+      {.x = 0, .y = 0}, {.x = 100, .y = 0}, 1.1, 18
+  ));
+  QVERIFY(!followInputIndicator(
+      {.x = 0, .y = 0}, {.x = 100, .y = 0}, 0.5, -1
+  ));
 }
 
 QTEST_MAIN(InputIndicatorGeometryTests)

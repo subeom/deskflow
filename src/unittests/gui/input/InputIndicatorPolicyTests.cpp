@@ -95,6 +95,13 @@ struct MacInputIndicatorControllerTestAccess
   {
     return controller.m_sourceMonitor != nullptr;
   }
+
+  static bool panelActive(
+      const MacInputIndicatorController &controller
+  )
+  {
+    return controller.m_panel != nullptr;
+  }
 };
 #endif
 
@@ -424,6 +431,14 @@ void InputIndicatorPolicyTests::panelPresentationNeverRequestsCursorMutation()
   );
 }
 
+void InputIndicatorPolicyTests::panelPresentationNeededAfterActiveSpaceChange()
+{
+  QVERIFY(!macInputIndicatorPresentationNeeded(false, true));
+  QVERIFY(macInputIndicatorPresentationNeeded(true, true));
+  QVERIFY(macInputIndicatorPresentationNeeded(false, false));
+  QVERIFY(macInputIndicatorPresentationNeeded(true, false));
+}
+
 void InputIndicatorPolicyTests::persistentPolicyUsesOnlyEnabledLocalAndKnownSource()
 {
   const PersistentInputIndicatorPolicyInput visible{
@@ -614,6 +629,7 @@ void InputIndicatorPolicyTests::persistentFeatureOffStopsAndHides()
   QVERIFY(MacInputIndicatorControllerTestAccess::sourceMonitorActive(
       controller
   ));
+  QVERIFY(MacInputIndicatorControllerTestAccess::panelActive(controller));
   const auto presentations = harness.presentations.size();
 
   MacInputIndicatorControllerTestAccess::setEnabled(controller, false);
@@ -625,6 +641,7 @@ void InputIndicatorPolicyTests::persistentFeatureOffStopsAndHides()
   QVERIFY(!MacInputIndicatorControllerTestAccess::sourceMonitorActive(
       controller
   ));
+  QVERIFY(!MacInputIndicatorControllerTestAccess::panelActive(controller));
   controller.inputIndicatorStateInvalidated();
   QCOMPARE(harness.presentations.size(), presentations);
 }

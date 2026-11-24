@@ -55,7 +55,6 @@ MacInputIndicatorController::MacInputIndicatorController(
     QObject *parent, Dependencies dependencies
 )
     : QObject(parent),
-      m_panel(std::make_unique<MacInputIndicatorPanel>()),
       m_pointerTimer(this)
 {
   m_inputSource =
@@ -68,18 +67,22 @@ MacInputIndicatorController::MacInputIndicatorController(
       dependencies.panelShow
           ? std::move(dependencies.panelShow)
           : [this](const MacInputIndicatorPanelOptions &options) {
-              return m_panel->show(options);
+              return m_panel && m_panel->show(options);
             };
   m_panelMove =
       dependencies.panelMove
           ? std::move(dependencies.panelMove)
           : [this](InputIndicatorPosition position) {
-              return m_panel->move(position);
+              return m_panel && m_panel->move(position);
             };
   m_panelHide =
       dependencies.panelHide
           ? std::move(dependencies.panelHide)
-          : [this] { m_panel->hide(); };
+          : [this] {
+              if (m_panel) {
+                m_panel->hide();
+              }
+            };
   m_diagnosticEmitter =
       dependencies.diagnosticEmitter
           ? std::move(dependencies.diagnosticEmitter)
@@ -161,6 +164,9 @@ void MacInputIndicatorController::setEffectiveEnabled(bool enabled)
 
 void MacInputIndicatorController::createMonitors()
 {
+  if (!m_panel) {
+    m_panel = std::make_unique<MacInputIndicatorPanel>();
+  }
   m_sourceSnapshot = m_inputSource();
   if (!m_sourceMonitor) {
     m_sourceMonitor =
@@ -175,6 +181,7 @@ void MacInputIndicatorController::destroyMonitors()
   m_pointerTimer.stop();
   m_sourceMonitor.reset();
   m_sourceSnapshot = {};
+  m_panel.reset();
 }
 
 void MacInputIndicatorController::inputSourceChanged()

@@ -44,4 +44,9 @@ std::optional<InputIndicatorPoint> positionInputIndicator(
     InputIndicatorPosition position, double gap, double margin
 );
 
+std::optional<InputIndicatorPoint> followInputIndicator(
+    InputIndicatorPoint previous, InputIndicatorPoint target,
+    double catchUpFactor, double maximumLag
+);
+
 } // namespace deskflow::gui::input

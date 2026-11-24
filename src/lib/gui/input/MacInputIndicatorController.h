@@ -79,7 +79,7 @@ private:
   bool m_panelConfigured = false;
   bool m_panelVisible = false;
   InputIndicatorPosition m_position = InputIndicatorPosition::CursorBottomRight;
-  int m_opacityPercent = 85;
+  int m_opacityPercent = macInputIndicatorPanelStyle().opacityPercent;
   InputIndicatorTone m_tone = InputIndicatorTone::Automatic;
   deskflow::platform::OSXInputSourceSnapshot m_sourceSnapshot;
   std::unique_ptr<deskflow::platform::OSXInputSourceMonitor> m_sourceMonitor;

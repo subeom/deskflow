@@ -31,6 +31,7 @@ private Q_SLOTS:
   void accessibilitySnapshotRequiresFrontmostPid();
   void accessibilitySnapshotAcceptsMatchingFrontmostPid();
   void panelPresentationNeverRequestsCursorMutation();
+  void panelPresentationNeededAfterActiveSpaceChange();
   void persistentPolicyUsesOnlyEnabledLocalAndKnownSource();
   void persistentKnownSourceShowsWithoutConnectivityOrAx();
   void persistentOffComputerHides();

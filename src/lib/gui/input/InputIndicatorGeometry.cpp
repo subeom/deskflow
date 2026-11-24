@@ -73,4 +73,44 @@ std::optional<InputIndicatorPoint> positionInputIndicator(
   return result;
 }
 
+std::optional<InputIndicatorPoint> followInputIndicator(
+    InputIndicatorPoint previous, InputIndicatorPoint target,
+    double catchUpFactor, double maximumLag
+)
+{
+  if (!std::isfinite(previous.x) || !std::isfinite(previous.y) ||
+      !std::isfinite(target.x) || !std::isfinite(target.y) ||
+      !std::isfinite(catchUpFactor) || catchUpFactor <= 0 ||
+      catchUpFactor > 1 || !std::isfinite(maximumLag) ||
+      maximumLag < 0) {
+    return std::nullopt;
+  }
+
+  const auto deltaX = target.x - previous.x;
+  const auto deltaY = target.y - previous.y;
+  const auto distance = std::hypot(deltaX, deltaY);
+  if (!std::isfinite(distance)) {
+    return std::nullopt;
+  }
+  if (distance == 0) {
+    return target;
+  }
+
+  const InputIndicatorPoint eased{
+      .x = previous.x + deltaX * catchUpFactor,
+      .y = previous.y + deltaY * catchUpFactor,
+  };
+  const auto remaining =
+      distance * (1.0 - catchUpFactor);
+  if (remaining <= maximumLag) {
+    return eased;
+  }
+
+  const auto lagScale = maximumLag / distance;
+  return InputIndicatorPoint{
+      .x = target.x - deltaX * lagScale,
+      .y = target.y - deltaY * lagScale,
+  };
+}
+
 } // namespace deskflow::gui::input

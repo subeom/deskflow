@@ -314,7 +314,7 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
 
   QVERIFY(!enabled->isChecked());
   QCOMPARE(position->currentData().toString(), QStringLiteral("cursorBottomRight"));
-  QCOMPARE(opacity->value(), 85);
+  QCOMPARE(opacity->value(), 65);
   QCOMPARE(tone->currentData().toString(), QStringLiteral("automatic"));
   QVERIFY(!find<QSpinBox>(pages, "sbInputIndicatorDwell"));
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorDwellMs).toInt(), 1500);

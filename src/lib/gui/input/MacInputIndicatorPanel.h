@@ -20,13 +20,44 @@ enum class InputIndicatorTone
   Dark
 };
 
+struct MacInputIndicatorPanelStyle
+{
+  double width = 0;
+  double height = 0;
+  double cursorGap = 0;
+  double screenMargin = 0;
+  double labelSize = 0;
+  double cornerRadius = 0;
+  int opacityPercent = 0;
+};
+
+constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle()
+{
+  return {
+      .width = 24,
+      .height = 20,
+      .cursorGap = 6,
+      .screenMargin = 6,
+      .labelSize = 11,
+      .cornerRadius = 7,
+      .opacityPercent = 65,
+  };
+}
+
 struct MacInputIndicatorPanelOptions
 {
   deskflow::input::InputIndicatorSource source = deskflow::input::InputIndicatorSource::Unknown;
   InputIndicatorPosition position = InputIndicatorPosition::CursorBottomRight;
-  int opacityPercent = 85;
+  int opacityPercent = macInputIndicatorPanelStyle().opacityPercent;
   InputIndicatorTone tone = InputIndicatorTone::Automatic;
 };
+
+constexpr bool macInputIndicatorPresentationNeeded(
+    bool activeSpaceChanged, bool visible
+)
+{
+  return activeSpaceChanged || !visible;
+}
 
 enum class MacInputIndicatorPanelOrderCommand
 {
