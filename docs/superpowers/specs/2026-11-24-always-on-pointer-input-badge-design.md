@@ -32,9 +32,11 @@ non-activating `NSPanel` near it:
 - Cat uses a rounded head/body, triangular ears, and curled tail. Dog uses
   floppy ears and a tail. Turtle uses an oval shell and tiny head/tail. All are
   original in-code vector drawings with no stock asset or external dependency.
-- Bodies use a soft translucent, glass-like fill and a 1 pt highlight. There is
-  no large shadow or layout overlay. Explicit light and dark tones remain
-  available.
+- Bodies, ears, shell, tail, and paws use the configured opacity directly
+  (default 65%, clamped to 60-100%). The 1 pt highlight and `A`/`한` glyph may
+  be at most 10 percentage points above body opacity; tag background stays at
+  body opacity. There is no solid sticker, large shadow, or layout overlay.
+  Explicit light and dark tones remain available.
 - English uses a cool tint and Korean uses a warm tint. Source changes morph the
   tint, a subtle <=10% body/ear pose, and the label over 160-220 ms.
 
@@ -179,6 +181,8 @@ Focused tests cover:
 - unknown source hides and cannot leave stale `A` or `한`;
 - repeated pointer ticks move only, without source redraw;
 - compact Cat/Dog/Turtle metrics and low-emphasis automatic opacity;
+- every body part uses clamped configured body alpha and glyph/outline alpha
+  stays within 10 percentage points;
 - companion setting persistence and Cat default;
 - bounded follower convergence without overshoot or more than 8 pt lag;
 - local/global event seams, fallback registration, and render-timer stop;

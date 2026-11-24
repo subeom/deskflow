@@ -1733,3 +1733,93 @@ Expected: clean named branch with direct ancestry from
 `4f508481f3200dce827939197040cd0642e19349`, no tag/push/merge/release/PR,
 and visual feel/full-screen Space/physical-device smoothness reported as
 residual live checks.
+
+---
+
+## Revision 5: Unified Companion Transparency
+
+### Task 23: Record Render-Alpha RED
+
+**Files:**
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+
+- [ ] **Step 1: Add the render-model test**
+
+Add:
+
+```cpp
+void companionRenderAlphaFollowsSettingAndBoundsDetail();
+```
+
+Assert:
+
+```cpp
+macInputIndicatorRenderAlpha(59).body == 0.60
+macInputIndicatorRenderAlpha(65).body == 0.65
+macInputIndicatorRenderAlpha(101).body == 1.00
+detailAlpha >= bodyAlpha
+detailAlpha - bodyAlpha <= 0.10
+```
+
+- [ ] **Step 2: Capture RED**
+
+Run `InputIndicatorGeometryTests`. Expected: compile failure because the
+render-alpha model does not exist.
+
+### Task 24: Apply One Alpha Model
+
+**Files:**
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+
+- [ ] **Step 1: Add the pure render model**
+
+```cpp
+struct MacInputIndicatorRenderAlpha
+{
+  double body = 0;
+  double detail = 0;
+};
+
+constexpr MacInputIndicatorRenderAlpha
+macInputIndicatorRenderAlpha(int opacityPercent);
+```
+
+Clamp body to 60-100% and set detail to the minimum of body + 10 percentage
+points and 100%.
+
+- [ ] **Step 2: Replace fixed alpha**
+
+Pass both values through `indicatorTint`, `fillAndHighlight`, tail stroke,
+eyes, tag background, tag border, and `A`/`한` rendering. Cat/Dog/Turtle body
+parts use body alpha exactly; glyph/outline use detail alpha crossfaded by
+the source transition.
+
+- [ ] **Step 3: Verify focused GREEN**
+
+Run the existing nine focused targets. Expected: 9/9 pass and the render-alpha
+test proves the bound.
+
+### Task 25: Commit, Full Gate, and Package
+
+- [ ] **Step 1: Commit docs and implementation separately**
+
+Do not amend existing visual commits.
+
+- [ ] **Step 2: Run 158 build targets and 157 eligible tests**
+
+Exclude only `OSXClipboardTests` and `OSXKeyStateTests`.
+
+- [ ] **Step 3: Package**
+
+Build a clean `build/pointer-badge-alpha/deskflow-2.0.9.0-macos-arm64.dmg`,
+verify metadata, SHA-256, architecture, signature, and package tooling state.
+Do not install or stable-sign.
+
+- [ ] **Step 4: Verify final state**
+
+Expected: clean ancestry from
+`28cd0c13e6db15bc652e627e295250e750d31f2f`, no tag/push/merge/release/PR,
+and no source change outside the render model.
