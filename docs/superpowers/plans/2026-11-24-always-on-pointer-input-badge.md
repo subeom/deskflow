@@ -2621,3 +2621,97 @@ signature, and do not install.
 Expected: clean ancestry from
 `9c34e2b625877cf2a52cf415e8a8a8255c49a35b`, zero-spill native output, no
 arbitrary baseline offset, no push/tag/release/merge/PR/install.
+
+---
+
+## Revision 12: Continuous Torso Contour, No Belly Pad
+
+### Task 47: Record Continuous-Contour RED
+
+**Files:**
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.mm`
+
+- [ ] **Step 1: Assert no pad primitive**
+
+The render model exposes `usesTorsoPad == false`. The Cat pose exposes one
+outer `torsoBounds` and one `innerLanguageBounds`; it has no independent
+belly/pad rectangle or render primitive.
+
+- [ ] **Step 2: Add contour-deformation bounds**
+
+Add a pure `inputIndicatorCatTorsoPoint(pose, point)` helper contract. Assert
+for Idle that points are unchanged; for Walk/Run assert:
+
+```text
+point x never changes
+maximum |output.y - input.y| <= 1.5
+points outside the torso x/height influence bands are unchanged
+```
+
+- [ ] **Step 3: Add native outer-contour containment**
+
+Update the 36-case pixel test to build the body only from the transformed near
+artwork path plus the original far path. Do not append a rounded belly path.
+Assert `outsidePixels == 0` and no missing CoreText ink pixels.
+
+- [ ] **Step 4: Capture RED**
+
+Build `InputIndicatorGeometryTests`. Expected: missing no-pad/deformation API
+or nonzero pixel spill when the separate pad is removed but no contour warp
+exists.
+
+### Task 48: Warp the Primary Cat Torso Path
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.cpp`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+
+- [ ] **Step 1: Replace pad geometry**
+
+Remove `bellyBounds` and every rounded-rect belly construction. Return:
+
+```text
+torsoBounds height >= 8.0 for Walk/Run
+innerLanguageBounds 8 x 7 centered on the art anchor
+torsoExpansion <= 1.5
+```
+
+- [ ] **Step 2: Deform only near-body Bézier points**
+
+Apply a smooth x/y influence around the inner label anchor to Move, Line, and
+all Cubic controls/endpoints. Keep far limbs, ears, head, paws, and tail
+unchanged. The deformation is zero for Idle.
+
+- [ ] **Step 3: Render one continuous body**
+
+Use the deformed near path and original far path as the only Cat body paths.
+Stroke/fill those outer paths once; use the resulting near path union as the
+label clip. Do not append a pad, tile, seam, or separate body stroke.
+
+### Task 49: Verify, Package, and Audit
+
+- [ ] **Step 1: Run focused and native gates**
+
+Run the 36-case offscreen renderer and existing nine focused suites. Required:
+`outsidePixels 0 cases 36`, torso height/deformation bounds green, and no pad
+render primitive.
+
+- [ ] **Step 2: Run full Release**
+
+Build all targets and run 157 eligible CTests with only
+`OSXClipboardTests` and `OSXKeyStateTests` excluded.
+
+- [ ] **Step 3: Commit/package**
+
+Commit docs and implementation separately with the standard trailer. Build
+`build/pointer-badge-contour/deskflow-2.0.9.0-macos-arm64.dmg`, verify hash and
+signature, and do not install.
+
+- [ ] **Step 4: Audit final state**
+
+Expected: clean ancestry from
+`b95cb353080bb7b1cd6e4fd40de1dc12146f741b`, no rounded pad/belly path,
+zero-spill native output, no push/merge/tag/release/PR/install.

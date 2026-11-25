@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-24  
 **Status:** Approved for implementation  
-**Revision base:** `9c34e2b625877cf2a52cf415e8a8a8255c49a35b`
+**Revision base:** `b95cb353080bb7b1cd6e4fd40de1dc12146f741b`
 
 ## Goal
 
@@ -51,13 +51,14 @@ non-activating `NSPanel` near it:
   typographic-origin inference. Invalid or oversized ink fails closed by
   scaling; the Cat silhouette plus label target clips as a final guard, so no
   glyph pixel can leave the filled torso interior.
-- Walk and Run artwork receives a small rounded belly union centered on the
-  selected language anchor. Its minimum vertical thickness is 7.2 pt (the
-  implementation uses 8.0 pt) and its inner label target is 8.0 x 7.0 pt.
-  The union may not grow the complete silhouette width by more than 1.5 pt.
-  This preserves the approved head, ear, tail, paw, and overall-width profile
-  while making the torso physically readable instead of relying on font
-  shrinking alone.
+- Walk and Run keep one continuous primary body path. A smooth torso-region
+  deformation moves the near contour's Bézier points outward around the label
+  anchor; no rounded belly union, overlay, pad, independent stroke, or second
+  body primitive exists. The resulting torso is at least 8.0 pt thick at the
+  label, with an 8.0 x 7.0 pt inner label target. Any path point moves at most
+  1.5 pt beyond the approved outline and the overall silhouette width remains
+  within 1.5 pt of the approved art. Head, ears, paws, and tail use their
+  original keyframe points. Idle keeps its seated proportions unchanged.
 - Bodies, ears, shell, tail, and paws use the configured opacity directly
   (default 65%, clamped to 60-100%). The body is a neutral translucent
   off-white close to the macOS cursor (`#F2F3F5`), with a subtle dark-neutral
@@ -254,8 +255,10 @@ Focused tests cover:
   rectangle contained by baseline-derived placement;
 - native offscreen coverage renders every Cat source, artwork frame, and
   direction and reports zero glyph pixels outside the filled torso silhouette;
-- every Walk/Run belly union is at least 7.2 pt thick around the label anchor
-  and changes the complete silhouette width by at most 1.5 pt;
+- every Walk/Run outer torso contour is at least 8.0 pt thick around the label
+  anchor, no torso-pad render primitive/model exists, and contour expansion
+  changes no path point by more than 1.5 pt or the complete width by more than
+  1.5 pt;
 - the generated native path data contains only normalized compiled constants;
   no SVG loader, XML/path parser, external dependency, runtime file path, or
   network access exists;
