@@ -47,6 +47,7 @@ void clearIndicatorSettings()
   Settings::setValue(Settings::Gui::InputIndicatorPosition);
   Settings::setValue(Settings::Gui::InputIndicatorDwellMs);
   Settings::setValue(Settings::Gui::InputIndicatorOpacityPercent);
+  Settings::setValue(Settings::Gui::InputIndicatorSpeedPercent);
   Settings::setValue(Settings::Gui::InputIndicatorTone);
 }
 
@@ -73,6 +74,7 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
   );
   auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
   auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
+  auto *speed = must<QSpinBox>(pages, "sbInputIndicatorSpeed");
   auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
   auto *note = must<InlineHint>(pages, "hintInputIndicatorSafety");
 
@@ -87,9 +89,23 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
   );
   QCOMPARE(position->currentData().toString(), QStringLiteral("cursorBottomRight"));
   QCOMPARE(opacity->value(), 65);
+  QCOMPARE(speed->minimum(), 50);
+  QCOMPARE(speed->maximum(), 200);
+  QCOMPARE(speed->singleStep(), 1);
+  QCOMPARE(speed->value(), 100);
+  QCOMPARE(speed->suffix(), QStringLiteral("%"));
   QCOMPARE(tone->currentData().toString(), QStringLiteral("automatic"));
   QVERIFY(!find<QSpinBox>(pages, "sbInputIndicatorDwell"));
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorDwellMs).toInt(), 1500);
+  QCOMPARE(
+      Settings::defaultValue(
+          Settings::Gui::InputIndicatorSpeedPercent
+      ).toInt(),
+      100
+  );
+  QVERIFY(Settings::validKeys().contains(
+      Settings::Gui::InputIndicatorSpeedPercent
+  ));
   QVERIFY(note->text().contains(QStringLiteral("input-source")));
   QVERIFY(note->text().contains(QStringLiteral("mouse pointer")));
   QVERIFY(note->text().contains(QStringLiteral("Accessibility")));
@@ -100,6 +116,7 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
        {Settings::Gui::InputIndicatorEnabled, Settings::Gui::InputIndicatorPosition,
         Settings::Gui::InputIndicatorCompanion, Settings::Gui::InputIndicatorDwellMs,
         Settings::Gui::InputIndicatorOpacityPercent,
+        Settings::Gui::InputIndicatorSpeedPercent,
         Settings::Gui::InputIndicatorTone}) {
     QCOMPARE(effectOf(key), std::optional<Effect>(Effect::Live));
   }
@@ -114,12 +131,14 @@ void InputIndicatorSettingsTests::dependencyControlsFollowTheToggle()
   );
   auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
   auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
+  auto *speed = must<QSpinBox>(pages, "sbInputIndicatorSpeed");
   auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
 
   QVERIFY(companion);
   QVERIFY(!companion->isEnabled());
   QVERIFY(!position->isEnabled());
   QVERIFY(!opacity->isEnabled());
+  QVERIFY(!speed->isEnabled());
   QVERIFY(!tone->isEnabled());
 
   enabled->setChecked(true);
@@ -127,6 +146,7 @@ void InputIndicatorSettingsTests::dependencyControlsFollowTheToggle()
   QVERIFY(companion->isEnabled());
   QVERIFY(position->isEnabled());
   QVERIFY(opacity->isEnabled());
+  QVERIFY(speed->isEnabled());
   QVERIFY(tone->isEnabled());
 
   const auto dog = companion->findData(QStringLiteral("dog"));
@@ -136,6 +156,47 @@ void InputIndicatorSettingsTests::dependencyControlsFollowTheToggle()
   QCOMPARE(
       Settings::value(Settings::Gui::InputIndicatorCompanion).toString(),
       QStringLiteral("dog")
+  );
+  QVERIFY(speed->isEnabled());
+  const auto turtle = companion->findData(QStringLiteral("turtle"));
+  QVERIFY(turtle >= 0);
+  companion->setCurrentIndex(turtle);
+  Q_EMIT companion->activated(turtle);
+  QVERIFY(speed->isEnabled());
+  const auto cat = companion->findData(QStringLiteral("cat"));
+  QVERIFY(cat >= 0);
+  companion->setCurrentIndex(cat);
+  Q_EMIT companion->activated(cat);
+  QVERIFY(speed->isEnabled());
+  speed->setValue(175);
+  QCOMPARE(
+      Settings::value(
+          Settings::Gui::InputIndicatorSpeedPercent
+      ).toInt(),
+      175
+  );
+  speed->setValue(1);
+  QCOMPARE(speed->value(), 50);
+  speed->setValue(999);
+  QCOMPARE(speed->value(), 200);
+}
+
+void InputIndicatorSettingsTests::invalidStoredSpeedUsesSafeBounds()
+{
+  Settings::setValue(
+      Settings::Gui::InputIndicatorSpeedPercent,
+      QStringLiteral("not-a-number")
+  );
+  SettingsPages pages;
+  auto *speed = must<QSpinBox>(
+      pages, "sbInputIndicatorSpeed"
+  );
+  QCOMPARE(speed->value(), 50);
+  QCOMPARE(
+      Settings::value(
+          Settings::Gui::InputIndicatorCompanion
+      ).toString(),
+      QStringLiteral("cat")
   );
 }
 

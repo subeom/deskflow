@@ -1029,6 +1029,19 @@ SettingsPage *SettingsPages::buildKeyboard()
   indicatorCompanion->setObjectName(
       QStringLiteral("comboInputIndicatorCompanion")
   );
+  auto *indicatorSpeed = addNumber(
+      page, m_binder, inputIndicator,
+      Settings::Gui::InputIndicatorSpeedPercent,
+      tx(QT_TRANSLATE_NOOP(
+          "SettingsPages",
+          "Companion follow speed"
+      )),
+      50, 200
+  );
+  indicatorSpeed->setSuffix(QStringLiteral("%"));
+  indicatorSpeed->setObjectName(
+      QStringLiteral("sbInputIndicatorSpeed")
+  );
   auto *indicatorPosition = addChoice(
       page, m_binder, inputIndicator, Settings::Gui::InputIndicatorPosition,
       tx(QT_TRANSLATE_NOOP("SettingsPages", "Position from cursor")),
@@ -1072,9 +1085,11 @@ SettingsPage *SettingsPages::buildKeyboard()
     );
   });
   inputIndicator->addNote(indicatorNote);
-  m_binder->onRefresh([indicatorEnabled, indicatorCompanion, indicatorPosition, indicatorOpacity, indicatorTone] {
+  m_binder->onRefresh([indicatorEnabled, indicatorCompanion, indicatorSpeed, indicatorPosition, indicatorOpacity,
+                       indicatorTone] {
     const bool enabled = Settings::isWritable() && indicatorEnabled->isChecked();
     indicatorCompanion->setEnabled(enabled);
+    indicatorSpeed->setEnabled(enabled);
     indicatorPosition->setEnabled(enabled);
     indicatorOpacity->setEnabled(enabled);
     indicatorTone->setEnabled(enabled);

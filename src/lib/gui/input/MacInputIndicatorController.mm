@@ -45,6 +45,17 @@ InputIndicatorTone toneFromSetting(const QString &value)
   return InputIndicatorTone::Automatic;
 }
 
+int inputIndicatorFollowSpeedPercent(
+    const QVariant &value
+)
+{
+  bool valid = false;
+  const int parsed = value.toInt(&valid);
+  return valid
+      ? std::clamp(parsed, 50, 200)
+      : 100;
+}
+
 } // namespace
 
 MacInputIndicatorController::MacInputIndicatorController(QObject *parent)
@@ -78,6 +89,18 @@ MacInputIndicatorController::MacInputIndicatorController(
               return m_panel
                   ? m_panel->move(position)
                   : MacInputIndicatorPanelMoveResult{};
+            };
+  m_panelSetFollowSpeed =
+      dependencies.panelSetFollowSpeed
+          ? std::move(
+                dependencies.panelSetFollowSpeed
+            )
+          : [this](int percent) {
+              if (m_panel) {
+                m_panel->setFollowSpeedPercent(
+                    percent
+                );
+              }
             };
   m_panelHide =
       dependencies.panelHide
@@ -132,6 +155,19 @@ MacInputIndicatorController::~MacInputIndicatorController()
 
 void MacInputIndicatorController::settingsChanged(const QString &key)
 {
+  if (key ==
+      Settings::Gui::InputIndicatorSpeedPercent) {
+    m_followSpeedPercent =
+        inputIndicatorFollowSpeedPercent(
+            Settings::value(key)
+        );
+    if (m_panelSetFollowSpeed) {
+      m_panelSetFollowSpeed(
+          m_followSpeedPercent
+      );
+    }
+    return;
+  }
   if (key == Settings::Gui::InputIndicatorEnabled ||
       key == Settings::Gui::InputIndicatorCompanion ||
       key == Settings::Gui::InputIndicatorPosition ||
@@ -157,6 +193,13 @@ void MacInputIndicatorController::applySettings()
       Settings::value(Settings::Gui::InputIndicatorOpacityPercent).toInt(),
       60, 100
   );
+  m_followSpeedPercent =
+      inputIndicatorFollowSpeedPercent(
+          Settings::value(
+              Settings::Gui::
+                  InputIndicatorSpeedPercent
+          )
+      );
   m_tone = toneFromSetting(
       Settings::value(Settings::Gui::InputIndicatorTone).toString()
   );
@@ -269,6 +312,8 @@ void MacInputIndicatorController::refreshVisibility(bool reconfigure)
         .companion = m_companion,
         .position = m_position,
         .opacityPercent = m_opacityPercent,
+        .followSpeedPercent =
+            m_followSpeedPercent,
         .tone = m_tone,
     });
     m_panelConfigured = true;

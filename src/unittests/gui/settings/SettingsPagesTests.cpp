@@ -165,6 +165,7 @@ void forgetAll()
   Settings::setValue(Settings::Gui::InputIndicatorPosition);
   Settings::setValue(Settings::Gui::InputIndicatorDwellMs);
   Settings::setValue(Settings::Gui::InputIndicatorOpacityPercent);
+  Settings::setValue(Settings::Gui::InputIndicatorSpeedPercent);
   Settings::setValue(Settings::Gui::InputIndicatorTone);
   Settings::setValue(Settings::Core::CoreMode);
 }
@@ -313,6 +314,7 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
   );
   auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
   auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
+  auto *speed = must<QSpinBox>(pages, "sbInputIndicatorSpeed");
   auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
   auto *note = must<InlineHint>(pages, "hintInputIndicatorSafety");
 
@@ -325,12 +327,18 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
   );
   QCOMPARE(position->currentData().toString(), QStringLiteral("cursorBottomRight"));
   QCOMPARE(opacity->value(), 65);
+  QCOMPARE(speed->minimum(), 50);
+  QCOMPARE(speed->maximum(), 200);
+  QCOMPARE(speed->singleStep(), 1);
+  QCOMPARE(speed->value(), 100);
+  QCOMPARE(speed->suffix(), QStringLiteral("%"));
   QCOMPARE(tone->currentData().toString(), QStringLiteral("automatic"));
   QVERIFY(!find<QSpinBox>(pages, "sbInputIndicatorDwell"));
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorDwellMs).toInt(), 1500);
   QVERIFY(!position->isEnabled());
   QVERIFY(!companion->isEnabled());
   QVERIFY(!opacity->isEnabled());
+  QVERIFY(!speed->isEnabled());
   QVERIFY(!tone->isEnabled());
   QVERIFY(note->text().contains(QStringLiteral("input-source")));
   QVERIFY(note->text().contains(QStringLiteral("mouse pointer")));
@@ -342,6 +350,7 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
        {Settings::Gui::InputIndicatorEnabled, Settings::Gui::InputIndicatorPosition,
         Settings::Gui::InputIndicatorCompanion, Settings::Gui::InputIndicatorDwellMs,
         Settings::Gui::InputIndicatorOpacityPercent,
+        Settings::Gui::InputIndicatorSpeedPercent,
         Settings::Gui::InputIndicatorTone}) {
     QCOMPARE(effectOf(key), std::optional<Effect>(Effect::Live));
   }
@@ -350,18 +359,23 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
   QVERIFY(companion->isEnabled());
   QVERIFY(position->isEnabled());
   QVERIFY(opacity->isEnabled());
+  QVERIFY(speed->isEnabled());
   QVERIFY(tone->isEnabled());
 
+  choose(companion, QStringLiteral("dog"));
+  QVERIFY(speed->isEnabled());
   choose(companion, QStringLiteral("turtle"));
+  QVERIFY(speed->isEnabled());
+  choose(companion, QStringLiteral("cat"));
+  QVERIFY(speed->isEnabled());
   choose(position, QStringLiteral("cursorTopLeft"));
   opacity->setValue(90);
+  speed->setValue(150);
   choose(tone, QStringLiteral("dark"));
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorPosition).toString(), QStringLiteral("cursorTopLeft"));
-  QCOMPARE(
-      Settings::value(Settings::Gui::InputIndicatorCompanion).toString(),
-      QStringLiteral("turtle")
-  );
+  QCOMPARE(Settings::value(Settings::Gui::InputIndicatorCompanion).toString(), QStringLiteral("cat"));
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorOpacityPercent).toInt(), 90);
+  QCOMPARE(Settings::value(Settings::Gui::InputIndicatorSpeedPercent).toInt(), 150);
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorTone).toString(), QStringLiteral("dark"));
 #endif
 }

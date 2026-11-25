@@ -40,6 +40,7 @@ private Q_SLOTS:
   void persistentPointerTicksMoveWithoutReconfigure();
   void persistentDuplicateSourceDoesNotReconfigure();
   void persistentSourceChangesUpdateLabel();
+  void persistentFollowSpeedUpdatesWithoutReconfigure();
   void persistentCompanionChoiceUpdatesPanel();
   void persistentFeatureOffStopsAndHides();
   void persistentGeometryOrPanelFailureHides();

@@ -982,8 +982,6 @@ std::vector<InputIndicatorRect> screenRects()
   return result;
 }
 
-constexpr double kCatchUpFactor = 0.5;
-constexpr double kMotionEaseFactor = 0.5;
 constexpr double kSettledDistance = 0.25;
 
 double distance(InputIndicatorPoint point)
@@ -1083,20 +1081,6 @@ struct MacInputIndicatorPanel::Impl
                         return;
                       }
                       state->owner->activeSpaceChanged = true;
-                      if (state->owner->companion !=
-                          InputIndicatorCompanion::Cat) {
-                        state->owner->followerInitialized =
-                            false;
-                        state->owner
-                            ->previousTargetInitialized =
-                            false;
-                        state->owner->motion = {};
-                        state->owner->motionState =
-                            InputIndicatorMotionState::Idle;
-                        state->owner
-                            ->idleTailMotionState.running =
-                            false;
-                      }
                       state->owner->idleTailPaused = false;
                       const auto now =
                           std::chrono::steady_clock::now();
@@ -1144,7 +1128,8 @@ struct MacInputIndicatorPanel::Impl
   InputIndicatorPoint follower;
   InputIndicatorPoint previousTarget;
   InputIndicatorPoint motion;
-  InputIndicatorCatPursuitState pursuitState;
+  InputIndicatorCompanionPursuitState pursuitState;
+  double followSpeedMultiplier = 1;
   bool facesRight = true;
   bool facingTargetRight = true;
   bool facingTurning = false;
@@ -1184,6 +1169,8 @@ bool MacInputIndicatorPanel::show(
       m_impl->source;
   const auto now =
       std::chrono::steady_clock::now();
+  const bool companionChanged =
+      m_impl->companion != options.companion;
   const double animationMilliseconds =
       std::chrono::duration<double, std::milli>(
           now - m_impl->animationEpoch
@@ -1202,11 +1189,9 @@ bool MacInputIndicatorPanel::show(
     m_impl->startleState = {};
     m_impl->idleTailPaused = false;
   }
-  if (options.companion ==
-          InputIndicatorCompanion::Cat &&
-      m_impl->companion !=
-          InputIndicatorCompanion::Cat &&
-      m_impl->followerInitialized) {
+  if (companionChanged &&
+      m_impl->followerInitialized &&
+      !m_impl->pursuitState.initialized) {
     m_impl->pursuitState = {
         .position = m_impl->follower,
         .velocity = {},
@@ -1224,22 +1209,27 @@ bool MacInputIndicatorPanel::show(
           : options.source;
   m_impl->source = options.source;
   m_impl->transitionStarted = now;
-  if (options.companion !=
-          InputIndicatorCompanion::Cat ||
-      !m_impl->followerInitialized) {
+  if (!m_impl->followerInitialized) {
     m_impl->motionStateStarted = now;
     m_impl->previousTargetTime = now;
     m_impl->lastPointerMovement = now;
   }
   m_impl->activeSpaceChanged = true;
-  if (options.companion !=
-      InputIndicatorCompanion::Cat) {
+  if (companionChanged) {
     m_impl->motionState =
         InputIndicatorMotionState::Idle;
-    m_impl->followerInitialized = false;
-    m_impl->previousTargetInitialized = false;
     m_impl->motion = {};
+    m_impl->pursuitState.velocity = {};
+    m_impl->pursuitState
+        .stoppedMilliseconds = 0;
+    m_impl->pursuitState.motionState =
+        InputIndicatorMotionState::Idle;
   }
+  m_impl->followSpeedMultiplier =
+      std::clamp(
+          options.followSpeedPercent, 50, 200
+      ) /
+      100.0;
 
   const auto style = macInputIndicatorPanelStyle(options.companion);
   [m_impl->panel setContentSize:NSMakeSize(
@@ -1276,6 +1266,14 @@ bool MacInputIndicatorPanel::show(
   m_impl->view.catBodyHeadingRadians = 0;
   [m_impl->view setNeedsDisplay:YES];
   return move(options.position).visible;
+}
+
+void MacInputIndicatorPanel::setFollowSpeedPercent(
+    int percent
+)
+{
+  m_impl->followSpeedMultiplier =
+      std::clamp(percent, 50, 200) / 100.0;
 }
 
 MacInputIndicatorPanelMoveResult
@@ -1336,59 +1334,37 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       m_impl->lastPointerMovement = now;
     }
   }
-  const auto stoppedMilliseconds =
-      std::chrono::duration<double, std::milli>(
-          now - m_impl->lastPointerMovement
-      )
-          .count();
-  auto nextMotionState = m_impl->motionState;
-  if (m_impl->companion ==
-      InputIndicatorCompanion::Cat) {
-    if (!m_impl->pursuitState.initialized &&
-        m_impl->followerInitialized) {
-      m_impl->pursuitState.position =
-          m_impl->follower;
-      m_impl->pursuitState.initialized = true;
-    }
-    const auto pursuit =
-        inputIndicatorCatPursuitAdvance(
-            m_impl->pursuitState,
-            {
-                .point = *target,
-                .kind = targetLocation.kind,
-            },
-            pointerSpeed,
-            elapsedMilliseconds,
-            !m_impl->pursuitState.initialized,
-            reducedMotion
-        );
-    if (!pursuit) {
-      hide();
-      return {};
-    }
-    m_impl->pursuitState = pursuit->state;
-    m_impl->follower =
-        m_impl->pursuitState.position;
-    m_impl->followerInitialized = true;
-    m_impl->motion =
-        reducedMotion ? InputIndicatorPoint{} : pursuit->movement;
-    nextMotionState =
-        m_impl->pursuitState.motionState;
-  } else {
-    nextMotionState = inputIndicatorMotionState(
-        m_impl->motionState,
-        pointerSpeed,
-        pointerDistance,
-        m_impl->followerInitialized
-            ? distance({
-                  .x = target->x - m_impl->follower.x,
-                  .y = target->y - m_impl->follower.y,
-              })
-            : 0,
-        stoppedMilliseconds,
-        reducedMotion
-    );
+  if (!m_impl->pursuitState.initialized &&
+      m_impl->followerInitialized) {
+    m_impl->pursuitState.position =
+        m_impl->follower;
+    m_impl->pursuitState.initialized = true;
   }
+  const auto pursuit =
+      inputIndicatorCompanionPursuitAdvance(
+          m_impl->pursuitState,
+          {
+              .point = *target,
+              .kind = targetLocation.kind,
+          },
+          pointerSpeed,
+          elapsedMilliseconds,
+          !m_impl->pursuitState.initialized,
+          reducedMotion,
+          m_impl->followSpeedMultiplier
+      );
+  if (!pursuit) {
+    hide();
+    return {};
+  }
+  m_impl->pursuitState = pursuit->state;
+  m_impl->follower =
+      m_impl->pursuitState.position;
+  m_impl->followerInitialized = true;
+  m_impl->motion =
+      reducedMotion ? InputIndicatorPoint{} : pursuit->movement;
+  const auto nextMotionState =
+      m_impl->pursuitState.motionState;
   if (nextMotionState != m_impl->motionState) {
     m_impl->motionState = nextMotionState;
     m_impl->motionStateStarted = now;
@@ -1467,65 +1443,13 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
     idleTailFrame = idleTailStep.frame;
   }
 
-  if (reducedMotion || !m_impl->followerInitialized) {
-    m_impl->follower = *target;
-    m_impl->followerInitialized = true;
-  } else if (
-      m_impl->companion !=
-      InputIndicatorCompanion::Cat) {
-    const auto follower = followInputIndicator(
-        m_impl->follower,
-        *target,
-        kCatchUpFactor,
-        style.maximumLag
-    );
-    if (!follower) {
-      hide();
-      return {};
-    }
-    m_impl->follower = *follower;
-  }
-
-  InputIndicatorPoint desiredMotion{};
-  if (m_impl->companion !=
-          InputIndicatorCompanion::Cat &&
-      m_impl->previousTargetInitialized) {
-    const auto motion = inputIndicatorMotionOffset(
-        m_impl->previousTarget,
-        *target,
-        style.maximumMotion,
-        reducedMotion
-    );
-    if (!motion) {
-      hide();
-      return {};
-    }
-    desiredMotion = *motion;
-  }
   m_impl->previousTarget = *target;
   m_impl->previousTargetTime = now;
   m_impl->previousTargetInitialized = true;
 
-  if (m_impl->companion ==
-      InputIndicatorCompanion::Cat) {
-    if (reducedMotion ||
-        distance(m_impl->motion) <= kSettledDistance) {
-      m_impl->motion = {};
-    }
-  } else if (reducedMotion) {
+  if (reducedMotion ||
+      distance(m_impl->motion) <= kSettledDistance) {
     m_impl->motion = {};
-  } else {
-    const auto motion = followInputIndicator(
-        m_impl->motion,
-        desiredMotion,
-        kMotionEaseFactor,
-        style.maximumMotion
-    );
-    if (!motion) {
-      hide();
-      return {};
-    }
-    m_impl->motion = *motion;
   }
 
   const auto followerDistance = distance({

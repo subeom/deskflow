@@ -3502,6 +3502,245 @@ void InputIndicatorGeometryTests::catPursuitBoundsLargeJumpAndNeverTeleports()
   QVERIFY(positions.size() > 100);
 }
 
+void InputIndicatorGeometryTests::companionPursuitScalesCapsWithoutChangingGates()
+{
+  struct SpeedCase
+  {
+    double multiplier;
+    double walkDistance;
+    double runDistance;
+  };
+  const SpeedCase cases[] = {
+      {.multiplier = 0.5,
+       .walkDistance = 0.48,
+       .runDistance = 2.88},
+      {.multiplier = 1.0,
+       .walkDistance = 0.96,
+       .runDistance = 5.76},
+      {.multiplier = 2.0,
+       .walkDistance = 1.92,
+       .runDistance = 11.52},
+  };
+  for (const auto speed : cases) {
+    const InputIndicatorCatPursuitState origin{
+        .initialized = true,
+    };
+    const InputIndicatorTarget walkTarget{
+        .point = {.x = 20, .y = 0},
+        .kind = InputIndicatorTargetKind::Pointer,
+    };
+    const auto walk =
+        inputIndicatorCompanionPursuitAdvance(
+            origin,
+            walkTarget,
+            0,
+            8,
+            false,
+            false,
+            speed.multiplier
+        );
+    QVERIFY(walk);
+    QVERIFY(std::abs(
+        walk->distanceMoved - speed.walkDistance
+    ) < 1e-9);
+    QCOMPARE(
+        walk->state.motionState,
+        InputIndicatorMotionState::Walk
+    );
+    const InputIndicatorTarget runTarget{
+        .point = {.x = 100, .y = 0},
+        .kind = InputIndicatorTargetKind::Pointer,
+    };
+    const auto run =
+        inputIndicatorCompanionPursuitAdvance(
+            origin,
+            runTarget,
+            0,
+            8,
+            false,
+            false,
+            speed.multiplier
+        );
+    QVERIFY(run);
+    QVERIFY(std::abs(
+        run->distanceMoved - speed.runDistance
+    ) < 1e-9);
+    QCOMPARE(
+        run->state.motionState,
+        InputIndicatorMotionState::Run
+    );
+
+    for (const auto target :
+         {walkTarget, runTarget}) {
+      InputIndicatorCatPursuitState state = origin;
+      int steps = 0;
+      while (true) {
+        const auto step =
+            inputIndicatorCompanionPursuitAdvance(
+                state,
+                target,
+                0,
+                8,
+                false,
+                false,
+                speed.multiplier
+            );
+        QVERIFY(step);
+        QVERIFY(
+            step->state.position.x >=
+            state.position.x
+        );
+        QVERIFY(
+            step->state.position.x <=
+            target.point.x
+        );
+        QVERIFY(
+            step->state.position.y ==
+            state.position.y
+        );
+        state = step->state;
+        if (step->reached) {
+          break;
+        }
+        QVERIFY(++steps < 400);
+      }
+      QCOMPARE(state.position.x, target.point.x);
+      QCOMPARE(state.position.y, target.point.y);
+    }
+  }
+
+  const InputIndicatorCatPursuitState origin{
+      .initialized = true,
+  };
+  const InputIndicatorTarget fortySeven{
+      .point = {.x = 47, .y = 0},
+      .kind = InputIndicatorTargetKind::Pointer,
+  };
+  const auto belowTargetSpeed =
+      inputIndicatorCompanionPursuitAdvance(
+          origin, fortySeven, 259.999,
+          8, false, false, 2.0
+      );
+  QVERIFY(belowTargetSpeed);
+  QCOMPARE(
+      belowTargetSpeed->state.motionState,
+      InputIndicatorMotionState::Walk
+  );
+  const auto atTargetSpeed =
+      inputIndicatorCompanionPursuitAdvance(
+          origin, fortySeven, 260,
+          8, false, false, 2.0
+      );
+  QVERIFY(atTargetSpeed);
+  QCOMPARE(
+      atTargetSpeed->state.motionState,
+      InputIndicatorMotionState::Run
+  );
+  const auto atDistance =
+      inputIndicatorCompanionPursuitAdvance(
+          origin,
+          {
+              .point = {.x = 48, .y = 0},
+              .kind = InputIndicatorTargetKind::Pointer,
+          },
+          0,
+          8,
+          false,
+          false,
+          2.0
+      );
+  QVERIFY(atDistance);
+  QCOMPARE(
+      atDistance->state.motionState,
+      InputIndicatorMotionState::Run
+  );
+  InputIndicatorCatPursuitState running{
+      .motionState = InputIndicatorMotionState::Run,
+      .initialized = true,
+  };
+  const auto hysteresisHolds =
+      inputIndicatorCompanionPursuitAdvance(
+          running,
+          {
+              .point = {.x = 13, .y = 0},
+              .kind = InputIndicatorTargetKind::Pointer,
+          },
+          0,
+          8,
+          false,
+          false,
+          2.0
+      );
+  QVERIFY(hysteresisHolds);
+  QCOMPARE(
+      hysteresisHolds->state.motionState,
+      InputIndicatorMotionState::Run
+  );
+  const auto hysteresisReleases =
+      inputIndicatorCompanionPursuitAdvance(
+          running,
+          {
+              .point = {.x = 12, .y = 0},
+              .kind = InputIndicatorTargetKind::Pointer,
+          },
+          0,
+          8,
+          false,
+          false,
+          2.0
+      );
+  QVERIFY(hysteresisReleases);
+  QCOMPARE(
+      hysteresisReleases->state.motionState,
+      InputIndicatorMotionState::Walk
+  );
+
+  const auto reduced =
+      inputIndicatorCompanionPursuitAdvance(
+          origin,
+          {
+              .point = {.x = 100, .y = 200},
+              .kind = InputIndicatorTargetKind::Caret,
+          },
+          999,
+          8,
+          false,
+          true,
+          0.5
+      );
+  QVERIFY(reduced);
+  QCOMPARE(reduced->state.position.x, 100.0);
+  QCOMPARE(reduced->state.position.y, 200.0);
+  QCOMPARE(
+      reduced->state.motionState,
+      InputIndicatorMotionState::Idle
+  );
+  QVERIFY(reduced->reached);
+
+  const double invalidFactors[] = {
+      std::numeric_limits<double>::quiet_NaN(),
+      std::numeric_limits<double>::infinity(),
+      0.0,
+      0.499,
+      2.001,
+  };
+  for (const double factor : invalidFactors) {
+    QVERIFY(!inputIndicatorCompanionPursuitAdvance(
+        origin,
+        {
+            .point = {.x = 20, .y = 0},
+            .kind =
+                InputIndicatorTargetKind::Pointer,
+        },
+        0,
+        8,
+        false,
+        false,
+        factor
+    ));
+  }
+}
+
 void InputIndicatorGeometryTests::catPursuitWalksNearAndSettlesWithoutOvershoot()
 {
   const InputIndicatorTarget target{
@@ -4062,6 +4301,381 @@ void InputIndicatorGeometryTests::catPursuitPanelTraversesLargeTargetJump()
   const auto final = positions.back();
   QVERIFY(std::abs(final.x - expected->x) <= 0.5);
   QVERIFY(std::abs(final.y - expected->y) <= 0.5);
+}
+
+void InputIndicatorGeometryTests::companionPursuitPanelHonorsFollowSpeed()
+{
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  NSRect containingScreen;
+  bool foundScreen = false;
+  for (NSScreen *screen in NSScreen.screens) {
+    if (NSPointInRect(fixedCursor, screen.frame)) {
+      containingScreen = screen.frame;
+      foundScreen = true;
+      break;
+    }
+  }
+  QVERIFY(foundScreen);
+  const std::vector<InputIndicatorRect> screens{{
+      .x = containingScreen.origin.x,
+      .y = containingScreen.origin.y,
+      .width = containingScreen.size.width,
+      .height = containingScreen.size.height,
+  }};
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  const struct
+  {
+    int percent;
+    double movementCap;
+    int minimumIntermediatePositions;
+  } speeds[] = {
+      {.percent = 50,
+       .movementCap = 2.88,
+       .minimumIntermediatePositions = 100},
+      {.percent = 100,
+       .movementCap = 5.76,
+       .minimumIntermediatePositions = 40},
+      {.percent = 200,
+       .movementCap = 11.52,
+       .minimumIntermediatePositions = 10},
+  };
+
+  for (const auto companion : companions) {
+    const auto style =
+        macInputIndicatorPanelStyle(companion);
+    for (const auto speed : speeds) {
+      InputIndicatorTarget target{
+          .point = {
+              .x = fixedCursor.x,
+              .y = fixedCursor.y,
+          },
+          .kind =
+              InputIndicatorTargetKind::Pointer,
+      };
+      MacInputIndicatorPanel panel(
+          {},
+          [&target] {
+            return target;
+          }
+      );
+      const MacInputIndicatorPanelOptions options{
+          .source =
+              deskflow::input::InputIndicatorSource::LatinABC,
+          .companion = companion,
+          .followSpeedPercent = speed.percent,
+      };
+      QVERIFY(panel.show(options));
+      NSView *view = catPanelView();
+      QVERIFY(view);
+      const auto visibleOrigin =
+          [view, style] {
+            const auto origin =
+                view.window.frame.origin;
+            return InputIndicatorPoint{
+                .x =
+                    origin.x +
+                    style.canvasOffsetX,
+                .y =
+                    origin.y +
+                    style.canvasOffsetY,
+            };
+          };
+
+      target.point.x =
+          fixedCursor.x <
+                  NSMidX(containingScreen)
+              ? std::max(
+                    fixedCursor.x + 700,
+                    NSMinX(containingScreen) +
+                        700
+                )
+              : std::min(
+                    fixedCursor.x - 700,
+                    NSMaxX(containingScreen) -
+                        700
+                );
+      target.point.y =
+          fixedCursor.y <
+                  NSMidY(containingScreen)
+              ? std::min(
+                    fixedCursor.y + 500,
+                    NSMaxY(containingScreen) -
+                        80
+                )
+              : std::max(
+                    fixedCursor.y - 500,
+                    NSMinY(containingScreen) +
+                        80
+                );
+      const auto expected =
+          positionInputIndicator(
+              target.point,
+              {
+                  .width = style.width,
+                  .height = style.height,
+              },
+              screens,
+              options.position,
+              style.cursorGap,
+              style.screenMargin
+          );
+      QVERIFY(expected);
+
+      std::vector<InputIndicatorPoint> positions{
+          visibleOrigin()
+      };
+      const double quantizationTolerance =
+          std::sqrt(2.0);
+      bool reached = false;
+      for (int tick = 0;
+           tick < 600;
+           ++tick) {
+        QTest::qWait(8);
+        const auto result =
+            panel.move(options.position);
+        QVERIFY(result.visible);
+        QVERIFY(!result.reducedMotion);
+        QCOMPARE(
+            result.frameIntervalMilliseconds,
+            8
+        );
+        const auto current = visibleOrigin();
+        const auto previous = positions.back();
+        const double movement =
+            std::hypot(
+                current.x - previous.x,
+                current.y - previous.y
+            );
+        if (movement >
+            speed.movementCap +
+                quantizationTolerance) {
+          qInfo() << "companion-speed-step"
+                  << static_cast<int>(companion)
+                  << speed.percent
+                  << tick
+                  << movement
+                  << speed.movementCap;
+        }
+        QVERIFY(
+            movement <=
+            speed.movementCap +
+                quantizationTolerance
+        );
+        const double previousDistance =
+            std::hypot(
+                expected->x - previous.x,
+                expected->y - previous.y
+            );
+        const double currentDistance =
+            std::hypot(
+                expected->x - current.x,
+                expected->y - current.y
+            );
+        QVERIFY(
+            currentDistance <=
+            previousDistance +
+                quantizationTolerance
+        );
+        positions.push_back(current);
+        if (std::abs(current.x - expected->x) < 1.0 &&
+            std::abs(current.y - expected->y) < 1.0) {
+          reached = true;
+          break;
+        }
+      }
+      QVERIFY(reached);
+      QVERIFY(
+          static_cast<int>(positions.size()) >
+          speed.minimumIntermediatePositions
+      );
+      const auto final = positions.back();
+      QVERIFY(
+          std::abs(final.x - expected->x) < 1.0
+      );
+      QVERIFY(
+          std::abs(final.y - expected->y) < 1.0
+      );
+      panel.hide();
+    }
+  }
+}
+
+void InputIndicatorGeometryTests::companionPursuitPanelSpeedChangePreservesPosition()
+{
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  NSRect containingScreen;
+  bool foundScreen = false;
+  for (NSScreen *screen in NSScreen.screens) {
+    if (NSPointInRect(fixedCursor, screen.frame)) {
+      containingScreen = screen.frame;
+      foundScreen = true;
+      break;
+    }
+  }
+  QVERIFY(foundScreen);
+
+  for (const auto companion : companions) {
+    InputIndicatorTarget target{
+        .point = {
+            .x = fixedCursor.x,
+            .y = fixedCursor.y,
+        },
+        .kind = InputIndicatorTargetKind::Pointer,
+    };
+    MacInputIndicatorPanel panel(
+        {},
+        [&target] {
+          return target;
+        }
+    );
+    const MacInputIndicatorPanelOptions options{
+        .source =
+            deskflow::input::InputIndicatorSource::LatinABC,
+        .companion = companion,
+        .followSpeedPercent = 50,
+    };
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    const auto style =
+        macInputIndicatorPanelStyle(companion);
+    const auto visibleOrigin =
+        [view, style] {
+          const auto origin =
+              view.window.frame.origin;
+          return InputIndicatorPoint{
+              .x =
+                  origin.x +
+                  style.canvasOffsetX,
+              .y =
+                  origin.y +
+                  style.canvasOffsetY,
+          };
+        };
+    target.point.x =
+        fixedCursor.x < NSMidX(containingScreen)
+            ? std::min(
+                  fixedCursor.x + 700,
+                  NSMaxX(containingScreen) - 80
+              )
+            : std::max(
+                  fixedCursor.x - 700,
+                  NSMinX(containingScreen) + 80
+              );
+    QTest::qWait(8);
+    QVERIFY(panel.move(options.position).visible);
+    const auto beforeChange = visibleOrigin();
+    panel.setFollowSpeedPercent(200);
+    const auto afterChange = visibleOrigin();
+    QCOMPARE(afterChange.x, beforeChange.x);
+    QCOMPARE(afterChange.y, beforeChange.y);
+
+    QTest::qWait(8);
+    QVERIFY(panel.move(options.position).visible);
+    const auto afterMove = visibleOrigin();
+    const double movement =
+        std::hypot(
+            afterMove.x - beforeChange.x,
+            afterMove.y - beforeChange.y
+        );
+    QVERIFY(movement > 2.88);
+    QVERIFY(
+        movement <=
+        11.52 + std::sqrt(2.0)
+    );
+    panel.hide();
+  }
+}
+
+void InputIndicatorGeometryTests::companionPursuitPanelPreservesPositionOnSourceAndSpaceChange()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  for (const auto companion : companions) {
+    InputIndicatorTarget target{
+        .point = {
+            .x = fixedCursor.x,
+            .y = fixedCursor.y,
+        },
+        .kind =
+            InputIndicatorTargetKind::Pointer,
+    };
+    MacInputIndicatorPanel panel(
+        {},
+        [&target] {
+          return target;
+        }
+    );
+    MacInputIndicatorPanelOptions options{
+        .source = Source::LatinABC,
+        .companion = companion,
+    };
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    const auto style =
+        macInputIndicatorPanelStyle(companion);
+    const auto visibleOrigin =
+        [view, style] {
+          const auto origin =
+              view.window.frame.origin;
+          return InputIndicatorPoint{
+              .x =
+                  origin.x +
+                  style.canvasOffsetX,
+              .y =
+                  origin.y +
+                  style.canvasOffsetY,
+          };
+        };
+
+    target.point.x +=
+        target.point.x < 1000 ? 500 : -500;
+    QTest::qWait(8);
+    QVERIFY(panel.move(options.position).visible);
+    const auto beforeSource = visibleOrigin();
+    options.source = Source::Korean2Set;
+    QVERIFY(panel.show(options));
+    const auto afterSource = visibleOrigin();
+    QVERIFY(std::hypot(
+        afterSource.x - beforeSource.x,
+        afterSource.y - beforeSource.y
+    ) <= 5.760001 + std::sqrt(2.0));
+
+    QTest::qWait(8);
+    QVERIFY(panel.move(options.position).visible);
+    const auto beforeSpace = visibleOrigin();
+    [[NSWorkspace sharedWorkspace].notificationCenter
+        postNotificationName:
+            NSWorkspaceActiveSpaceDidChangeNotification
+                  object:nil];
+    QCoreApplication::processEvents();
+    QVERIFY(panel.move(options.position).visible);
+    const auto afterSpace = visibleOrigin();
+    QVERIFY(std::hypot(
+        afterSpace.x - beforeSpace.x,
+        afterSpace.y - beforeSpace.y
+    ) <= 5.760001 + std::sqrt(2.0));
+    panel.hide();
+  }
 }
 
 void InputIndicatorGeometryTests::catPursuitPanelSettlesWithinWholePointOfFractionalTargets()

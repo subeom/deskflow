@@ -2912,6 +2912,10 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>배지 투명도</translation>
     </message>
     <message>
+        <source>Companion follow speed</source>
+        <translation>동반자 따라가기 속도</translation>
+    </message>
+    <message>
         <source>Badge color</source>
         <translation>배지 색상</translation>
     </message>

@@ -5,6 +5,7 @@
 
 #include "InputIndicatorPolicyTests.h"
 
+#include "common/Settings.h"
 #include "gui/input/InputIndicatorPolicy.h"
 #ifdef Q_OS_MACOS
 #include "gui/input/MacAccessibilityProbe.h"
@@ -15,6 +16,7 @@
 #endif
 
 #include <QTest>
+#include <QScopeGuard>
 
 using namespace deskflow::gui::input;
 using Source = deskflow::input::InputIndicatorSource;
@@ -152,6 +154,7 @@ struct PersistentControllerHarness
   bool pointerMonitorComplete = true;
   int pointerMonitorStarts = 0;
   int pointerMonitorStops = 0;
+  std::vector<int> speedUpdates;
   std::function<void()> pointerMoved;
 
   MacInputIndicatorController::Dependencies dependencies()
@@ -177,6 +180,10 @@ struct PersistentControllerHarness
       };
     };
     result.panelHide = [this] { ++hides; };
+    result.panelSetFollowSpeed =
+        [this](int percent) {
+          speedUpdates.push_back(percent);
+        };
     result.pointerMonitorStart =
         [this](std::function<void()> changed) {
           ++pointerMonitorStarts;
@@ -670,6 +677,92 @@ void InputIndicatorPolicyTests::persistentSourceChangesUpdateLabel()
   MacInputIndicatorControllerTestAccess::inputSourceChanged(controller);
   QCOMPARE(harness.presentations.size(), size_t{3});
   QCOMPARE(harness.presentations.back().source, Source::LatinABC);
+}
+
+void InputIndicatorPolicyTests::persistentFollowSpeedUpdatesWithoutReconfigure()
+{
+  const auto original =
+      Settings::value(
+          Settings::Gui::InputIndicatorSpeedPercent
+      );
+  const auto restore = qScopeGuard([&original] {
+    Settings::setValue(
+        Settings::Gui::InputIndicatorSpeedPercent,
+        original
+    );
+  });
+
+  Settings::setValue(
+      Settings::Gui::InputIndicatorSpeedPercent, 150
+  );
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::arm(controller);
+  QCOMPARE(harness.presentations.size(), size_t{1});
+  QCOMPARE(
+      harness.presentations.back().followSpeedPercent,
+      150
+  );
+
+  const auto presentations =
+      harness.presentations.size();
+  const auto hides = harness.hides;
+  Settings::setValue(
+      Settings::Gui::InputIndicatorSpeedPercent, 200
+  );
+  QCOMPARE(harness.speedUpdates.size(), size_t{1});
+  QCOMPARE(harness.speedUpdates.back(), 200);
+  QCOMPARE(
+      harness.presentations.size(), presentations
+  );
+  QCOMPARE(harness.hides, hides);
+
+  for (const auto companion :
+       {
+           InputIndicatorCompanion::Dog,
+           InputIndicatorCompanion::Turtle,
+       }) {
+    MacInputIndicatorControllerTestAccess::setCompanion(
+        controller, companion
+    );
+    QCOMPARE(
+        harness.presentations.back().companion,
+        companion
+    );
+    QCOMPARE(
+        harness.presentations.back()
+            .followSpeedPercent,
+        200
+    );
+  }
+
+  const auto invalidCases = {
+      std::pair<QVariant, int>{
+          QStringLiteral("not-a-number"), 100
+      },
+      std::pair<QVariant, int>{25, 50},
+      std::pair<QVariant, int>{250, 200},
+  };
+  for (const auto &invalid : invalidCases) {
+    Settings::setValue(
+        Settings::Gui::InputIndicatorSpeedPercent,
+        invalid.first
+    );
+    PersistentControllerHarness invalidHarness;
+    MacInputIndicatorController invalidController(
+        nullptr, invalidHarness.dependencies()
+    );
+    MacInputIndicatorControllerTestAccess::arm(
+        invalidController
+    );
+    QCOMPARE(
+        invalidHarness.presentations.back()
+            .followSpeedPercent,
+        invalid.second
+    );
+  }
 }
 
 void InputIndicatorPolicyTests::persistentCompanionChoiceUpdatesPanel()

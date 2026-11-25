@@ -375,6 +375,9 @@ QVariant Settings::defaultValue(const QString &key)
   if (key == Gui::InputIndicatorOpacityPercent)
     return 65;
 
+  if (key == Gui::InputIndicatorSpeedPercent)
+    return 100;
+
   if (key == Gui::InputIndicatorTone)
     return QStringLiteral("automatic");
 

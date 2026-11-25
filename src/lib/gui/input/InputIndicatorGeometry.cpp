@@ -1033,14 +1033,15 @@ double inputIndicatorNormalizedAngle(double radians)
   return radians - kPi;
 }
 
-std::optional<InputIndicatorCatPursuitStep>
-inputIndicatorCatPursuitAdvance(
-    const InputIndicatorCatPursuitState &state,
+std::optional<InputIndicatorCompanionPursuitStep>
+inputIndicatorCompanionPursuitAdvance(
+    const InputIndicatorCompanionPursuitState &state,
     const InputIndicatorTarget &target,
     double targetSpeedPointsPerSecond,
     double elapsedMilliseconds,
     bool initialize,
-    bool reducedMotion
+    bool reducedMotion,
+    double speedMultiplier
 )
 {
   if (!finitePoint(target.point) ||
@@ -1048,6 +1049,9 @@ inputIndicatorCatPursuitAdvance(
       targetSpeedPointsPerSecond < 0 ||
       !std::isfinite(elapsedMilliseconds) ||
       elapsedMilliseconds < 0 ||
+      !std::isfinite(speedMultiplier) ||
+      speedMultiplier < 0.5 ||
+      speedMultiplier > 2.0 ||
       (!initialize && !validPursuitState(state))) {
     return std::nullopt;
   }
@@ -1056,7 +1060,7 @@ inputIndicatorCatPursuitAdvance(
     return std::nullopt;
   }
 
-  InputIndicatorCatPursuitStep result{
+  InputIndicatorCompanionPursuitStep result{
       .state = state,
       .targetKind = target.kind,
   };
@@ -1126,9 +1130,10 @@ inputIndicatorCatPursuitAdvance(
            InputIndicatorMotionState::Run &&
        distance > kCatRunHysteresisDistance);
   const double speed =
-      run
+      (run
           ? kCatRunSpeedPointsPerSecond
-          : kCatWalkSpeedPointsPerSecond;
+          : kCatWalkSpeedPointsPerSecond) *
+      speedMultiplier;
   const double stepDistance =
       std::min(
           distance,
@@ -1206,6 +1211,27 @@ inputIndicatorCatPursuitAdvance(
           result.state.velocity.y
       );
   return result;
+}
+
+std::optional<InputIndicatorCatPursuitStep>
+inputIndicatorCatPursuitAdvance(
+    const InputIndicatorCatPursuitState &state,
+    const InputIndicatorTarget &target,
+    double targetSpeedPointsPerSecond,
+    double elapsedMilliseconds,
+    bool initialize,
+    bool reducedMotion
+)
+{
+  return inputIndicatorCompanionPursuitAdvance(
+      state,
+      target,
+      targetSpeedPointsPerSecond,
+      elapsedMilliseconds,
+      initialize,
+      reducedMotion,
+      1.0
+  );
 }
 
 InputIndicatorPoint inputIndicatorCatBodyPoint(

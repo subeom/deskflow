@@ -643,6 +643,7 @@ struct MacInputIndicatorPanelOptions
   InputIndicatorCompanion companion = InputIndicatorCompanion::Cat;
   InputIndicatorPosition position = InputIndicatorPosition::CursorBottomRight;
   int opacityPercent = macInputIndicatorPanelStyle().opacityPercent;
+  int followSpeedPercent = 100;
   InputIndicatorTone tone = InputIndicatorTone::Automatic;
 };
 
@@ -691,6 +692,7 @@ public:
   MacInputIndicatorPanelMoveResult move(
       InputIndicatorPosition position
   );
+  void setFollowSpeedPercent(int percent);
   void hide();
 
 private:

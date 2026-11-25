@@ -40,6 +40,7 @@ const QHash<QString, Effect> &table()
     live(S::Gui::InputIndicatorPosition);
     live(S::Gui::InputIndicatorDwellMs);
     live(S::Gui::InputIndicatorOpacityPercent);
+    live(S::Gui::InputIndicatorSpeedPercent);
     live(S::Gui::InputIndicatorTone);
     // the GUI logger listens for it
     live(S::Log::GuiDebug);

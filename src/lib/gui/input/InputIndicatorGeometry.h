@@ -124,7 +124,7 @@ struct InputIndicatorTarget
       InputIndicatorTargetKind::Pointer;
 };
 
-struct InputIndicatorCatPursuitState
+struct InputIndicatorCompanionPursuitState
 {
   InputIndicatorPoint position;
   InputIndicatorPoint velocity;
@@ -135,9 +135,9 @@ struct InputIndicatorCatPursuitState
   bool initialized = false;
 };
 
-struct InputIndicatorCatPursuitStep
+struct InputIndicatorCompanionPursuitStep
 {
-  InputIndicatorCatPursuitState state;
+  InputIndicatorCompanionPursuitState state;
   InputIndicatorPoint movement;
   InputIndicatorTargetKind targetKind =
       InputIndicatorTargetKind::Pointer;
@@ -145,6 +145,11 @@ struct InputIndicatorCatPursuitStep
   double speedPointsPerSecond = 0;
   bool reached = false;
 };
+
+using InputIndicatorCatPursuitState =
+    InputIndicatorCompanionPursuitState;
+using InputIndicatorCatPursuitStep =
+    InputIndicatorCompanionPursuitStep;
 
 enum class InputIndicatorCatArtworkFrame
 {
@@ -312,6 +317,17 @@ inputIndicatorCatPursuitAdvance(
     double elapsedMilliseconds,
     bool initialize,
     bool reducedMotion
+);
+
+std::optional<InputIndicatorCompanionPursuitStep>
+inputIndicatorCompanionPursuitAdvance(
+    const InputIndicatorCompanionPursuitState &state,
+    const InputIndicatorTarget &target,
+    double targetSpeedPointsPerSecond,
+    double elapsedMilliseconds,
+    bool initialize,
+    bool reducedMotion,
+    double speedMultiplier
 );
 
 double inputIndicatorNormalizedAngle(double radians);
