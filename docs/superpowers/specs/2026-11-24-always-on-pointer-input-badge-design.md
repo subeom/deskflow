@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-24  
 **Status:** Approved for implementation  
-**Revision base:** `b95cb353080bb7b1cd6e4fd40de1dc12146f741b`
+**Revision base:** `e7b30e670dacb4a6efd25f3eae2d26ee96fd59b3`
 
 ## Goal
 
@@ -27,8 +27,9 @@ non-activating `NSPanel` near it:
 - The native arrow, I-beam, resize, and other cursor shape remains the
   operating system's responsibility.
 - The companion has no containing tile, badge, border, icon frame, or
-  background. The complete free-standing silhouette stays inside 30 x 28 pt
-  with a 6 pt pointer gap and 6 pt screen margin.
+  background. The approved art remains authored in a 30 x 28 pt logical
+  coordinate space and is displayed with one 1.10 scale transform inside a
+  33 x 31 pt panel. The pointer gap and screen margin scale to 7 pt.
 - Cat, Dog, and Turtle are unified filled silhouette paths, not illustrated
   faces. Cat follows the approved external Cat pose sheet: three Idle contours
   (rise/neutral/fall), three Walk contours (reach/pass/push), and three Run
@@ -51,6 +52,10 @@ non-activating `NSPanel` near it:
   typographic-origin inference. Invalid or oversized ink fails closed by
   scaling; the Cat silhouette plus label target clips as a final guard, so no
   glyph pixel can leave the filled torso interior.
+- The 1.10 display scale applies consistently to Cat, Dog, and Turtle paths,
+  glow, label targets, and CoreText preferred/minimum font sizes. Logical art
+  containment and follower geometry stay testable independently of display
+  coordinates.
 - Walk and Run keep one continuous primary body path. A smooth torso-region
   deformation moves the near contour's Bézier points outward around the label
   anchor; no rounded belly union, overlay, pad, independent stroke, or second
@@ -181,8 +186,15 @@ lift so the required 8 pt glyph remains fully inside the Run contours.
 The Cat artwork is right-facing in source coordinates. When motion faces left,
 only the path transforms horizontally; the glyph center mirrors with the
 torso but the `A`/`한` itself remains upright. The follower remains capped at
-8 pt and never delays, replaces, hides, or warps the native cursor. Source
+9 pt and never delays, replaces, hides, or warps the native cursor. Source
 transition uses an eased 200 ms glyph-color/label crossfade.
+
+Direction changes use a 280 ms eased turn rather than an instantaneous
+mirror. The silhouette compresses to 0.80 of its logical width at the
+midpoint, switches source-facing once, and expands to 1.0. A requested
+reversal during an active turn does not replace its target. The label remains
+upright, centered, and outside the turn transform. Reduced Motion switches
+immediately at scale 1.0 and starts no turn timer.
 
 The approved art carries the Cat tail as part of the continuous near contour,
 with a thick anchored proximal section and a tapered two-cubic-section tip.
@@ -198,6 +210,9 @@ fixed curled tail, with no gait phase.
 source morphing: the stable companion moves directly to the target, uses the
 neutral seated Cat, and starts no animation timer. Reduced Motion draws no
 ambient halo, pulse, afterimage, or trail.
+
+Caret tracking is outside this revision. No Accessibility, IMK, text-field
+caret, cursor-shape replacement, or text-caret coordinate source is introduced.
 
 ## Retained and Disconnected Work
 
@@ -245,6 +260,11 @@ Focused tests cover:
 - unknown source hides and cannot leave stale `A` or `한`;
 - repeated pointer ticks move only, without source redraw;
 - compact Cat/Dog/Turtle metrics and low-emphasis automatic opacity;
+- 33 x 31 display metrics derived from one 1.10 transform of 30 x 28 logical
+  art, with 7 pt gap/margin and 9 pt lag/motion caps;
+- a 280 ms facing pose that reaches 0.80 scale at midpoint, switches direction
+  once, ignores in-flight requests, and keeps the label unmirrored;
+- Reduced Motion facing changes immediately with no compression/timer;
 - a two-primitive silhouette/language render plan with no tile or eye
   primitives;
 - the Cat's right-facing source outline, Idle/Walk/Run keyframe sequence, near

@@ -2715,3 +2715,105 @@ signature, and do not install.
 Expected: clean ancestry from
 `b95cb353080bb7b1cd6e4fd40de1dc12146f741b`, no rounded pad/belly path,
 zero-spill native output, no push/merge/tag/release/PR/install.
+
+---
+
+## Revision 13: Larger Companion and Smooth Facing Turn
+
+Caret tracking is explicitly excluded from this revision and remains a
+separate read-only feasibility task.
+
+### Task 50: Record Scale and Turn RED
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.mm`
+
+- [ ] **Step 1: Assert the display model**
+
+Add a pure 1.10 logical-to-display mapping and assert:
+
+```text
+logical 30 x 28 -> display 33 x 31
+logical point/rect maps to the 33 x 31 panel
+cursor gap/margin == 7
+maximum lag/motion == 9
+Cat/Dog/Turtle share the same display scale
+```
+
+- [ ] **Step 2: Add facing-turn pose tests**
+
+Define a pure 280 ms facing pose with source/target direction, active state,
+and horizontal scale. Assert:
+
+```text
+0 ms -> source direction, scale 1.0
+140 ms -> target direction, scale 0.80
+280 ms -> target direction, scale 1.0, inactive
+Reduced Motion -> target direction, scale 1.0, inactive
+```
+
+Also assert an in-flight request does not replace the active target.
+
+- [ ] **Step 3: Assert scaled label containment**
+
+Map the inner Cat label target into display coordinates, scale preferred
+CoreText font/minimum sizes by 1.10, and retain actual-ink containment for all
+36 native source/frame/direction cases.
+
+- [ ] **Step 4: Capture RED**
+
+Build `InputIndicatorGeometryTests`. Expected failures are the missing
+display-scale and facing-turn APIs plus old 30 x 28 style values.
+
+### Task 51: Apply Display Scale and Smooth Turn
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.cpp`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+
+- [ ] **Step 1: Implement the display mapping**
+
+Keep all artwork commands and logical geometry in 30 x 28 coordinates. Add one
+`NSAffineTransform` at draw time that maps to 33 x 31. Scale Cat/Dog/Turtle
+paths, halos, label rectangles, and CoreText font sizes consistently. Screen
+positioning uses 33 x 31, 7 pt gaps, and 9 pt caps.
+
+- [ ] **Step 2: Add a 280 ms facing state machine**
+
+Track stable, target, active turn, and turn start. Ignore requested reversals
+while active. Feed the pure facing pose into the view on every 8 ms tick. At
+midpoint switch `facesRight`; keep the label outside the compression/mirror
+transform.
+
+- [ ] **Step 3: Preserve Reduced Motion and behavior**
+
+Reduced Motion performs the facing switch immediately at scale 1.0 and no turn
+timer. Follower position, Space presentation, source glow, art poses, privacy,
+label colors, and CoreText containment remain unchanged.
+
+### Task 52: Verify, Package, and Audit
+
+- [ ] **Step 1: Run focused/native gate**
+
+Require 36-case `outsidePixels 0`, turn timing/coalescing, scaled label fit,
+and the existing nine focused suites.
+
+- [ ] **Step 2: Run full Release**
+
+Build all targets and run 157 eligible CTests, excluding only
+`OSXClipboardTests` and `OSXKeyStateTests`.
+
+- [ ] **Step 3: Commit/package**
+
+Commit docs and implementation separately. Build
+`build/pointer-badge-scale-turn/deskflow-2.0.9.0-macos-arm64.dmg`, verify hash
+and signature, and do not install.
+
+- [ ] **Step 4: Audit final state**
+
+Expected: clean ancestry from
+`e7b30e670dacb4a6efd25f3eae2d26ee96fd59b3`, no caret-mode code, zero-spill
+native output, smooth turn tests green, no push/merge/tag/release/PR/install.
