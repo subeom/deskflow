@@ -39,6 +39,9 @@ private Q_SLOTS:
 
   void closeToTray_withATray_hidesTheWindow();
   void closeToTray_withoutATray_keepsTheWindowWhereItCanBeFoundAgain();
+  void nativeQuit_withCloseToTray_isAccepted();
+  void nativeQuit_canceledBeforeTheCloseKeepsTheNextCloseBehavior();
+  void systemShutdownDuringUpdate_isAccepted();
 
 private:
   QTemporaryDir m_dir;

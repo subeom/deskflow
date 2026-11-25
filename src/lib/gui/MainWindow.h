@@ -208,7 +208,8 @@ private:
   void closeEvent(QCloseEvent *event) override;
   bool maybeHideToTray();
   bool canQuitApplication();
-  bool shouldQuitForNativeRequest();
+  bool shouldQuitForNativeRequest(bool systemShuttingDown = false);
+  void nativeQuitRequestFinished();
   void secureSocket(bool secureSocket);
   void connectSlots();
   void handleLogLine(const QString &line);
@@ -291,6 +292,8 @@ private:
   QString m_updateReceiptPath;
   bool m_updateApplying = false;
   bool m_updateExitAuthorized = false;
+  bool m_nativeQuitRequested = false;
+  bool m_nativeSystemShutdown = false;
   bool m_secureSocket = false;
   bool m_saveOnExit = true;
   bool m_clientErrorVisible = false;

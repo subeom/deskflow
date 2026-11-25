@@ -232,8 +232,13 @@ MainWindow::MainWindow()
   );
   m_coreProcess.setInputIndicatorEnabled(m_inputIndicatorController->isEnabled());
 
-  // Route native quits (Cmd+Q / Apple menu Quit / Dock "Quit") to the usual close-to-tray decision instead.
-  installQuitHandler([this] { return shouldQuitForNativeRequest(); });
+  // Native Quit is an explicit termination, not a request to close the main window into the tray.
+  installQuitHandler(
+      [this](bool systemShuttingDown) {
+        return shouldQuitForNativeRequest(systemShuttingDown);
+      },
+      [this] { nativeQuitRequestFinished(); }
+  );
 #endif
 }
 MainWindow::~MainWindow()
@@ -1831,9 +1836,20 @@ bool MainWindow::maybeHideToTray()
   return true;
 }
 
-bool MainWindow::shouldQuitForNativeRequest()
+bool MainWindow::shouldQuitForNativeRequest(bool systemShuttingDown)
 {
-  return canQuitApplication() && !maybeHideToTray();
+  if (!systemShuttingDown && !canQuitApplication())
+    return false;
+
+  m_nativeQuitRequested = true;
+  m_nativeSystemShutdown = systemShuttingDown;
+  return true;
+}
+
+void MainWindow::nativeQuitRequestFinished()
+{
+  m_nativeQuitRequested = false;
+  m_nativeSystemShutdown = false;
 }
 
 bool MainWindow::canQuitApplication()
@@ -1848,11 +1864,15 @@ bool MainWindow::canQuitApplication()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-  if (!canQuitApplication()) {
+  const auto nativeQuitRequested = m_nativeQuitRequested;
+  const auto nativeSystemShutdown = m_nativeSystemShutdown;
+  nativeQuitRequestFinished();
+
+  if (!nativeSystemShutdown && !canQuitApplication()) {
     event->ignore();
     return;
   }
-  if (event->spontaneous() && maybeHideToTray()) {
+  if (event->spontaneous() && !nativeQuitRequested && maybeHideToTray()) {
     event->ignore();
     return;
   }

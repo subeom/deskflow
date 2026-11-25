@@ -21,11 +21,13 @@
 #include <QAccessible>
 #include <QAction>
 #include <QApplication>
+#include <QCloseEvent>
 #include <QMenu>
 #include <QMenuBar>
 #include <QPixmapCache>
 #include <QSystemTrayIcon>
 #include <QTimer>
+#include <qtestspontaneevent.h>
 
 #include <memory>
 
@@ -59,9 +61,20 @@ struct MainWindowTestAccess
   {
     return w.maybeHideToTray();
   }
-  static bool nativeQuitShouldProceed(MainWindow &w)
+  static bool nativeQuitShouldProceed(MainWindow &w, bool systemShuttingDown = false)
   {
-    return w.shouldQuitForNativeRequest();
+    return w.shouldQuitForNativeRequest(systemShuttingDown);
+  }
+  static void nativeQuitDidFinish(MainWindow &w)
+  {
+    w.nativeQuitRequestFinished();
+  }
+  static bool nativeCloseShouldProceed(MainWindow &w)
+  {
+    QCloseEvent event;
+    QSpontaneKeyEvent::setSpontaneous(&event);
+    w.closeEvent(&event);
+    return event.isAccepted();
   }
   static QMenu *menuFile(MainWindow &w)
   {
@@ -374,6 +387,47 @@ void TrayWindowTests::closeToTray_withoutATray_keepsTheWindowWhereItCanBeFoundAg
   QVERIFY(!open->isVisible());
 }
 
+void TrayWindowTests::nativeQuit_withCloseToTray_isAccepted()
+{
+  Settings::setValue(Settings::Gui::CloseToTray, true);
+  Settings::setValue(Settings::Gui::CloseReminder, false);
+  auto window = makeWindow();
+  Access::setTrayAvailable(*window, true);
+  Access::showAndActivate(*window);
+  QVERIFY(QTest::qWaitForWindowExposed(window.get()));
+
+  QVERIFY(Access::nativeQuitShouldProceed(*window));
+  QVERIFY(Access::nativeCloseShouldProceed(*window));
+}
+
+void TrayWindowTests::nativeQuit_canceledBeforeTheCloseKeepsTheNextCloseBehavior()
+{
+  Settings::setValue(Settings::Gui::CloseToTray, true);
+  Settings::setValue(Settings::Gui::CloseReminder, false);
+  auto window = makeWindow();
+  Access::setTrayAvailable(*window, true);
+  Access::showAndActivate(*window);
+  QVERIFY(QTest::qWaitForWindowExposed(window.get()));
+
+  QVERIFY(Access::nativeQuitShouldProceed(*window));
+  Access::nativeQuitDidFinish(*window);
+  QVERIFY(!Access::nativeCloseShouldProceed(*window));
+}
+
+void TrayWindowTests::systemShutdownDuringUpdate_isAccepted()
+{
+  Settings::setValue(Settings::Gui::CloseToTray, true);
+  Settings::setValue(Settings::Gui::CloseReminder, false);
+  auto window = makeWindow();
+  Access::setTrayAvailable(*window, true);
+  Access::showAndActivate(*window);
+  QVERIFY(QTest::qWaitForWindowExposed(window.get()));
+  Access::setUpdateApplying(*window, true);
+
+  QVERIFY(Access::nativeQuitShouldProceed(*window, true));
+  QVERIFY(Access::nativeCloseShouldProceed(*window));
+}
+
 void TrayWindowTests::systemLook_hasNoTrayController_andNoStateInTheTrayIcon()
 {
   auto window = makeWindow();
@@ -504,6 +558,8 @@ void TrayWindowTests::updateApplying_blocksTrayQuitAndClose()
   QVERIFY(!window->close());
   Settings::setValue(Settings::Gui::CloseToTray, false);
   QVERIFY(!Access::nativeQuitShouldProceed(*window));
+  QVERIFY(Access::nativeQuitShouldProceed(*window, true));
+  Access::nativeQuitDidFinish(*window);
 
   Access::setUpdateApplying(*window, false);
   QVERIFY(window->isVisible());
