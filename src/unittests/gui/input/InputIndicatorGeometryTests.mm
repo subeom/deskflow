@@ -62,23 +62,45 @@ double contrastRatio(
 }
 
 NSBezierPath *artworkPath(
-    std::span<const MacInputIndicatorCatPathCommand> commands
+    std::span<const MacInputIndicatorCatPathCommand> commands,
+    const InputIndicatorCatStartleFrame &startleFrame = {}
 )
 {
   NSBezierPath *path = [NSBezierPath bezierPath];
+  const auto deformed =
+      [&startleFrame](double x, double y) {
+        return inputIndicatorCatStartlePoint(
+            {.x = x, .y = y},
+            startleFrame,
+            false
+        );
+      };
   for (const auto &command : commands) {
     switch (command.type) {
-    case MacInputIndicatorCatPathCommandType::Move:
-      [path moveToPoint:NSMakePoint(command.x1, command.y1)];
+    case MacInputIndicatorCatPathCommandType::Move: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path moveToPoint:NSMakePoint(point.x, point.y)];
       break;
-    case MacInputIndicatorCatPathCommandType::Line:
-      [path lineToPoint:NSMakePoint(command.x1, command.y1)];
+    }
+    case MacInputIndicatorCatPathCommandType::Line: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path lineToPoint:NSMakePoint(point.x, point.y)];
       break;
-    case MacInputIndicatorCatPathCommandType::Cubic:
-      [path curveToPoint:NSMakePoint(command.x3, command.y3)
-          controlPoint1:NSMakePoint(command.x1, command.y1)
-          controlPoint2:NSMakePoint(command.x2, command.y2)];
+    }
+    case MacInputIndicatorCatPathCommandType::Cubic: {
+      const auto control1 =
+          deformed(command.x1, command.y1);
+      const auto control2 =
+          deformed(command.x2, command.y2);
+      const auto point =
+          deformed(command.x3, command.y3);
+      [path curveToPoint:NSMakePoint(point.x, point.y)
+          controlPoint1:NSMakePoint(control1.x, control1.y)
+          controlPoint2:NSMakePoint(control2.x, control2.y)];
       break;
+    }
     case MacInputIndicatorCatPathCommandType::Close:
       [path closePath];
       break;
@@ -90,18 +112,25 @@ NSBezierPath *artworkPath(
 NSBezierPath *artworkPath(
     const InputIndicatorCatPose &pose,
     std::span<const MacInputIndicatorCatPathCommand> commands,
-    const InputIndicatorCatIdleTailFrame &tailFrame
+    const InputIndicatorCatIdleTailFrame &tailFrame,
+    const InputIndicatorCatStartleFrame &startleFrame = {}
 )
 {
   NSBezierPath *path = [NSBezierPath bezierPath];
   const auto deformed =
-      [&pose, &tailFrame](double x, double y) {
+      [&pose, &tailFrame, &startleFrame](
+          double x, double y
+      ) {
         const auto torsoPoint =
             inputIndicatorCatTorsoPoint(
                 pose, {.x = x, .y = y}
             );
-        return inputIndicatorCatIdleTailPoint(
-            torsoPoint, tailFrame
+        const auto tailPoint =
+            inputIndicatorCatIdleTailPoint(
+                torsoPoint, tailFrame
+            );
+        return inputIndicatorCatStartlePoint(
+            tailPoint, startleFrame, true
         );
       };
   for (const auto &command : commands) {
@@ -179,7 +208,8 @@ NSBitmapImageRep *catBodyBitmap(
     bool facesRight,
     int scale,
     int paddingPoints,
-    bool includeHalo
+    bool includeStroke,
+    const InputIndicatorCatStartleFrame &startleFrame = {}
 )
 {
   NSBitmapImageRep *bitmap =
@@ -219,28 +249,14 @@ NSBitmapImageRep *catBodyBitmap(
     CGContextScaleCTM(context, -1, 1);
   }
 
-  NSBezierPath *far = artworkPath(artwork.far);
+  NSBezierPath *far =
+      artworkPath(artwork.far, startleFrame);
   NSBezierPath *near =
-      artworkPath(pose, artwork.near, tailFrame);
-  if (includeHalo) {
-    NSBezierPath *halo =
-        [NSBezierPath bezierPath];
-    [halo appendBezierPath:far];
-    [halo appendBezierPath:near];
-    constexpr double kMaximumHaloScale =
-        1.0 + (1.22 - 1.0) * 0.30;
-    NSAffineTransform *transform =
-        [NSAffineTransform transform];
-    [transform translateXBy:15 yBy:14];
-    [transform scaleXBy:kMaximumHaloScale
-                    yBy:kMaximumHaloScale];
-    [transform translateXBy:-15 yBy:-14];
-    [halo transformUsingAffineTransform:transform];
-    [[NSColor blackColor] setFill];
-    [halo fill];
-  }
+      artworkPath(
+          pose, artwork.near, tailFrame, startleFrame
+      );
   [[NSColor blackColor] setFill];
-  if (includeHalo) {
+  if (includeStroke) {
     [[NSColor blackColor] setStroke];
     [near setLineWidth:0.55];
     [far setLineWidth:0.55];
@@ -261,12 +277,16 @@ NSBitmapImageRep *catGlyphBitmap(
     InputIndicatorMotionState state,
     bool facesRight,
     int scale,
-    int paddingPoints
+    int paddingPoints,
+    deskflow::input::InputIndicatorSource source =
+        deskflow::input::InputIndicatorSource::LatinABC
 )
 {
-  using Source =
-      deskflow::input::InputIndicatorSource;
-  const auto source = Source::LatinABC;
+  NSString *label =
+      source ==
+              deskflow::input::InputIndicatorSource::Korean2Set
+          ? @"한"
+          : @"A";
   auto target =
       macInputIndicatorDisplayRect(
           inputIndicatorCatInnerLanguageBounds(
@@ -288,7 +308,7 @@ NSBitmapImageRep *catGlyphBitmap(
                           weight:NSFontWeightSemibold];
     const auto measured =
         macInputIndicatorCoreTextLabelMeasurement(
-            @"A", font
+            label, font
         );
     if (!measured) {
       return nil;
@@ -331,7 +351,7 @@ NSBitmapImageRep *catGlyphBitmap(
   CGContextScaleCTM(context, scale, scale);
   macInputIndicatorDrawCoreTextLabel(
       context,
-      @"A",
+      label,
       font,
       [NSColor blackColor],
       *layout
@@ -391,6 +411,22 @@ int bitmapChangedPixels(
     }
   }
   return changed;
+}
+
+NSView *catPanelView()
+{
+  Class panelClass =
+      NSClassFromString(@"DeskflowInputIndicatorPanel");
+  if (!panelClass) {
+    return nil;
+  }
+  for (NSWindow *candidate in NSApp.windows) {
+    if ([candidate isKindOfClass:panelClass] &&
+        candidate.visible) {
+      return candidate.contentView;
+    }
+  }
+  return nil;
 }
 
 } // namespace
@@ -1440,6 +1476,219 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
   QCOMPARE(outsidePixels, 0);
 }
 
+void InputIndicatorGeometryTests::catStartleRenderKeepsLabelAndCanvasStable()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto pose =
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Idle, 0, false
+      );
+  const auto artwork =
+      macInputIndicatorCatArtwork(pose.artworkFrame);
+  const InputIndicatorCatIdleTailFrame restTail;
+  const InputIndicatorCatStartleFrame restStartle;
+  const Source sources[] = {
+      Source::LatinABC,
+      Source::Korean2Set,
+  };
+  const bool facings[] = {true, false};
+  constexpr int paddingPoints = 4;
+  const double ages[] = {70, 110, 160, 230, 299, 300};
+  const auto state =
+      inputIndicatorCatSourceStartleTrigger(
+          {},
+          Source::LatinABC,
+          Source::Korean2Set,
+          0,
+          false
+      );
+  int cases = 0;
+  int outsidePixels = 0;
+
+  for (const int scale : {1, 2}) {
+    const NSInteger panelLeft =
+        paddingPoints * scale;
+    const NSInteger panelBottom =
+        paddingPoints * scale;
+    const NSInteger panelRight =
+        panelLeft + 33 * scale;
+    const NSInteger panelTop =
+        panelBottom + 31 * scale;
+    const NSInteger dorsalLeft =
+        static_cast<NSInteger>(
+            std::floor(
+                (
+                    paddingPoints +
+                    macInputIndicatorDisplayPoint(
+                        {.x = 13.0, .y = 0}
+                    ).x
+                ) *
+                scale
+            )
+        );
+    const NSInteger dorsalRight =
+        static_cast<NSInteger>(
+            std::ceil(
+                (
+                    paddingPoints +
+                    macInputIndicatorDisplayPoint(
+                        {.x = 18.5, .y = 0}
+                    ).x
+                ) *
+                scale
+            )
+        );
+    const NSInteger dorsalBottom =
+        static_cast<NSInteger>(
+            std::floor(
+                (
+                    paddingPoints +
+                    macInputIndicatorDisplayPoint(
+                        {.x = 0, .y = 9.5}
+                    ).y
+                ) *
+                scale
+            )
+        );
+    const NSInteger dorsalTop =
+        static_cast<NSInteger>(
+            std::ceil(
+                (
+                    paddingPoints +
+                    macInputIndicatorDisplayPoint(
+                        {.x = 0, .y = 17.0}
+                    ).y
+                ) *
+                scale
+            )
+        );
+
+    for (const auto source : sources) {
+      for (const bool facesRight : facings) {
+        NSBitmapImageRep *baseline =
+            catBodyBitmap(
+                pose,
+                artwork,
+                restTail,
+                facesRight,
+                scale,
+                paddingPoints,
+                false,
+                restStartle
+            );
+        NSBitmapImageRep *glyph =
+            catGlyphBitmap(
+                pose,
+                InputIndicatorMotionState::Idle,
+                facesRight,
+                scale,
+                paddingPoints,
+                source
+            );
+        QVERIFY(baseline);
+        QVERIFY(glyph);
+
+        for (const double age : ages) {
+          const auto startleStep =
+              inputIndicatorCatSourceStartleAdvance(
+                  state, age, false
+              );
+          NSBitmapImageRep *body =
+              catBodyBitmap(
+                  pose,
+                  artwork,
+                  restTail,
+                  facesRight,
+                  scale,
+                  paddingPoints,
+                  false,
+                  startleStep.frame
+              );
+          NSBitmapImageRep *paint =
+              catBodyBitmap(
+                  pose,
+                  artwork,
+                  restTail,
+                  facesRight,
+                  scale,
+                  paddingPoints,
+                  true,
+                  startleStep.frame
+              );
+          QVERIFY(body);
+          QVERIFY(paint);
+          int changedPixels = 0;
+          int dorsalPixels = 0;
+          int caseOutsidePixels = 0;
+          for (NSInteger y = 0;
+               y < body.pixelsHigh;
+               ++y) {
+            for (NSInteger x = 0;
+                 x < body.pixelsWide;
+                 ++x) {
+              const double baselineAlpha =
+                  [baseline colorAtX:x y:y]
+                      .alphaComponent;
+              const double bodyAlpha =
+                  [body colorAtX:x y:y]
+                      .alphaComponent;
+              const double paintAlpha =
+                  [paint colorAtX:x y:y]
+                      .alphaComponent;
+              const double glyphAlpha =
+                  [glyph colorAtX:x y:y]
+                      .alphaComponent;
+              if (std::abs(
+                      baselineAlpha - bodyAlpha
+                  ) > 0.02) {
+                ++changedPixels;
+                if (x >= dorsalLeft &&
+                    x < dorsalRight &&
+                    y >= dorsalBottom &&
+                    y < dorsalTop) {
+                  ++dorsalPixels;
+                }
+              }
+              const bool glyphOutside =
+                  glyphAlpha > 0.02 &&
+                  bodyAlpha <= 0.02;
+              const bool paintOutside =
+                  paintAlpha > 0.02 &&
+                  (x < panelLeft ||
+                   x >= panelRight ||
+                   y < panelBottom ||
+                   y >= panelTop);
+              if (glyphOutside ||
+                  paintOutside) {
+                ++caseOutsidePixels;
+              }
+            }
+          }
+          if (age == 160) {
+            QVERIFY(dorsalPixels > 0);
+          }
+          if (age == 300) {
+            QCOMPARE(changedPixels, 0);
+          }
+          outsidePixels += caseOutsidePixels;
+          QCOMPARE(caseOutsidePixels, 0);
+          [body release];
+          [paint release];
+          ++cases;
+        }
+        [baseline release];
+        [glyph release];
+      }
+    }
+  }
+  qInfo() << "startle-outsidePixels"
+          << outsidePixels
+          << "cases" << cases;
+  QCOMPARE(cases, 48);
+  QCOMPARE(outsidePixels, 0);
+}
+
 void InputIndicatorGeometryTests::catIdleTailMotionChangesOnlyTailPixels()
 {
   const auto pose =
@@ -1732,10 +1981,7 @@ void InputIndicatorGeometryTests::catPanelIdleTailFrameRepaints()
                  doubleValue]
           << "transitionProgress"
           << [[view valueForKey:@"transitionProgress"]
-                 doubleValue]
-          << "haloPulseCount"
-          << [[view valueForKey:@"haloPulseCount"]
-                 integerValue];
+                 doubleValue];
   QVERIFY(result.visible);
   QVERIFY(result.animating);
   QVERIFY(!result.reducedMotion);
@@ -1915,66 +2161,6 @@ void InputIndicatorGeometryTests::companionPaletteUsesNeutralBodyAndReadableGlyp
   ) <= std::abs(
       automatic.koreanGlyph.blue - automatic.body.blue
   ) * 0.08 + 1e-12);
-}
-
-void InputIndicatorGeometryTests::companionHaloPulsesStayBoundedAndReducedMotionSafe()
-{
-  using Source =
-      deskflow::input::InputIndicatorSource;
-  std::vector<MacInputIndicatorHaloPulse> pulses;
-
-  QVERIFY(macInputIndicatorAppendHaloPulse(
-      pulses, Source::LatinABC, 0
-  ));
-  QVERIFY(!macInputIndicatorAppendHaloPulse(
-      pulses, Source::Korean2Set, 49
-  ));
-  QVERIFY(macInputIndicatorAppendHaloPulse(
-      pulses, Source::Korean2Set, 50
-  ));
-  QVERIFY(macInputIndicatorAppendHaloPulse(
-      pulses, Source::LatinABC, 100
-  ));
-  QVERIFY(macInputIndicatorAppendHaloPulse(
-      pulses, Source::Korean2Set, 150
-  ));
-  QCOMPARE(
-      pulses.size(), kMacInputIndicatorMaximumHaloWaves
-  );
-  QCOMPARE(pulses[0].source, Source::Korean2Set);
-  QCOMPARE(pulses[1].source, Source::LatinABC);
-  QCOMPARE(pulses[2].source, Source::Korean2Set);
-
-  const auto early = macInputIndicatorHaloFrame(
-      pulses.back(), 160, false
-  );
-  const auto peak = macInputIndicatorHaloFrame(
-      pulses.back(), 200, false
-  );
-  const auto decay = macInputIndicatorHaloFrame(
-      pulses.back(), 360, false
-  );
-  const auto ended = macInputIndicatorHaloFrame(
-      pulses.back(), 430, false
-  );
-  const auto reduced = macInputIndicatorHaloFrame(
-      pulses.back(), 200, true
-  );
-
-  QVERIFY(early.active);
-  QVERIFY(peak.active);
-  QVERIFY(decay.active);
-  QVERIFY(!ended.active);
-  QVERIFY(!reduced.active);
-  QVERIFY(peak.scale <= 1.25);
-  QVERIFY(peak.alpha <= 0.34);
-  QVERIFY(decay.alpha < peak.alpha);
-  QCOMPARE(
-      macInputIndicatorActiveHaloFrames(
-          pulses, 200, true
-      ).size(),
-      size_t{0}
-  );
 }
 
 void InputIndicatorGeometryTests::companionRenderAlphaFollowsSettingAndBoundsDetail()
@@ -2395,6 +2581,621 @@ void InputIndicatorGeometryTests::catIdleTailMotionIsSeededAndFacingDeterministi
   QCOMPARE(restored.y, right.y);
   QVERIFY(right.x != sourcePoint.x ||
           right.y != sourcePoint.y);
+}
+
+void InputIndicatorGeometryTests::catSourceStartleTimelineUsesFiniteNeutralEndpoints()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  InputIndicatorCatSourceStartleState state;
+  state = inputIndicatorCatSourceStartleTrigger(
+      state,
+      Source::LatinABC,
+      Source::Korean2Set,
+      100,
+      false
+  );
+
+  const auto start =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 100, false
+      );
+  const auto recoil =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 170, false
+      );
+  const auto fur =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 260, false
+      );
+  const auto ended =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 400, false
+      );
+
+  QCOMPARE(
+      start.state.latestSource,
+      Source::Korean2Set
+  );
+  QVERIFY(start.frame.active);
+  QCOMPARE(start.frame.recoilOffsetX, 0.0);
+  QCOMPARE(start.frame.horizontalScale, 1.0);
+  QCOMPARE(start.frame.dorsalLift, 0.0);
+  QVERIFY(recoil.frame.active);
+  QVERIFY(recoil.frame.recoilOffsetX < 0);
+  QVERIFY(recoil.frame.horizontalScale >= 0.92);
+  QCOMPARE(recoil.frame.dorsalLift, 0.0);
+  QVERIFY(fur.frame.active);
+  QCOMPARE(fur.frame.recoilOffsetX, 0.0);
+  QCOMPARE(fur.frame.horizontalScale, 1.0);
+  QVERIFY(std::abs(fur.frame.dorsalLift - 1.8) < 1e-9);
+  QVERIFY(!ended.frame.active);
+  QCOMPARE(ended.frame.recoilOffsetX, 0.0);
+  QCOMPARE(ended.frame.horizontalScale, 1.0);
+  QCOMPARE(ended.frame.dorsalLift, 0.0);
+
+  for (double now = 100; now <= 400; now += 1) {
+    const auto step =
+        inputIndicatorCatSourceStartleAdvance(
+            state, now, false
+        );
+    QVERIFY(std::isfinite(step.frame.progress));
+    QVERIFY(std::isfinite(
+        step.frame.recoilOffsetX
+    ));
+    QVERIFY(std::isfinite(
+        step.frame.horizontalScale
+    ));
+    QVERIFY(std::isfinite(step.frame.dorsalLift));
+    QVERIFY(step.frame.recoilOffsetX >= -0.45);
+    QVERIFY(step.frame.recoilOffsetX <= 0);
+    QVERIFY(step.frame.horizontalScale >= 0.92);
+    QVERIFY(step.frame.horizontalScale <= 1);
+    QVERIFY(step.frame.dorsalLift >= 0);
+    QVERIFY(step.frame.dorsalLift <= 1.8);
+  }
+
+  const InputIndicatorPoint point{
+      .x = 15.5,
+      .y = 12.5,
+  };
+  const auto startPoint =
+      inputIndicatorCatStartlePoint(
+          point, start.frame, true
+      );
+  const auto endPoint =
+      inputIndicatorCatStartlePoint(
+          point, ended.frame, true
+      );
+  QCOMPARE(startPoint.x, point.x);
+  QCOMPARE(startPoint.y, point.y);
+  QCOMPARE(endPoint.x, point.x);
+  QCOMPARE(endPoint.y, point.y);
+}
+
+void InputIndicatorGeometryTests::catSourceStartleCoalescesLatestSourceAtFiftyMilliseconds()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  InputIndicatorCatSourceStartleState state;
+  state = inputIndicatorCatSourceStartleTrigger(
+      state,
+      Source::LatinABC,
+      Source::Korean2Set,
+      0,
+      false
+  );
+  state = inputIndicatorCatSourceStartleTrigger(
+      state,
+      Source::Korean2Set,
+      Source::LatinABC,
+      20,
+      false
+  );
+  state = inputIndicatorCatSourceStartleTrigger(
+      state,
+      Source::LatinABC,
+      Source::Korean2Set,
+      35,
+      false
+  );
+  state = inputIndicatorCatSourceStartleTrigger(
+      state,
+      Source::Korean2Set,
+      Source::Korean2Set,
+      49,
+      false
+  );
+  const auto throttled =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 49, false
+      );
+  QCOMPARE(
+      throttled.state.lastStartedMilliseconds,
+      0.0
+  );
+  QVERIFY(throttled.state.pending);
+  const auto replacement =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 50, false
+      );
+  QCOMPARE(
+      replacement.state.lastStartedMilliseconds,
+      50.0
+  );
+  QCOMPARE(
+      replacement.state.latestSource,
+      Source::Korean2Set
+  );
+  QVERIFY(!replacement.state.pending);
+  QVERIFY(replacement.frame.active);
+
+  double previousStart =
+      replacement.state.lastStartedMilliseconds;
+  Source current = Source::Korean2Set;
+  auto repeated =
+      replacement.state;
+  for (double now = 60; now <= 1000; now += 10) {
+    const auto next =
+        current == Source::LatinABC
+            ? Source::Korean2Set
+            : Source::LatinABC;
+    repeated =
+        inputIndicatorCatSourceStartleTrigger(
+            repeated, current, next, now, false
+        );
+    current = next;
+    const auto step =
+        inputIndicatorCatSourceStartleAdvance(
+            repeated, now, false
+        );
+    repeated = step.state;
+    if (repeated.lastStartedMilliseconds !=
+        previousStart) {
+      QVERIFY(
+          repeated.lastStartedMilliseconds -
+              previousStart >=
+          50
+      );
+      previousStart =
+          repeated.lastStartedMilliseconds;
+    }
+  }
+  QVERIFY(repeated.active);
+  QCOMPARE(repeated.latestSource, current);
+}
+
+void InputIndicatorGeometryTests::catSourceStartleRejectsNonEventsAndReducedMotion()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  InputIndicatorCatSourceStartleState state;
+  const auto initial =
+      inputIndicatorCatSourceStartleTrigger(
+          state,
+          Source::Unknown,
+          Source::LatinABC,
+          10,
+          false
+      );
+  QVERIFY(!initial.active);
+  QVERIFY(!initial.pending);
+  QVERIFY(!initial.hasStarted);
+
+  const auto duplicate =
+      inputIndicatorCatSourceStartleTrigger(
+          initial,
+          Source::LatinABC,
+          Source::LatinABC,
+          20,
+          false
+      );
+  QVERIFY(!duplicate.active);
+  QVERIFY(!duplicate.pending);
+  const auto unknown =
+      inputIndicatorCatSourceStartleTrigger(
+          duplicate,
+          Source::LatinABC,
+          Source::Unknown,
+          30,
+          false
+      );
+  QVERIFY(!unknown.active);
+  QVERIFY(!unknown.pending);
+
+  auto active =
+      inputIndicatorCatSourceStartleTrigger(
+          unknown,
+          Source::LatinABC,
+          Source::Korean2Set,
+          40,
+          false
+      );
+  const auto reduced =
+      inputIndicatorCatSourceStartleAdvance(
+          active, 100, true
+      );
+  QVERIFY(!reduced.frame.active);
+  QVERIFY(!reduced.state.active);
+  QVERIFY(!reduced.state.pending);
+  QCOMPARE(reduced.frame.recoilOffsetX, 0.0);
+  QCOMPARE(reduced.frame.horizontalScale, 1.0);
+  QCOMPARE(reduced.frame.dorsalLift, 0.0);
+
+  const auto reducedTrigger =
+      inputIndicatorCatSourceStartleTrigger(
+          reduced.state,
+          Source::Korean2Set,
+          Source::LatinABC,
+          100,
+          true
+      );
+  QVERIFY(!reducedTrigger.active);
+  QVERIFY(!reducedTrigger.pending);
+
+  const auto invalid =
+      inputIndicatorCatSourceStartleAdvance(
+          active,
+          std::numeric_limits<double>::quiet_NaN(),
+          false
+      );
+  QVERIFY(std::isfinite(invalid.frame.progress));
+  QVERIFY(std::isfinite(
+      invalid.frame.recoilOffsetX
+  ));
+  QVERIFY(std::isfinite(
+      invalid.frame.horizontalScale
+  ));
+  QVERIFY(std::isfinite(invalid.frame.dorsalLift));
+}
+
+void InputIndicatorGeometryTests::catSourceStartleWarpsOnlyApprovedDorsalRegion()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto state =
+      inputIndicatorCatSourceStartleTrigger(
+          {},
+          Source::LatinABC,
+          Source::Korean2Set,
+          0,
+          false
+      );
+  const auto recoil =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 70, false
+      );
+  const auto fur =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 160, false
+      );
+  const auto rest =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 300, false
+      );
+
+  const InputIndicatorPoint tail{
+      .x = 5,
+      .y = 7,
+  };
+  const InputIndicatorPoint dorsal{
+      .x = 15.5,
+      .y = 12.5,
+  };
+  const InputIndicatorPoint head{
+      .x = 22,
+      .y = 16,
+  };
+  const auto recoilPoint =
+      inputIndicatorCatStartlePoint(
+          dorsal, recoil.frame, true
+      );
+  QVERIFY(recoilPoint.x < dorsal.x);
+  const auto furTail =
+      inputIndicatorCatStartlePoint(
+          tail, fur.frame, true
+      );
+  const auto furDorsal =
+      inputIndicatorCatStartlePoint(
+          dorsal, fur.frame, true
+      );
+  const auto furOnlyDorsal =
+      inputIndicatorCatStartlePoint(
+          dorsal, fur.frame, false
+      );
+  const auto furHead =
+      inputIndicatorCatStartlePoint(
+          head, fur.frame, true
+      );
+  QCOMPARE(furTail.y, tail.y);
+  QVERIFY(furDorsal.y > dorsal.y);
+  QCOMPARE(furOnlyDorsal.y, dorsal.y);
+  QCOMPARE(furHead.y, head.y);
+
+  for (const auto point :
+       {tail, dorsal, head}) {
+    const auto ended =
+        inputIndicatorCatStartlePoint(
+            point, rest.frame, true
+        );
+    QCOMPARE(ended.x, point.x);
+    QCOMPARE(ended.y, point.y);
+  }
+}
+
+void InputIndicatorGeometryTests::catPanelSourceChangesTriggerOnlyOneStartle()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      NSEvent.mouseLocation;
+  const InputIndicatorPoint fixedPointer{
+      .x = fixedCursor.x,
+      .y = fixedCursor.y,
+  };
+  MacInputIndicatorPanel panel(
+      {},
+      [fixedPointer] {
+        return fixedPointer;
+      }
+  );
+  const MacInputIndicatorPanelOptions latin{
+      .source = Source::LatinABC,
+      .companion = InputIndicatorCompanion::Cat,
+  };
+  const MacInputIndicatorPanelOptions korean{
+      .source = Source::Korean2Set,
+      .companion = InputIndicatorCompanion::Cat,
+  };
+  QVERIFY(panel.show(latin));
+  NSView *view = catPanelView();
+  QVERIFY(view);
+  QVERIFY([view respondsToSelector:
+                    NSSelectorFromString(
+                        @"catStartleActive"
+                    )]);
+  QVERIFY(![[view valueForKey:@"catStartleActive"]
+      boolValue]);
+  QVERIFY(![view respondsToSelector:
+                     NSSelectorFromString(
+                         @"haloPulseCount"
+                     )]);
+
+  QVERIFY(panel.show(latin));
+  QVERIFY(![[view valueForKey:@"catStartleActive"]
+      boolValue]);
+  QVERIFY(panel.show(korean));
+  QVERIFY([[view valueForKey:@"catStartleActive"]
+      boolValue]);
+  QCOMPARE(
+      [[view valueForKey:@"catStartleLatestSource"]
+          integerValue],
+      static_cast<NSInteger>(Source::Korean2Set)
+  );
+  QCOMPARE(
+      panel.move(latin.position)
+          .frameIntervalMilliseconds,
+      8
+  );
+
+  QTest::qWait(20);
+  QVERIFY(panel.show(latin));
+  QVERIFY([[view valueForKey:@"catStartlePending"]
+      boolValue]);
+  QTest::qWait(10);
+  QVERIFY(panel.show(korean));
+  QCOMPARE(
+      [[view valueForKey:@"catStartleLatestSource"]
+          integerValue],
+      static_cast<NSInteger>(Source::Korean2Set)
+  );
+  QTest::qWait(30);
+  const auto replaced =
+      panel.move(latin.position);
+  QCOMPARE(replaced.frameIntervalMilliseconds, 8);
+  QVERIFY(![[view valueForKey:@"catStartlePending"]
+      boolValue]);
+  QVERIFY([[view valueForKey:@"catStartleActive"]
+      boolValue]);
+
+  MacInputIndicatorPanelOptions unknown =
+      korean;
+  unknown.source = Source::Unknown;
+  QVERIFY(!panel.show(unknown));
+  QVERIFY(![[view valueForKey:@"catStartleActive"]
+      boolValue]);
+  QVERIFY(![[view valueForKey:@"catStartlePending"]
+      boolValue]);
+}
+
+void InputIndicatorGeometryTests::catStartleReplacesHaloAndResumesIdleTail()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      NSEvent.mouseLocation;
+  const InputIndicatorPoint fixedPointer{
+      .x = fixedCursor.x,
+      .y = fixedCursor.y,
+  };
+  MacInputIndicatorPanel panel(
+      {},
+      [fixedPointer] {
+        return fixedPointer;
+      }
+  );
+  const MacInputIndicatorPanelOptions latin{
+      .source = Source::LatinABC,
+      .companion = InputIndicatorCompanion::Cat,
+  };
+  const MacInputIndicatorPanelOptions korean{
+      .source = Source::Korean2Set,
+      .companion = InputIndicatorCompanion::Cat,
+  };
+  QVERIFY(panel.show(latin));
+  NSView *view = catPanelView();
+  QVERIFY(view);
+  QTest::qWait(500);
+  const auto before =
+      panel.move(latin.position);
+  QCOMPARE(before.frameIntervalMilliseconds, 75);
+  const auto beforeMotion =
+      [[view valueForKey:@"catIdleTailMotion"]
+          integerValue];
+  const double beforeProgress =
+      [[view valueForKey:@"catIdleTailProgress"]
+          doubleValue];
+  QVERIFY([[view valueForKey:@"catIdleTailActive"]
+      boolValue]);
+
+  QVERIFY(panel.show(korean));
+  QVERIFY([[view valueForKey:@"catStartleActive"]
+      boolValue]);
+  QVERIFY(![[view valueForKey:@"catIdleTailActive"]
+      boolValue]);
+  [view displayIfNeeded];
+  NSBitmapImageRep *startleBefore =
+      [view bitmapImageRepForCachingDisplayInRect:
+                view.bounds];
+  QVERIFY(startleBefore);
+  [view cacheDisplayInRect:view.bounds
+         toBitmapImageRep:startleBefore];
+  QTest::qWait(160);
+  const auto peak =
+      panel.move(korean.position);
+  QCOMPARE(peak.frameIntervalMilliseconds, 8);
+  [view displayIfNeeded];
+  NSBitmapImageRep *startlePeak =
+      [view bitmapImageRepForCachingDisplayInRect:
+                view.bounds];
+  QVERIFY(startlePeak);
+  [view cacheDisplayInRect:view.bounds
+         toBitmapImageRep:startlePeak];
+  const double startleScale =
+      static_cast<double>(startlePeak.pixelsWide) /
+      view.bounds.size.width;
+  const NSInteger dorsalLeft =
+      static_cast<NSInteger>(
+          std::floor(
+              macInputIndicatorDisplayPoint(
+                  {.x = 13, .y = 0}
+              ).x *
+              startleScale
+          )
+      );
+  const NSInteger dorsalRight =
+      static_cast<NSInteger>(
+          std::ceil(
+              macInputIndicatorDisplayPoint(
+                  {.x = 18.5, .y = 0}
+              ).x *
+              startleScale
+          )
+      );
+  const NSInteger dorsalBottom =
+      static_cast<NSInteger>(
+          std::floor(
+              macInputIndicatorDisplayPoint(
+                  {.x = 0, .y = 9.5}
+              ).y *
+              startleScale
+          )
+      );
+  const NSInteger dorsalTop =
+      static_cast<NSInteger>(
+          std::ceil(
+              macInputIndicatorDisplayPoint(
+                  {.x = 0, .y = 17}
+              ).y *
+              startleScale
+          )
+      );
+  int dorsalPixels = 0;
+  for (NSInteger y = dorsalBottom;
+       y < dorsalTop;
+       ++y) {
+    for (NSInteger x = dorsalLeft;
+         x < dorsalRight;
+         ++x) {
+      const double beforeAlpha =
+          [startleBefore colorAtX:x y:y]
+              .alphaComponent;
+      const double peakAlpha =
+          [startlePeak colorAtX:x y:y]
+              .alphaComponent;
+      if (std::abs(beforeAlpha - peakAlpha) >
+          0.02) {
+        ++dorsalPixels;
+      }
+    }
+  }
+  qInfo() << "cat-startle-dorsal-pixels"
+          << dorsalPixels
+          << "scale" << startleScale;
+  QVERIFY(dorsalPixels > 0);
+  QTest::qWait(160);
+  const auto after =
+      panel.move(korean.position);
+  QCOMPARE(after.frameIntervalMilliseconds, 75);
+  QVERIFY(![[view valueForKey:@"catStartleActive"]
+      boolValue]);
+  QVERIFY([[view valueForKey:@"catIdleTailActive"]
+      boolValue]);
+  QCOMPARE(
+      [[view valueForKey:@"catIdleTailMotion"]
+          integerValue],
+      beforeMotion
+  );
+  const double afterProgress =
+      [[view valueForKey:@"catIdleTailProgress"]
+          doubleValue];
+  QVERIFY(std::abs(
+      afterProgress - beforeProgress
+  ) < 0.08);
+}
+
+void InputIndicatorGeometryTests::otherCompanionsDoNotStartleOnSourceChange()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      NSEvent.mouseLocation;
+  const InputIndicatorPoint fixedPointer{
+      .x = fixedCursor.x,
+      .y = fixedCursor.y,
+  };
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  for (const auto companion : companions) {
+    MacInputIndicatorPanel panel(
+        {},
+        [fixedPointer] {
+          return fixedPointer;
+        }
+    );
+    MacInputIndicatorPanelOptions options{
+        .source = Source::LatinABC,
+        .companion = companion,
+    };
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    options.source = Source::Korean2Set;
+    QVERIFY(panel.show(options));
+    QVERIFY(![[view valueForKey:@"catStartleActive"]
+        boolValue]);
+    QVERIFY(
+        [[view valueForKey:@"transitionProgress"]
+            doubleValue] < 1.0
+    );
+    const auto result =
+        panel.move(options.position);
+    QVERIFY(result.animating);
+    QCOMPARE(result.frameIntervalMilliseconds, 8);
+    panel.hide();
+  }
 }
 
 void InputIndicatorGeometryTests::companionSettingDefaultsToCat()

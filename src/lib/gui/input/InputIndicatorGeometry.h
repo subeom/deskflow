@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "deskflow/ipc/InputIndicatorIpc.h"
+
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -79,6 +81,32 @@ struct InputIndicatorCatIdleTailMotionStep
 {
   InputIndicatorCatIdleTailMotionState state;
   InputIndicatorCatIdleTailFrame frame;
+};
+
+struct InputIndicatorCatSourceStartleState
+{
+  deskflow::input::InputIndicatorSource latestSource =
+      deskflow::input::InputIndicatorSource::Unknown;
+  bool active = false;
+  bool pending = false;
+  bool hasStarted = false;
+  double startedMilliseconds = 0;
+  double lastStartedMilliseconds = 0;
+};
+
+struct InputIndicatorCatStartleFrame
+{
+  bool active = false;
+  double progress = 0;
+  double recoilOffsetX = 0;
+  double horizontalScale = 1;
+  double dorsalLift = 0;
+};
+
+struct InputIndicatorCatSourceStartleStep
+{
+  InputIndicatorCatSourceStartleState state;
+  InputIndicatorCatStartleFrame frame;
 };
 
 enum class InputIndicatorCatArtworkFrame
@@ -215,6 +243,28 @@ InputIndicatorPoint inputIndicatorCatIdleTailOffset(
 InputIndicatorPoint inputIndicatorCatIdleTailPoint(
     InputIndicatorPoint point,
     const InputIndicatorCatIdleTailFrame &frame
+);
+
+InputIndicatorCatSourceStartleState
+inputIndicatorCatSourceStartleTrigger(
+    const InputIndicatorCatSourceStartleState &state,
+    deskflow::input::InputIndicatorSource previousSource,
+    deskflow::input::InputIndicatorSource source,
+    double nowMilliseconds,
+    bool reducedMotion
+);
+
+InputIndicatorCatSourceStartleStep
+inputIndicatorCatSourceStartleAdvance(
+    const InputIndicatorCatSourceStartleState &state,
+    double nowMilliseconds,
+    bool reducedMotion
+);
+
+InputIndicatorPoint inputIndicatorCatStartlePoint(
+    InputIndicatorPoint point,
+    const InputIndicatorCatStartleFrame &frame,
+    bool dorsalContour
 );
 
 constexpr InputIndicatorPoint inputIndicatorCatFacingPoint(
