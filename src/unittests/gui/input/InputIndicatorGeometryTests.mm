@@ -89,14 +89,19 @@ NSBezierPath *artworkPath(
 
 NSBezierPath *artworkPath(
     const InputIndicatorCatPose &pose,
-    std::span<const MacInputIndicatorCatPathCommand> commands
+    std::span<const MacInputIndicatorCatPathCommand> commands,
+    const InputIndicatorCatIdleTailFrame &tailFrame
 )
 {
   NSBezierPath *path = [NSBezierPath bezierPath];
   const auto deformed =
-      [&pose](double x, double y) {
-        return inputIndicatorCatTorsoPoint(
-            pose, {.x = x, .y = y}
+      [&pose, &tailFrame](double x, double y) {
+        const auto torsoPoint =
+            inputIndicatorCatTorsoPoint(
+                pose, {.x = x, .y = y}
+            );
+        return inputIndicatorCatIdleTailPoint(
+            torsoPoint, tailFrame
         );
       };
   for (const auto &command : commands) {
@@ -133,7 +138,10 @@ NSBezierPath *artworkPath(
   return path;
 }
 
-NSBitmapImageRep *pixelBitmap(int scale)
+NSBitmapImageRep *pixelBitmap(
+    int scale,
+    int paddingPoints
+)
 {
   const auto style =
       macInputIndicatorPanelStyle(
@@ -143,11 +151,17 @@ NSBitmapImageRep *pixelBitmap(int scale)
       initWithBitmapDataPlanes:nil
                     pixelsWide:
                         static_cast<NSInteger>(
-                            std::lround(style.width)
+                            std::lround(
+                                style.width +
+                                paddingPoints * 2.0
+                            )
                         ) * scale
                     pixelsHigh:
                         static_cast<NSInteger>(
-                            std::lround(style.height)
+                            std::lround(
+                                style.height +
+                                paddingPoints * 2.0
+                            )
                         ) * scale
                  bitsPerSample:8
                samplesPerPixel:4
@@ -156,6 +170,90 @@ NSBitmapImageRep *pixelBitmap(int scale)
                 colorSpaceName:NSDeviceRGBColorSpace
                    bytesPerRow:0
                   bitsPerPixel:0];
+}
+
+NSBitmapImageRep *catBodyBitmap(
+    const InputIndicatorCatPose &pose,
+    const MacInputIndicatorCatArtwork &artwork,
+    const InputIndicatorCatIdleTailFrame &tailFrame,
+    bool facesRight,
+    int scale,
+    int paddingPoints,
+    bool includeHalo
+)
+{
+  NSBitmapImageRep *bitmap =
+      pixelBitmap(scale, paddingPoints);
+  if (!bitmap) {
+    return nil;
+  }
+  NSGraphicsContext *graphics =
+      [NSGraphicsContext
+          graphicsContextWithBitmapImageRep:bitmap];
+  [NSGraphicsContext saveGraphicsState];
+  [NSGraphicsContext setCurrentContext:graphics];
+  CGContextRef context = [graphics CGContext];
+  CGContextSaveGState(context);
+  CGContextScaleCTM(context, scale, scale);
+  CGContextTranslateCTM(
+      context, paddingPoints, paddingPoints
+  );
+  const auto displayOrigin =
+      macInputIndicatorDisplayPoint({});
+  CGContextTranslateCTM(
+      context, displayOrigin.x, displayOrigin.y
+  );
+  CGContextScaleCTM(
+      context,
+      macInputIndicatorPanelStyle().visualScale,
+      macInputIndicatorPanelStyle().visualScale
+  );
+  const auto model =
+      macInputIndicatorRenderModel(
+          InputIndicatorCompanion::Cat
+      );
+  if (!facesRight) {
+    CGContextTranslateCTM(
+        context, model.totalWidth, 0
+    );
+    CGContextScaleCTM(context, -1, 1);
+  }
+
+  NSBezierPath *far = artworkPath(artwork.far);
+  NSBezierPath *near =
+      artworkPath(pose, artwork.near, tailFrame);
+  if (includeHalo) {
+    NSBezierPath *halo =
+        [NSBezierPath bezierPath];
+    [halo appendBezierPath:far];
+    [halo appendBezierPath:near];
+    constexpr double kMaximumHaloScale =
+        1.0 + (1.22 - 1.0) * 0.30;
+    NSAffineTransform *transform =
+        [NSAffineTransform transform];
+    [transform translateXBy:15 yBy:14];
+    [transform scaleXBy:kMaximumHaloScale
+                    yBy:kMaximumHaloScale];
+    [transform translateXBy:-15 yBy:-14];
+    [halo transformUsingAffineTransform:transform];
+    [[NSColor blackColor] setFill];
+    [halo fill];
+  }
+  [[NSColor blackColor] setFill];
+  if (includeHalo) {
+    [[NSColor blackColor] setStroke];
+    [near setLineWidth:0.55];
+    [far setLineWidth:0.55];
+    [near setLineJoinStyle:NSLineJoinStyleRound];
+    [far setLineJoinStyle:NSLineJoinStyleRound];
+    [near stroke];
+    [far stroke];
+  }
+  [near fill];
+  [far fill];
+  CGContextRestoreGState(context);
+  [NSGraphicsContext restoreGraphicsState];
+  return bitmap;
 }
 
 } // namespace
@@ -960,26 +1058,56 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
 {
   using Source =
       deskflow::input::InputIndicatorSource;
-  const struct
+  struct PaintPose
   {
     InputIndicatorMotionState state;
     double phase;
-  } poses[] = {
-      {.state = InputIndicatorMotionState::Idle, .phase = 0.0},
-      {.state = InputIndicatorMotionState::Idle, .phase = 0.25},
-      {.state = InputIndicatorMotionState::Idle, .phase = 0.75},
-      {.state = InputIndicatorMotionState::Walk, .phase = 0.0},
-      {.state = InputIndicatorMotionState::Walk, .phase = 0.34},
-      {.state = InputIndicatorMotionState::Walk, .phase = 0.67},
-      {.state = InputIndicatorMotionState::Run, .phase = 0.0},
-      {.state = InputIndicatorMotionState::Run, .phase = 0.34},
-      {.state = InputIndicatorMotionState::Run, .phase = 0.67},
+    InputIndicatorCatIdleTailFrame tail;
   };
+  std::vector<PaintPose> poses;
+  const double idlePhases[] = {0.0, 0.25, 0.75};
+  const InputIndicatorCatIdleTailMotion idleMotions[] = {
+      InputIndicatorCatIdleTailMotion::RelaxedSway,
+      InputIndicatorCatIdleTailMotion::TipFlick,
+      InputIndicatorCatIdleTailMotion::CurlUnfurl,
+      InputIndicatorCatIdleTailMotion::LazySweep,
+      InputIndicatorCatIdleTailMotion::QuestionLift,
+  };
+  const double idleProgress[] = {0.2, 0.4, 0.6, 0.8};
+  for (const double phase : idlePhases) {
+    for (const auto motion : idleMotions) {
+      for (const double progress : idleProgress) {
+        poses.push_back({
+            .state = InputIndicatorMotionState::Idle,
+            .phase = phase,
+            .tail = {
+                .motion = motion,
+                .progress = progress,
+                .active = true,
+            },
+        });
+      }
+    }
+  }
+  for (const double phase : {0.0, 0.34, 0.67}) {
+    poses.push_back({
+        .state = InputIndicatorMotionState::Walk,
+        .phase = phase,
+    });
+    poses.push_back({
+        .state = InputIndicatorMotionState::Run,
+        .phase = phase,
+    });
+  }
+
   const Source sources[] = {Source::LatinABC, Source::Korean2Set};
   const bool directions[] = {true, false};
   constexpr NSInteger scale = 4;
-  const auto model =
-      macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
+  constexpr int paddingPoints = 4;
+  const auto panelStyle =
+      macInputIndicatorPanelStyle(
+          InputIndicatorCompanion::Cat
+      );
   int cases = 0;
   int outsidePixels = 0;
 
@@ -1014,46 +1142,40 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
           source == Source::LatinABC ? @"A" : @"한";
       for (const bool facesRight : directions) {
         int caseOutsidePixels = 0;
-        NSBitmapImageRep *bodyMask = pixelBitmap(scale);
-        NSBitmapImageRep *glyphMask = pixelBitmap(scale);
+        NSBitmapImageRep *bodyMask =
+            catBodyBitmap(
+                pose,
+                artwork,
+                poseInput.tail,
+                facesRight,
+                scale,
+                paddingPoints,
+                false
+            );
+        NSBitmapImageRep *panelMask =
+            catBodyBitmap(
+                pose,
+                artwork,
+                poseInput.tail,
+                facesRight,
+                scale,
+                paddingPoints,
+                true
+            );
+        NSBitmapImageRep *glyphMask =
+            pixelBitmap(scale, paddingPoints);
         QVERIFY(bodyMask);
+        QVERIFY(panelMask);
         QVERIFY(glyphMask);
 
-        NSGraphicsContext *bodyContext =
-            [NSGraphicsContext
-                graphicsContextWithBitmapImageRep:bodyMask];
-        [NSGraphicsContext saveGraphicsState];
-        [NSGraphicsContext setCurrentContext:bodyContext];
-        CGContextRef bodyCG =
-            [bodyContext CGContext];
-        CGContextSaveGState(bodyCG);
-        CGContextScaleCTM(bodyCG, scale, scale);
-        const auto displayOrigin =
-            macInputIndicatorDisplayPoint({});
-        CGContextTranslateCTM(
-            bodyCG, displayOrigin.x, displayOrigin.y
-        );
-        CGContextScaleCTM(
-            bodyCG,
-            macInputIndicatorPanelStyle().visualScale,
-            macInputIndicatorPanelStyle().visualScale
-        );
-        if (!facesRight) {
-          CGContextTranslateCTM(bodyCG, model.totalWidth, 0);
-          CGContextScaleCTM(bodyCG, -1, 1);
-        }
-        [[NSColor blackColor] setFill];
-        [artworkPath(artwork.far) fill];
-        [artworkPath(pose, artwork.near) fill];
-        CGContextRestoreGState(bodyCG);
-        [NSGraphicsContext restoreGraphicsState];
-
-        const auto target =
+        auto target =
             macInputIndicatorDisplayRect(
                 inputIndicatorCatInnerLanguageBounds(
                     pose, facesRight
                 )
             );
+        target.x += paddingPoints;
+        target.y += paddingPoints;
         const auto displayPreference =
             macInputIndicatorDisplayLabelPreference(
                 source, poseInput.state
@@ -1104,6 +1226,22 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
         CGContextRestoreGState(glyphCG);
         [NSGraphicsContext restoreGraphicsState];
 
+        const NSInteger panelLeft =
+            paddingPoints * scale;
+        const NSInteger panelBottom =
+            paddingPoints * scale;
+        const NSInteger panelRight =
+            panelLeft +
+            static_cast<NSInteger>(
+                std::lround(panelStyle.width)
+            ) *
+                scale;
+        const NSInteger panelTop =
+            panelBottom +
+            static_cast<NSInteger>(
+                std::lround(panelStyle.height)
+            ) *
+                scale;
         for (NSInteger y = 0;
              y < glyphMask.pixelsHigh;
              ++y) {
@@ -1114,8 +1252,19 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
                 [glyphMask colorAtX:x y:y].alphaComponent;
             const double bodyAlpha =
                 [bodyMask colorAtX:x y:y].alphaComponent;
-            if (glyphAlpha > 0.02 &&
-                bodyAlpha <= 0.02) {
+            const double panelAlpha =
+                [panelMask colorAtX:x y:y].alphaComponent;
+            const bool glyphOutsideBody =
+                glyphAlpha > 0.02 &&
+                bodyAlpha <= 0.02;
+            const bool paintOutsidePanel =
+                panelAlpha > 0.02 &&
+                (x < panelLeft ||
+                 x >= panelRight ||
+                 y < panelBottom ||
+                 y >= panelTop);
+            if (glyphOutsideBody ||
+                paintOutsidePanel) {
               ++caseOutsidePixels;
             }
           }
@@ -1126,10 +1275,15 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
                   << poseInput.phase
                   << static_cast<int>(source)
                   << facesRight
+                  << static_cast<int>(
+                         poseInput.tail.motion
+                     )
+                  << poseInput.tail.progress
                   << caseOutsidePixels;
         }
         outsidePixels += caseOutsidePixels;
         [bodyMask release];
+        [panelMask release];
         [glyphMask release];
         ++cases;
       }
@@ -1137,7 +1291,15 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
   }
   qInfo() << "outsidePixels" << outsidePixels
           << "cases" << cases;
-  QCOMPARE(cases, 36);
+  QCOMPARE(
+      cases,
+      static_cast<int>(
+          poses.size() *
+          (sizeof(sources) / sizeof(sources[0])) *
+          (sizeof(directions) /
+           sizeof(directions[0]))
+      )
+  );
   QCOMPARE(outsidePixels, 0);
 }
 
