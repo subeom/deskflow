@@ -54,6 +54,7 @@ private Q_SLOTS:
   void catPursuitTreatsPointerAndCaretTargetsIdentically();
   void catPursuitPreservesInitializedStateAcrossRepresentationChanges();
   void catPursuitPanelTraversesLargeTargetJump();
+  void catPursuitPanelSettlesWithinWholePointOfFractionalTargets();
   void catPursuitPanelPreservesPositionOnSourceAndSpaceChange();
   void catPursuitRotatesSilhouetteButKeepsGlyphUpright();
   void catPursuitCanvasContainsEightHeadings();

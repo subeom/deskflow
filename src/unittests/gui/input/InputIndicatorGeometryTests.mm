@@ -570,6 +570,20 @@ NSView *catPanelView()
   return nil;
 }
 
+// The panel tests never read the live pointer. Deskflow parks the local pointer on the very edge of a screen while another computer is in
+// use, and NSPointInRect is half open, so such a pointer is inside no screen. A fractional pointer also makes the whole point window origin
+// that AppKit gives the panel differ from the exact target by up to a point. A fixed whole point position inside the first screen keeps the
+// tests deterministic and independent of where the real pointer is.
+NSPoint fixedPanelTestPointer()
+{
+  NSScreen *screen = NSScreen.screens.firstObject;
+  const NSRect frame =
+      screen ? screen.frame : NSMakeRect(0, 0, 1280, 800);
+  return NSMakePoint(
+      std::floor(NSMidX(frame)), std::floor(NSMidY(frame))
+  );
+}
+
 } // namespace
 
 void InputIndicatorGeometryTests::bottomRightOffsetsCursor()
@@ -2064,7 +2078,7 @@ void InputIndicatorGeometryTests::catIdleTailMotionChangesOnlyTailPixels()
 void InputIndicatorGeometryTests::catPanelIdleTailFrameRepaints()
 {
   const auto fixedCursor =
-      NSEvent.mouseLocation;
+      fixedPanelTestPointer();
   const InputIndicatorPoint fixedPointer{
       .x = fixedCursor.x,
       .y = fixedCursor.y,
@@ -3090,7 +3104,7 @@ void InputIndicatorGeometryTests::catPanelSourceChangesTriggerOnlyOneStartle()
   using Source =
       deskflow::input::InputIndicatorSource;
   const auto fixedCursor =
-      NSEvent.mouseLocation;
+      fixedPanelTestPointer();
   const InputIndicatorPoint fixedPointer{
       .x = fixedCursor.x,
       .y = fixedCursor.y,
@@ -3179,7 +3193,7 @@ void InputIndicatorGeometryTests::catStartleReplacesHaloAndResumesIdleTail()
   using Source =
       deskflow::input::InputIndicatorSource;
   const auto fixedCursor =
-      NSEvent.mouseLocation;
+      fixedPanelTestPointer();
   const InputIndicatorPoint fixedPointer{
       .x = fixedCursor.x,
       .y = fixedCursor.y,
@@ -3345,7 +3359,7 @@ void InputIndicatorGeometryTests::otherCompanionsDoNotStartleOnSourceChange()
   using Source =
       deskflow::input::InputIndicatorSource;
   const auto fixedCursor =
-      NSEvent.mouseLocation;
+      fixedPanelTestPointer();
   const InputIndicatorPoint fixedPointer{
       .x = fixedCursor.x,
       .y = fixedCursor.y,
@@ -3848,7 +3862,7 @@ void InputIndicatorGeometryTests::catPursuitPreservesInitializedStateAcrossRepre
 void InputIndicatorGeometryTests::catPursuitPanelTraversesLargeTargetJump()
 {
   const auto fixedCursor =
-      NSEvent.mouseLocation;
+      fixedPanelTestPointer();
   InputIndicatorTarget target{
       .point = {
           .x = fixedCursor.x,
@@ -4011,12 +4025,114 @@ void InputIndicatorGeometryTests::catPursuitPanelTraversesLargeTargetJump()
   QVERIFY(std::abs(final.y - expected->y) <= 0.5);
 }
 
+void InputIndicatorGeometryTests::catPursuitPanelSettlesWithinWholePointOfFractionalTargets()
+{
+  const auto style =
+      macInputIndicatorPanelStyle(
+          InputIndicatorCompanion::Cat
+      );
+  NSScreen *screen = NSScreen.screens.firstObject;
+  QVERIFY(screen);
+  const NSRect screenFrame = screen.frame;
+  const std::vector<InputIndicatorRect> screens{{
+      .x = screenFrame.origin.x,
+      .y = screenFrame.origin.y,
+      .width = screenFrame.size.width,
+      .height = screenFrame.size.height,
+  }};
+  const NSPoint start = fixedPanelTestPointer();
+  // AppKit gives the panel window a whole point origin, so a target whose
+  // exact position has a fractional part can be reproduced only to within
+  // a point per axis. These are fractions that failed with a live pointer.
+  const std::array<InputIndicatorPoint, 5> fractions{{
+      {.x = 0.25, .y = 0.25},
+      {.x = 0.5, .y = 0.5},
+      {.x = 0.75, .y = 0.75},
+      {.x = 0.98, .y = 0.719},
+      {.x = 0.3, .y = 0.7},
+  }};
+  for (const auto &fraction : fractions) {
+    InputIndicatorTarget target{
+        .point = {
+            .x = start.x + fraction.x,
+            .y = start.y + fraction.y,
+        },
+        .kind = InputIndicatorTargetKind::Pointer,
+    };
+    MacInputIndicatorPanel panel(
+        {},
+        [&target] {
+          return target;
+        }
+    );
+    const MacInputIndicatorPanelOptions options{
+        .source =
+            deskflow::input::InputIndicatorSource::LatinABC,
+        .companion = InputIndicatorCompanion::Cat,
+    };
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    const auto visibleOrigin =
+        [view, style] {
+          const auto origin =
+              view.window.frame.origin;
+          return InputIndicatorPoint{
+              .x = origin.x + style.canvasOffsetX,
+              .y = origin.y + style.canvasOffsetY,
+          };
+        };
+
+    target.point.x -= 300;
+    target.point.y -= 200;
+    const auto expected =
+        positionInputIndicator(
+            target.point,
+            {.width = style.width, .height = style.height},
+            screens,
+            options.position,
+            style.cursorGap,
+            style.screenMargin
+        );
+    QVERIFY(expected);
+    bool settled = false;
+    InputIndicatorPoint settledOrigin{};
+    for (int tick = 0; tick < 400; ++tick) {
+      QTest::qWait(8);
+      const auto result =
+          panel.move(options.position);
+      QVERIFY(result.visible);
+      if (result.frameIntervalMilliseconds != 8) {
+        settled = true;
+        settledOrigin = visibleOrigin();
+        break;
+      }
+    }
+    QVERIFY(settled);
+    QVERIFY(
+        std::abs(settledOrigin.x - expected->x) < 1.0
+    );
+    QVERIFY(
+        std::abs(settledOrigin.y - expected->y) < 1.0
+    );
+    for (int tick = 0; tick < 5; ++tick) {
+      QTest::qWait(8);
+      const auto idle =
+          panel.move(options.position);
+      QVERIFY(idle.frameIntervalMilliseconds != 8);
+      const auto current = visibleOrigin();
+      QCOMPARE(current.x, settledOrigin.x);
+      QCOMPARE(current.y, settledOrigin.y);
+    }
+  }
+}
+
 void InputIndicatorGeometryTests::catPursuitPanelPreservesPositionOnSourceAndSpaceChange()
 {
   using Source =
       deskflow::input::InputIndicatorSource;
   const auto fixedCursor =
-      NSEvent.mouseLocation;
+      fixedPanelTestPointer();
   InputIndicatorTarget target{
       .point = {
           .x = fixedCursor.x,
@@ -4223,7 +4339,7 @@ void InputIndicatorGeometryTests::catPursuitRotatesSilhouetteButKeepsGlyphUprigh
   [diagonalGlyph release];
 
   const auto fixedCursor =
-      NSEvent.mouseLocation;
+      fixedPanelTestPointer();
   InputIndicatorTarget target{
       .point = {
           .x = fixedCursor.x,
@@ -4415,7 +4531,7 @@ void InputIndicatorGeometryTests::catPursuitCanvasContainsEightHeadings()
 void InputIndicatorGeometryTests::catPursuitCaretTargetFollowsSamePath()
 {
   const auto fixedCursor =
-      NSEvent.mouseLocation;
+      fixedPanelTestPointer();
   InputIndicatorTarget target{
       .point = {
           .x = fixedCursor.x,
