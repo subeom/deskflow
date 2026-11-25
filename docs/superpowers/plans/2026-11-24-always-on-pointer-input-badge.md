@@ -2520,3 +2520,89 @@ Expected: direct ancestry from
 `7b7d2f8fc609e72a42782d1b4f4137aeb9bb850c`, clean worktree, no label
 behavior changed outside source/state fitting, and no push/merge/tag/release/
 PR/install.
+
+---
+
+## Revision 11: CoreText Glyph-Ink Containment
+
+### Task 44: Record Actual-Ink RED
+
+**Files:**
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+- Add: `src/unittests/gui/input/InputIndicatorCoreTextRenderTests.mm`
+- Modify: `src/unittests/gui/input/CMakeLists.txt`
+
+- [ ] **Step 1: Replace offset assumptions in the pure fitter test**
+
+Pass a negative Korean glyph-path origin (for example `y=-0.374`) and positive
+A origin (`y=0`) into the fitter. Assert the baseline-derived drawing origin
+centers the actual ink without any `inkYCorrection` field.
+
+- [ ] **Step 2: Add CoreText native measurement tests**
+
+Create a `CTLine` for exact `A`/`한` font candidates. Assert
+`kCTLineBoundsUseGlyphPathBounds` returns the negative Korean origin seen in
+the native evidence and that glyph size differs from typographic bounds.
+
+- [ ] **Step 3: Add offscreen pixel-containment regression**
+
+Render every Cat artwork frame for both sources and both directions (36 native
+cases total) into separate body-mask and glyph bitmaps. Use the production
+CoreText helper and Cat compiled path constants. Fail when any nonzero glyph
+alpha pixel is present where body-mask alpha is zero.
+
+- [ ] **Step 4: Capture RED**
+
+Run the pure and native render targets. Expected: compile failure for removed
+offset-free/CoreText APIs or nonzero spill output from the old renderer path.
+
+### Task 45: Draw from CoreText Glyph Bounds
+
+**Files:**
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+
+- [ ] **Step 1: Remove arbitrary correction**
+
+Keep only source/state maximum font sizes. Replace
+`MacInputIndicatorLabelMeasurement.origin/size` with actual glyph-path ink
+bounds relative to a CoreText baseline; retain typographic bounds only for
+diagnostic/native tests.
+
+- [ ] **Step 2: Add shared CoreText helpers**
+
+Create attributed `CTLine`, query `kCTLineBoundsUseGlyphPathBounds`, fit the
+font until actual ink fits the inner label target, and draw at
+`targetInkOrigin - measuredInkOrigin`. Expose the native helper for the render
+test.
+
+- [ ] **Step 3: Clip to the actual Cat torso silhouette**
+
+For Cat only, intersect the existing label-box clip with the compiled near/far
+silhouette path. Dog/Turtle continue their existing 8 pt path.
+
+### Task 46: Verify, Package, and Audit
+
+- [ ] **Step 1: Run focused and native gates**
+
+Run InputIndicatorCoreTextRenderTests, InputIndicatorGeometryTests, policy,
+settings, translation, and panel build targets. Required pre-run output is the
+native spill count, with `outsidePixels == 0` for all 36 cases.
+
+- [ ] **Step 2: Run full Release**
+
+Build all targets and run 157 eligible CTests with only
+`OSXClipboardTests` and `OSXKeyStateTests` excluded.
+
+- [ ] **Step 3: Commit and package**
+
+Commit docs and implementation separately with the standard trailer. Build
+`build/pointer-badge-coretext/deskflow-2.0.9.0-macos-arm64.dmg`, record hash and
+signature, and do not install.
+
+- [ ] **Step 4: Audit final state**
+
+Expected: clean ancestry from
+`9c34e2b625877cf2a52cf415e8a8a8255c49a35b`, zero-spill native output, no
+arbitrary baseline offset, no push/tag/release/merge/PR/install.

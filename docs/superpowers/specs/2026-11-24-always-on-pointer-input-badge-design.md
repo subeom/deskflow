@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-24  
 **Status:** Approved for implementation  
-**Revision base:** `7b7d2f8fc609e72a42782d1b4f4137aeb9bb850c`
+**Revision base:** `9c34e2b625877cf2a52cf415e8a8a8255c49a35b`
 
 ## Goal
 
@@ -41,13 +41,16 @@ non-activating `NSPanel` near it:
   denser Korean `한` uses 6.8 pt in Idle, 6.4 pt in Walk, and 6.1 pt in Run.
   Dog/Turtle retain their existing 8 pt label behavior. There are no eye dots,
   pupils, mouth, whiskers, face marks, or external language badge.
-- Cat labels are centered in the selected art frame's torso box, with a small
-  negative AppKit-Y baseline correction for Korean ink. The native renderer
-  measures each exact `A`/`한` attributed string with device/font metrics,
-  then scales further to contain both the measured ink origin and size. It
-  draws with the measured fitted rectangle instead of line-layout drawing in
-  the 9 x 8 box. Invalid or oversized measurements fail closed by scaling;
-  no glyph path may extend outside the torso label region.
+- Cat label layout treats typographic and glyph-ink rectangles as different
+  metrics. It creates a `CTLine` and reads
+  `CTLineGetBoundsWithOptions(..., kCTLineBoundsUseGlyphPathBounds)` for the
+  actual ink origin and size; typographic bounds are only a baseline
+  reference. The font is iteratively fitted so that actual ink is centered in
+  an inner torso target, then CoreText draws at the baseline derived from that
+  measured origin. There is no arbitrary Korean Y offset and no `NSString`
+  typographic-origin inference. Invalid or oversized ink fails closed by
+  scaling; the Cat silhouette plus label target clips as a final guard, so no
+  glyph pixel can leave the filled torso interior.
 - Bodies, ears, shell, tail, and paws use the configured opacity directly
   (default 65%, clamped to 60-100%). The body is a neutral translucent
   off-white close to the macOS cursor (`#F2F3F5`), with a subtle dark-neutral
@@ -240,8 +243,10 @@ Focused tests cover:
   and far limb layers, and normalized label center match the approved external
   pose sheet within explicit point tolerances;
 - source/state Cat font preferences are exactly `A`: 8/8/7.6 pt and `한`:
-  6.8/6.4/6.1 pt for Idle/Walk/Run, with the final measured ink rectangle
-  contained after Korean baseline correction;
+  6.8/6.4/6.1 pt for Idle/Walk/Run, with the final CoreText glyph-path ink
+  rectangle contained by baseline-derived placement;
+- native offscreen coverage renders every Cat source, artwork frame, and
+  direction and reports zero glyph pixels outside the filled torso silhouette;
 - the generated native path data contains only normalized compiled constants;
   no SVG loader, XML/path parser, external dependency, runtime file path, or
   network access exists;
