@@ -154,7 +154,9 @@ Idle uses rise/neutral/fall, Walk uses reach/pass/push, and Run uses
 coil/air/land. This preserves the source sheet's wider right-facing profile,
 ear and muzzle proportions, continuous rear-tail contour, and near/far paw
 placement. The normalized artwork footprint stays inside 30 x 28 pt. A pure
-frame model also records the exact in-torso glyph center for every pose.
+frame model also records the exact in-torso glyph center for every pose. The
+authoring transform applies the same X scale as the source and a 10% optical Y
+lift so the required 8 pt glyph remains fully inside the Run contours.
 
 The Cat artwork is right-facing in source coordinates. When motion faces left,
 only the path transforms horizontally; the glyph center mirrors with the
@@ -162,18 +164,15 @@ torso but the `A`/`한` itself remains upright. The follower remains capped at
 8 pt and never delays, replaces, hides, or warps the native cursor. Source
 transition uses an eased 200 ms glyph-color/label crossfade.
 
-The Cat tail is one natural two-segment cubic curve with an anchored root, a
-continuous proximal/mid tangent, and a tip that lags the root by one phase
-offset. Idle uses the fullest curl, Walk keeps a soft curl, and Run reduces
-the vertical curl/phase amplitude while retaining controlled inertia. Pointer
-velocity adds opposite-direction inertia to the tip, but the complete bend is
-clamped to preserve the silhouette. Cat tail thickness tapers toward the tip.
-Dog uses the same
-continuity principle without the Cat curl; Turtle keeps a subtle head/tail
-settle. The Cat profile faces the latest sustained horizontal motion and keeps
-that direction through stationary frames; only the silhouette mirrors, so
-`A`/`한` always remains upright and readable. Reduced Motion keeps the neutral
-seated Cat and fixed curled tail, with no gait phase.
+The approved art carries the Cat tail as part of the continuous near contour,
+with a thick anchored proximal section and a tapered two-cubic-section tip.
+Idle rise/neutral/fall paths preserve the soft curl; Run coil/air/land reduce
+the curl and carry controlled lag through the tail contour. The profile faces
+the latest sustained horizontal motion and keeps that direction through
+stationary frames; only the silhouette mirrors, so `A`/`한` always remains
+upright and readable. Dog uses its existing continuity model and Turtle keeps
+a subtle head/tail settle. Reduced Motion keeps the neutral seated Cat and
+fixed curled tail, with no gait phase.
 
 `isOSXReduceMotion()` disables idle tail, walk/run pose, follower easing, and
 source morphing: the stable companion moves directly to the target, uses the

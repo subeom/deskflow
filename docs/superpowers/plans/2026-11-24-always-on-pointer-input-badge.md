@@ -2318,13 +2318,14 @@ Reduced Motion -> IdleNeutral
 - [ ] **Step 2: Add SVG-derived proportion assertions**
 
 Use the approved sheet's union transform: source x 53.910000..654.845600,
-source y 67.875200..323.323648, output x 1..29, bottom 4, with one uniform
-scale. Assert normalized width/height for representative frames:
+source y 67.875200..323.323648, output x 1..29, bottom 4, one uniform source
+scale on X, and a 10% optical Y lift for 8 pt glyph containment. Assert
+normalized width/height for representative frames:
 
 ```text
-IdleNeutral width ~= 20.6824, height ~= 11.7700
-WalkReach width ~= 21.8200, height ~= 9.7440
-RunAir width ~= 28.0000, height ~= 8.8587
+IdleNeutral width ~= 20.6824, height ~= 12.9470
+WalkReach width ~= 21.8200, height ~= 10.7184
+RunAir width ~= 28.0000, height ~= 9.7445
 ```
 
 Tolerance is 0.02 pt. This proves the wide run pose is not replaced by the
@@ -2335,9 +2336,9 @@ previous primitive rounded-body drawing.
 Assert language bounds center around the source sheet's normalized points:
 
 ```text
-IdleNeutral center ~= (17.4985, 8.6279)
-WalkReach center ~= (16.3336, 9.9325)
-RunAir center ~= (16.6132, 10.5382)
+IdleNeutral center ~= (17.4985, 9.0907)
+WalkReach center ~= (16.3336, 10.5258)
+RunAir center ~= (16.6132, 11.1921)
 ```
 
 Mirror the center position for a left-facing Cat while keeping
