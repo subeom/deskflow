@@ -1,7 +1,7 @@
 # Five Idle Cat Tail Motions
 
-**Date:** 2026-11-25  
-**Status:** Approved for immediate implementation  
+**Date:** 2026-11-25
+**Status:** Approved for immediate implementation
 **Revision base:** `389bc3924bb0c03657ce5d44876af454f9f26e05`
 
 ## Goal
