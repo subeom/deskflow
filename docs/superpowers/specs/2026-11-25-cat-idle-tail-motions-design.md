@@ -59,9 +59,15 @@ normalized progress. AppKit owns only the path paint operation.
 ## Exactly Five Motions
 
 Each duration includes eased lead-in and return-to-rest. Motion offsets are
-bounded in logical Cat coordinates to 0.90 pt horizontal and 1.35 pt vertical.
+bounded in logical Cat coordinates to 1.60 pt horizontal and 2.60 pt vertical.
 The dynamic area is distal to the approximately 12.4 pt tail root; the root and
 proximal body contour stay fixed.
+
+The offset values include one 2.0 visibility calibration after an installed
+Mac review showed that the first version could be repainted correctly but was
+too subtle at the 33 x 31 pt presentation size. The calibration remains
+tail-only; it does not resize the panel or affect the torso, head, paws, label,
+halo, or facing transform.
 
 | ID | Duration | Visible behavior |
 | --- | ---: | --- |
@@ -169,6 +175,12 @@ The pure QtTest coverage proves:
 - different seeds can change the order;
 - Reduced Motion leaves selection state untouched and produces exact rest
   coordinates.
+
+Native pixel coverage additionally proves that each representative pattern
+changes at least 20 tail pixels at 1x and 65 at 2x, while every body/head and
+glyph pixel remains stable. An actual `MacInputIndicatorPanel` NSView test uses
+a fixed cursor provider and proves an Idle 75 ms move result repaints visible
+tail pixels without changing the rest of the Cat.
 
 Native paint coverage renders every approved Cat artwork pose. For each idle
 artwork frame it covers all five motions at representative middle samples, in

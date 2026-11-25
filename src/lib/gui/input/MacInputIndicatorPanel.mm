@@ -194,27 +194,56 @@ void appendPath(NSBezierPath *silhouette, NSBezierPath *part)
 }
 
 NSBezierPath *catArtworkPath(
-    std::span<const MacInputIndicatorCatPathCommand> commands
+    std::span<const MacInputIndicatorCatPathCommand> commands,
+    const InputIndicatorCatStartleFrame &startleFrame,
+    bool facesRight,
+    double facingScaleX,
+    double bodyHeadingRadians
 )
 {
   NSBezierPath *path = [NSBezierPath bezierPath];
+  const auto deformed =
+      [&startleFrame, facesRight, facingScaleX,
+       bodyHeadingRadians](double x, double y) {
+        const auto startlePoint =
+            inputIndicatorCatStartlePoint(
+                {.x = x, .y = y},
+                startleFrame,
+                false
+            );
+        return inputIndicatorCatBodyPoint(
+            startlePoint,
+            facesRight,
+            facingScaleX,
+            bodyHeadingRadians
+        );
+      };
   for (const auto &command : commands) {
     switch (command.type) {
-    case MacInputIndicatorCatPathCommandType::Move:
-      [path moveToPoint:NSMakePoint(
-                            command.x1, command.y1
-                        )];
+    case MacInputIndicatorCatPathCommandType::Move: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path moveToPoint:NSMakePoint(point.x, point.y)];
       break;
-    case MacInputIndicatorCatPathCommandType::Line:
-      [path lineToPoint:NSMakePoint(
-                            command.x1, command.y1
-                        )];
+    }
+    case MacInputIndicatorCatPathCommandType::Line: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path lineToPoint:NSMakePoint(point.x, point.y)];
       break;
-    case MacInputIndicatorCatPathCommandType::Cubic:
-      [path curveToPoint:NSMakePoint(command.x3, command.y3)
-          controlPoint1:NSMakePoint(command.x1, command.y1)
-          controlPoint2:NSMakePoint(command.x2, command.y2)];
+    }
+    case MacInputIndicatorCatPathCommandType::Cubic: {
+      const auto control1 =
+          deformed(command.x1, command.y1);
+      const auto control2 =
+          deformed(command.x2, command.y2);
+      const auto point =
+          deformed(command.x3, command.y3);
+      [path curveToPoint:NSMakePoint(point.x, point.y)
+          controlPoint1:NSMakePoint(control1.x, control1.y)
+          controlPoint2:NSMakePoint(control2.x, control2.y)];
       break;
+    }
     case MacInputIndicatorCatPathCommandType::Close:
       [path closePath];
       break;
@@ -226,18 +255,36 @@ NSBezierPath *catArtworkPath(
 NSBezierPath *catArtworkPath(
     const InputIndicatorCatPose &pose,
     std::span<const MacInputIndicatorCatPathCommand> commands,
-    const InputIndicatorCatIdleTailFrame &tailFrame
+    const InputIndicatorCatIdleTailFrame &tailFrame,
+    const InputIndicatorCatStartleFrame &startleFrame,
+    bool facesRight,
+    double facingScaleX,
+    double bodyHeadingRadians
 )
 {
   NSBezierPath *path = [NSBezierPath bezierPath];
   const auto deformed =
-      [&pose, &tailFrame](double x, double y) {
+      [&pose, &tailFrame, &startleFrame,
+       facesRight, facingScaleX, bodyHeadingRadians](
+          double x, double y
+      ) {
         const auto torsoPoint =
             inputIndicatorCatTorsoPoint(
                 pose, {.x = x, .y = y}
             );
-        return inputIndicatorCatIdleTailPoint(
-            torsoPoint, tailFrame
+        const auto tailPoint =
+            inputIndicatorCatIdleTailPoint(
+                torsoPoint, tailFrame
+            );
+        const auto startlePoint =
+            inputIndicatorCatStartlePoint(
+                tailPoint, startleFrame, true
+            );
+        return inputIndicatorCatBodyPoint(
+            startlePoint,
+            facesRight,
+            facingScaleX,
+            bodyHeadingRadians
         );
       };
   for (const auto &command : commands) {
@@ -281,11 +328,9 @@ void drawCat(
     bool reducedMotion,
     bool facesRight,
     double facingScaleX,
+    double bodyHeadingRadians,
     const InputIndicatorCatIdleTailFrame &idleTailFrame,
-    const std::vector<MacInputIndicatorHaloFrame> &haloFrames,
-    deskflow::input::InputIndicatorSource source,
-    InputIndicatorTone tone,
-    MacInputIndicatorRenderAlpha alpha
+    const InputIndicatorCatStartleFrame &startleFrame
 )
 {
   (void)bounds;
@@ -298,78 +343,29 @@ void drawCat(
   );
   const auto artwork =
       macInputIndicatorCatArtwork(pose.artworkFrame);
-  const auto model =
-      macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
 
-  [NSGraphicsContext saveGraphicsState];
-  if (facesRight != model.sourceFacesRight) {
-    NSAffineTransform *mirror = [NSAffineTransform transform];
-    [mirror translateXBy:model.totalWidth yBy:0];
-    [mirror scaleXBy:-1 yBy:1];
-    [mirror concat];
-  }
-  if (std::abs(facingScaleX - 1.0) > 0.0001) {
-    NSAffineTransform *turn =
-        [NSAffineTransform transform];
-    [turn translateXBy:model.totalWidth / 2.0 yBy:0];
-    [turn scaleXBy:facingScaleX yBy:1];
-    [turn translateXBy:-model.totalWidth / 2.0 yBy:0];
-    [turn concat];
-  }
-
-  NSBezierPath *far = catArtworkPath(artwork.far);
+  NSBezierPath *far =
+      catArtworkPath(
+          artwork.far,
+          startleFrame,
+          facesRight,
+          facingScaleX,
+          bodyHeadingRadians
+      );
   NSBezierPath *near = catArtworkPath(
-      pose, artwork.near, idleTailFrame
+      pose,
+      artwork.near,
+      idleTailFrame,
+      startleFrame,
+      facesRight,
+      facingScaleX,
+      bodyHeadingRadians
   );
-  NSBezierPath *silhouette = [NSBezierPath bezierPath];
-  appendPath(silhouette, far);
-  appendPath(silhouette, near);
-
-  if (!reducedMotion) {
-    const auto drawHalo =
-        [silhouette, tone, alpha](
-            deskflow::input::InputIndicatorSource haloSource,
-            double haloScale,
-            double haloAlpha
-        ) {
-          NSBezierPath *halo = [silhouette copy];
-          NSAffineTransform *transform =
-              [NSAffineTransform transform];
-          [transform translateXBy:15 yBy:14];
-          [transform scaleXBy:haloScale yBy:haloScale];
-          [transform translateXBy:-15 yBy:-14];
-          [halo transformUsingAffineTransform:transform];
-          [indicatorGlyphColor(
-               haloSource, tone, alpha.body * haloAlpha
-           ) setFill];
-          [halo fill];
-          [halo release];
-        };
-    drawHalo(source, 1.05, 0.08);
-    for (const auto &frame : haloFrames) {
-      drawHalo(
-          frame.source,
-          1.0 + (frame.scale - 1.0) * 0.12,
-          frame.alpha * 0.28
-      );
-      drawHalo(
-          frame.source,
-          1.0 + (frame.scale - 1.0) * 0.21,
-          frame.alpha * 0.22
-      );
-      drawHalo(
-          frame.source,
-          1.0 + (frame.scale - 1.0) * 0.30,
-          frame.alpha * 0.16
-      );
-    }
-  }
 
   NSColor *farFill =
       [fill blendedColorWithFraction:0.18 ofColor:edge];
   fillSilhouette(far, farFill, edge);
   fillSilhouette(near, fill, edge);
-  [NSGraphicsContext restoreGraphicsState];
 }
 
 void drawDog(
@@ -561,7 +557,9 @@ void drawLanguageGlyph(
     bool reducedMotion,
     bool facesRight,
     double facingScaleX,
-    const InputIndicatorCatIdleTailFrame &idleTailFrame
+    double bodyHeadingRadians,
+    const InputIndicatorCatIdleTailFrame &idleTailFrame,
+    const InputIndicatorCatStartleFrame &startleFrame
 )
 {
   const auto model =
@@ -576,29 +574,37 @@ void drawLanguageGlyph(
             : motionPhase,
         reducedMotion
     );
-    bounds = inputIndicatorCatInnerLanguageBounds(
-        pose, facesRight
-    );
+    const InputIndicatorPoint labelCenter{
+        .x = pose.innerLanguageBounds.x +
+            pose.innerLanguageBounds.width / 2.0,
+        .y = pose.innerLanguageBounds.y +
+            pose.innerLanguageBounds.height / 2.0,
+    };
+    const auto transformedLabelCenter =
+        inputIndicatorCatBodyPoint(
+            labelCenter,
+            facesRight,
+            facingScaleX,
+            bodyHeadingRadians
+        );
+    bounds = pose.innerLanguageBounds;
+    bounds.x =
+        transformedLabelCenter.x -
+        bounds.width / 2.0;
+    bounds.y =
+        transformedLabelCenter.y -
+        bounds.height / 2.0;
     const auto artwork =
         macInputIndicatorCatArtwork(pose.artworkFrame);
     catSilhouette = catArtworkPath(
-        pose, artwork.near, idleTailFrame
+        pose,
+        artwork.near,
+        idleTailFrame,
+        startleFrame,
+        facesRight,
+        facingScaleX,
+        bodyHeadingRadians
     );
-    if (facesRight != model.sourceFacesRight) {
-      NSAffineTransform *mirror =
-          [NSAffineTransform transform];
-      [mirror translateXBy:model.totalWidth yBy:0];
-      [mirror scaleXBy:-1 yBy:1];
-      [catSilhouette transformUsingAffineTransform:mirror];
-    }
-    if (std::abs(facingScaleX - 1.0) > 0.0001) {
-      NSAffineTransform *turn =
-          [NSAffineTransform transform];
-      [turn translateXBy:model.totalWidth / 2.0 yBy:0];
-      [turn scaleXBy:facingScaleX yBy:1];
-      [turn translateXBy:-model.totalWidth / 2.0 yBy:0];
-      [catSilhouette transformUsingAffineTransform:turn];
-    }
   }
   const NSRect labelBounds = NSMakeRect(
       bounds.x,
@@ -751,16 +757,14 @@ void drawLanguageGlyph(
 @property(nonatomic) NSInteger catIdleTailMotion;
 @property(nonatomic) double catIdleTailProgress;
 @property(nonatomic) BOOL catIdleTailActive;
-@property(nonatomic) NSInteger haloPulseCount;
-@property(nonatomic) NSInteger haloSource0;
-@property(nonatomic) double haloScale0;
-@property(nonatomic) double haloAlpha0;
-@property(nonatomic) NSInteger haloSource1;
-@property(nonatomic) double haloScale1;
-@property(nonatomic) double haloAlpha1;
-@property(nonatomic) NSInteger haloSource2;
-@property(nonatomic) double haloScale2;
-@property(nonatomic) double haloAlpha2;
+@property(nonatomic) BOOL catStartleActive;
+@property(nonatomic) BOOL catStartlePending;
+@property(nonatomic) NSInteger catStartleLatestSource;
+@property(nonatomic) double catStartleProgress;
+@property(nonatomic) double catStartleRecoilOffsetX;
+@property(nonatomic) double catStartleHorizontalScale;
+@property(nonatomic) double catStartleDorsalLift;
+@property(nonatomic) double catBodyHeadingRadians;
 @end
 
 @implementation DeskflowInputIndicatorView
@@ -796,6 +800,18 @@ void drawLanguageGlyph(
           .active =
               static_cast<bool>(self.catIdleTailActive),
       };
+  const deskflow::gui::input::InputIndicatorCatStartleFrame
+      startleFrame{
+          .active =
+              static_cast<bool>(self.catStartleActive),
+          .progress = self.catStartleProgress,
+          .recoilOffsetX =
+              self.catStartleRecoilOffsetX,
+          .horizontalScale =
+              self.catStartleHorizontalScale,
+          .dorsalLift =
+              self.catStartleDorsalLift,
+      };
   const auto alpha = deskflow::gui::input::
       macInputIndicatorRenderAlpha(
           static_cast<int>(std::lround(self.opacity * 100.0))
@@ -822,38 +838,6 @@ void drawLanguageGlyph(
       deskflow::gui::input::indicatorColor(
           colorModel.edge, alpha.body
       );
-  std::vector<deskflow::gui::input::MacInputIndicatorHaloFrame>
-      haloFrames;
-  const auto addHaloFrame =
-      [&haloFrames](NSInteger haloSource, double scale, double haloAlpha) {
-        if (haloAlpha > 0) {
-          haloFrames.push_back({
-              .source =
-                  static_cast<deskflow::input::InputIndicatorSource>(
-                      haloSource
-                  ),
-              .scale = scale,
-              .alpha = haloAlpha,
-              .active = true,
-          });
-        }
-      };
-  if (self.haloPulseCount > 0) {
-    addHaloFrame(
-        self.haloSource0, self.haloScale0, self.haloAlpha0
-    );
-  }
-  if (self.haloPulseCount > 1) {
-    addHaloFrame(
-        self.haloSource1, self.haloScale1, self.haloAlpha1
-    );
-  }
-  if (self.haloPulseCount > 2) {
-    addHaloFrame(
-        self.haloSource2, self.haloScale2, self.haloAlpha2
-    );
-  }
-
   [NSGraphicsContext saveGraphicsState];
   CGContextRef context =
       [[NSGraphicsContext currentContext] CGContext];
@@ -866,7 +850,9 @@ void drawLanguageGlyph(
           {}
       );
   CGContextTranslateCTM(
-      context, displayOrigin.x, displayOrigin.y
+      context,
+      displayOrigin.x + style.canvasOffsetX,
+      displayOrigin.y + style.canvasOffsetY
   );
   CGContextScaleCTM(
       context, style.visualScale, style.visualScale
@@ -880,11 +866,9 @@ void drawLanguageGlyph(
         self.reducedMotion,
         self.facesRight,
         self.facingScaleX,
+        self.catBodyHeadingRadians,
         idleTailFrame,
-        haloFrames,
-        source,
-        tone,
-        alpha
+        startleFrame
     );
     break;
   case deskflow::gui::input::InputIndicatorCompanion::Dog:
@@ -920,7 +904,9 @@ void drawLanguageGlyph(
       self.reducedMotion,
       self.facesRight,
       self.facingScaleX,
-      idleTailFrame
+      self.catBodyHeadingRadians,
+      idleTailFrame,
+      startleFrame
   );
   [NSGraphicsContext restoreGraphicsState];
 }
@@ -965,8 +951,27 @@ struct MacInputIndicatorPanel::Impl
     bool active = true;
   };
 
-  explicit Impl(std::function<void()> invalidated)
-      : presentationInvalidated(std::move(invalidated))
+  explicit Impl(
+      std::function<void()> invalidated,
+      MacInputIndicatorPanel::TargetLocation targetLocation
+  )
+      : presentationInvalidated(std::move(invalidated)),
+        targetLocation(
+            targetLocation
+                ? std::move(targetLocation)
+                : [] {
+                    const auto cursor =
+                        NSEvent.mouseLocation;
+                    return InputIndicatorTarget{
+                        .point = {
+                            .x = cursor.x,
+                            .y = cursor.y,
+                        },
+                        .kind =
+                            InputIndicatorTargetKind::Pointer,
+                    };
+                  }
+        )
   {
     lifetime = std::make_shared<Lifetime>();
     lifetime->owner = this;
@@ -981,12 +986,15 @@ struct MacInputIndicatorPanel::Impl
                     .count()
             )
         );
-    haloEpoch = std::chrono::steady_clock::now();
+    animationEpoch = std::chrono::steady_clock::now();
     const auto style =
         macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat);
     panel = [[DeskflowInputIndicatorPanel alloc]
         initWithContentRect:NSMakeRect(
-                                0, 0, style.width, style.height
+                                0,
+                                0,
+                                style.canvasWidth,
+                                style.canvasHeight
                             )
                   styleMask:NSWindowStyleMaskBorderless
                     backing:NSBackingStoreBuffered
@@ -1025,13 +1033,21 @@ struct MacInputIndicatorPanel::Impl
                         return;
                       }
                       state->owner->activeSpaceChanged = true;
-                      state->owner->followerInitialized = false;
-                      state->owner->previousTargetInitialized = false;
-                      state->owner->motion = {};
-                      state->owner->motionState =
-                          InputIndicatorMotionState::Idle;
-                      state->owner->idleTailMotionState.running =
-                          false;
+                      if (state->owner->companion !=
+                          InputIndicatorCompanion::Cat) {
+                        state->owner->followerInitialized =
+                            false;
+                        state->owner
+                            ->previousTargetInitialized =
+                            false;
+                        state->owner->motion = {};
+                        state->owner->motionState =
+                            InputIndicatorMotionState::Idle;
+                        state->owner
+                            ->idleTailMotionState.running =
+                            false;
+                      }
+                      state->owner->idleTailPaused = false;
                       const auto now =
                           std::chrono::steady_clock::now();
                       state->owner->motionStateStarted = now;
@@ -1061,6 +1077,7 @@ struct MacInputIndicatorPanel::Impl
   id activeSpaceToken = nil;
   std::shared_ptr<Lifetime> lifetime;
   std::function<void()> presentationInvalidated;
+  MacInputIndicatorPanel::TargetLocation targetLocation;
   InputIndicatorCompanion companion =
       InputIndicatorCompanion::Cat;
   deskflow::input::InputIndicatorSource source =
@@ -1077,25 +1094,27 @@ struct MacInputIndicatorPanel::Impl
   InputIndicatorPoint follower;
   InputIndicatorPoint previousTarget;
   InputIndicatorPoint motion;
+  InputIndicatorCatPursuitState pursuitState;
   bool facesRight = true;
   bool facingTargetRight = true;
   bool facingTurning = false;
   std::chrono::steady_clock::time_point facingTurnStarted;
-  std::chrono::steady_clock::time_point haloEpoch;
-  std::vector<MacInputIndicatorHaloPulse> haloPulses;
-  deskflow::input::InputIndicatorSource pendingHaloSource =
-      deskflow::input::InputIndicatorSource::Unknown;
-  bool haloPending = false;
+  std::chrono::steady_clock::time_point animationEpoch;
+  InputIndicatorCatSourceStartleState startleState;
+  bool idleTailPaused = false;
+  double idleTailPauseStartedMilliseconds = 0;
   InputIndicatorMotionState motionState =
       InputIndicatorMotionState::Idle;
   InputIndicatorCatIdleTailMotionState idleTailMotionState;
 };
 
 MacInputIndicatorPanel::MacInputIndicatorPanel(
-    std::function<void()> presentationInvalidated
+    std::function<void()> presentationInvalidated,
+    TargetLocation targetLocation
 )
     : m_impl(std::make_unique<Impl>(
-          std::move(presentationInvalidated)
+          std::move(presentationInvalidated),
+          std::move(targetLocation)
       ))
 {
 }
@@ -1111,55 +1130,70 @@ bool MacInputIndicatorPanel::show(
     return false;
   }
 
-  const bool sourceChanged =
-      m_impl->source !=
-          deskflow::input::InputIndicatorSource::Unknown &&
-      m_impl->source != options.source &&
-      options.companion == InputIndicatorCompanion::Cat;
-  if (options.companion != InputIndicatorCompanion::Cat) {
-    m_impl->haloPulses.clear();
-    m_impl->haloPending = false;
-    m_impl->pendingHaloSource =
-        deskflow::input::InputIndicatorSource::Unknown;
+  const auto previousInputSource =
+      m_impl->source;
+  const auto now =
+      std::chrono::steady_clock::now();
+  const double animationMilliseconds =
+      std::chrono::duration<double, std::milli>(
+          now - m_impl->animationEpoch
+      )
+          .count();
+  if (options.companion == InputIndicatorCompanion::Cat) {
+    m_impl->startleState =
+        inputIndicatorCatSourceStartleTrigger(
+            m_impl->startleState,
+            previousInputSource,
+            options.source,
+            animationMilliseconds,
+            isOSXReduceMotion()
+        );
+  } else {
+    m_impl->startleState = {};
+    m_impl->idleTailPaused = false;
+  }
+  if (options.companion ==
+          InputIndicatorCompanion::Cat &&
+      m_impl->companion !=
+          InputIndicatorCompanion::Cat &&
+      m_impl->followerInitialized) {
+    m_impl->pursuitState = {
+        .position = m_impl->follower,
+        .velocity = {},
+        .headingRadians =
+            m_impl->pursuitState.headingRadians,
+        .motionState = m_impl->motionState,
+        .initialized = true,
+    };
   }
   m_impl->companion = options.companion;
   m_impl->previousSource =
-      m_impl->source != deskflow::input::InputIndicatorSource::Unknown
-          ? m_impl->source
+      previousInputSource !=
+              deskflow::input::InputIndicatorSource::Unknown
+          ? previousInputSource
           : options.source;
   m_impl->source = options.source;
-  const auto now = std::chrono::steady_clock::now();
-  if (sourceChanged) {
-    const double elapsedMilliseconds =
-        std::chrono::duration<double, std::milli>(
-            now - m_impl->haloEpoch
-        )
-            .count();
-    if (macInputIndicatorAppendHaloPulse(
-            m_impl->haloPulses,
-            options.source,
-            elapsedMilliseconds
-        )) {
-      m_impl->haloPending = false;
-    } else {
-      m_impl->pendingHaloSource = options.source;
-      m_impl->haloPending = true;
-    }
-  }
   m_impl->transitionStarted = now;
-  m_impl->motionStateStarted = now;
-  m_impl->previousTargetTime = now;
-  m_impl->lastPointerMovement = now;
-  m_impl->motionState = InputIndicatorMotionState::Idle;
-  m_impl->idleTailMotionState.running = false;
+  if (options.companion !=
+          InputIndicatorCompanion::Cat ||
+      !m_impl->followerInitialized) {
+    m_impl->motionStateStarted = now;
+    m_impl->previousTargetTime = now;
+    m_impl->lastPointerMovement = now;
+  }
   m_impl->activeSpaceChanged = true;
-  m_impl->followerInitialized = false;
-  m_impl->previousTargetInitialized = false;
-  m_impl->motion = {};
+  if (options.companion !=
+      InputIndicatorCompanion::Cat) {
+    m_impl->motionState =
+        InputIndicatorMotionState::Idle;
+    m_impl->followerInitialized = false;
+    m_impl->previousTargetInitialized = false;
+    m_impl->motion = {};
+  }
 
   const auto style = macInputIndicatorPanelStyle(options.companion);
   [m_impl->panel setContentSize:NSMakeSize(
-                      style.width, style.height
+                      style.canvasWidth, style.canvasHeight
                   )];
   m_impl->view.companion =
       static_cast<NSInteger>(options.companion);
@@ -1177,7 +1211,17 @@ bool MacInputIndicatorPanel::show(
   m_impl->view.catIdleTailMotion = 0;
   m_impl->view.catIdleTailProgress = 0;
   m_impl->view.catIdleTailActive = NO;
-  m_impl->view.haloPulseCount = 0;
+  m_impl->view.catStartleActive = NO;
+  m_impl->view.catStartlePending = NO;
+  m_impl->view.catStartleLatestSource =
+      static_cast<NSInteger>(
+          m_impl->startleState.latestSource
+      );
+  m_impl->view.catStartleProgress = 0;
+  m_impl->view.catStartleRecoilOffsetX = 0;
+  m_impl->view.catStartleHorizontalScale = 1;
+  m_impl->view.catStartleDorsalLift = 0;
+  m_impl->view.catBodyHeadingRadians = 0;
   [m_impl->view setNeedsDisplay:YES];
   return move(options.position).visible;
 }
@@ -1187,9 +1231,10 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
 {
   const auto style =
       macInputIndicatorPanelStyle(m_impl->companion);
-  const auto cursor = NSEvent.mouseLocation;
+  const auto targetLocation =
+      m_impl->targetLocation();
   const auto target = positionInputIndicator(
-      {.x = cursor.x, .y = cursor.y},
+      targetLocation.point,
       {.width = style.width, .height = style.height},
       screenRects(),
       position,
@@ -1218,8 +1263,9 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
 
   double pointerSpeed = 0;
   double pointerDistance = 0;
+  double elapsedMilliseconds = 8;
   if (m_impl->previousTargetInitialized) {
-    const auto elapsedMilliseconds =
+    elapsedMilliseconds =
         std::chrono::duration<double, std::milli>(
             now - m_impl->previousTargetTime
         )
@@ -1243,19 +1289,54 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
           now - m_impl->lastPointerMovement
       )
           .count();
-  const auto nextMotionState = inputIndicatorMotionState(
-      m_impl->motionState,
-      pointerSpeed,
-      pointerDistance,
-      m_impl->followerInitialized
-          ? distance({
-                .x = target->x - m_impl->follower.x,
-                .y = target->y - m_impl->follower.y,
-            })
-          : 0,
-      stoppedMilliseconds,
-      reducedMotion
-  );
+  auto nextMotionState = m_impl->motionState;
+  if (m_impl->companion ==
+      InputIndicatorCompanion::Cat) {
+    if (!m_impl->pursuitState.initialized &&
+        m_impl->followerInitialized) {
+      m_impl->pursuitState.position =
+          m_impl->follower;
+      m_impl->pursuitState.initialized = true;
+    }
+    const auto pursuit =
+        inputIndicatorCatPursuitAdvance(
+            m_impl->pursuitState,
+            {
+                .point = *target,
+                .kind = targetLocation.kind,
+            },
+            pointerSpeed,
+            elapsedMilliseconds,
+            !m_impl->pursuitState.initialized,
+            reducedMotion
+        );
+    if (!pursuit) {
+      hide();
+      return {};
+    }
+    m_impl->pursuitState = pursuit->state;
+    m_impl->follower =
+        m_impl->pursuitState.position;
+    m_impl->followerInitialized = true;
+    m_impl->motion =
+        reducedMotion ? InputIndicatorPoint{} : pursuit->movement;
+    nextMotionState =
+        m_impl->pursuitState.motionState;
+  } else {
+    nextMotionState = inputIndicatorMotionState(
+        m_impl->motionState,
+        pointerSpeed,
+        pointerDistance,
+        m_impl->followerInitialized
+            ? distance({
+                  .x = target->x - m_impl->follower.x,
+                  .y = target->y - m_impl->follower.y,
+              })
+            : 0,
+        stoppedMilliseconds,
+        reducedMotion
+    );
+  }
   if (nextMotionState != m_impl->motionState) {
     m_impl->motionState = nextMotionState;
     m_impl->motionStateStarted = now;
@@ -1267,28 +1348,79 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       )
           .count()
   );
-  const auto idleTailStep =
-      inputIndicatorCatIdleTailMotionAdvance(
-          m_impl->idleTailMotionState,
-          m_impl->companion ==
-                  InputIndicatorCompanion::Cat
-              ? m_impl->motionState
-              : InputIndicatorMotionState::Walk,
-          std::chrono::duration<double, std::milli>(
-              now - m_impl->haloEpoch
-          )
-              .count(),
-          reducedMotion
-      );
-  m_impl->idleTailMotionState =
-      idleTailStep.state;
-  const auto idleTailFrame =
-      idleTailStep.frame;
+  const double animationMilliseconds =
+      std::chrono::duration<double, std::milli>(
+          now - m_impl->animationEpoch
+      )
+          .count();
+  InputIndicatorCatSourceStartleStep startleStep;
+  if (m_impl->companion == InputIndicatorCompanion::Cat) {
+    startleStep =
+        inputIndicatorCatSourceStartleAdvance(
+            m_impl->startleState,
+            animationMilliseconds,
+            reducedMotion
+        );
+    m_impl->startleState =
+        startleStep.state;
+  } else {
+    m_impl->startleState = {};
+  }
+  const bool startleSuspendsIdle =
+      m_impl->companion ==
+          InputIndicatorCompanion::Cat &&
+      m_impl->motionState ==
+          InputIndicatorMotionState::Idle &&
+      (startleStep.frame.active ||
+       startleStep.state.pending);
+  const double bodyHeadingRadians =
+      m_impl->companion ==
+              InputIndicatorCompanion::Cat
+          ? m_impl->pursuitState.headingRadians
+          : 0;
+
+  InputIndicatorCatIdleTailFrame idleTailFrame;
+  if (startleSuspendsIdle) {
+    if (!m_impl->idleTailPaused) {
+      m_impl->idleTailPaused = true;
+      m_impl->idleTailPauseStartedMilliseconds =
+          animationMilliseconds;
+    }
+  } else {
+    if (m_impl->idleTailPaused) {
+      if (m_impl->motionState ==
+              InputIndicatorMotionState::Idle &&
+          !reducedMotion &&
+          m_impl->idleTailMotionState.running) {
+        m_impl->idleTailMotionState
+            .startedMilliseconds +=
+            animationMilliseconds -
+            m_impl
+                ->idleTailPauseStartedMilliseconds;
+      }
+      m_impl->idleTailPaused = false;
+    }
+    const auto idleTailStep =
+        inputIndicatorCatIdleTailMotionAdvance(
+            m_impl->idleTailMotionState,
+            m_impl->companion ==
+                    InputIndicatorCompanion::Cat
+                ? m_impl->motionState
+                : InputIndicatorMotionState::Walk,
+            animationMilliseconds,
+            reducedMotion
+        );
+    m_impl->idleTailMotionState =
+        idleTailStep.state;
+    idleTailFrame = idleTailStep.frame;
+  }
 
   if (reducedMotion || !m_impl->followerInitialized) {
     m_impl->follower = *target;
     m_impl->followerInitialized = true;
-  } else {
+  } else if (
+      m_impl->companion !=
+      InputIndicatorCompanion::Cat) {
     const auto follower = followInputIndicator(
         m_impl->follower,
         *target,
@@ -1303,7 +1435,9 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   }
 
   InputIndicatorPoint desiredMotion{};
-  if (m_impl->previousTargetInitialized) {
+  if (m_impl->companion !=
+          InputIndicatorCompanion::Cat &&
+      m_impl->previousTargetInitialized) {
     const auto motion = inputIndicatorMotionOffset(
         m_impl->previousTarget,
         *target,
@@ -1320,7 +1454,13 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   m_impl->previousTargetTime = now;
   m_impl->previousTargetInitialized = true;
 
-  if (reducedMotion) {
+  if (m_impl->companion ==
+      InputIndicatorCompanion::Cat) {
+    if (reducedMotion ||
+        distance(m_impl->motion) <= kSettledDistance) {
+      m_impl->motion = {};
+    }
+  } else if (reducedMotion) {
     m_impl->motion = {};
   } else {
     const auto motion = followInputIndicator(
@@ -1346,35 +1486,6 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   if (distance(m_impl->motion) <= kSettledDistance) {
     m_impl->motion = {};
   }
-  const double haloMilliseconds =
-      std::chrono::duration<double, std::milli>(
-          now - m_impl->haloEpoch
-      )
-          .count();
-  if (reducedMotion) {
-    m_impl->haloPulses.clear();
-    m_impl->haloPending = false;
-    m_impl->pendingHaloSource =
-        deskflow::input::InputIndicatorSource::Unknown;
-  } else if (
-      m_impl->haloPending &&
-      macInputIndicatorAppendHaloPulse(
-          m_impl->haloPulses,
-          m_impl->pendingHaloSource,
-          haloMilliseconds
-      )) {
-    m_impl->haloPending = false;
-    m_impl->pendingHaloSource =
-        deskflow::input::InputIndicatorSource::Unknown;
-  }
-  const auto haloFrames =
-      macInputIndicatorActiveHaloFrames(
-          m_impl->haloPulses,
-          haloMilliseconds,
-          reducedMotion
-      );
-  const bool haloAnimating =
-      !haloFrames.empty() || m_impl->haloPending;
   MacInputIndicatorFacingPose facingPose{
       .facesRight = m_impl->facesRight,
       .turning = false,
@@ -1443,8 +1554,12 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       transitionProgress < 1.0 ||
       followerDistance > kSettledDistance ||
       distance(m_impl->motion) > kSettledDistance ||
-      haloAnimating ||
+      startleStep.frame.active ||
+      startleStep.state.pending ||
       facingPose.turning;
+  const bool startleAnimating =
+      startleStep.frame.active ||
+      startleStep.state.pending;
   const bool locomotionAnimating =
       !reducedMotion &&
       (m_impl->motionState == InputIndicatorMotionState::Idle ||
@@ -1452,7 +1567,7 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
        m_impl->motionState == InputIndicatorMotionState::Run);
   const auto frameInterval =
       transitionProgress < 1.0 ||
-              haloAnimating ||
+              startleAnimating ||
               facingPose.turning
           ? 8
           : inputIndicatorMotionFrameInterval(
@@ -1487,9 +1602,36 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
           m_impl->view.facingScaleX -
           facingPose.horizontalScale
       ) > kRedrawTolerance ||
-      haloAnimating ||
-      m_impl->view.haloPulseCount !=
-          static_cast<NSInteger>(haloFrames.size());
+      static_cast<bool>(
+          m_impl->view.catStartleActive
+      ) != startleStep.frame.active ||
+      static_cast<bool>(
+          m_impl->view.catStartlePending
+      ) != startleStep.state.pending ||
+      m_impl->view.catStartleLatestSource !=
+          static_cast<NSInteger>(
+              startleStep.state.latestSource
+          ) ||
+      std::abs(
+          m_impl->view.catStartleProgress -
+          startleStep.frame.progress
+      ) > kRedrawTolerance ||
+      std::abs(
+          m_impl->view.catStartleRecoilOffsetX -
+          startleStep.frame.recoilOffsetX
+      ) > kRedrawTolerance ||
+      std::abs(
+          m_impl->view.catStartleHorizontalScale -
+          startleStep.frame.horizontalScale
+      ) > kRedrawTolerance ||
+      std::abs(
+          m_impl->view.catStartleDorsalLift -
+          startleStep.frame.dorsalLift
+      ) > kRedrawTolerance ||
+      std::abs(
+          m_impl->view.catBodyHeadingRadians -
+          bodyHeadingRadians
+      ) > kRedrawTolerance;
   m_impl->view.previousSource =
       static_cast<NSInteger>(m_impl->previousSource);
   m_impl->view.source =
@@ -1510,41 +1652,32 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   m_impl->view.facesRight = facingPose.facesRight;
   m_impl->view.facingScaleX =
       facingPose.horizontalScale;
-  m_impl->view.haloPulseCount =
-      static_cast<NSInteger>(haloFrames.size());
-  m_impl->view.haloAlpha0 = 0;
-  m_impl->view.haloAlpha1 = 0;
-  m_impl->view.haloAlpha2 = 0;
-  for (size_t i = 0; i < haloFrames.size(); ++i) {
-    switch (i) {
-    case 0:
-      m_impl->view.haloSource0 =
-          static_cast<NSInteger>(haloFrames[i].source);
-      m_impl->view.haloScale0 = haloFrames[i].scale;
-      m_impl->view.haloAlpha0 = haloFrames[i].alpha;
-      break;
-    case 1:
-      m_impl->view.haloSource1 =
-          static_cast<NSInteger>(haloFrames[i].source);
-      m_impl->view.haloScale1 = haloFrames[i].scale;
-      m_impl->view.haloAlpha1 = haloFrames[i].alpha;
-      break;
-    case 2:
-      m_impl->view.haloSource2 =
-          static_cast<NSInteger>(haloFrames[i].source);
-      m_impl->view.haloScale2 = haloFrames[i].scale;
-      m_impl->view.haloAlpha2 = haloFrames[i].alpha;
-      break;
-    default:
-      break;
-    }
-  }
+  m_impl->view.catStartleActive =
+      startleStep.frame.active ? YES : NO;
+  m_impl->view.catStartlePending =
+      startleStep.state.pending ? YES : NO;
+  m_impl->view.catStartleLatestSource =
+      static_cast<NSInteger>(
+          startleStep.state.latestSource
+      );
+  m_impl->view.catStartleProgress =
+      startleStep.frame.progress;
+  m_impl->view.catStartleRecoilOffsetX =
+      startleStep.frame.recoilOffsetX;
+  m_impl->view.catStartleHorizontalScale =
+      startleStep.frame.horizontalScale;
+  m_impl->view.catStartleDorsalLift =
+      startleStep.frame.dorsalLift;
+  m_impl->view.catBodyHeadingRadians =
+      bodyHeadingRadians;
   if (viewNeedsDisplay) {
     [m_impl->view setNeedsDisplay:YES];
   }
-  [m_impl->panel setFrameOrigin:NSMakePoint(
-                      m_impl->follower.x, m_impl->follower.y
-                  )];
+  const auto panelOrigin = NSMakePoint(
+      m_impl->follower.x - style.canvasOffsetX,
+      m_impl->follower.y - style.canvasOffsetY
+  );
+  [m_impl->panel setFrameOrigin:panelOrigin];
 
   const bool visible =
       static_cast<bool>([m_impl->panel isVisible]);
@@ -1582,11 +1715,18 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
 void MacInputIndicatorPanel::hide()
 {
   m_impl->idleTailMotionState.running = false;
-  m_impl->haloPulses.clear();
-  m_impl->haloPending = false;
-  m_impl->pendingHaloSource =
-      deskflow::input::InputIndicatorSource::Unknown;
-  m_impl->view.haloPulseCount = 0;
+  m_impl->idleTailPaused = false;
+  m_impl->startleState = {};
+  m_impl->view.catStartleActive = NO;
+  m_impl->view.catStartlePending = NO;
+  m_impl->view.catStartleLatestSource =
+      static_cast<NSInteger>(
+          deskflow::input::InputIndicatorSource::Unknown
+      );
+  m_impl->view.catStartleProgress = 0;
+  m_impl->view.catStartleRecoilOffsetX = 0;
+  m_impl->view.catStartleHorizontalScale = 1;
+  m_impl->view.catStartleDorsalLift = 0;
   [m_impl->panel orderOut:nil];
 }
 

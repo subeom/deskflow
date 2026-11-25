@@ -318,133 +318,14 @@ constexpr MacInputIndicatorRgb macInputIndicatorBodyColor(
   );
 }
 
-struct MacInputIndicatorHaloPulse
-{
-  deskflow::input::InputIndicatorSource source =
-      deskflow::input::InputIndicatorSource::Unknown;
-  double startedMilliseconds = 0;
-};
-
-struct MacInputIndicatorHaloFrame
-{
-  deskflow::input::InputIndicatorSource source =
-      deskflow::input::InputIndicatorSource::Unknown;
-  double scale = 1;
-  double alpha = 0;
-  bool active = false;
-};
-
-inline constexpr double kMacInputIndicatorHaloDurationMilliseconds =
-    280;
-inline constexpr double kMacInputIndicatorHaloMinimumStartInterval =
-    50;
-inline constexpr size_t kMacInputIndicatorMaximumHaloWaves = 3;
-
-inline bool macInputIndicatorAppendHaloPulse(
-    std::vector<MacInputIndicatorHaloPulse> &pulses,
-    deskflow::input::InputIndicatorSource source,
-    double startedMilliseconds
-)
-{
-  if (!std::isfinite(startedMilliseconds) ||
-      startedMilliseconds < 0) {
-    return false;
-  }
-  if (!pulses.empty() &&
-      startedMilliseconds - pulses.back().startedMilliseconds <
-          kMacInputIndicatorHaloMinimumStartInterval) {
-    return false;
-  }
-  pulses.push_back({
-      .source = source,
-      .startedMilliseconds = startedMilliseconds,
-  });
-  if (pulses.size() > kMacInputIndicatorMaximumHaloWaves) {
-    pulses.erase(
-        pulses.begin(),
-        pulses.begin() +
-            static_cast<std::ptrdiff_t>(
-                pulses.size() -
-                kMacInputIndicatorMaximumHaloWaves
-            )
-    );
-  }
-  return true;
-}
-
-inline MacInputIndicatorHaloFrame macInputIndicatorHaloFrame(
-    const MacInputIndicatorHaloPulse &pulse,
-    double nowMilliseconds,
-    bool reducedMotion
-)
-{
-  if (reducedMotion ||
-      !std::isfinite(nowMilliseconds) ||
-      !std::isfinite(pulse.startedMilliseconds)) {
-    return {};
-  }
-  const double age =
-      nowMilliseconds - pulse.startedMilliseconds;
-  if (age < 0 ||
-      age >= kMacInputIndicatorHaloDurationMilliseconds) {
-    return {};
-  }
-  constexpr double kPeakProgress = 0.18;
-  constexpr double kMaximumAlpha = 0.34;
-  constexpr double kMaximumScale = 1.22;
-  constexpr double kPi = 3.14159265358979323846;
-  const double progress =
-      age / kMacInputIndicatorHaloDurationMilliseconds;
-  const double easeOut =
-      1.0 - std::pow(1.0 - progress, 3.0);
-  const double alpha =
-      progress < kPeakProgress
-          ? kMaximumAlpha *
-                std::sin(
-                    (progress / kPeakProgress) *
-                    kPi / 2.0
-                )
-          : kMaximumAlpha *
-                std::pow(
-                    1.0 -
-                        (progress - kPeakProgress) /
-                            (1.0 - kPeakProgress),
-                    2.0
-                );
-  return {
-      .source = pulse.source,
-      .scale =
-          1.0 + (kMaximumScale - 1.0) * easeOut,
-      .alpha = alpha,
-      .active = true,
-  };
-}
-
-inline std::vector<MacInputIndicatorHaloFrame>
-macInputIndicatorActiveHaloFrames(
-    const std::vector<MacInputIndicatorHaloPulse> &pulses,
-    double nowMilliseconds,
-    bool reducedMotion
-)
-{
-  std::vector<MacInputIndicatorHaloFrame> result;
-  result.reserve(kMacInputIndicatorMaximumHaloWaves);
-  for (const auto &pulse : pulses) {
-    const auto frame =
-        macInputIndicatorHaloFrame(
-            pulse, nowMilliseconds, reducedMotion
-        );
-    if (frame.active) {
-      result.push_back(frame);
-    }
-  }
-  return result;
-}
-
 struct MacInputIndicatorPanelStyle
 {
   double width = 0;
   double height = 0;
+  double canvasWidth = 0;
+  double canvasHeight = 0;
+  double canvasOffsetX = 0;
+  double canvasOffsetY = 0;
   double logicalWidth = 0;
   double logicalHeight = 0;
   double visualScale = 0;
@@ -545,9 +426,15 @@ constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
     InputIndicatorCompanion companion = InputIndicatorCompanion::Cat
 )
 {
+  const bool cat =
+      companion == InputIndicatorCompanion::Cat;
   return {
       .width = 33,
       .height = 31,
+      .canvasWidth = cat ? 49.0 : 33.0,
+      .canvasHeight = cat ? 49.0 : 31.0,
+      .canvasOffsetX = cat ? 8.0 : 0.0,
+      .canvasOffsetY = cat ? 9.0 : 0.0,
       .logicalWidth = 30,
       .logicalHeight = 28,
       .visualScale = 1.1,
@@ -579,6 +466,22 @@ constexpr InputIndicatorPoint macInputIndicatorDisplayPoint(
   };
 }
 
+constexpr InputIndicatorPoint macInputIndicatorCanvasPoint(
+    InputIndicatorPoint point,
+    InputIndicatorCompanion companion =
+        InputIndicatorCompanion::Cat
+)
+{
+  const auto display =
+      macInputIndicatorDisplayPoint(point);
+  const auto style =
+      macInputIndicatorPanelStyle(companion);
+  return {
+      .x = display.x + style.canvasOffsetX,
+      .y = display.y + style.canvasOffsetY,
+  };
+}
+
 constexpr InputIndicatorRect macInputIndicatorDisplayRect(
     const InputIndicatorRect &rect
 )
@@ -590,6 +493,27 @@ constexpr InputIndicatorRect macInputIndicatorDisplayRect(
       });
   const auto style =
       macInputIndicatorPanelStyle();
+  return {
+      .x = origin.x,
+      .y = origin.y,
+      .width = rect.width * style.visualScale,
+      .height = rect.height * style.visualScale,
+  };
+}
+
+constexpr InputIndicatorRect macInputIndicatorCanvasRect(
+    const InputIndicatorRect &rect,
+    InputIndicatorCompanion companion =
+        InputIndicatorCompanion::Cat
+)
+{
+  const auto origin =
+      macInputIndicatorCanvasPoint(
+          {.x = rect.x, .y = rect.y},
+          companion
+      );
+  const auto style =
+      macInputIndicatorPanelStyle(companion);
   return {
       .x = origin.x,
       .y = origin.y,
@@ -751,8 +675,12 @@ void requestMacInputIndicatorPanelPresentation(Dispatch dispatch)
 class MacInputIndicatorPanel
 {
 public:
+  using TargetLocation =
+      std::function<InputIndicatorTarget()>;
+
   explicit MacInputIndicatorPanel(
-      std::function<void()> presentationInvalidated = {}
+      std::function<void()> presentationInvalidated = {},
+      TargetLocation targetLocation = {}
   );
   ~MacInputIndicatorPanel();
 
