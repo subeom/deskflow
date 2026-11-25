@@ -445,6 +445,9 @@ struct MacInputIndicatorPanelStyle
 {
   double width = 0;
   double height = 0;
+  double logicalWidth = 0;
+  double logicalHeight = 0;
+  double visualScale = 0;
   double cursorGap = 0;
   double screenMargin = 0;
   double labelSize = 0;
@@ -453,6 +456,67 @@ struct MacInputIndicatorPanelStyle
   double transitionMilliseconds = 0;
   int opacityPercent = 0;
 };
+
+struct MacInputIndicatorFacingPose
+{
+  bool facesRight = true;
+  bool turning = false;
+  double horizontalScale = 1;
+  double progress = 1;
+};
+
+inline constexpr double kMacInputIndicatorFacingTurnMilliseconds =
+    280;
+
+inline MacInputIndicatorFacingPose macInputIndicatorFacingPose(
+    bool fromFacesRight,
+    bool targetFacesRight,
+    double elapsedMilliseconds,
+    bool reducedMotion
+)
+{
+  if (reducedMotion ||
+      fromFacesRight == targetFacesRight) {
+    return {
+        .facesRight = targetFacesRight,
+        .turning = false,
+        .horizontalScale = 1,
+        .progress = 1,
+    };
+  }
+  if (!std::isfinite(elapsedMilliseconds)) {
+    elapsedMilliseconds = 0;
+  }
+  const double progress =
+      std::clamp(
+          elapsedMilliseconds /
+              kMacInputIndicatorFacingTurnMilliseconds,
+          0.0,
+          1.0
+      );
+  constexpr double kPi = 3.14159265358979323846;
+  return {
+      .facesRight =
+          progress >= 0.5
+              ? targetFacesRight
+              : fromFacesRight,
+      .turning = progress < 1.0,
+      .horizontalScale =
+          1.0 -
+          0.2 * std::sin(progress * kPi),
+      .progress = progress,
+  };
+}
+
+constexpr bool macInputIndicatorFacingTurnStarts(
+    bool facesRight,
+    bool requestedFacesRight,
+    bool turning
+)
+{
+  return !turning &&
+      facesRight != requestedFacesRight;
+}
 
 struct MacInputIndicatorRenderAlpha
 {
@@ -482,15 +546,73 @@ constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
 )
 {
   return {
-      .width = 30,
-      .height = 28,
-      .cursorGap = 6,
-      .screenMargin = 6,
+      .width = 33,
+      .height = 31,
+      .logicalWidth = 30,
+      .logicalHeight = 28,
+      .visualScale = 1.1,
+      .cursorGap = 7,
+      .screenMargin = 7,
       .labelSize = 8,
-      .maximumLag = 8,
-      .maximumMotion = 8,
+      .maximumLag = 9,
+      .maximumMotion = 9,
       .transitionMilliseconds = 200,
       .opacityPercent = 65,
+  };
+}
+
+constexpr InputIndicatorPoint macInputIndicatorDisplayPoint(
+    InputIndicatorPoint point
+)
+{
+  const auto style =
+      macInputIndicatorPanelStyle();
+  return {
+      .x = point.x * style.visualScale +
+          (style.width -
+           style.logicalWidth * style.visualScale) /
+              2.0,
+      .y = point.y * style.visualScale +
+          (style.height -
+           style.logicalHeight * style.visualScale) /
+              2.0,
+  };
+}
+
+constexpr InputIndicatorRect macInputIndicatorDisplayRect(
+    const InputIndicatorRect &rect
+)
+{
+  const auto origin =
+      macInputIndicatorDisplayPoint({
+          .x = rect.x,
+          .y = rect.y,
+      });
+  const auto style =
+      macInputIndicatorPanelStyle();
+  return {
+      .x = origin.x,
+      .y = origin.y,
+      .width = rect.width * style.visualScale,
+      .height = rect.height * style.visualScale,
+  };
+}
+
+constexpr MacInputIndicatorLabelPreference
+macInputIndicatorDisplayLabelPreference(
+    deskflow::input::InputIndicatorSource source,
+    InputIndicatorMotionState state
+)
+{
+  const auto logical =
+      macInputIndicatorLabelPreference(source, state);
+  const auto style =
+      macInputIndicatorPanelStyle();
+  return {
+      .pointSize =
+          logical.pointSize * style.visualScale,
+      .minimumPointSize =
+          logical.minimumPointSize * style.visualScale,
   };
 }
 

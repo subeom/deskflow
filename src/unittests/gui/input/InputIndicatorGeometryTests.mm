@@ -133,10 +133,20 @@ NSBezierPath *artworkPath(
 
 NSBitmapImageRep *pixelBitmap(int scale)
 {
+  const auto style =
+      macInputIndicatorPanelStyle(
+          InputIndicatorCompanion::Cat
+      );
   return [[NSBitmapImageRep alloc]
       initWithBitmapDataPlanes:nil
-                    pixelsWide:30 * scale
-                    pixelsHigh:28 * scale
+                    pixelsWide:
+                        static_cast<NSInteger>(
+                            std::lround(style.width)
+                        ) * scale
+                    pixelsHigh:
+                        static_cast<NSInteger>(
+                            std::lround(style.height)
+                        ) * scale
                  bitsPerSample:8
                samplesPerPixel:4
                       hasAlpha:YES
@@ -286,23 +296,100 @@ void InputIndicatorGeometryTests::compactPanelStyleUsesApprovedMetrics()
   const auto turtle =
       macInputIndicatorPanelStyle(InputIndicatorCompanion::Turtle);
 
-  QCOMPARE(cat.width, 30.0);
-  QCOMPARE(cat.height, 28.0);
-  QCOMPARE(dog.width, 30.0);
-  QCOMPARE(dog.height, 28.0);
-  QCOMPARE(turtle.width, 30.0);
-  QCOMPARE(turtle.height, 28.0);
-  QCOMPARE(cat.cursorGap, 6.0);
-  QCOMPARE(cat.screenMargin, 6.0);
+  QCOMPARE(cat.width, 33.0);
+  QCOMPARE(cat.height, 31.0);
+  QCOMPARE(dog.width, 33.0);
+  QCOMPARE(dog.height, 31.0);
+  QCOMPARE(turtle.width, 33.0);
+  QCOMPARE(turtle.height, 31.0);
+  QCOMPARE(cat.visualScale, 1.1);
+  QCOMPARE(cat.logicalWidth, 30.0);
+  QCOMPARE(cat.logicalHeight, 28.0);
+  QCOMPARE(cat.cursorGap, 7.0);
+  QCOMPARE(cat.screenMargin, 7.0);
   QCOMPARE(cat.labelSize, 8.0);
-  QCOMPARE(cat.maximumLag, 8.0);
-  QCOMPARE(cat.maximumMotion, 8.0);
+  QCOMPARE(cat.maximumLag, 9.0);
+  QCOMPARE(cat.maximumMotion, 9.0);
   QCOMPARE(cat.transitionMilliseconds, 200.0);
   QCOMPARE(cat.opacityPercent, 65);
 
   const MacInputIndicatorPanelOptions options;
   QCOMPARE(options.opacityPercent, 65);
   QCOMPARE(options.companion, InputIndicatorCompanion::Cat);
+}
+
+void InputIndicatorGeometryTests::companionDisplayModelScalesAllLogicalGeometry()
+{
+  const auto point =
+      macInputIndicatorDisplayPoint(
+          {.x = 15, .y = 14}
+      );
+  QVERIFY(std::abs(point.x - 16.5) < 1e-9);
+  QVERIFY(std::abs(point.y - 15.5) < 1e-9);
+
+  const auto rect =
+      macInputIndicatorDisplayRect(
+          {.x = 1, .y = 2, .width = 28, .height = 26}
+      );
+  QVERIFY(std::abs(rect.x - 1.1) < 1e-9);
+  QVERIFY(std::abs(rect.y - 2.3) < 1e-9);
+  QVERIFY(std::abs(rect.width - 30.8) < 1e-9);
+  QVERIFY(std::abs(rect.height - 28.6) < 1e-9);
+
+  const auto preference =
+      macInputIndicatorDisplayLabelPreference(
+          deskflow::input::InputIndicatorSource::Korean2Set,
+          InputIndicatorMotionState::Run
+      );
+  QVERIFY(std::abs(preference.pointSize - 6.71) < 1e-9);
+  QVERIFY(std::abs(
+      preference.minimumPointSize - 6.38
+  ) < 1e-9);
+}
+
+void InputIndicatorGeometryTests::companionFacingTurnCompressesAndSwitchesOnce()
+{
+  const auto start =
+      macInputIndicatorFacingPose(
+          true, false, 0, false
+      );
+  QVERIFY(start.facesRight);
+  QVERIFY(start.turning);
+  QCOMPARE(start.horizontalScale, 1.0);
+
+  const auto middle =
+      macInputIndicatorFacingPose(
+          true, false, 140, false
+      );
+  QVERIFY(!middle.facesRight);
+  QVERIFY(middle.turning);
+  QCOMPARE(middle.horizontalScale, 0.8);
+
+  const auto end =
+      macInputIndicatorFacingPose(
+          true, false, 280, false
+      );
+  QVERIFY(!end.facesRight);
+  QVERIFY(!end.turning);
+  QCOMPARE(end.horizontalScale, 1.0);
+
+  const auto reduced =
+      macInputIndicatorFacingPose(
+          true, false, 140, true
+      );
+  QVERIFY(!reduced.facesRight);
+  QVERIFY(!reduced.turning);
+  QCOMPARE(reduced.horizontalScale, 1.0);
+
+  QVERIFY(macInputIndicatorFacingTurnStarts(
+      true, false, false
+  ));
+  QVERIFY(!macInputIndicatorFacingTurnStarts(
+      true, true, false
+  ));
+  QVERIFY(!macInputIndicatorFacingTurnStarts(
+      true, false, true
+  ));
 }
 
 void InputIndicatorGeometryTests::companionRenderModelUsesUnifiedSilhouetteAndInternalLabel()
@@ -923,10 +1010,6 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
     for (const auto source : sources) {
       NSString *label =
           source == Source::LatinABC ? @"A" : @"한";
-      const auto preference =
-          macInputIndicatorLabelPreference(
-              source, poseInput.state
-          );
       for (const bool facesRight : directions) {
         int caseOutsidePixels = 0;
         NSBitmapImageRep *bodyMask = pixelBitmap(scale);
@@ -943,6 +1026,16 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
             [bodyContext CGContext];
         CGContextSaveGState(bodyCG);
         CGContextScaleCTM(bodyCG, scale, scale);
+        const auto displayOrigin =
+            macInputIndicatorDisplayPoint({});
+        CGContextTranslateCTM(
+            bodyCG, displayOrigin.x, displayOrigin.y
+        );
+        CGContextScaleCTM(
+            bodyCG,
+            macInputIndicatorPanelStyle().visualScale,
+            macInputIndicatorPanelStyle().visualScale
+        );
         if (!facesRight) {
           CGContextTranslateCTM(bodyCG, model.totalWidth, 0);
           CGContextScaleCTM(bodyCG, -1, 1);
@@ -954,10 +1047,16 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
         [NSGraphicsContext restoreGraphicsState];
 
         const auto target =
-            inputIndicatorCatInnerLanguageBounds(
-                pose, facesRight
+            macInputIndicatorDisplayRect(
+                inputIndicatorCatInnerLanguageBounds(
+                    pose, facesRight
+                )
             );
-        double pointSize = preference.pointSize;
+        const auto displayPreference =
+            macInputIndicatorDisplayLabelPreference(
+                source, poseInput.state
+            );
+        double pointSize = displayPreference.pointSize;
         std::optional<MacInputIndicatorLabelLayout> layout;
         NSFont *font = nil;
         for (int attempt = 0; attempt < 5; ++attempt) {
@@ -971,7 +1070,7 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
           QVERIFY(measured);
           layout = macInputIndicatorFitLabelInkLayout(
               pointSize,
-              preference.minimumPointSize, target, measured->ink
+              displayPreference.minimumPointSize, target, measured->ink
           );
           QVERIFY(layout);
           if (std::abs(

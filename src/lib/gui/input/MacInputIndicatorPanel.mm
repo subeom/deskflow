@@ -275,12 +275,14 @@ void drawCat(
     double motionPhase,
     bool reducedMotion,
     bool facesRight,
+    double facingScaleX,
     const std::vector<MacInputIndicatorHaloFrame> &haloFrames,
     deskflow::input::InputIndicatorSource source,
     InputIndicatorTone tone,
     MacInputIndicatorRenderAlpha alpha
 )
 {
+  (void)bounds;
   const auto pose = inputIndicatorCatPose(
       motionState, motionPhase, reducedMotion
   );
@@ -292,9 +294,17 @@ void drawCat(
   [NSGraphicsContext saveGraphicsState];
   if (facesRight != model.sourceFacesRight) {
     NSAffineTransform *mirror = [NSAffineTransform transform];
-    [mirror translateXBy:bounds.size.width yBy:0];
+    [mirror translateXBy:model.totalWidth yBy:0];
     [mirror scaleXBy:-1 yBy:1];
     [mirror concat];
+  }
+  if (std::abs(facingScaleX - 1.0) > 0.0001) {
+    NSAffineTransform *turn =
+        [NSAffineTransform transform];
+    [turn translateXBy:model.totalWidth / 2.0 yBy:0];
+    [turn scaleXBy:facingScaleX yBy:1];
+    [turn translateXBy:-model.totalWidth / 2.0 yBy:0];
+    [turn concat];
   }
 
   NSBezierPath *far = catArtworkPath(artwork.far);
@@ -539,7 +549,8 @@ void drawLanguageGlyph(
     InputIndicatorMotionState motionState,
     double motionPhase,
     bool reducedMotion,
-    bool facesRight
+    bool facesRight,
+    double facingScaleX
 )
 {
   const auto model =
@@ -564,6 +575,14 @@ void drawLanguageGlyph(
       [mirror translateXBy:model.totalWidth yBy:0];
       [mirror scaleXBy:-1 yBy:1];
       [catSilhouette transformUsingAffineTransform:mirror];
+    }
+    if (std::abs(facingScaleX - 1.0) > 0.0001) {
+      NSAffineTransform *turn =
+          [NSAffineTransform transform];
+      [turn translateXBy:model.totalWidth / 2.0 yBy:0];
+      [turn scaleXBy:facingScaleX yBy:1];
+      [turn translateXBy:-model.totalWidth / 2.0 yBy:0];
+      [catSilhouette transformUsingAffineTransform:turn];
     }
   }
   const NSRect labelBounds = NSMakeRect(
@@ -713,6 +732,7 @@ void drawLanguageGlyph(
 @property(nonatomic) double motionPhase;
 @property(nonatomic) BOOL reducedMotion;
 @property(nonatomic) BOOL facesRight;
+@property(nonatomic) double facingScaleX;
 @property(nonatomic) NSInteger haloPulseCount;
 @property(nonatomic) NSInteger haloSource0;
 @property(nonatomic) double haloScale0;
@@ -805,6 +825,23 @@ void drawLanguageGlyph(
     );
   }
 
+  [NSGraphicsContext saveGraphicsState];
+  CGContextRef context =
+      [[NSGraphicsContext currentContext] CGContext];
+  const auto style =
+      deskflow::gui::input::macInputIndicatorPanelStyle(
+          companion
+      );
+  const auto displayOrigin =
+      deskflow::gui::input::macInputIndicatorDisplayPoint(
+          {}
+      );
+  CGContextTranslateCTM(
+      context, displayOrigin.x, displayOrigin.y
+  );
+  CGContextScaleCTM(
+      context, style.visualScale, style.visualScale
+  );
   switch (companion) {
   case deskflow::gui::input::InputIndicatorCompanion::Cat:
     deskflow::gui::input::drawCat(
@@ -813,6 +850,7 @@ void drawLanguageGlyph(
         self.motionPhase,
         self.reducedMotion,
         self.facesRight,
+        self.facingScaleX,
         haloFrames,
         source,
         tone,
@@ -850,8 +888,10 @@ void drawLanguageGlyph(
       motionState,
       self.motionPhase,
       self.reducedMotion,
-      self.facesRight
+      self.facesRight,
+      self.facingScaleX
   );
+  [NSGraphicsContext restoreGraphicsState];
 }
 
 - (BOOL)isOpaque
@@ -994,6 +1034,9 @@ struct MacInputIndicatorPanel::Impl
   InputIndicatorPoint previousTarget;
   InputIndicatorPoint motion;
   bool facesRight = true;
+  bool facingTargetRight = true;
+  bool facingTurning = false;
+  std::chrono::steady_clock::time_point facingTurnStarted;
   std::chrono::steady_clock::time_point haloEpoch;
   std::vector<MacInputIndicatorHaloPulse> haloPulses;
   deskflow::input::InputIndicatorSource pendingHaloSource =
@@ -1084,6 +1127,7 @@ bool MacInputIndicatorPanel::show(
   m_impl->view.motionX = 0;
   m_impl->view.motionY = 0;
   m_impl->view.facesRight = m_impl->facesRight;
+  m_impl->view.facingScaleX = 1;
   m_impl->view.haloPulseCount = 0;
   [m_impl->view setNeedsDisplay:YES];
   return move(options.position).visible;
@@ -1265,22 +1309,85 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       );
   const bool haloAnimating =
       !haloFrames.empty() || m_impl->haloPending;
-  m_impl->facesRight =
-      inputIndicatorCompanionFacesRight(
-          m_impl->facesRight, m_impl->motion.x
+  MacInputIndicatorFacingPose facingPose{
+      .facesRight = m_impl->facesRight,
+      .turning = false,
+      .horizontalScale = 1,
+      .progress = 1,
+  };
+  if (m_impl->companion != InputIndicatorCompanion::Cat) {
+    m_impl->facingTurning = false;
+    m_impl->facingTargetRight = m_impl->facesRight;
+  } else if (reducedMotion) {
+    const bool desired =
+        m_impl->facingTurning
+            ? m_impl->facingTargetRight
+            : inputIndicatorCompanionFacesRight(
+                  m_impl->facesRight, m_impl->motion.x
+              );
+    m_impl->facesRight = desired;
+    m_impl->facingTargetRight = desired;
+    m_impl->facingTurning = false;
+    facingPose = macInputIndicatorFacingPose(
+        desired, desired, 0, true
+    );
+  } else {
+    if (!m_impl->facingTurning) {
+      const bool desired =
+          inputIndicatorCompanionFacesRight(
+              m_impl->facesRight, m_impl->motion.x
+          );
+      if (macInputIndicatorFacingTurnStarts(
+              m_impl->facesRight,
+              desired,
+              m_impl->facingTurning
+          )) {
+        m_impl->facingTargetRight = desired;
+        m_impl->facingTurnStarted = now;
+        m_impl->facingTurning = true;
+      }
+    }
+    if (m_impl->facingTurning) {
+      const double elapsed =
+          std::chrono::duration<double, std::milli>(
+              now - m_impl->facingTurnStarted
+          )
+              .count();
+      facingPose = macInputIndicatorFacingPose(
+          m_impl->facesRight,
+          m_impl->facingTargetRight,
+          elapsed,
+          false
       );
+      if (!facingPose.turning) {
+        m_impl->facesRight =
+            m_impl->facingTargetRight;
+        m_impl->facingTurning = false;
+      }
+    } else {
+      facingPose = macInputIndicatorFacingPose(
+          m_impl->facesRight,
+          m_impl->facesRight,
+          0,
+          false
+      );
+    }
+  }
   const bool animating =
       transitionProgress < 1.0 ||
       followerDistance > kSettledDistance ||
       distance(m_impl->motion) > kSettledDistance ||
-      haloAnimating;
+      haloAnimating ||
+      facingPose.turning;
   const bool locomotionAnimating =
       !reducedMotion &&
       (m_impl->motionState == InputIndicatorMotionState::Idle ||
        m_impl->motionState == InputIndicatorMotionState::Walk ||
        m_impl->motionState == InputIndicatorMotionState::Run);
   const auto frameInterval =
-      transitionProgress < 1.0 || haloAnimating
+      transitionProgress < 1.0 ||
+              haloAnimating ||
+              facingPose.turning
           ? 8
           : inputIndicatorMotionFrameInterval(
                 m_impl->motionState, reducedMotion
@@ -1300,7 +1407,11 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
           static_cast<NSInteger>(m_impl->motionState) ||
       std::abs(m_impl->view.motionPhase - motionPhase) >
           kRedrawTolerance ||
-      m_impl->view.facesRight != m_impl->facesRight ||
+      m_impl->view.facesRight != facingPose.facesRight ||
+      std::abs(
+          m_impl->view.facingScaleX -
+          facingPose.horizontalScale
+      ) > kRedrawTolerance ||
       haloAnimating ||
       m_impl->view.haloPulseCount !=
           static_cast<NSInteger>(haloFrames.size());
@@ -1315,7 +1426,9 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       static_cast<NSInteger>(m_impl->motionState);
   m_impl->view.motionPhase = reducedMotion ? 0 : motionPhase;
   m_impl->view.reducedMotion = reducedMotion;
-  m_impl->view.facesRight = m_impl->facesRight;
+  m_impl->view.facesRight = facingPose.facesRight;
+  m_impl->view.facingScaleX =
+      facingPose.horizontalScale;
   m_impl->view.haloPulseCount =
       static_cast<NSInteger>(haloFrames.size());
   m_impl->view.haloAlpha0 = 0;

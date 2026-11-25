@@ -20,6 +20,8 @@ private Q_SLOTS:
   void unknownOrInvalidGeometryHides_data();
   void unknownOrInvalidGeometryHides();
   void compactPanelStyleUsesApprovedMetrics();
+  void companionDisplayModelScalesAllLogicalGeometry();
+  void companionFacingTurnCompressesAndSwitchesOnce();
   void companionRenderModelUsesUnifiedSilhouetteAndInternalLabel();
   void catRenderModelUsesSideProfileAndPersistentFacing();
   void catTorsoContourExpandsWithoutPadPrimitive();
