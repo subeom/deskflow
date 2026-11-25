@@ -679,8 +679,13 @@ inputIndicatorCatInnerLanguageBounds(
       macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
   auto bounds = pose.innerLanguageBounds;
   if (facesRight != model.sourceFacesRight) {
-    bounds.x =
-        model.totalWidth - bounds.x - bounds.width;
+    bounds.x = inputIndicatorCatFacingPoint(
+        {
+            .x = bounds.x + bounds.width,
+            .y = bounds.y,
+        },
+        false
+    ).x;
   }
   return bounds;
 }

@@ -15,8 +15,10 @@
 #include <QTest>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
+#include <set>
 
 using namespace deskflow::gui::input;
 
@@ -87,14 +89,19 @@ NSBezierPath *artworkPath(
 
 NSBezierPath *artworkPath(
     const InputIndicatorCatPose &pose,
-    std::span<const MacInputIndicatorCatPathCommand> commands
+    std::span<const MacInputIndicatorCatPathCommand> commands,
+    const InputIndicatorCatIdleTailFrame &tailFrame
 )
 {
   NSBezierPath *path = [NSBezierPath bezierPath];
   const auto deformed =
-      [&pose](double x, double y) {
-        return inputIndicatorCatTorsoPoint(
-            pose, {.x = x, .y = y}
+      [&pose, &tailFrame](double x, double y) {
+        const auto torsoPoint =
+            inputIndicatorCatTorsoPoint(
+                pose, {.x = x, .y = y}
+            );
+        return inputIndicatorCatIdleTailPoint(
+            torsoPoint, tailFrame
         );
       };
   for (const auto &command : commands) {
@@ -131,7 +138,10 @@ NSBezierPath *artworkPath(
   return path;
 }
 
-NSBitmapImageRep *pixelBitmap(int scale)
+NSBitmapImageRep *pixelBitmap(
+    int scale,
+    int paddingPoints
+)
 {
   const auto style =
       macInputIndicatorPanelStyle(
@@ -141,11 +151,17 @@ NSBitmapImageRep *pixelBitmap(int scale)
       initWithBitmapDataPlanes:nil
                     pixelsWide:
                         static_cast<NSInteger>(
-                            std::lround(style.width)
+                            std::lround(
+                                style.width +
+                                paddingPoints * 2.0
+                            )
                         ) * scale
                     pixelsHigh:
                         static_cast<NSInteger>(
-                            std::lround(style.height)
+                            std::lround(
+                                style.height +
+                                paddingPoints * 2.0
+                            )
                         ) * scale
                  bitsPerSample:8
                samplesPerPixel:4
@@ -154,6 +170,90 @@ NSBitmapImageRep *pixelBitmap(int scale)
                 colorSpaceName:NSDeviceRGBColorSpace
                    bytesPerRow:0
                   bitsPerPixel:0];
+}
+
+NSBitmapImageRep *catBodyBitmap(
+    const InputIndicatorCatPose &pose,
+    const MacInputIndicatorCatArtwork &artwork,
+    const InputIndicatorCatIdleTailFrame &tailFrame,
+    bool facesRight,
+    int scale,
+    int paddingPoints,
+    bool includeHalo
+)
+{
+  NSBitmapImageRep *bitmap =
+      pixelBitmap(scale, paddingPoints);
+  if (!bitmap) {
+    return nil;
+  }
+  NSGraphicsContext *graphics =
+      [NSGraphicsContext
+          graphicsContextWithBitmapImageRep:bitmap];
+  [NSGraphicsContext saveGraphicsState];
+  [NSGraphicsContext setCurrentContext:graphics];
+  CGContextRef context = [graphics CGContext];
+  CGContextSaveGState(context);
+  CGContextScaleCTM(context, scale, scale);
+  CGContextTranslateCTM(
+      context, paddingPoints, paddingPoints
+  );
+  const auto displayOrigin =
+      macInputIndicatorDisplayPoint({});
+  CGContextTranslateCTM(
+      context, displayOrigin.x, displayOrigin.y
+  );
+  CGContextScaleCTM(
+      context,
+      macInputIndicatorPanelStyle().visualScale,
+      macInputIndicatorPanelStyle().visualScale
+  );
+  const auto model =
+      macInputIndicatorRenderModel(
+          InputIndicatorCompanion::Cat
+      );
+  if (!facesRight) {
+    CGContextTranslateCTM(
+        context, model.totalWidth, 0
+    );
+    CGContextScaleCTM(context, -1, 1);
+  }
+
+  NSBezierPath *far = artworkPath(artwork.far);
+  NSBezierPath *near =
+      artworkPath(pose, artwork.near, tailFrame);
+  if (includeHalo) {
+    NSBezierPath *halo =
+        [NSBezierPath bezierPath];
+    [halo appendBezierPath:far];
+    [halo appendBezierPath:near];
+    constexpr double kMaximumHaloScale =
+        1.0 + (1.22 - 1.0) * 0.30;
+    NSAffineTransform *transform =
+        [NSAffineTransform transform];
+    [transform translateXBy:15 yBy:14];
+    [transform scaleXBy:kMaximumHaloScale
+                    yBy:kMaximumHaloScale];
+    [transform translateXBy:-15 yBy:-14];
+    [halo transformUsingAffineTransform:transform];
+    [[NSColor blackColor] setFill];
+    [halo fill];
+  }
+  [[NSColor blackColor] setFill];
+  if (includeHalo) {
+    [[NSColor blackColor] setStroke];
+    [near setLineWidth:0.55];
+    [far setLineWidth:0.55];
+    [near setLineJoinStyle:NSLineJoinStyleRound];
+    [far setLineJoinStyle:NSLineJoinStyleRound];
+    [near stroke];
+    [far stroke];
+  }
+  [near fill];
+  [far fill];
+  CGContextRestoreGState(context);
+  [NSGraphicsContext restoreGraphicsState];
+  return bitmap;
 }
 
 } // namespace
@@ -958,26 +1058,56 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
 {
   using Source =
       deskflow::input::InputIndicatorSource;
-  const struct
+  struct PaintPose
   {
     InputIndicatorMotionState state;
     double phase;
-  } poses[] = {
-      {.state = InputIndicatorMotionState::Idle, .phase = 0.0},
-      {.state = InputIndicatorMotionState::Idle, .phase = 0.25},
-      {.state = InputIndicatorMotionState::Idle, .phase = 0.75},
-      {.state = InputIndicatorMotionState::Walk, .phase = 0.0},
-      {.state = InputIndicatorMotionState::Walk, .phase = 0.34},
-      {.state = InputIndicatorMotionState::Walk, .phase = 0.67},
-      {.state = InputIndicatorMotionState::Run, .phase = 0.0},
-      {.state = InputIndicatorMotionState::Run, .phase = 0.34},
-      {.state = InputIndicatorMotionState::Run, .phase = 0.67},
+    InputIndicatorCatIdleTailFrame tail;
   };
+  std::vector<PaintPose> poses;
+  const double idlePhases[] = {0.0, 0.25, 0.75};
+  const InputIndicatorCatIdleTailMotion idleMotions[] = {
+      InputIndicatorCatIdleTailMotion::RelaxedSway,
+      InputIndicatorCatIdleTailMotion::TipFlick,
+      InputIndicatorCatIdleTailMotion::CurlUnfurl,
+      InputIndicatorCatIdleTailMotion::LazySweep,
+      InputIndicatorCatIdleTailMotion::QuestionLift,
+  };
+  const double idleProgress[] = {0.2, 0.4, 0.6, 0.8};
+  for (const double phase : idlePhases) {
+    for (const auto motion : idleMotions) {
+      for (const double progress : idleProgress) {
+        poses.push_back({
+            .state = InputIndicatorMotionState::Idle,
+            .phase = phase,
+            .tail = {
+                .motion = motion,
+                .progress = progress,
+                .active = true,
+            },
+        });
+      }
+    }
+  }
+  for (const double phase : {0.0, 0.34, 0.67}) {
+    poses.push_back({
+        .state = InputIndicatorMotionState::Walk,
+        .phase = phase,
+    });
+    poses.push_back({
+        .state = InputIndicatorMotionState::Run,
+        .phase = phase,
+    });
+  }
+
   const Source sources[] = {Source::LatinABC, Source::Korean2Set};
   const bool directions[] = {true, false};
   constexpr NSInteger scale = 4;
-  const auto model =
-      macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
+  constexpr int paddingPoints = 4;
+  const auto panelStyle =
+      macInputIndicatorPanelStyle(
+          InputIndicatorCompanion::Cat
+      );
   int cases = 0;
   int outsidePixels = 0;
 
@@ -1012,46 +1142,40 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
           source == Source::LatinABC ? @"A" : @"한";
       for (const bool facesRight : directions) {
         int caseOutsidePixels = 0;
-        NSBitmapImageRep *bodyMask = pixelBitmap(scale);
-        NSBitmapImageRep *glyphMask = pixelBitmap(scale);
+        NSBitmapImageRep *bodyMask =
+            catBodyBitmap(
+                pose,
+                artwork,
+                poseInput.tail,
+                facesRight,
+                scale,
+                paddingPoints,
+                false
+            );
+        NSBitmapImageRep *panelMask =
+            catBodyBitmap(
+                pose,
+                artwork,
+                poseInput.tail,
+                facesRight,
+                scale,
+                paddingPoints,
+                true
+            );
+        NSBitmapImageRep *glyphMask =
+            pixelBitmap(scale, paddingPoints);
         QVERIFY(bodyMask);
+        QVERIFY(panelMask);
         QVERIFY(glyphMask);
 
-        NSGraphicsContext *bodyContext =
-            [NSGraphicsContext
-                graphicsContextWithBitmapImageRep:bodyMask];
-        [NSGraphicsContext saveGraphicsState];
-        [NSGraphicsContext setCurrentContext:bodyContext];
-        CGContextRef bodyCG =
-            [bodyContext CGContext];
-        CGContextSaveGState(bodyCG);
-        CGContextScaleCTM(bodyCG, scale, scale);
-        const auto displayOrigin =
-            macInputIndicatorDisplayPoint({});
-        CGContextTranslateCTM(
-            bodyCG, displayOrigin.x, displayOrigin.y
-        );
-        CGContextScaleCTM(
-            bodyCG,
-            macInputIndicatorPanelStyle().visualScale,
-            macInputIndicatorPanelStyle().visualScale
-        );
-        if (!facesRight) {
-          CGContextTranslateCTM(bodyCG, model.totalWidth, 0);
-          CGContextScaleCTM(bodyCG, -1, 1);
-        }
-        [[NSColor blackColor] setFill];
-        [artworkPath(artwork.far) fill];
-        [artworkPath(pose, artwork.near) fill];
-        CGContextRestoreGState(bodyCG);
-        [NSGraphicsContext restoreGraphicsState];
-
-        const auto target =
+        auto target =
             macInputIndicatorDisplayRect(
                 inputIndicatorCatInnerLanguageBounds(
                     pose, facesRight
                 )
             );
+        target.x += paddingPoints;
+        target.y += paddingPoints;
         const auto displayPreference =
             macInputIndicatorDisplayLabelPreference(
                 source, poseInput.state
@@ -1102,6 +1226,22 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
         CGContextRestoreGState(glyphCG);
         [NSGraphicsContext restoreGraphicsState];
 
+        const NSInteger panelLeft =
+            paddingPoints * scale;
+        const NSInteger panelBottom =
+            paddingPoints * scale;
+        const NSInteger panelRight =
+            panelLeft +
+            static_cast<NSInteger>(
+                std::lround(panelStyle.width)
+            ) *
+                scale;
+        const NSInteger panelTop =
+            panelBottom +
+            static_cast<NSInteger>(
+                std::lround(panelStyle.height)
+            ) *
+                scale;
         for (NSInteger y = 0;
              y < glyphMask.pixelsHigh;
              ++y) {
@@ -1112,8 +1252,19 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
                 [glyphMask colorAtX:x y:y].alphaComponent;
             const double bodyAlpha =
                 [bodyMask colorAtX:x y:y].alphaComponent;
-            if (glyphAlpha > 0.02 &&
-                bodyAlpha <= 0.02) {
+            const double panelAlpha =
+                [panelMask colorAtX:x y:y].alphaComponent;
+            const bool glyphOutsideBody =
+                glyphAlpha > 0.02 &&
+                bodyAlpha <= 0.02;
+            const bool paintOutsidePanel =
+                panelAlpha > 0.02 &&
+                (x < panelLeft ||
+                 x >= panelRight ||
+                 y < panelBottom ||
+                 y >= panelTop);
+            if (glyphOutsideBody ||
+                paintOutsidePanel) {
               ++caseOutsidePixels;
             }
           }
@@ -1124,10 +1275,15 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
                   << poseInput.phase
                   << static_cast<int>(source)
                   << facesRight
+                  << static_cast<int>(
+                         poseInput.tail.motion
+                     )
+                  << poseInput.tail.progress
                   << caseOutsidePixels;
         }
         outsidePixels += caseOutsidePixels;
         [bodyMask release];
+        [panelMask release];
         [glyphMask release];
         ++cases;
       }
@@ -1135,7 +1291,15 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
   }
   qInfo() << "outsidePixels" << outsidePixels
           << "cases" << cases;
-  QCOMPARE(cases, 36);
+  QCOMPARE(
+      cases,
+      static_cast<int>(
+          poses.size() *
+          (sizeof(sources) / sizeof(sources[0])) *
+          (sizeof(directions) /
+           sizeof(directions[0]))
+      )
+  );
   QCOMPARE(outsidePixels, 0);
 }
 
@@ -1419,6 +1583,341 @@ void InputIndicatorGeometryTests::catTailUsesContinuousPhaseLaggedCurve()
   QCOMPARE(reducedFast.middle.y, neutral.middle.y);
   QCOMPARE(reducedFast.tip.x, neutral.tip.x);
   QCOMPARE(reducedFast.tip.y, neutral.tip.y);
+}
+
+void InputIndicatorGeometryTests::catIdleTailMotionsCoverFiveFinitePatterns()
+{
+  auto state =
+      inputIndicatorCatIdleTailMotionInitialState(
+          0x13579bdfU
+      );
+  std::vector<InputIndicatorCatIdleTailMotion> motions;
+  double now = 0;
+  for (int index = 0; index < 10; ++index) {
+    const auto step =
+        inputIndicatorCatIdleTailMotionAdvance(
+            state,
+            InputIndicatorMotionState::Idle,
+            now,
+            false
+        );
+    QVERIFY(step.frame.active);
+    QVERIFY(std::isfinite(step.frame.progress));
+    QVERIFY(step.frame.progress >= 0);
+    QVERIFY(step.frame.progress < 1);
+    if (!motions.empty()) {
+      QVERIFY(motions.back() != step.frame.motion);
+    }
+    motions.push_back(step.frame.motion);
+    state = step.state;
+    now =
+        state.startedMilliseconds +
+        inputIndicatorCatIdleTailMotionDuration(
+            step.frame.motion
+        );
+  }
+
+  const std::set<InputIndicatorCatIdleTailMotion> ids(
+      motions.begin(),
+      motions.begin() + 5
+  );
+  QCOMPARE(ids.size(), size_t{5});
+
+  const std::array<InputIndicatorCatIdleTailMotion, 5>
+      allMotions{{
+          InputIndicatorCatIdleTailMotion::RelaxedSway,
+          InputIndicatorCatIdleTailMotion::TipFlick,
+          InputIndicatorCatIdleTailMotion::CurlUnfurl,
+          InputIndicatorCatIdleTailMotion::LazySweep,
+          InputIndicatorCatIdleTailMotion::QuestionLift,
+      }};
+  std::array<std::vector<InputIndicatorPoint>, 5> samples;
+  for (size_t motionIndex = 0;
+       motionIndex < allMotions.size();
+       ++motionIndex) {
+    for (int sample = 0; sample <= 100; ++sample) {
+      const double progress = sample / 100.0;
+      const auto offset =
+          inputIndicatorCatIdleTailOffset(
+              allMotions[motionIndex], progress
+          );
+      QVERIFY(std::isfinite(offset.x));
+      QVERIFY(std::isfinite(offset.y));
+      QVERIFY(std::abs(offset.x) <= 0.90 + 1e-12);
+      QVERIFY(std::abs(offset.y) <= 1.35 + 1e-12);
+      if (sample % 20 == 0) {
+        samples[motionIndex].push_back(offset);
+      }
+    }
+    const auto start =
+        inputIndicatorCatIdleTailOffset(
+            allMotions[motionIndex], 0
+        );
+    const auto end =
+        inputIndicatorCatIdleTailOffset(
+            allMotions[motionIndex], 1
+        );
+    QCOMPARE(start.x, 0.0);
+    QCOMPARE(start.y, 0.0);
+    QCOMPARE(end.x, 0.0);
+    QCOMPARE(end.y, 0.0);
+  }
+  for (size_t left = 0; left < samples.size(); ++left) {
+    for (size_t right = left + 1;
+         right < samples.size();
+         ++right) {
+      double difference = 0;
+      for (size_t index = 0;
+           index < samples[left].size();
+           ++index) {
+        difference = std::max(
+            difference,
+            std::hypot(
+                samples[left][index].x -
+                    samples[right][index].x,
+                samples[left][index].y -
+                    samples[right][index].y
+            )
+        );
+      }
+      QVERIFY(difference > 0.1);
+    }
+  }
+}
+
+void InputIndicatorGeometryTests::catIdleTailMotionGatesMovementAndReducedMotion()
+{
+  const auto fresh =
+      inputIndicatorCatIdleTailMotionInitialState(
+          0x2468ace0U
+      );
+  const auto idle =
+      inputIndicatorCatIdleTailMotionAdvance(
+          fresh,
+          InputIndicatorMotionState::Idle,
+          1000,
+          false
+      );
+  QVERIFY(idle.frame.active);
+
+  const auto walk =
+      inputIndicatorCatIdleTailMotionAdvance(
+          idle.state,
+          InputIndicatorMotionState::Walk,
+          1100,
+          false
+      );
+  QVERIFY(!walk.frame.active);
+  QCOMPARE(walk.frame.progress, 0.0);
+  const auto run =
+      inputIndicatorCatIdleTailMotionAdvance(
+          walk.state,
+          InputIndicatorMotionState::Run,
+          1200,
+          false
+      );
+  QVERIFY(!run.frame.active);
+  QCOMPARE(run.frame.progress, 0.0);
+
+  const auto reentered =
+      inputIndicatorCatIdleTailMotionAdvance(
+          run.state,
+          InputIndicatorMotionState::Idle,
+          2000,
+          false
+      );
+  QVERIFY(reentered.frame.active);
+  QVERIFY(reentered.frame.motion != idle.frame.motion);
+  QCOMPARE(reentered.frame.progress, 0.0);
+  QCOMPARE(reentered.state.startedMilliseconds, 2000.0);
+
+  const auto reduced =
+      inputIndicatorCatIdleTailMotionAdvance(
+          fresh,
+          InputIndicatorMotionState::Idle,
+          1000,
+          true
+      );
+  QVERIFY(!reduced.frame.active);
+  QCOMPARE(reduced.state.seed, fresh.seed);
+  QCOMPARE(
+      reduced.state.remainingMask,
+      fresh.remainingMask
+  );
+  QCOMPARE(
+      reduced.state.hasLastMotion,
+      fresh.hasLastMotion
+  );
+  QCOMPARE(reduced.frame.progress, 0.0);
+  const InputIndicatorPoint rest{.x = 3.4, .y = 7.0};
+  const auto unchanged =
+      inputIndicatorCatIdleTailPoint(
+          rest, reduced.frame
+      );
+  QCOMPARE(unchanged.x, rest.x);
+  QCOMPARE(unchanged.y, rest.y);
+
+  const auto invalidTime =
+      inputIndicatorCatIdleTailMotionAdvance(
+          fresh,
+          InputIndicatorMotionState::Idle,
+          std::numeric_limits<double>::quiet_NaN(),
+          false
+      );
+  QVERIFY(std::isfinite(
+      invalidTime.frame.progress
+  ));
+  QVERIFY(std::isfinite(
+      invalidTime.state.startedMilliseconds
+  ));
+
+  const auto nan =
+      inputIndicatorCatIdleTailOffset(
+          InputIndicatorCatIdleTailMotion::LazySweep,
+          std::numeric_limits<double>::quiet_NaN()
+      );
+  const auto negative =
+      inputIndicatorCatIdleTailOffset(
+          InputIndicatorCatIdleTailMotion::LazySweep,
+          -1
+      );
+  const auto over =
+      inputIndicatorCatIdleTailOffset(
+          InputIndicatorCatIdleTailMotion::LazySweep,
+          2
+      );
+  QCOMPARE(nan.x, 0.0);
+  QCOMPARE(nan.y, 0.0);
+  QCOMPARE(negative.x, 0.0);
+  QCOMPARE(negative.y, 0.0);
+  QCOMPARE(over.x, 0.0);
+  QCOMPARE(over.y, 0.0);
+}
+
+void InputIndicatorGeometryTests::catIdleTailMotionIsSeededAndFacingDeterministic()
+{
+  auto leftState =
+      inputIndicatorCatIdleTailMotionInitialState(
+          0x10203040U
+      );
+  auto rightState =
+      inputIndicatorCatIdleTailMotionInitialState(
+          0x10203040U
+      );
+  for (const double time : {0.0, 300.0, 900.0, 1800.0, 2700.0}) {
+    const auto left =
+        inputIndicatorCatIdleTailMotionAdvance(
+            leftState,
+            InputIndicatorMotionState::Idle,
+            time,
+            false
+        );
+    const auto right =
+        inputIndicatorCatIdleTailMotionAdvance(
+            rightState,
+            InputIndicatorMotionState::Idle,
+            time,
+            false
+        );
+    QCOMPARE(left.state.seed, right.state.seed);
+    QCOMPARE(
+        left.state.remainingMask,
+        right.state.remainingMask
+    );
+    QCOMPARE(
+        left.state.lastMotion,
+        right.state.lastMotion
+    );
+    QCOMPARE(left.state.running, right.state.running);
+    QCOMPARE(
+        left.state.startedMilliseconds,
+        right.state.startedMilliseconds
+    );
+    QCOMPARE(left.frame.motion, right.frame.motion);
+    QCOMPARE(left.frame.progress, right.frame.progress);
+    leftState = left.state;
+    rightState = right.state;
+  }
+
+  bool differentOrder = false;
+  auto firstState =
+      inputIndicatorCatIdleTailMotionInitialState(1);
+  auto secondState =
+      inputIndicatorCatIdleTailMotionInitialState(
+          0xfeedcafeU
+      );
+  for (int index = 0; index < 5; ++index) {
+    const double time =
+        index == 0
+            ? 0
+            : firstState.startedMilliseconds +
+                  inputIndicatorCatIdleTailMotionDuration(
+                      firstState.lastMotion
+                  );
+    const auto first =
+        inputIndicatorCatIdleTailMotionAdvance(
+            firstState,
+            InputIndicatorMotionState::Idle,
+            time,
+            false
+        );
+    const double secondTime =
+        index == 0
+            ? 0
+            : secondState.startedMilliseconds +
+                  inputIndicatorCatIdleTailMotionDuration(
+                      secondState.lastMotion
+                  );
+    const auto second =
+        inputIndicatorCatIdleTailMotionAdvance(
+            secondState,
+            InputIndicatorMotionState::Idle,
+            secondTime,
+            false
+        );
+    differentOrder =
+        differentOrder ||
+        first.frame.motion != second.frame.motion;
+    firstState = first.state;
+    secondState = second.state;
+  }
+  QVERIFY(differentOrder);
+
+  const auto active =
+      inputIndicatorCatIdleTailMotionAdvance(
+          inputIndicatorCatIdleTailMotionInitialState(
+              0xabcdef01U
+          ),
+          InputIndicatorMotionState::Idle,
+          0,
+          false
+      );
+  const auto midpoint =
+      inputIndicatorCatIdleTailMotionAdvance(
+          active.state,
+          InputIndicatorMotionState::Idle,
+          inputIndicatorCatIdleTailMotionDuration(
+              active.frame.motion
+          ) * 0.5,
+          false
+      );
+  QVERIFY(midpoint.frame.active);
+  const auto sourcePoint =
+      InputIndicatorPoint{.x = 3.4, .y = 7.0};
+  const auto right =
+      inputIndicatorCatIdleTailPoint(
+          sourcePoint, midpoint.frame
+      );
+  const auto left =
+      inputIndicatorCatFacingPoint(right, false);
+  const auto restored =
+      inputIndicatorCatFacingPoint(left, false);
+  QCOMPARE(left.x, 30.0 - right.x);
+  QCOMPARE(left.y, right.y);
+  QCOMPARE(restored.x, right.x);
+  QCOMPARE(restored.y, right.y);
+  QVERIFY(right.x != sourcePoint.x ||
+          right.y != sourcePoint.y);
 }
 
 void InputIndicatorGeometryTests::companionSettingDefaultsToCat()

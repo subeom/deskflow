@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -44,6 +45,40 @@ enum class InputIndicatorMotionState
   Idle,
   Walk,
   Run
+};
+
+enum class InputIndicatorCatIdleTailMotion : unsigned char
+{
+  RelaxedSway,
+  TipFlick,
+  CurlUnfurl,
+  LazySweep,
+  QuestionLift
+};
+
+struct InputIndicatorCatIdleTailMotionState
+{
+  std::uint32_t seed = 0;
+  std::uint32_t remainingMask = 0x1f;
+  InputIndicatorCatIdleTailMotion lastMotion =
+      InputIndicatorCatIdleTailMotion::RelaxedSway;
+  bool hasLastMotion = false;
+  bool running = false;
+  double startedMilliseconds = 0;
+};
+
+struct InputIndicatorCatIdleTailFrame
+{
+  InputIndicatorCatIdleTailMotion motion =
+      InputIndicatorCatIdleTailMotion::RelaxedSway;
+  double progress = 0;
+  bool active = false;
+};
+
+struct InputIndicatorCatIdleTailMotionStep
+{
+  InputIndicatorCatIdleTailMotionState state;
+  InputIndicatorCatIdleTailFrame frame;
 };
 
 enum class InputIndicatorCatArtworkFrame
@@ -154,6 +189,42 @@ InputIndicatorPoint inputIndicatorCatTorsoPoint(
     const InputIndicatorCatPose &pose,
     InputIndicatorPoint point
 );
+
+InputIndicatorCatIdleTailMotionState
+inputIndicatorCatIdleTailMotionInitialState(
+    std::uint32_t seed
+);
+
+double inputIndicatorCatIdleTailMotionDuration(
+    InputIndicatorCatIdleTailMotion motion
+);
+
+InputIndicatorCatIdleTailMotionStep
+inputIndicatorCatIdleTailMotionAdvance(
+    const InputIndicatorCatIdleTailMotionState &state,
+    InputIndicatorMotionState motionState,
+    double nowMilliseconds,
+    bool reducedMotion
+);
+
+InputIndicatorPoint inputIndicatorCatIdleTailOffset(
+    InputIndicatorCatIdleTailMotion motion,
+    double progress
+);
+
+InputIndicatorPoint inputIndicatorCatIdleTailPoint(
+    InputIndicatorPoint point,
+    const InputIndicatorCatIdleTailFrame &frame
+);
+
+constexpr InputIndicatorPoint inputIndicatorCatFacingPoint(
+    InputIndicatorPoint point, bool facesRight
+)
+{
+  return facesRight
+      ? point
+      : InputIndicatorPoint{.x = 30.0 - point.x, .y = point.y};
+}
 
 InputIndicatorTailPose inputIndicatorCatTailPose(
     InputIndicatorPoint root,

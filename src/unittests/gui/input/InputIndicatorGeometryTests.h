@@ -35,6 +35,9 @@ private Q_SLOTS:
   void companionHaloPulsesStayBoundedAndReducedMotionSafe();
   void companionRenderAlphaFollowsSettingAndBoundsDetail();
   void catTailUsesContinuousPhaseLaggedCurve();
+  void catIdleTailMotionsCoverFiveFinitePatterns();
+  void catIdleTailMotionGatesMovementAndReducedMotion();
+  void catIdleTailMotionIsSeededAndFacingDeterministic();
   void companionSettingDefaultsToCat();
   void motionOffsetClampsAndRespectsReducedMotion();
   void transitionProgressEasesAndRespectsReducedMotion();
