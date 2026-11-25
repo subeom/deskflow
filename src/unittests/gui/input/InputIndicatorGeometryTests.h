@@ -59,6 +59,13 @@ private Q_SLOTS:
   void catPursuitRotatesSilhouetteButKeepsGlyphUpright();
   void catPursuitCanvasContainsEightHeadings();
   void catPursuitCaretTargetFollowsSamePath();
+  void catStartleFurReachesTwoPointFourWithoutChangingTiming();
+  void catStartleGlowUsesOneBoundedEnvelope();
+  void catStartleLatestSourceSelectsGlowColor();
+  void catStartleFurAndGlowRespectReducedMotion();
+  void catStartleFurIsVisiblyStrongerThanOldPeak();
+  void catStartleGlowIsSingleColoredAndBehindBody();
+  void catStartleFurAndGlowStayInsideRotatingCanvas();
   void companionSettingDefaultsToCat();
   void motionOffsetClampsAndRespectsReducedMotion();
   void transitionProgressEasesAndRespectsReducedMotion();

@@ -330,7 +330,10 @@ void drawCat(
     double facingScaleX,
     double bodyHeadingRadians,
     const InputIndicatorCatIdleTailFrame &idleTailFrame,
-    const InputIndicatorCatStartleFrame &startleFrame
+    const InputIndicatorCatStartleFrame &startleFrame,
+    deskflow::input::InputIndicatorSource reactionSource,
+    InputIndicatorTone tone,
+    MacInputIndicatorRenderAlpha alpha
 )
 {
   (void)bounds;
@@ -361,6 +364,42 @@ void drawCat(
       facingScaleX,
       bodyHeadingRadians
   );
+
+  if (!reducedMotion &&
+      startleFrame.active &&
+      startleFrame.haloAlpha > 0) {
+    NSBezierPath *halo =
+        [NSBezierPath bezierPath];
+    appendPath(halo, far);
+    appendPath(halo, near);
+    NSAffineTransform *haloTransform =
+        [NSAffineTransform transform];
+    [haloTransform translateXBy:15 yBy:14];
+    [haloTransform scaleXBy:startleFrame.haloScale
+                        yBy:startleFrame.haloScale];
+    [haloTransform translateXBy:-15 yBy:-14];
+    [halo transformUsingAffineTransform:haloTransform];
+
+    NSColor *haloColor =
+        indicatorGlyphColor(
+            reactionSource,
+            tone,
+            alpha.detail *
+                startleFrame.haloAlpha
+        );
+    NSShadow *haloShadow =
+        [[NSShadow alloc] init];
+    haloShadow.shadowOffset =
+        NSMakeSize(0, 0);
+    haloShadow.shadowBlurRadius = 2.2;
+    haloShadow.shadowColor = haloColor;
+    [NSGraphicsContext saveGraphicsState];
+    [haloShadow set];
+    [haloColor setFill];
+    [halo fill];
+    [NSGraphicsContext restoreGraphicsState];
+    [haloShadow release];
+  }
 
   NSColor *farFill =
       [fill blendedColorWithFraction:0.18 ofColor:edge];
@@ -764,6 +803,8 @@ void drawLanguageGlyph(
 @property(nonatomic) double catStartleRecoilOffsetX;
 @property(nonatomic) double catStartleHorizontalScale;
 @property(nonatomic) double catStartleDorsalLift;
+@property(nonatomic) double catStartleHaloScale;
+@property(nonatomic) double catStartleHaloAlpha;
 @property(nonatomic) double catBodyHeadingRadians;
 @end
 
@@ -811,6 +852,10 @@ void drawLanguageGlyph(
               self.catStartleHorizontalScale,
           .dorsalLift =
               self.catStartleDorsalLift,
+          .haloScale =
+              self.catStartleHaloScale,
+          .haloAlpha =
+              self.catStartleHaloAlpha,
       };
   const auto alpha = deskflow::gui::input::
       macInputIndicatorRenderAlpha(
@@ -868,7 +913,12 @@ void drawLanguageGlyph(
         self.facingScaleX,
         self.catBodyHeadingRadians,
         idleTailFrame,
-        startleFrame
+        startleFrame,
+        static_cast<deskflow::input::InputIndicatorSource>(
+            self.catStartleLatestSource
+        ),
+        tone,
+        alpha
     );
     break;
   case deskflow::gui::input::InputIndicatorCompanion::Dog:
@@ -1221,6 +1271,8 @@ bool MacInputIndicatorPanel::show(
   m_impl->view.catStartleRecoilOffsetX = 0;
   m_impl->view.catStartleHorizontalScale = 1;
   m_impl->view.catStartleDorsalLift = 0;
+  m_impl->view.catStartleHaloScale = 1;
+  m_impl->view.catStartleHaloAlpha = 0;
   m_impl->view.catBodyHeadingRadians = 0;
   [m_impl->view setNeedsDisplay:YES];
   return move(options.position).visible;
@@ -1629,6 +1681,14 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
           startleStep.frame.dorsalLift
       ) > kRedrawTolerance ||
       std::abs(
+          m_impl->view.catStartleHaloScale -
+          startleStep.frame.haloScale
+      ) > kRedrawTolerance ||
+      std::abs(
+          m_impl->view.catStartleHaloAlpha -
+          startleStep.frame.haloAlpha
+      ) > kRedrawTolerance ||
+      std::abs(
           m_impl->view.catBodyHeadingRadians -
           bodyHeadingRadians
       ) > kRedrawTolerance;
@@ -1668,6 +1728,10 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       startleStep.frame.horizontalScale;
   m_impl->view.catStartleDorsalLift =
       startleStep.frame.dorsalLift;
+  m_impl->view.catStartleHaloScale =
+      startleStep.frame.haloScale;
+  m_impl->view.catStartleHaloAlpha =
+      startleStep.frame.haloAlpha;
   m_impl->view.catBodyHeadingRadians =
       bodyHeadingRadians;
   if (viewNeedsDisplay) {
@@ -1727,6 +1791,8 @@ void MacInputIndicatorPanel::hide()
   m_impl->view.catStartleRecoilOffsetX = 0;
   m_impl->view.catStartleHorizontalScale = 1;
   m_impl->view.catStartleDorsalLift = 0;
+  m_impl->view.catStartleHaloScale = 1;
+  m_impl->view.catStartleHaloAlpha = 0;
   [m_impl->panel orderOut:nil];
 }
 

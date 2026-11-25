@@ -42,7 +42,9 @@ constexpr double kCatStartleMinimumStartIntervalMilliseconds =
 constexpr double kCatStartleDurationMilliseconds = 300;
 constexpr double kCatStartleRecoilOffsetX = -0.45;
 constexpr double kCatStartleHorizontalScale = 0.92;
-constexpr double kCatStartleDorsalLift = 1.8;
+constexpr double kCatStartleDorsalLift = 2.4;
+constexpr double kCatStartleMaximumHaloScale = 1.12;
+constexpr double kCatStartleMaximumHaloAlpha = 0.16;
 constexpr double kCatWalkSpeedPointsPerSecond = 120;
 constexpr double kCatRunSpeedPointsPerSecond = 720;
 constexpr double kCatRunTargetSpeedPointsPerSecond =
@@ -937,6 +939,17 @@ inputIndicatorCatSourceStartleAdvance(
           0.0,
           1.0
       );
+  const double haloEnvelope =
+      std::sin(
+          result.frame.progress * kPi
+      );
+  result.frame.haloScale =
+      1.0 +
+      (kCatStartleMaximumHaloScale - 1.0) *
+          haloEnvelope;
+  result.frame.haloAlpha =
+      kCatStartleMaximumHaloAlpha *
+      haloEnvelope;
   if (age <= 70) {
     const double attack =
         smoothstep01(age / 70.0);

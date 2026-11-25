@@ -270,7 +270,10 @@ NSBitmapImageRep *catBodyBitmap(
     double bodyHeadingRadians =
         std::numeric_limits<double>::quiet_NaN(),
     bool canvas = false,
-    double facingScaleX = 1
+    double facingScaleX = 1,
+    bool includeGlow = false,
+    deskflow::input::InputIndicatorSource glowSource =
+        deskflow::input::InputIndicatorSource::LatinABC
 )
 {
   const double effectiveHeading =
@@ -331,6 +334,42 @@ NSBitmapImageRep *catBodyBitmap(
           facingScaleX,
           effectiveHeading
       );
+  if (includeGlow &&
+      startleFrame.active &&
+      startleFrame.haloAlpha > 0) {
+    NSBezierPath *halo =
+        [NSBezierPath bezierPath];
+    [halo appendBezierPath:far];
+    [halo appendBezierPath:near];
+    NSAffineTransform *haloTransform =
+        [NSAffineTransform transform];
+    [haloTransform translateXBy:15 yBy:14];
+    [haloTransform scaleXBy:startleFrame.haloScale
+                        yBy:startleFrame.haloScale];
+    [haloTransform translateXBy:-15 yBy:-14];
+    [halo transformUsingAffineTransform:haloTransform];
+    const auto color =
+        macInputIndicatorGlyphColor(
+            glowSource,
+            InputIndicatorTone::Automatic
+        );
+    NSColor *haloColor =
+        [NSColor colorWithSRGBRed:color.red
+                             green:color.green
+                              blue:color.blue
+                             alpha:startleFrame.haloAlpha];
+    NSShadow *haloShadow =
+        [[NSShadow alloc] init];
+    haloShadow.shadowOffset = NSMakeSize(0, 0);
+    haloShadow.shadowBlurRadius = 2.2;
+    haloShadow.shadowColor = haloColor;
+    [NSGraphicsContext saveGraphicsState];
+    [haloShadow set];
+    [haloColor setFill];
+    [halo fill];
+    [NSGraphicsContext restoreGraphicsState];
+    [haloShadow release];
+  }
   [[NSColor blackColor] setFill];
   if (includeStroke) {
     [[NSColor blackColor] setStroke];
@@ -2804,7 +2843,7 @@ void InputIndicatorGeometryTests::catSourceStartleTimelineUsesFiniteNeutralEndpo
   QVERIFY(fur.frame.active);
   QCOMPARE(fur.frame.recoilOffsetX, 0.0);
   QCOMPARE(fur.frame.horizontalScale, 1.0);
-  QVERIFY(std::abs(fur.frame.dorsalLift - 1.8) < 1e-9);
+  QVERIFY(std::abs(fur.frame.dorsalLift - 2.4) < 1e-9);
   QVERIFY(!ended.frame.active);
   QCOMPARE(ended.frame.recoilOffsetX, 0.0);
   QCOMPARE(ended.frame.horizontalScale, 1.0);
@@ -2828,7 +2867,7 @@ void InputIndicatorGeometryTests::catSourceStartleTimelineUsesFiniteNeutralEndpo
     QVERIFY(step.frame.horizontalScale >= 0.92);
     QVERIFY(step.frame.horizontalScale <= 1);
     QVERIFY(step.frame.dorsalLift >= 0);
-    QVERIFY(step.frame.dorsalLift <= 1.8);
+    QVERIFY(step.frame.dorsalLift <= 2.4);
   }
 
   const InputIndicatorPoint point{
@@ -4577,6 +4616,732 @@ void InputIndicatorGeometryTests::catPursuitCaretTargetFollowsSamePath()
       panel.move(options.position);
   QVERIFY(pointerStep.visible);
   QCOMPARE(pointerStep.frameIntervalMilliseconds, 8);
+}
+
+void InputIndicatorGeometryTests::catStartleFurReachesTwoPointFourWithoutChangingTiming()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto state =
+      inputIndicatorCatSourceStartleTrigger(
+          {},
+          Source::LatinABC,
+          Source::Korean2Set,
+          0,
+          false
+      );
+  const auto recoil =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 70, false
+      );
+  const auto peak =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 160, false
+      );
+  const auto ended =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 300, false
+      );
+
+  QCOMPARE(recoil.frame.dorsalLift, 0.0);
+  QVERIFY(std::abs(
+      peak.frame.dorsalLift - 2.4
+  ) < 1e-9);
+  QVERIFY(!ended.frame.active);
+  QCOMPARE(ended.frame.dorsalLift, 0.0);
+
+  const InputIndicatorPoint dorsal{
+      .x = 15.5,
+      .y = 12.5,
+  };
+  const auto peakPoint =
+      inputIndicatorCatStartlePoint(
+          dorsal, peak.frame, true
+      );
+  QVERIFY(std::abs(
+      peakPoint.y - dorsal.y - 2.4
+  ) < 1e-9);
+}
+
+void InputIndicatorGeometryTests::catStartleGlowUsesOneBoundedEnvelope()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto state =
+      inputIndicatorCatSourceStartleTrigger(
+          {},
+          Source::LatinABC,
+          Source::Korean2Set,
+          0,
+          false
+      );
+  const auto start =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 0, false
+      );
+  const auto peak =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 150, false
+      );
+  const auto ended =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 300, false
+      );
+  QCOMPARE(start.frame.haloScale, 1.0);
+  QCOMPARE(start.frame.haloAlpha, 0.0);
+  QVERIFY(std::abs(
+      peak.frame.haloScale - 1.12
+  ) < 1e-9);
+  QVERIFY(std::abs(
+      peak.frame.haloAlpha - 0.16
+  ) < 1e-9);
+  QCOMPARE(ended.frame.haloScale, 1.0);
+  QCOMPARE(ended.frame.haloAlpha, 0.0);
+
+  for (double age = 0; age <= 300; age += 1) {
+    const auto step =
+        inputIndicatorCatSourceStartleAdvance(
+            state, age, false
+        );
+    QVERIFY(std::isfinite(step.frame.haloScale));
+    QVERIFY(std::isfinite(step.frame.haloAlpha));
+    QVERIFY(step.frame.haloScale >= 1.0);
+    QVERIFY(step.frame.haloScale <= 1.12);
+    QVERIFY(step.frame.haloAlpha >= 0.0);
+    QVERIFY(step.frame.haloAlpha <= 0.16);
+  }
+}
+
+void InputIndicatorGeometryTests::catStartleLatestSourceSelectsGlowColor()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  auto state =
+      inputIndicatorCatSourceStartleTrigger(
+          {},
+          Source::LatinABC,
+          Source::Korean2Set,
+          0,
+          false
+      );
+  state =
+      inputIndicatorCatSourceStartleTrigger(
+          state,
+          Source::Korean2Set,
+          Source::LatinABC,
+          20,
+          false
+      );
+  const auto step =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 50, false
+      );
+  const auto colored =
+      inputIndicatorCatSourceStartleAdvance(
+          step.state, 100, false
+      );
+  QCOMPARE(
+      step.state.latestSource,
+      Source::LatinABC
+  );
+  const auto selected =
+      macInputIndicatorGlyphColor(
+          step.state.latestSource,
+          InputIndicatorTone::Automatic
+      );
+  const auto latin =
+      macInputIndicatorGlyphColor(
+          Source::LatinABC,
+          InputIndicatorTone::Automatic
+      );
+  const auto korean =
+      macInputIndicatorGlyphColor(
+          Source::Korean2Set,
+          InputIndicatorTone::Automatic
+      );
+  QCOMPARE(selected.red, latin.red);
+  QCOMPARE(selected.green, latin.green);
+  QCOMPARE(selected.blue, latin.blue);
+  QVERIFY(selected.blue > selected.red);
+  QVERIFY(korean.red > korean.blue);
+  QVERIFY(colored.frame.haloAlpha > 0.0);
+}
+
+void InputIndicatorGeometryTests::catStartleFurAndGlowRespectReducedMotion()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto state =
+      inputIndicatorCatSourceStartleTrigger(
+          {},
+          Source::LatinABC,
+          Source::Korean2Set,
+          0,
+          false
+      );
+  const auto reduced =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 160, true
+      );
+  QVERIFY(!reduced.frame.active);
+  QCOMPARE(reduced.frame.dorsalLift, 0.0);
+  QCOMPARE(reduced.frame.haloScale, 1.0);
+  QCOMPARE(reduced.frame.haloAlpha, 0.0);
+  QVERIFY(!reduced.state.active);
+  QVERIFY(!reduced.state.pending);
+}
+
+void InputIndicatorGeometryTests::catStartleFurIsVisiblyStrongerThanOldPeak()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto pose =
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Idle, 0, false
+      );
+  const auto artwork =
+      macInputIndicatorCatArtwork(pose.artworkFrame);
+  const auto state =
+      inputIndicatorCatSourceStartleTrigger(
+          {},
+          Source::LatinABC,
+          Source::Korean2Set,
+          0,
+          false
+      );
+  const auto peak =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 160, false
+      );
+  auto oldPeak = peak.frame;
+  oldPeak.dorsalLift = 1.8;
+  const InputIndicatorCatIdleTailFrame restTail;
+
+  for (const int scale : {1, 2}) {
+    NSBitmapImageRep *baseline =
+        catBodyBitmap(
+            pose,
+            artwork,
+            restTail,
+            true,
+            scale,
+            4,
+            false,
+            {},
+            0,
+            true
+        );
+    NSBitmapImageRep *oldFur =
+        catBodyBitmap(
+            pose,
+            artwork,
+            restTail,
+            true,
+            scale,
+            4,
+            false,
+            oldPeak,
+            0,
+            true
+        );
+    NSBitmapImageRep *newFur =
+        catBodyBitmap(
+            pose,
+            artwork,
+            restTail,
+            true,
+            scale,
+            4,
+            false,
+            peak.frame,
+            0,
+            true
+        );
+    QVERIFY(baseline);
+    QVERIFY(oldFur);
+    QVERIFY(newFur);
+    const int oldChanged =
+        bitmapChangedPixels(baseline, oldFur);
+    const int newChanged =
+        bitmapChangedPixels(baseline, newFur);
+    const int additional =
+        bitmapChangedPixels(oldFur, newFur);
+    qInfo() << "cat-fur-pixels"
+            << "scale" << scale
+            << "old" << oldChanged
+            << "new" << newChanged
+            << "additional" << additional;
+    QVERIFY(oldChanged > 0);
+    QVERIFY(newChanged > oldChanged);
+    QVERIFY(additional > 0);
+    [baseline release];
+    [oldFur release];
+    [newFur release];
+  }
+}
+
+void InputIndicatorGeometryTests::catStartleGlowIsSingleColoredAndBehindBody()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  const InputIndicatorPoint fixedPointer{
+      .x = fixedCursor.x,
+      .y = fixedCursor.y,
+  };
+  const struct
+  {
+    Source from;
+    Source to;
+    bool redDominant;
+  } transitions[] = {
+      {Source::LatinABC, Source::Korean2Set, true},
+      {Source::Korean2Set, Source::LatinABC, false},
+  };
+
+  for (const auto transition : transitions) {
+    InputIndicatorTarget target{
+        .point = fixedPointer,
+        .kind = InputIndicatorTargetKind::Pointer,
+    };
+    MacInputIndicatorPanel panel(
+        {},
+        [&target] {
+          return target;
+        }
+    );
+    MacInputIndicatorPanelOptions options{
+        .source = transition.from,
+        .companion = InputIndicatorCompanion::Cat,
+    };
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    options.source = transition.to;
+    QVERIFY(panel.show(options));
+    QVERIFY([view respondsToSelector:
+                     NSSelectorFromString(
+                         @"catStartleHaloScale"
+                     )]);
+    QVERIFY([view respondsToSelector:
+                     NSSelectorFromString(
+                         @"catStartleHaloAlpha"
+                     )]);
+
+    const auto countHaloPixels =
+        [&](double waitMilliseconds) -> std::pair<int, int> {
+          QTest::qWait(
+              static_cast<int>(waitMilliseconds)
+          );
+          const auto result =
+              panel.move(options.position);
+          if (!result.visible) {
+            return {-1, -1};
+          }
+          [view displayIfNeeded];
+          const InputIndicatorCatStartleFrame frame{
+              .active =
+                  [[view valueForKey:@"catStartleActive"]
+                      boolValue],
+              .progress =
+                  [[view valueForKey:@"catStartleProgress"]
+                      doubleValue],
+              .recoilOffsetX =
+                  [[view valueForKey:@"catStartleRecoilOffsetX"]
+                      doubleValue],
+              .horizontalScale =
+                  [[view valueForKey:@"catStartleHorizontalScale"]
+                      doubleValue],
+              .dorsalLift =
+                  [[view valueForKey:@"catStartleDorsalLift"]
+                      doubleValue],
+              .haloScale =
+                  [[view valueForKey:@"catStartleHaloScale"]
+                      doubleValue],
+              .haloAlpha =
+                  [[view valueForKey:@"catStartleHaloAlpha"]
+                      doubleValue],
+          };
+          const InputIndicatorCatIdleTailFrame tail{
+              .motion = static_cast<
+                  InputIndicatorCatIdleTailMotion>(
+                  [[view valueForKey:@"catIdleTailMotion"]
+                      integerValue]
+              ),
+              .progress =
+                  [[view valueForKey:@"catIdleTailProgress"]
+                      doubleValue],
+              .active =
+                  [[view valueForKey:@"catIdleTailActive"]
+                      boolValue],
+          };
+          const bool facesRight =
+              [[view valueForKey:@"facesRight"]
+                  boolValue];
+          const double facingScale =
+              [[view valueForKey:@"facingScaleX"]
+                  doubleValue];
+          const double heading =
+              [[view valueForKey:@"catBodyHeadingRadians"]
+                  doubleValue];
+          const auto pose =
+              inputIndicatorCatPose(
+                  InputIndicatorMotionState::Idle,
+                  0,
+                  false
+              );
+          const auto artwork =
+              macInputIndicatorCatArtwork(
+                  pose.artworkFrame
+              );
+          constexpr int scale = 2;
+          NSBitmapImageRep *body =
+              catBodyBitmap(
+                  pose,
+                  artwork,
+                  tail,
+                  facesRight,
+                  scale,
+                  0,
+                  true,
+                  frame,
+                  heading,
+                  true,
+                  facingScale
+              );
+          NSBitmapImageRep *actual =
+              [view bitmapImageRepForCachingDisplayInRect:
+                        view.bounds];
+          if (!body || !actual) {
+            if (body) {
+              [body release];
+            }
+            return {-1, -1};
+          }
+          [view cacheDisplayInRect:view.bounds
+                 toBitmapImageRep:actual];
+          int pixels = 0;
+          int colorMatches = 0;
+          for (NSInteger y = 0;
+               y < actual.pixelsHigh;
+               ++y) {
+            for (NSInteger x = 0;
+                 x < actual.pixelsWide;
+                 ++x) {
+              const NSColor *color =
+                  [actual colorAtX:x y:y];
+              const double actualAlpha =
+                  color.alphaComponent;
+              const double bodyAlpha =
+                  [body colorAtX:x y:y]
+                      .alphaComponent;
+              if (actualAlpha <= 0.02 ||
+                  bodyAlpha > 0.02) {
+                continue;
+              }
+              ++pixels;
+              if ((transition.redDominant &&
+                   color.redComponent >
+                       color.blueComponent) ||
+                  (!transition.redDominant &&
+                   color.blueComponent >
+                       color.redComponent)) {
+                ++colorMatches;
+              }
+            }
+          }
+          [body release];
+          return std::pair<int, int>{
+              pixels, colorMatches
+          };
+        };
+
+    const auto atStart =
+        countHaloPixels(0);
+    QVERIFY(atStart.first >= 0);
+    const auto atPeak =
+        countHaloPixels(160);
+    QVERIFY(atPeak.first >= 0);
+    QVERIFY(atPeak.first > 0);
+    QVERIFY(atPeak.second >= atPeak.first / 2);
+    QVERIFY(
+        [[view valueForKey:@"catStartleHaloScale"]
+            doubleValue] <= 1.12
+    );
+    QVERIFY(
+        [[view valueForKey:@"catStartleHaloAlpha"]
+            doubleValue] <= 0.16
+    );
+    const auto atEnd =
+        countHaloPixels(160);
+    QVERIFY(atEnd.first >= 0);
+    QCOMPARE(atEnd.first, 0);
+    panel.hide();
+  }
+}
+
+void InputIndicatorGeometryTests::catStartleFurAndGlowStayInsideRotatingCanvas()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto pose =
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Idle, 0, false
+      );
+  const auto artwork =
+      macInputIndicatorCatArtwork(pose.artworkFrame);
+  const InputIndicatorCatIdleTailFrame tail{
+      .motion =
+          InputIndicatorCatIdleTailMotion::QuestionLift,
+      .progress = 0.5,
+      .active = true,
+  };
+  const auto state =
+      inputIndicatorCatSourceStartleTrigger(
+          {},
+          Source::LatinABC,
+          Source::Korean2Set,
+          0,
+          false
+      );
+  const auto peak =
+      inputIndicatorCatSourceStartleAdvance(
+          state, 160, false
+      );
+  const Source sources[] = {
+      Source::LatinABC,
+      Source::Korean2Set,
+  };
+  const bool facings[] = {true, false};
+  const double headings[] = {
+      0,
+      M_PI / 4,
+      M_PI / 2,
+      3 * M_PI / 4,
+      M_PI,
+      5 * M_PI / 4,
+      3 * M_PI / 2,
+      7 * M_PI / 4,
+  };
+  constexpr int paddingPoints = 4;
+  const auto style =
+      macInputIndicatorPanelStyle(
+          InputIndicatorCompanion::Cat
+      );
+  int cases = 0;
+  int outsidePixels = 0;
+  int paintOutsidePixels = 0;
+  int glyphOutsidePixels = 0;
+  int haloOnlyPixels = 0;
+  int haloCorePixels = 0;
+  int haloColorPixels = 0;
+  double haloMinimumAlpha = 1;
+  double haloMaximumAlpha = 0;
+
+  QVERIFY(std::abs(
+      peak.frame.dorsalLift - 2.4
+  ) < 1e-9);
+  QVERIFY(peak.frame.haloScale > 1.0);
+  QVERIFY(peak.frame.haloScale <= 1.12);
+  QVERIFY(peak.frame.haloAlpha > 0.0);
+  QVERIFY(peak.frame.haloAlpha <= 0.16);
+
+  for (const int scale : {1, 2}) {
+    const NSInteger canvasLeft =
+        paddingPoints * scale;
+    const NSInteger canvasBottom =
+        paddingPoints * scale;
+    const NSInteger canvasRight =
+        canvasLeft +
+        static_cast<NSInteger>(
+            std::lround(style.canvasWidth)
+        ) *
+            scale;
+    const NSInteger canvasTop =
+        canvasBottom +
+        static_cast<NSInteger>(
+            std::lround(style.canvasHeight)
+        ) *
+            scale;
+
+    for (const auto source : sources) {
+      const auto sourceColor =
+          macInputIndicatorGlyphColor(
+              source,
+              InputIndicatorTone::Automatic
+          );
+      const double sourceColorSum =
+          sourceColor.red +
+          sourceColor.green +
+          sourceColor.blue;
+      for (const bool facesRight : facings) {
+        for (const double heading : headings) {
+          NSBitmapImageRep *body =
+              catBodyBitmap(
+                  pose,
+                  artwork,
+                  tail,
+                  facesRight,
+                  scale,
+                  paddingPoints,
+                  true,
+                  peak.frame,
+                  heading,
+                  true,
+                  1,
+                  false,
+                  source
+              );
+          NSBitmapImageRep *paint =
+              catBodyBitmap(
+                  pose,
+                  artwork,
+                  tail,
+                  facesRight,
+                  scale,
+                  paddingPoints,
+                  true,
+                  peak.frame,
+                  heading,
+                  true,
+                  1,
+                  true,
+                  source
+              );
+          NSBitmapImageRep *glyph =
+              catGlyphBitmap(
+                  pose,
+                  InputIndicatorMotionState::Idle,
+                  facesRight,
+                  scale,
+                  paddingPoints,
+                  source,
+                  heading,
+                  true
+              );
+          QVERIFY(body);
+          QVERIFY(paint);
+          QVERIFY(glyph);
+          int caseOutsidePixels = 0;
+          int caseHaloOnlyPixels = 0;
+
+          for (NSInteger y = 0;
+               y < paint.pixelsHigh;
+               ++y) {
+            for (NSInteger x = 0;
+                 x < paint.pixelsWide;
+                 ++x) {
+              const NSColor *color =
+                  [paint colorAtX:x y:y];
+              const double paintAlpha =
+                  color.alphaComponent;
+              const double bodyAlpha =
+                  [body colorAtX:x y:y]
+                      .alphaComponent;
+              const double glyphAlpha =
+                  [glyph colorAtX:x y:y]
+                      .alphaComponent;
+              if (paintAlpha > 0.02 &&
+                  (x < canvasLeft ||
+                   x >= canvasRight ||
+                   y < canvasBottom ||
+                   y >= canvasTop)) {
+                ++caseOutsidePixels;
+                ++paintOutsidePixels;
+              }
+              if (glyphAlpha > 0.02 &&
+                  bodyAlpha <= 0.02) {
+                ++caseOutsidePixels;
+                ++glyphOutsidePixels;
+              }
+              if (paintAlpha <= 0.02 ||
+                  bodyAlpha > 0) {
+                continue;
+              }
+              ++caseHaloOnlyPixels;
+              ++haloOnlyPixels;
+              haloMinimumAlpha =
+                  std::min(
+                      haloMinimumAlpha,
+                      paintAlpha
+                  );
+              haloMaximumAlpha =
+                  std::max(
+                      haloMaximumAlpha,
+                      paintAlpha
+                  );
+              const double paintColorSum =
+                  color.redComponent +
+                  color.greenComponent +
+                  color.blueComponent;
+              if (paintAlpha <= 0.1) {
+                continue;
+              }
+              ++haloCorePixels;
+              if (paintColorSum > 0 &&
+                  std::abs(
+                      color.redComponent /
+                          paintColorSum -
+                      sourceColor.red /
+                          sourceColorSum
+                  ) <= 0.03 &&
+                  std::abs(
+                      color.greenComponent /
+                          paintColorSum -
+                      sourceColor.green /
+                          sourceColorSum
+                  ) <= 0.03 &&
+                  std::abs(
+                      color.blueComponent /
+                          paintColorSum -
+                      sourceColor.blue /
+                          sourceColorSum
+                  ) <= 0.03) {
+                ++haloColorPixels;
+              }
+            }
+          }
+          outsidePixels += caseOutsidePixels;
+          QCOMPARE(caseOutsidePixels, 0);
+          QVERIFY(caseHaloOnlyPixels > 0);
+          [body release];
+          [paint release];
+          [glyph release];
+          ++cases;
+        }
+      }
+    }
+  }
+
+  qInfo() << "startle-rotating-canvas"
+          << "outsidePixels" << outsidePixels
+          << "paintOutside" << paintOutsidePixels
+          << "glyphOutside" << glyphOutsidePixels
+          << "haloOnlyPixels" << haloOnlyPixels
+          << "haloCorePixels" << haloCorePixels
+          << "haloColorPixels" << haloColorPixels
+          << "haloFrameAlpha"
+          << peak.frame.haloAlpha
+          << "haloEdgeAlphaRange"
+          << haloMinimumAlpha
+          << haloMaximumAlpha
+          << "cases" << cases;
+  QCOMPARE(cases, 64);
+  QCOMPARE(paintOutsidePixels, 0);
+  QCOMPARE(glyphOutsidePixels, 0);
+  QCOMPARE(outsidePixels, 0);
+  QVERIFY(haloCorePixels > 0);
+  QCOMPARE(haloColorPixels, haloCorePixels);
+  QVERIFY(haloMinimumAlpha < 0.05);
+  const double maximumCompositedAlpha =
+      1 - std::pow(
+          1 - peak.frame.haloAlpha, 2
+      );
+  QVERIFY(
+      haloMaximumAlpha <=
+      maximumCompositedAlpha + 0.002
+  );
 }
 
 void InputIndicatorGeometryTests::companionSettingDefaultsToCat()

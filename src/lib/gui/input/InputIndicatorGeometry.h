@@ -101,6 +101,8 @@ struct InputIndicatorCatStartleFrame
   double recoilOffsetX = 0;
   double horizontalScale = 1;
   double dorsalLift = 0;
+  double haloScale = 1;
+  double haloAlpha = 0;
 };
 
 struct InputIndicatorCatSourceStartleStep
