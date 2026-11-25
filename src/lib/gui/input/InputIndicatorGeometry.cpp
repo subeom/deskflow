@@ -8,6 +8,7 @@
 #include "MacInputIndicatorCatArtwork.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 
 namespace deskflow::gui::input {
@@ -29,6 +30,99 @@ bool contains(const InputIndicatorRect &screen, const InputIndicatorPoint &point
 {
   return point.x >= screen.x && point.x <= screen.x + screen.width && point.y >= screen.y &&
          point.y <= screen.y + screen.height;
+}
+
+constexpr std::uint32_t kCatIdleTailMotionMask = 0x1f;
+constexpr std::uint32_t kCatIdleTailSeedFallback =
+    0x6d2b79f5;
+constexpr double kPi = 3.14159265358979323846;
+
+std::uint32_t nextCatIdleTailSeed(std::uint32_t seed)
+{
+  seed ^= seed << 13;
+  seed ^= seed >> 17;
+  seed ^= seed << 5;
+  return seed == 0 ? kCatIdleTailSeedFallback : seed;
+}
+
+std::uint32_t catIdleTailMotionBit(
+    InputIndicatorCatIdleTailMotion motion
+)
+{
+  return 1U << static_cast<unsigned char>(motion);
+}
+
+InputIndicatorCatIdleTailMotion catIdleTailMotionAt(
+    unsigned int index
+)
+{
+  return static_cast<InputIndicatorCatIdleTailMotion>(index);
+}
+
+InputIndicatorCatIdleTailMotionState selectCatIdleTailMotion(
+    InputIndicatorCatIdleTailMotionState state
+)
+{
+  if ((state.remainingMask & kCatIdleTailMotionMask) == 0) {
+    state.remainingMask = kCatIdleTailMotionMask;
+  }
+
+  auto candidates =
+      state.remainingMask & kCatIdleTailMotionMask;
+  if (state.hasLastMotion &&
+      std::popcount(candidates) > 1) {
+    candidates &=
+        ~catIdleTailMotionBit(state.lastMotion);
+  }
+  if (candidates == 0) {
+    candidates =
+        state.remainingMask & kCatIdleTailMotionMask;
+  }
+
+  state.seed = nextCatIdleTailSeed(state.seed);
+  const auto candidateCount =
+      static_cast<std::uint32_t>(
+          std::popcount(candidates)
+      );
+  const auto selection =
+      state.seed % candidateCount;
+  std::uint32_t selectedIndex = 0;
+  std::uint32_t candidateIndex = 0;
+  for (unsigned int index = 0; index < 5; ++index) {
+    const auto bit = 1U << index;
+    if ((candidates & bit) == 0) {
+      continue;
+    }
+    if (candidateIndex == selection) {
+      selectedIndex = index;
+      break;
+    }
+    ++candidateIndex;
+  }
+
+  state.lastMotion =
+      catIdleTailMotionAt(selectedIndex);
+  state.hasLastMotion = true;
+  state.remainingMask &=
+      ~catIdleTailMotionBit(state.lastMotion);
+  return state;
+}
+
+double smoothstep01(double value)
+{
+  const auto clamped = std::clamp(value, 0.0, 1.0);
+  return clamped * clamped * (3.0 - 2.0 * clamped);
+}
+
+double smoothWindow(double progress)
+{
+  return smoothstep01(progress / 0.22) *
+         (1.0 - smoothstep01((progress - 0.78) / 0.22));
+}
+
+double pulseWindow(double progress, double start, double end)
+{
+  return smoothstep01((progress - start) / (end - start));
 }
 
 } // namespace
@@ -476,6 +570,209 @@ InputIndicatorPoint inputIndicatorCatTorsoPoint(
       xWeight *
       growWeight *
       fadeWeight;
+  return point;
+}
+
+InputIndicatorCatIdleTailMotionState
+inputIndicatorCatIdleTailMotionInitialState(
+    std::uint32_t seed
+)
+{
+  return {
+      .seed = seed == 0 ? kCatIdleTailSeedFallback : seed,
+      .remainingMask = kCatIdleTailMotionMask,
+  };
+}
+
+double inputIndicatorCatIdleTailMotionDuration(
+    InputIndicatorCatIdleTailMotion motion
+)
+{
+  switch (motion) {
+  case InputIndicatorCatIdleTailMotion::RelaxedSway:
+    return 2400;
+  case InputIndicatorCatIdleTailMotion::TipFlick:
+    return 1800;
+  case InputIndicatorCatIdleTailMotion::CurlUnfurl:
+    return 2800;
+  case InputIndicatorCatIdleTailMotion::LazySweep:
+    return 3200;
+  case InputIndicatorCatIdleTailMotion::QuestionLift:
+    return 2400;
+  }
+}
+
+InputIndicatorCatIdleTailMotionStep
+inputIndicatorCatIdleTailMotionAdvance(
+    const InputIndicatorCatIdleTailMotionState &state,
+    InputIndicatorMotionState motionState,
+    double nowMilliseconds,
+    bool reducedMotion
+)
+{
+  InputIndicatorCatIdleTailMotionStep result{.state = state};
+  if (reducedMotion ||
+      motionState != InputIndicatorMotionState::Idle) {
+    result.state.running = false;
+    return result;
+  }
+
+  const double now =
+      std::isfinite(nowMilliseconds)
+          ? std::max(nowMilliseconds, 0.0)
+          : 0.0;
+  if (!result.state.running) {
+    result.state = selectCatIdleTailMotion(result.state);
+    result.state.startedMilliseconds = now;
+    result.state.running = true;
+  } else {
+    for (int advancement = 0; advancement < 1024;
+         ++advancement) {
+      const double duration =
+          inputIndicatorCatIdleTailMotionDuration(
+              result.state.lastMotion
+          );
+      const double completion =
+          result.state.startedMilliseconds + duration;
+      if (now < completion) {
+        break;
+      }
+      result.state =
+          selectCatIdleTailMotion(result.state);
+      result.state.startedMilliseconds = completion;
+      if (advancement == 1023) {
+        result.state.startedMilliseconds = now;
+      }
+    }
+  }
+
+  const double duration =
+      inputIndicatorCatIdleTailMotionDuration(
+          result.state.lastMotion
+      );
+  result.frame = {
+      .motion = result.state.lastMotion,
+      .progress = std::clamp(
+          (now - result.state.startedMilliseconds) /
+              duration,
+          0.0,
+          1.0 - std::numeric_limits<double>::epsilon()
+      ),
+      .active = true,
+  };
+  return result;
+}
+
+InputIndicatorPoint inputIndicatorCatIdleTailOffset(
+    InputIndicatorCatIdleTailMotion motion,
+    double progress
+)
+{
+  if (!std::isfinite(progress) ||
+      progress <= 0 ||
+      progress >= 1) {
+    return {};
+  }
+  progress = std::clamp(progress, 0.0, 1.0);
+  const double window = smoothWindow(progress);
+  switch (motion) {
+  case InputIndicatorCatIdleTailMotion::RelaxedSway: {
+    const double wave =
+        std::sin(progress * 2.0 * kPi) * window;
+    return {
+        .x = 0.18 * wave,
+        .y = 0.68 * wave,
+    };
+  }
+  case InputIndicatorCatIdleTailMotion::TipFlick: {
+    const double local =
+        std::clamp(
+            (progress - 0.30) / 0.40, 0.0, 1.0
+        );
+    if (local <= 0 || local >= 1) {
+      return {};
+    }
+    const double wave =
+        std::sin(local * 2.0 * kPi) *
+        std::sin(local * kPi);
+    return {
+        .x = -0.22 * wave,
+        .y = 1.10 * wave,
+    };
+  }
+  case InputIndicatorCatIdleTailMotion::CurlUnfurl: {
+    const double curl =
+        std::sin(progress * kPi);
+    const double eased = curl * curl;
+    return {
+        .x = 0.78 * eased,
+        .y = -0.58 * eased,
+    };
+  }
+  case InputIndicatorCatIdleTailMotion::LazySweep: {
+    const double wave =
+        std::sin(progress * 2.0 * kPi) * window;
+    return {
+        .x = -0.62 * wave,
+        .y = 0.42 * wave,
+    };
+  }
+  case InputIndicatorCatIdleTailMotion::QuestionLift: {
+    const double lift =
+        pulseWindow(progress, 0.12, 0.44) *
+        (1.0 - pulseWindow(progress, 0.70, 0.98));
+    return {
+        .x = 0.50 * lift,
+        .y = 1.28 * lift,
+    };
+  }
+  }
+}
+
+InputIndicatorPoint inputIndicatorCatIdleTailPoint(
+    InputIndicatorPoint point,
+    const InputIndicatorCatIdleTailFrame &frame
+)
+{
+  if (!frame.active ||
+      !std::isfinite(point.x) ||
+      !std::isfinite(point.y) ||
+      point.x >= 12.4) {
+    return point;
+  }
+
+  const double raw =
+      std::clamp((12.4 - point.x) / (12.4 - 2.8), 0.0, 1.0);
+  const double influence = smoothstep01(raw);
+  const auto offset = inputIndicatorCatIdleTailOffset(
+      frame.motion, frame.progress
+  );
+  double xWeight = influence;
+  double yWeight = influence;
+  switch (frame.motion) {
+  case InputIndicatorCatIdleTailMotion::RelaxedSway:
+    yWeight =
+        influence * (1.0 - 1.75 * influence);
+    break;
+  case InputIndicatorCatIdleTailMotion::TipFlick:
+    xWeight = influence * influence * influence;
+    yWeight = xWeight;
+    break;
+  case InputIndicatorCatIdleTailMotion::CurlUnfurl:
+    xWeight = influence * std::sqrt(influence);
+    yWeight = xWeight;
+    break;
+  case InputIndicatorCatIdleTailMotion::LazySweep:
+    xWeight = std::sqrt(influence);
+    yWeight = std::pow(influence, 0.75);
+    break;
+  case InputIndicatorCatIdleTailMotion::QuestionLift:
+    xWeight = influence * influence;
+    yWeight = xWeight;
+    break;
+  }
+  point.x += offset.x * xWeight;
+  point.y += offset.y * yWeight;
   return point;
 }
 

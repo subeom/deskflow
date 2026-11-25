@@ -15,8 +15,10 @@
 #include <QTest>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
+#include <set>
 
 using namespace deskflow::gui::input;
 
@@ -1419,6 +1421,341 @@ void InputIndicatorGeometryTests::catTailUsesContinuousPhaseLaggedCurve()
   QCOMPARE(reducedFast.middle.y, neutral.middle.y);
   QCOMPARE(reducedFast.tip.x, neutral.tip.x);
   QCOMPARE(reducedFast.tip.y, neutral.tip.y);
+}
+
+void InputIndicatorGeometryTests::catIdleTailMotionsCoverFiveFinitePatterns()
+{
+  auto state =
+      inputIndicatorCatIdleTailMotionInitialState(
+          0x13579bdfU
+      );
+  std::vector<InputIndicatorCatIdleTailMotion> motions;
+  double now = 0;
+  for (int index = 0; index < 10; ++index) {
+    const auto step =
+        inputIndicatorCatIdleTailMotionAdvance(
+            state,
+            InputIndicatorMotionState::Idle,
+            now,
+            false
+        );
+    QVERIFY(step.frame.active);
+    QVERIFY(std::isfinite(step.frame.progress));
+    QVERIFY(step.frame.progress >= 0);
+    QVERIFY(step.frame.progress < 1);
+    if (!motions.empty()) {
+      QVERIFY(motions.back() != step.frame.motion);
+    }
+    motions.push_back(step.frame.motion);
+    state = step.state;
+    now =
+        state.startedMilliseconds +
+        inputIndicatorCatIdleTailMotionDuration(
+            step.frame.motion
+        );
+  }
+
+  const std::set<InputIndicatorCatIdleTailMotion> ids(
+      motions.begin(),
+      motions.begin() + 5
+  );
+  QCOMPARE(ids.size(), size_t{5});
+
+  const std::array<InputIndicatorCatIdleTailMotion, 5>
+      allMotions{{
+          InputIndicatorCatIdleTailMotion::RelaxedSway,
+          InputIndicatorCatIdleTailMotion::TipFlick,
+          InputIndicatorCatIdleTailMotion::CurlUnfurl,
+          InputIndicatorCatIdleTailMotion::LazySweep,
+          InputIndicatorCatIdleTailMotion::QuestionLift,
+      }};
+  std::array<std::vector<InputIndicatorPoint>, 5> samples;
+  for (size_t motionIndex = 0;
+       motionIndex < allMotions.size();
+       ++motionIndex) {
+    for (int sample = 0; sample <= 100; ++sample) {
+      const double progress = sample / 100.0;
+      const auto offset =
+          inputIndicatorCatIdleTailOffset(
+              allMotions[motionIndex], progress
+          );
+      QVERIFY(std::isfinite(offset.x));
+      QVERIFY(std::isfinite(offset.y));
+      QVERIFY(std::abs(offset.x) <= 0.90 + 1e-12);
+      QVERIFY(std::abs(offset.y) <= 1.35 + 1e-12);
+      if (sample % 20 == 0) {
+        samples[motionIndex].push_back(offset);
+      }
+    }
+    const auto start =
+        inputIndicatorCatIdleTailOffset(
+            allMotions[motionIndex], 0
+        );
+    const auto end =
+        inputIndicatorCatIdleTailOffset(
+            allMotions[motionIndex], 1
+        );
+    QCOMPARE(start.x, 0.0);
+    QCOMPARE(start.y, 0.0);
+    QCOMPARE(end.x, 0.0);
+    QCOMPARE(end.y, 0.0);
+  }
+  for (size_t left = 0; left < samples.size(); ++left) {
+    for (size_t right = left + 1;
+         right < samples.size();
+         ++right) {
+      double difference = 0;
+      for (size_t index = 0;
+           index < samples[left].size();
+           ++index) {
+        difference = std::max(
+            difference,
+            std::hypot(
+                samples[left][index].x -
+                    samples[right][index].x,
+                samples[left][index].y -
+                    samples[right][index].y
+            )
+        );
+      }
+      QVERIFY(difference > 0.1);
+    }
+  }
+}
+
+void InputIndicatorGeometryTests::catIdleTailMotionGatesMovementAndReducedMotion()
+{
+  const auto fresh =
+      inputIndicatorCatIdleTailMotionInitialState(
+          0x2468ace0U
+      );
+  const auto idle =
+      inputIndicatorCatIdleTailMotionAdvance(
+          fresh,
+          InputIndicatorMotionState::Idle,
+          1000,
+          false
+      );
+  QVERIFY(idle.frame.active);
+
+  const auto walk =
+      inputIndicatorCatIdleTailMotionAdvance(
+          idle.state,
+          InputIndicatorMotionState::Walk,
+          1100,
+          false
+      );
+  QVERIFY(!walk.frame.active);
+  QCOMPARE(walk.frame.progress, 0.0);
+  const auto run =
+      inputIndicatorCatIdleTailMotionAdvance(
+          walk.state,
+          InputIndicatorMotionState::Run,
+          1200,
+          false
+      );
+  QVERIFY(!run.frame.active);
+  QCOMPARE(run.frame.progress, 0.0);
+
+  const auto reentered =
+      inputIndicatorCatIdleTailMotionAdvance(
+          run.state,
+          InputIndicatorMotionState::Idle,
+          2000,
+          false
+      );
+  QVERIFY(reentered.frame.active);
+  QVERIFY(reentered.frame.motion != idle.frame.motion);
+  QCOMPARE(reentered.frame.progress, 0.0);
+  QCOMPARE(reentered.state.startedMilliseconds, 2000.0);
+
+  const auto reduced =
+      inputIndicatorCatIdleTailMotionAdvance(
+          fresh,
+          InputIndicatorMotionState::Idle,
+          1000,
+          true
+      );
+  QVERIFY(!reduced.frame.active);
+  QCOMPARE(reduced.state.seed, fresh.seed);
+  QCOMPARE(
+      reduced.state.remainingMask,
+      fresh.remainingMask
+  );
+  QCOMPARE(
+      reduced.state.hasLastMotion,
+      fresh.hasLastMotion
+  );
+  QCOMPARE(reduced.frame.progress, 0.0);
+  const InputIndicatorPoint rest{.x = 3.4, .y = 7.0};
+  const auto unchanged =
+      inputIndicatorCatIdleTailPoint(
+          rest, reduced.frame
+      );
+  QCOMPARE(unchanged.x, rest.x);
+  QCOMPARE(unchanged.y, rest.y);
+
+  const auto invalidTime =
+      inputIndicatorCatIdleTailMotionAdvance(
+          fresh,
+          InputIndicatorMotionState::Idle,
+          std::numeric_limits<double>::quiet_NaN(),
+          false
+      );
+  QVERIFY(std::isfinite(
+      invalidTime.frame.progress
+  ));
+  QVERIFY(std::isfinite(
+      invalidTime.state.startedMilliseconds
+  ));
+
+  const auto nan =
+      inputIndicatorCatIdleTailOffset(
+          InputIndicatorCatIdleTailMotion::LazySweep,
+          std::numeric_limits<double>::quiet_NaN()
+      );
+  const auto negative =
+      inputIndicatorCatIdleTailOffset(
+          InputIndicatorCatIdleTailMotion::LazySweep,
+          -1
+      );
+  const auto over =
+      inputIndicatorCatIdleTailOffset(
+          InputIndicatorCatIdleTailMotion::LazySweep,
+          2
+      );
+  QCOMPARE(nan.x, 0.0);
+  QCOMPARE(nan.y, 0.0);
+  QCOMPARE(negative.x, 0.0);
+  QCOMPARE(negative.y, 0.0);
+  QCOMPARE(over.x, 0.0);
+  QCOMPARE(over.y, 0.0);
+}
+
+void InputIndicatorGeometryTests::catIdleTailMotionIsSeededAndFacingDeterministic()
+{
+  auto leftState =
+      inputIndicatorCatIdleTailMotionInitialState(
+          0x10203040U
+      );
+  auto rightState =
+      inputIndicatorCatIdleTailMotionInitialState(
+          0x10203040U
+      );
+  for (const double time : {0.0, 300.0, 900.0, 1800.0, 2700.0}) {
+    const auto left =
+        inputIndicatorCatIdleTailMotionAdvance(
+            leftState,
+            InputIndicatorMotionState::Idle,
+            time,
+            false
+        );
+    const auto right =
+        inputIndicatorCatIdleTailMotionAdvance(
+            rightState,
+            InputIndicatorMotionState::Idle,
+            time,
+            false
+        );
+    QCOMPARE(left.state.seed, right.state.seed);
+    QCOMPARE(
+        left.state.remainingMask,
+        right.state.remainingMask
+    );
+    QCOMPARE(
+        left.state.lastMotion,
+        right.state.lastMotion
+    );
+    QCOMPARE(left.state.running, right.state.running);
+    QCOMPARE(
+        left.state.startedMilliseconds,
+        right.state.startedMilliseconds
+    );
+    QCOMPARE(left.frame.motion, right.frame.motion);
+    QCOMPARE(left.frame.progress, right.frame.progress);
+    leftState = left.state;
+    rightState = right.state;
+  }
+
+  bool differentOrder = false;
+  auto firstState =
+      inputIndicatorCatIdleTailMotionInitialState(1);
+  auto secondState =
+      inputIndicatorCatIdleTailMotionInitialState(
+          0xfeedcafeU
+      );
+  for (int index = 0; index < 5; ++index) {
+    const double time =
+        index == 0
+            ? 0
+            : firstState.startedMilliseconds +
+                  inputIndicatorCatIdleTailMotionDuration(
+                      firstState.lastMotion
+                  );
+    const auto first =
+        inputIndicatorCatIdleTailMotionAdvance(
+            firstState,
+            InputIndicatorMotionState::Idle,
+            time,
+            false
+        );
+    const double secondTime =
+        index == 0
+            ? 0
+            : secondState.startedMilliseconds +
+                  inputIndicatorCatIdleTailMotionDuration(
+                      secondState.lastMotion
+                  );
+    const auto second =
+        inputIndicatorCatIdleTailMotionAdvance(
+            secondState,
+            InputIndicatorMotionState::Idle,
+            secondTime,
+            false
+        );
+    differentOrder =
+        differentOrder ||
+        first.frame.motion != second.frame.motion;
+    firstState = first.state;
+    secondState = second.state;
+  }
+  QVERIFY(differentOrder);
+
+  const auto active =
+      inputIndicatorCatIdleTailMotionAdvance(
+          inputIndicatorCatIdleTailMotionInitialState(
+              0xabcdef01U
+          ),
+          InputIndicatorMotionState::Idle,
+          0,
+          false
+      );
+  const auto midpoint =
+      inputIndicatorCatIdleTailMotionAdvance(
+          active.state,
+          InputIndicatorMotionState::Idle,
+          inputIndicatorCatIdleTailMotionDuration(
+              active.frame.motion
+          ) * 0.5,
+          false
+      );
+  QVERIFY(midpoint.frame.active);
+  const auto sourcePoint =
+      InputIndicatorPoint{.x = 3.4, .y = 7.0};
+  const auto right =
+      inputIndicatorCatIdleTailPoint(
+          sourcePoint, midpoint.frame
+      );
+  const auto left =
+      inputIndicatorCatFacingPoint(right, false);
+  const auto restored =
+      inputIndicatorCatFacingPoint(left, false);
+  QCOMPARE(left.x, 30.0 - right.x);
+  QCOMPARE(left.y, right.y);
+  QCOMPARE(restored.x, right.x);
+  QCOMPARE(restored.y, right.y);
+  QVERIFY(right.x != sourcePoint.x ||
+          right.y != sourcePoint.y);
 }
 
 void InputIndicatorGeometryTests::companionSettingDefaultsToCat()
