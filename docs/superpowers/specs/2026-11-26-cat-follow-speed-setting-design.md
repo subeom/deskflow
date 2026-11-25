@@ -1,4 +1,4 @@
-# Cat Follow Speed Setting
+# Companion Follow Speed Setting
 
 **Date:** 2026-11-26
 
@@ -8,10 +8,10 @@
 
 ## Goal
 
-Let a user adjust how quickly the Cat companion follows the local pointer.
-The setting is live, bounded, Cat-only in its UI effect, and preserves the
-current Cat position when it changes. Dog and Turtle keep their existing
-follower behavior.
+Let a user adjust how quickly the selected companion follows the local pointer.
+The setting is live, bounded, applies equally to Cat, Dog, and Turtle, and
+preserves the current companion position when it changes. Species keep
+distinct artwork and gait presentation.
 
 ## User-visible behavior
 
@@ -21,23 +21,19 @@ Add the setting key `gui/inputIndicatorSpeedPercent` with:
 - safe range `50..200`;
 - integer `QSpinBox` in
   **Settings > Keyboard & mouse > Input source indicator**;
-- label `Cat follow speed`;
+- label `Companion follow speed`;
 - object name `sbInputIndicatorSpeed`;
 - `%` suffix;
 - live setting effect.
 
-The control is enabled only when both conditions are true:
-
-1. the input source indicator is enabled;
-2. the selected companion is `cat`.
-
-It remains disabled for Dog and Turtle. The setting does not create a new page
+The control is enabled when the input source indicator is enabled, for every
+available Cat, Dog, and Turtle companion. The setting does not create a new page
 or dialog.
 
 ## Speed model
 
-The pure Cat pursuit step accepts one validated multiplier. It scales only the
-two motion caps:
+The shared pure companion pursuit step accepts one validated multiplier. It
+scales only the two motion caps:
 
 | Setting | Walk cap | Run cap | 8 ms Walk step | 8 ms Run step |
 | ---: | ---: | ---: | ---: | ---: |
@@ -47,9 +43,9 @@ two motion caps:
 
 The multiplier is valid only when finite and in `0.5..2.0`. Any invalid
 multiplier fails the pure pursuit call closed by returning `std::nullopt`.
-Valid initial placement and Reduced Motion behavior still place the Cat
-directly and therefore ignore the speed cap after the multiplier has been
-validated.
+Valid initial placement and Reduced Motion behavior still place the selected
+companion directly and therefore ignore the speed cap after the multiplier has
+been validated.
 
 The setting does not change:
 
@@ -85,7 +81,8 @@ indicator settings:
 - the setter changes only the multiplier used by future pursuit steps.
 
 This direct path preserves the initialized pursuit state and visible position.
-The next frame uses the new cap, and no frame snaps or reinitializes the Cat.
+The next frame uses the new cap, and no frame snaps or reinitializes the
+selected companion.
 If the panel is not yet visible, the updated controller value is carried by
 the next `show`.
 
@@ -97,8 +94,8 @@ Three approaches were considered:
    participates in source crossfade/startle state and presentation work even
    though speed is motion configuration.
 2. **Store speed in `InputIndicatorCatPursuitState`.** Rejected because the
-   state should contain motion integration data, not a separately persistent
-   user setting.
+   state should become species-neutral motion integration data, not contain a
+   separately persistent user setting.
 3. **Panel option plus direct live setter, with a pure multiplier argument.**
    Selected. It keeps configuration at the controller/panel boundary, pure
    motion math accepts a bounded primitive, and live updates cannot reset the
@@ -112,27 +109,31 @@ Tests prove:
 
 - `Settings::defaultValue` returns 100 and the key is valid;
 - `QSpinBox` value, minimum 50, maximum 200, integer step, and `%` suffix;
-- the control follows indicator enablement and Cat/Dog/Turtle selection;
+- the control follows indicator enablement and remains enabled for Cat, Dog,
+  and Turtle;
 - safe clamping and invalid stored-value fallback do not change another
   indicator setting;
 - `SettingEffects` reports `Live`.
 
 ### Pure motion
 
-Tests prove exact 8 ms step caps for 50, 100, and 200 percent in Walk and Run,
-monotonic/no-overshoot paths, and unchanged Run thresholds. NaN, infinite,
-zero, below-minimum, and above-maximum factors return `std::nullopt`.
-Reduced Motion still reaches the target directly.
+Tests prove exact 8 ms step caps for 50, 100, and 200 percent in Walk and Run
+for Cat, Dog, and Turtle through the shared pure path, monotonic/no-overshoot
+paths, and unchanged Run thresholds. NaN, infinite, zero, below-minimum, and
+above-maximum factors return `std::nullopt`. Reduced Motion still reaches the
+target directly.
 
 ### Controller and panel
 
 Controller tests prove the current setting reaches initial options, a live
-change reaches a dedicated setter, and no extra `show`/hide occurs. A native
-panel test proves a live speed setter leaves the visible origin unchanged;
-the next move uses the new bound without reinitializing the Cat.
+change reaches a dedicated setter, and no extra `show`/hide occurs. Native
+panel tests prove a live speed setter leaves the visible origin unchanged for
+Cat, Dog, and Turtle; the next move uses the new bound without reinitializing
+the selected companion.
 
-Representative native 700 pt target jumps are exercised at 50, 100, and 200
-percent. Tests account only for AppKit whole-point quantization and assert
+Representative native 700 pt target jumps are exercised for all three
+companions at 50, 100, and 200 percent. Tests account only for AppKit
+whole-point quantization and assert
 per-step movement is bounded by 2.88, 5.76, or 11.52 pt respectively. They
 also assert multiple intermediate positions and the existing 49 x 49 canvas,
 glyph, and outside-pixel invariants.
@@ -149,10 +150,13 @@ except only `OSXClipboardTests` and `OSXKeyStateTests`, with
 ## Scope
 
 In scope: one live setting, one macOS settings control, controller/panel
-propagation, bounded pure pursuit speed, focused tests, Korean text for the new
-label, docs, and local commits.
+propagation, a shared bounded pure pursuit path for all three companions,
+focused tests, Korean text for the new label, docs, and local commits.
 
-Out of scope: other companions, movement thresholds, cursor/caret APIs,
-reduced-motion policy, canvas/anchor changes, panel resizing, source-startle
-state, translation changes for other languages, release, install, push, and
-pull request.
+Out of scope for this speed-setting revision: species art redesign, idle
+motifs, reactions, body-heading paint, changed movement thresholds,
+cursor/caret APIs, Reduced Motion policy, canvas/anchor changes, panel
+resizing, translation changes for other languages, release, install, push,
+and pull request. Dog and Turtle Cat-level art and animation parity is
+defined and implemented in the subsequent
+`dog-turtle-companion-parity` spec and plan on the same branch.
