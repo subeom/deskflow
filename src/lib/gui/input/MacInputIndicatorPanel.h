@@ -53,6 +53,7 @@ struct MacInputIndicatorRenderModel
   bool mirrorsWithMotion = false;
   bool sourceFacesRight = false;
   bool languageMirrorsWithSilhouette = false;
+  bool usesTorsoPad = false;
   double totalWidth = 30;
   double totalHeight = 28;
   InputIndicatorRect silhouetteBounds;
@@ -505,7 +506,7 @@ constexpr MacInputIndicatorRenderModel macInputIndicatorRenderModel(
         .mirrorsWithMotion = true,
         .sourceFacesRight = true,
         .silhouetteBounds = {
-            .x = 1, .y = 2, .width = 28, .height = 16
+            .x = 1, .y = 1.5, .width = 28, .height = 17.5
         },
         .headBounds = {
             .x = 18, .y = 8, .width = 8, .height = 8

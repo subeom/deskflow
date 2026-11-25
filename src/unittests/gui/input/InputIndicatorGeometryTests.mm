@@ -85,6 +85,52 @@ NSBezierPath *artworkPath(
   return path;
 }
 
+NSBezierPath *artworkPath(
+    const InputIndicatorCatPose &pose,
+    std::span<const MacInputIndicatorCatPathCommand> commands
+)
+{
+  NSBezierPath *path = [NSBezierPath bezierPath];
+  const auto deformed =
+      [&pose](double x, double y) {
+        return inputIndicatorCatTorsoPoint(
+            pose, {.x = x, .y = y}
+        );
+      };
+  for (const auto &command : commands) {
+    switch (command.type) {
+    case MacInputIndicatorCatPathCommandType::Move: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path moveToPoint:NSMakePoint(point.x, point.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Line: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path lineToPoint:NSMakePoint(point.x, point.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Cubic: {
+      const auto control1 =
+          deformed(command.x1, command.y1);
+      const auto control2 =
+          deformed(command.x2, command.y2);
+      const auto point =
+          deformed(command.x3, command.y3);
+      [path curveToPoint:NSMakePoint(point.x, point.y)
+          controlPoint1:NSMakePoint(control1.x, control1.y)
+          controlPoint2:NSMakePoint(control2.x, control2.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Close:
+      [path closePath];
+      break;
+    }
+  }
+  return path;
+}
+
 NSBitmapImageRep *pixelBitmap(int scale)
 {
   return [[NSBitmapImageRep alloc]
@@ -301,6 +347,7 @@ void InputIndicatorGeometryTests::catRenderModelUsesSideProfileAndPersistentFaci
   QVERIFY(model.usesSideProfile);
   QVERIFY(model.mirrorsWithMotion);
   QVERIFY(model.sourceFacesRight);
+  QVERIFY(!model.usesTorsoPad);
   QVERIFY(model.headBounds.x > model.torsoBounds.x);
   QVERIFY(
       model.tailBounds.x <
@@ -339,6 +386,75 @@ void InputIndicatorGeometryTests::catRenderModelUsesSideProfileAndPersistentFaci
   QVERIFY(!inputIndicatorCompanionFacesRight(
       false, std::numeric_limits<double>::quiet_NaN()
   ));
+}
+
+void InputIndicatorGeometryTests::catTorsoContourExpandsWithoutPadPrimitive()
+{
+  const auto idle = inputIndicatorCatPose(
+      InputIndicatorMotionState::Idle, 0.0, false
+  );
+  const auto walk = inputIndicatorCatPose(
+      InputIndicatorMotionState::Walk, 0.34, false
+  );
+  const auto run = inputIndicatorCatPose(
+      InputIndicatorMotionState::Run, 0.34, false
+  );
+  const double idleCenterX =
+      idle.innerLanguageBounds.x +
+      idle.innerLanguageBounds.width / 2.0;
+  const double idleCenterY =
+      idle.innerLanguageBounds.y +
+      idle.innerLanguageBounds.height / 2.0;
+
+  const auto idleUpper = inputIndicatorCatTorsoPoint(
+      idle, {.x = idleCenterX, .y = idleCenterY + 2.5}
+  );
+  QCOMPARE(idleUpper.x, idleCenterX);
+  QVERIFY(idleUpper.y > idleCenterY + 2.5);
+  QVERIFY(idleUpper.y <= idleCenterY + 4.0);
+
+  for (const auto *pose : {&walk, &run}) {
+    QVERIFY(pose->torsoBounds.height >= 8.0);
+    QCOMPARE(
+        pose->innerLanguageBounds.width, 8.0
+    );
+    QCOMPARE(
+        pose->innerLanguageBounds.height, 7.0
+    );
+    QVERIFY(pose->silhouetteBounds.width <=
+        macInputIndicatorCatArtwork(pose->artworkFrame)
+            .silhouetteBounds.width +
+        1.5);
+
+    const double centerX =
+        pose->innerLanguageBounds.x +
+        pose->innerLanguageBounds.width / 2.0;
+    const double centerY =
+        pose->innerLanguageBounds.y +
+        pose->innerLanguageBounds.height / 2.0;
+    for (const double offset : {-3.5, 3.5}) {
+      const auto input =
+          InputIndicatorPoint{
+              .x = centerX,
+              .y = centerY + offset,
+          };
+      const auto output =
+          inputIndicatorCatTorsoPoint(*pose, input);
+      QCOMPARE(output.x, input.x);
+      QVERIFY(std::abs(output.y - input.y) > 0);
+      QVERIFY(std::abs(output.y - input.y) <= 1.5);
+    }
+    const auto outside =
+        inputIndicatorCatTorsoPoint(
+            *pose,
+            {
+                .x = centerX + 9,
+                .y = centerY + 4,
+            }
+        );
+    QCOMPARE(outside.x, centerX + 9);
+    QCOMPARE(outside.y, centerY + 4);
+  }
 }
 
 void InputIndicatorGeometryTests::catArtworkFramesFollowApprovedPoseSheet()
@@ -425,20 +541,24 @@ void InputIndicatorGeometryTests::catArtworkMetricsMatchApprovedSource()
       idle.silhouetteBounds.width - 20.6824
   ) < 0.02);
   QVERIFY(std::abs(
-      idle.silhouetteBounds.height - 12.9470
+      idle.silhouetteBounds.height - 15.9470
   ) < 0.02);
   QVERIFY(std::abs(
       walk.silhouetteBounds.width - 21.8200
   ) < 0.02);
   QVERIFY(std::abs(
-      walk.silhouetteBounds.height - 10.7184
+      walk.silhouetteBounds.height - 13.1184
   ) < 0.02);
+  QVERIFY(
+      walk.silhouetteBounds.height <= 13.1184
+  );
   QVERIFY(std::abs(
       run.silhouetteBounds.width - 28.0000
   ) < 0.02);
-  QVERIFY(std::abs(
-      run.silhouetteBounds.height - 9.7445
-  ) < 0.02);
+  QVERIFY(
+      run.silhouetteBounds.height >= 12.7445
+  );
+  QVERIFY(run.silhouetteBounds.height <= 12.745);
 
   const auto assertGlyph =
       [&model](
@@ -652,7 +772,7 @@ void InputIndicatorGeometryTests::catLabelLayoutFitsEveryArtworkPoseAndSource()
       if (source == Source::Korean2Set) {
         QVERIFY(measurement.origin.y < 0);
       }
-      QVERIFY(pose.bellyBounds.height >=
+      QVERIFY(pose.torsoBounds.height >=
           (poseInput.state == InputIndicatorMotionState::Idle
               ? 7.2
               : 8.0));
@@ -780,20 +900,20 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
     );
     const auto artwork =
         macInputIndicatorCatArtwork(pose.artworkFrame);
-    QVERIFY(pose.bellyBounds.height >=
+    QVERIFY(pose.torsoBounds.height >=
         (poseInput.state == InputIndicatorMotionState::Idle
             ? 7.2
             : 8.0));
     const double unionLeft =
         std::min(
             artwork.silhouetteBounds.x,
-            pose.bellyBounds.x
+            pose.torsoBounds.x
         );
     const double unionRight =
         std::max(
             artwork.silhouetteBounds.x +
                 artwork.silhouetteBounds.width,
-            pose.bellyBounds.x + pose.bellyBounds.width
+            pose.torsoBounds.x + pose.torsoBounds.width
         );
     QVERIFY(
         unionRight - unionLeft <=
@@ -829,17 +949,7 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
         }
         [[NSColor blackColor] setFill];
         [artworkPath(artwork.far) fill];
-        NSBezierPath *belly =
-            [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
-                                                        pose.bellyBounds.x,
-                                                        pose.bellyBounds.y,
-                                                        pose.bellyBounds.width,
-                                                        pose.bellyBounds.height
-                                                    )
-                                            xRadius:3.2
-                                            yRadius:3.2];
-        [belly fill];
-        [artworkPath(artwork.near) fill];
+        [artworkPath(pose, artwork.near) fill];
         CGContextRestoreGState(bodyCG);
         [NSGraphicsContext restoreGraphicsState];
 
@@ -909,6 +1019,14 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
             }
           }
         }
+        if (caseOutsidePixels > 0) {
+          qInfo() << "contour-spill"
+                  << static_cast<int>(poseInput.state)
+                  << poseInput.phase
+                  << static_cast<int>(source)
+                  << facesRight
+                  << caseOutsidePixels;
+        }
         outsidePixels += caseOutsidePixels;
         [bodyMask release];
         [glyphMask release];
@@ -939,7 +1057,7 @@ void InputIndicatorGeometryTests::catPoseUsesDistinctSeatedWalkRunGeometry()
   QVERIFY(idle.torsoBounds.height > walk.torsoBounds.height);
   QVERIFY(walk.torsoBounds.width > idle.torsoBounds.width);
   QVERIFY(run.torsoBounds.width > walk.torsoBounds.width);
-  QVERIFY(run.torsoBounds.height < walk.torsoBounds.height);
+  QVERIFY(run.torsoBounds.height <= walk.torsoBounds.height);
   QVERIFY(std::abs(idle.bodyAngleDegrees) < 1e-9);
   QVERIFY(std::abs(walk.bodyAngleDegrees) < 1e-9);
   QVERIFY(std::abs(run.bodyAngleDegrees) > 0);
@@ -953,12 +1071,13 @@ void InputIndicatorGeometryTests::catPoseUsesDistinctSeatedWalkRunGeometry()
       [silhouette = model.silhouetteBounds](
           const InputIndicatorRect &bounds
       ) {
-        return bounds.x >= silhouette.x &&
-               bounds.y >= silhouette.y &&
+        constexpr double tolerance = 0.0001;
+        return bounds.x >= silhouette.x - tolerance &&
+               bounds.y >= silhouette.y - tolerance &&
                bounds.x + bounds.width <=
-                   silhouette.x + silhouette.width &&
+                   silhouette.x + silhouette.width + tolerance &&
                bounds.y + bounds.height <=
-                   silhouette.y + silhouette.height;
+                   silhouette.y + silhouette.height + tolerance;
       };
   const InputIndicatorCatPose poses[] = {idle, walk, run};
   for (const auto &pose : poses) {

@@ -76,8 +76,8 @@ struct InputIndicatorCatPose
   InputIndicatorRect frontPawBounds;
   InputIndicatorRect rearPawBounds;
   InputIndicatorRect languageBounds;
-  InputIndicatorRect bellyBounds;
   InputIndicatorRect innerLanguageBounds;
+  double torsoExpansion = 0;
   double bodyAngleDegrees = 0;
   double tailLength = 0;
   double tailStraightness = 0;
@@ -148,6 +148,11 @@ InputIndicatorCatPose inputIndicatorCatPose(
     InputIndicatorMotionState state,
     double phase,
     bool reducedMotion
+);
+
+InputIndicatorPoint inputIndicatorCatTorsoPoint(
+    const InputIndicatorCatPose &pose,
+    InputIndicatorPoint point
 );
 
 InputIndicatorTailPose inputIndicatorCatTailPose(

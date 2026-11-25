@@ -347,52 +347,39 @@ InputIndicatorCatPose inputIndicatorCatPose(
       .width = 8.0,
       .height = 7.0,
   };
-  constexpr double bellyWidth = 11.5;
-  constexpr double bellyHeight = 8.0;
-  const InputIndicatorRect bellyBounds{
-      .x = labelCenterX - bellyWidth / 2.0,
-      .y = labelCenterY - bellyHeight / 2.0,
-      .width = bellyWidth,
-      .height = bellyHeight,
+  const double torsoExpansion =
+      state == InputIndicatorMotionState::Idle
+          ? 1.5
+          : state == InputIndicatorMotionState::Walk
+                ? 1.2
+                : 1.5;
+  const double torsoWidth =
+      state == InputIndicatorMotionState::Idle
+          ? 11.0
+          : state == InputIndicatorMotionState::Walk
+                ? 12.0
+                : 13.0;
+  const double torsoHeight =
+      state == InputIndicatorMotionState::Idle
+          ? 10.0
+          : 8.0;
+  const InputIndicatorRect torsoBounds{
+      .x = labelCenterX - torsoWidth / 2.0,
+      .y = labelCenterY - torsoHeight / 2.0,
+      .width = torsoWidth,
+      .height = torsoHeight,
   };
   const InputIndicatorRect silhouette{
-      .x = std::min(
-          artworkSilhouette.x, bellyBounds.x
-      ),
-      .y = std::min(
-          artworkSilhouette.y, bellyBounds.y
-      ),
-      .width =
-          std::max(
-              artworkSilhouette.x +
-                  artworkSilhouette.width,
-              bellyBounds.x + bellyBounds.width
-          ) -
-          std::min(
-              artworkSilhouette.x, bellyBounds.x
-          ),
-      .height =
-          std::max(
-              artworkSilhouette.y +
-                  artworkSilhouette.height,
-              bellyBounds.y + bellyBounds.height
-          ) -
-          std::min(
-              artworkSilhouette.y, bellyBounds.y
-          ),
+      .x = artworkSilhouette.x,
+      .y = artworkSilhouette.y - torsoExpansion,
+      .width = artworkSilhouette.width,
+      .height = artworkSilhouette.height +
+          torsoExpansion * 2.0,
   };
-  const double torsoY = silhouette.y + 0.2;
-  const double torsoHeight =
-      std::max(silhouette.height - 0.2, 8.0);
   return {
       .artworkFrame = artworkFrame,
       .silhouetteBounds = silhouette,
-      .torsoBounds = {
-          .x = silhouette.x + silhouette.width * 0.26,
-          .y = torsoY,
-          .width = silhouette.width * 0.68,
-          .height = torsoHeight,
-      },
+      .torsoBounds = torsoBounds,
       .headBounds = {
           .x = silhouette.x + silhouette.width * 0.72,
           .y = silhouette.y + silhouette.height * 0.35,
@@ -412,8 +399,8 @@ InputIndicatorCatPose inputIndicatorCatPose(
           .height = std::min(silhouette.height, 3.0),
       },
       .languageBounds = artwork.languageBounds,
-      .bellyBounds = bellyBounds,
       .innerLanguageBounds = innerLanguageBounds,
+      .torsoExpansion = torsoExpansion,
       .bodyAngleDegrees =
           state == InputIndicatorMotionState::Run ? 4.5 : 0,
       .tailLength =
@@ -425,6 +412,71 @@ InputIndicatorCatPose inputIndicatorCatPose(
                     ? 0.45
                     : 0.15,
   };
+}
+
+InputIndicatorPoint inputIndicatorCatTorsoPoint(
+    const InputIndicatorCatPose &pose,
+    InputIndicatorPoint point
+)
+{
+  if (pose.torsoExpansion <= 0 ||
+      !std::isfinite(point.x) ||
+      !std::isfinite(point.y)) {
+    return point;
+  }
+
+  const double centerX =
+      pose.innerLanguageBounds.x +
+      pose.innerLanguageBounds.width / 2.0;
+  const double centerY =
+      pose.innerLanguageBounds.y +
+      pose.innerLanguageBounds.height / 2.0;
+  constexpr double innerX = 4.5;
+  constexpr double outerX = 6.5;
+  constexpr double minimumY = 0.1;
+  constexpr double fullY = 1.2;
+  constexpr double maximumY = 4.0;
+  const double dx = std::abs(point.x - centerX);
+  const double dy = point.y - centerY;
+  const double verticalDistance = std::abs(dy);
+  if (dx >= outerX ||
+      verticalDistance <= minimumY ||
+      verticalDistance >= maximumY) {
+    return point;
+  }
+
+  const auto smoothstep =
+      [](double edge0, double edge1, double value) {
+        if (edge0 == edge1) {
+          return value < edge0 ? 0.0 : 1.0;
+        }
+        const double t =
+            std::clamp(
+                (value - edge0) / (edge1 - edge0),
+                0.0,
+                1.0
+            );
+        return t * t * (3.0 - 2.0 * t);
+      };
+  const double xWeight =
+      1.0 -
+      smoothstep(innerX, outerX, dx);
+  const double growWeight =
+      smoothstep(
+          minimumY, fullY, verticalDistance
+      );
+  const double fadeWeight =
+      1.0 -
+      smoothstep(
+          3.5, maximumY, verticalDistance
+      );
+  point.y +=
+      (dy < 0 ? -1.0 : 1.0) *
+      pose.torsoExpansion *
+      xWeight *
+      growWeight *
+      fadeWeight;
+  return point;
 }
 
 InputIndicatorTailPose inputIndicatorCatTailPose(

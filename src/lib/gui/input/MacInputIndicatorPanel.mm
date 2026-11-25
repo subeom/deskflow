@@ -223,6 +223,52 @@ NSBezierPath *catArtworkPath(
   return path;
 }
 
+NSBezierPath *catArtworkPath(
+    const InputIndicatorCatPose &pose,
+    std::span<const MacInputIndicatorCatPathCommand> commands
+)
+{
+  NSBezierPath *path = [NSBezierPath bezierPath];
+  const auto deformed =
+      [&pose](double x, double y) {
+        return inputIndicatorCatTorsoPoint(
+            pose, {.x = x, .y = y}
+        );
+      };
+  for (const auto &command : commands) {
+    switch (command.type) {
+    case MacInputIndicatorCatPathCommandType::Move: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path moveToPoint:NSMakePoint(point.x, point.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Line: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path lineToPoint:NSMakePoint(point.x, point.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Cubic: {
+      const auto control1 =
+          deformed(command.x1, command.y1);
+      const auto control2 =
+          deformed(command.x2, command.y2);
+      const auto point =
+          deformed(command.x3, command.y3);
+      [path curveToPoint:NSMakePoint(point.x, point.y)
+          controlPoint1:NSMakePoint(control1.x, control1.y)
+          controlPoint2:NSMakePoint(control2.x, control2.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Close:
+      [path closePath];
+      break;
+    }
+  }
+  return path;
+}
+
 void drawCat(
     NSRect bounds, NSColor *fill, NSColor *edge,
     InputIndicatorMotionState motionState,
@@ -252,17 +298,9 @@ void drawCat(
   }
 
   NSBezierPath *far = catArtworkPath(artwork.far);
-  NSBezierPath *near = catArtworkPath(artwork.near);
-  NSBezierPath *belly =
-      [NSBezierPath bezierPathWithRoundedRect:
-                        NSMakeRect(
-                            pose.bellyBounds.x,
-                            pose.bellyBounds.y,
-                            pose.bellyBounds.width,
-                            pose.bellyBounds.height
-                        )
-                                xRadius:3.2
-                                yRadius:3.2];
+  NSBezierPath *near = catArtworkPath(
+      pose, artwork.near
+  );
   NSBezierPath *silhouette = [NSBezierPath bezierPath];
   appendPath(silhouette, far);
   appendPath(silhouette, near);
@@ -310,7 +348,6 @@ void drawCat(
   NSColor *farFill =
       [fill blendedColorWithFraction:0.18 ofColor:edge];
   fillSilhouette(far, farFill, edge);
-  fillSilhouette(belly, fill, edge);
   fillSilhouette(near, fill, edge);
   [NSGraphicsContext restoreGraphicsState];
 }
@@ -516,16 +553,11 @@ void drawLanguageGlyph(
     bounds = inputIndicatorCatInnerLanguageBounds(
         pose, facesRight
     );
-    catSilhouette =
-        [NSBezierPath bezierPathWithRoundedRect:
-                          NSMakeRect(
-                              pose.bellyBounds.x,
-                              pose.bellyBounds.y,
-                              pose.bellyBounds.width,
-                              pose.bellyBounds.height
-                          )
-                                  xRadius:3.2
-                                  yRadius:3.2];
+    const auto artwork =
+        macInputIndicatorCatArtwork(pose.artworkFrame);
+    catSilhouette = catArtworkPath(
+        pose, artwork.near
+    );
     if (facesRight != model.sourceFacesRight) {
       NSAffineTransform *mirror =
           [NSAffineTransform transform];

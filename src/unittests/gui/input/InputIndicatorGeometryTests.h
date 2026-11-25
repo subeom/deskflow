@@ -22,6 +22,7 @@ private Q_SLOTS:
   void compactPanelStyleUsesApprovedMetrics();
   void companionRenderModelUsesUnifiedSilhouetteAndInternalLabel();
   void catRenderModelUsesSideProfileAndPersistentFacing();
+  void catTorsoContourExpandsWithoutPadPrimitive();
   void catArtworkFramesFollowApprovedPoseSheet();
   void catArtworkMetricsMatchApprovedSource();
   void catLabelLayoutFitsEveryArtworkPoseAndSource();
