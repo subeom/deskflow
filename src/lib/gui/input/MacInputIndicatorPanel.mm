@@ -965,8 +965,23 @@ struct MacInputIndicatorPanel::Impl
     bool active = true;
   };
 
-  explicit Impl(std::function<void()> invalidated)
-      : presentationInvalidated(std::move(invalidated))
+  explicit Impl(
+      std::function<void()> invalidated,
+      MacInputIndicatorPanel::PointerLocation pointerLocation
+  )
+      : presentationInvalidated(std::move(invalidated)),
+        pointerLocation(
+            pointerLocation
+                ? std::move(pointerLocation)
+                : [] {
+                    const auto cursor =
+                        NSEvent.mouseLocation;
+                    return InputIndicatorPoint{
+                        .x = cursor.x,
+                        .y = cursor.y,
+                    };
+                  }
+        )
   {
     lifetime = std::make_shared<Lifetime>();
     lifetime->owner = this;
@@ -1061,6 +1076,7 @@ struct MacInputIndicatorPanel::Impl
   id activeSpaceToken = nil;
   std::shared_ptr<Lifetime> lifetime;
   std::function<void()> presentationInvalidated;
+  MacInputIndicatorPanel::PointerLocation pointerLocation;
   InputIndicatorCompanion companion =
       InputIndicatorCompanion::Cat;
   deskflow::input::InputIndicatorSource source =
@@ -1092,10 +1108,12 @@ struct MacInputIndicatorPanel::Impl
 };
 
 MacInputIndicatorPanel::MacInputIndicatorPanel(
-    std::function<void()> presentationInvalidated
+    std::function<void()> presentationInvalidated,
+    PointerLocation pointerLocation
 )
     : m_impl(std::make_unique<Impl>(
-          std::move(presentationInvalidated)
+          std::move(presentationInvalidated),
+          std::move(pointerLocation)
       ))
 {
 }
@@ -1187,9 +1205,9 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
 {
   const auto style =
       macInputIndicatorPanelStyle(m_impl->companion);
-  const auto cursor = NSEvent.mouseLocation;
+  const auto cursor = m_impl->pointerLocation();
   const auto target = positionInputIndicator(
-      {.x = cursor.x, .y = cursor.y},
+      cursor,
       {.width = style.width, .height = style.height},
       screenRects(),
       position,

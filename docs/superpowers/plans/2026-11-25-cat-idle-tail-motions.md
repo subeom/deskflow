@@ -98,8 +98,10 @@ QCOMPARE(ids.size(), size_t{5});
 
 For each ID, call
 `inputIndicatorCatIdleTailOffset(motion, progress)` at 101 samples and assert
-both offsets are finite and `abs(x) <= 0.90`, `abs(y) <= 1.35`. Assert that
+both offsets are finite and `abs(x) <= 1.60`, `abs(y) <= 2.60`. Assert that
 sampled five-motion offset vectors differ pairwise.
+Also require at least 20 changed tail pixels at 1x and 65 at 2x while all
+non-tail and glyph pixels remain unchanged.
 
 - [ ] **Step 3: Add idle/movement/reduced-motion assertions**
 
@@ -270,8 +272,8 @@ QuestionLift 2400
 ```
 
 Each formula returns `{0, 0}` for progress zero/one and invalid input. Clamp
-the progress first. Keep horizontal offset at 0.90 pt maximum and vertical
-offset at 1.35 pt maximum.
+the progress first. Keep horizontal offset at 1.60 pt maximum and vertical
+offset at 2.60 pt maximum.
 
 - [ ] **Step 4: Implement the tail-region point warp**
 
@@ -303,6 +305,23 @@ env QT_QPA_PLATFORM=offscreen HOME="$SCRATCH/home" \
 
 Expected: all pure scheduler, timing, deformation, and existing geometry slots
 pass.
+
+- [ ] **Step 6: Exercise the real panel redraw with a fixed cursor**
+
+Inject an internal pointer-location provider into
+`MacInputIndicatorPanel` for tests while production continues to read
+`NSEvent.mouseLocation`. Show the real Cat panel, wait 650 ms, move it at a
+fixed point, and assert:
+
+```cpp
+QCOMPARE(result.frameIntervalMilliseconds, 75);
+QVERIFY(afterProgress > beforeProgress);
+QVERIFY(tailPixels > 0);
+QCOMPARE(nonTailPixels, 0);
+```
+
+Expected: the actual `DeskflowInputIndicatorView` caches a changed tail mask
+at 2x backing scale, and no body/head/glyph pixels move.
 
 ### Task 3: Integrate the Idle Frame into the Cat Painter
 

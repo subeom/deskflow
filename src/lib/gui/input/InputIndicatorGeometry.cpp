@@ -36,6 +36,7 @@ constexpr std::uint32_t kCatIdleTailMotionMask = 0x1f;
 constexpr std::uint32_t kCatIdleTailSeedFallback =
     0x6d2b79f5;
 constexpr double kPi = 3.14159265358979323846;
+constexpr double kCatIdleTailVisibilityScale = 2.0;
 
 std::uint32_t nextCatIdleTailSeed(std::uint32_t seed)
 {
@@ -680,8 +681,12 @@ InputIndicatorPoint inputIndicatorCatIdleTailOffset(
     const double wave =
         std::sin(progress * 2.0 * kPi) * window;
     return {
-        .x = 0.18 * wave,
-        .y = 0.68 * wave,
+        .x =
+            0.18 * wave *
+            kCatIdleTailVisibilityScale,
+        .y =
+            0.68 * wave *
+            kCatIdleTailVisibilityScale,
     };
   }
   case InputIndicatorCatIdleTailMotion::TipFlick: {
@@ -696,8 +701,12 @@ InputIndicatorPoint inputIndicatorCatIdleTailOffset(
         std::sin(local * 2.0 * kPi) *
         std::sin(local * kPi);
     return {
-        .x = -0.22 * wave,
-        .y = 1.10 * wave,
+        .x =
+            -0.22 * wave *
+            kCatIdleTailVisibilityScale,
+        .y =
+            1.10 * wave *
+            kCatIdleTailVisibilityScale,
     };
   }
   case InputIndicatorCatIdleTailMotion::CurlUnfurl: {
@@ -705,16 +714,24 @@ InputIndicatorPoint inputIndicatorCatIdleTailOffset(
         std::sin(progress * kPi);
     const double eased = curl * curl;
     return {
-        .x = 0.78 * eased,
-        .y = -0.58 * eased,
+        .x =
+            0.78 * eased *
+            kCatIdleTailVisibilityScale,
+        .y =
+            -0.58 * eased *
+            kCatIdleTailVisibilityScale,
     };
   }
   case InputIndicatorCatIdleTailMotion::LazySweep: {
     const double wave =
         std::sin(progress * 2.0 * kPi) * window;
     return {
-        .x = -0.62 * wave,
-        .y = 0.42 * wave,
+        .x =
+            -0.62 * wave *
+            kCatIdleTailVisibilityScale,
+        .y =
+            0.42 * wave *
+            kCatIdleTailVisibilityScale,
     };
   }
   case InputIndicatorCatIdleTailMotion::QuestionLift: {
@@ -722,8 +739,12 @@ InputIndicatorPoint inputIndicatorCatIdleTailOffset(
         pulseWindow(progress, 0.12, 0.44) *
         (1.0 - pulseWindow(progress, 0.70, 0.98));
     return {
-        .x = 0.50 * lift,
-        .y = 1.28 * lift,
+        .x =
+            0.50 * lift *
+            kCatIdleTailVisibilityScale,
+        .y =
+            1.28 * lift *
+            kCatIdleTailVisibilityScale,
     };
   }
   }

@@ -751,8 +751,12 @@ void requestMacInputIndicatorPanelPresentation(Dispatch dispatch)
 class MacInputIndicatorPanel
 {
 public:
+  using PointerLocation =
+      std::function<InputIndicatorPoint()>;
+
   explicit MacInputIndicatorPanel(
-      std::function<void()> presentationInvalidated = {}
+      std::function<void()> presentationInvalidated = {},
+      PointerLocation pointerLocation = {}
   );
   ~MacInputIndicatorPanel();
 

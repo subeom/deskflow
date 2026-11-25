@@ -256,6 +256,143 @@ NSBitmapImageRep *catBodyBitmap(
   return bitmap;
 }
 
+NSBitmapImageRep *catGlyphBitmap(
+    const InputIndicatorCatPose &pose,
+    InputIndicatorMotionState state,
+    bool facesRight,
+    int scale,
+    int paddingPoints
+)
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto source = Source::LatinABC;
+  auto target =
+      macInputIndicatorDisplayRect(
+          inputIndicatorCatInnerLanguageBounds(
+              pose, facesRight
+          )
+      );
+  target.x += paddingPoints;
+  target.y += paddingPoints;
+  const auto preference =
+      macInputIndicatorDisplayLabelPreference(
+          source, state
+      );
+  double pointSize = preference.pointSize;
+  std::optional<MacInputIndicatorLabelLayout> layout;
+  NSFont *font = nil;
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    font =
+        [NSFont systemFontOfSize:pointSize
+                          weight:NSFontWeightSemibold];
+    const auto measured =
+        macInputIndicatorCoreTextLabelMeasurement(
+            @"A", font
+        );
+    if (!measured) {
+      return nil;
+    }
+    layout = macInputIndicatorFitLabelInkLayout(
+        pointSize,
+        preference.minimumPointSize,
+        target,
+        measured->ink
+    );
+    if (!layout) {
+      return nil;
+    }
+    if (std::abs(
+            layout->fontSize - pointSize
+        ) < 0.01) {
+      font =
+          [NSFont systemFontOfSize:layout->fontSize
+                            weight:NSFontWeightSemibold];
+      break;
+    }
+    pointSize = layout->fontSize;
+  }
+  if (!layout || !font) {
+    return nil;
+  }
+
+  NSBitmapImageRep *bitmap =
+      pixelBitmap(scale, paddingPoints);
+  if (!bitmap) {
+    return nil;
+  }
+  NSGraphicsContext *graphics =
+      [NSGraphicsContext
+          graphicsContextWithBitmapImageRep:bitmap];
+  [NSGraphicsContext saveGraphicsState];
+  [NSGraphicsContext setCurrentContext:graphics];
+  CGContextRef context = [graphics CGContext];
+  CGContextSaveGState(context);
+  CGContextScaleCTM(context, scale, scale);
+  macInputIndicatorDrawCoreTextLabel(
+      context,
+      @"A",
+      font,
+      [NSColor blackColor],
+      *layout
+  );
+  CGContextRestoreGState(context);
+  [NSGraphicsContext restoreGraphicsState];
+  return bitmap;
+}
+
+struct CatPixelDifference
+{
+  int tail = 0;
+  int nonTail = 0;
+};
+
+CatPixelDifference catPixelDifference(
+    NSBitmapImageRep *from,
+    NSBitmapImageRep *to,
+    NSInteger tailBoundaryX
+)
+{
+  CatPixelDifference difference;
+  for (NSInteger y = 0; y < from.pixelsHigh; ++y) {
+    for (NSInteger x = 0; x < from.pixelsWide; ++x) {
+      const double fromAlpha =
+          [from colorAtX:x y:y].alphaComponent;
+      const double toAlpha =
+          [to colorAtX:x y:y].alphaComponent;
+      if (std::abs(fromAlpha - toAlpha) <= 0.02) {
+        continue;
+      }
+      if (x < tailBoundaryX) {
+        ++difference.tail;
+      } else {
+        ++difference.nonTail;
+      }
+    }
+  }
+  return difference;
+}
+
+int bitmapChangedPixels(
+    NSBitmapImageRep *from,
+    NSBitmapImageRep *to
+)
+{
+  int changed = 0;
+  for (NSInteger y = 0; y < from.pixelsHigh; ++y) {
+    for (NSInteger x = 0; x < from.pixelsWide; ++x) {
+      const double fromAlpha =
+          [from colorAtX:x y:y].alphaComponent;
+      const double toAlpha =
+          [to colorAtX:x y:y].alphaComponent;
+      if (std::abs(fromAlpha - toAlpha) > 0.02) {
+        ++changed;
+      }
+    }
+  }
+  return changed;
+}
+
 } // namespace
 
 void InputIndicatorGeometryTests::bottomRightOffsetsCursor()
@@ -1303,6 +1440,346 @@ void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
   QCOMPARE(outsidePixels, 0);
 }
 
+void InputIndicatorGeometryTests::catIdleTailMotionChangesOnlyTailPixels()
+{
+  const auto pose =
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Idle, 0, false
+      );
+  const auto artwork =
+      macInputIndicatorCatArtwork(pose.artworkFrame);
+  const struct
+  {
+    InputIndicatorCatIdleTailMotion motion;
+    double fromProgress;
+    double toProgress;
+  } windows[] = {
+      {
+          InputIndicatorCatIdleTailMotion::RelaxedSway,
+          0.25,
+          0.75,
+      },
+      {
+          InputIndicatorCatIdleTailMotion::TipFlick,
+          0.40,
+          0.60,
+      },
+      {
+          InputIndicatorCatIdleTailMotion::CurlUnfurl,
+          0.10,
+          0.50,
+      },
+      {
+          InputIndicatorCatIdleTailMotion::LazySweep,
+          0.25,
+          0.75,
+      },
+      {
+          InputIndicatorCatIdleTailMotion::QuestionLift,
+          0.10,
+          0.55,
+      },
+  };
+  constexpr int paddingPoints = 4;
+  for (const int scale : {1, 2}) {
+    const NSInteger tailBoundaryX =
+        static_cast<NSInteger>(
+            std::ceil(
+                (
+                    paddingPoints +
+                    macInputIndicatorDisplayPoint(
+                        {.x = 13.2, .y = 0}
+                    ).x
+                ) *
+                scale
+            )
+        );
+    for (const auto &window : windows) {
+      const InputIndicatorCatIdleTailFrame fromFrame{
+          .motion = window.motion,
+          .progress = window.fromProgress,
+          .active = true,
+      };
+      const InputIndicatorCatIdleTailFrame toFrame{
+          .motion = window.motion,
+          .progress = window.toProgress,
+          .active = true,
+      };
+      NSBitmapImageRep *from =
+          catBodyBitmap(
+              pose,
+              artwork,
+              fromFrame,
+              true,
+              scale,
+              paddingPoints,
+              false
+          );
+      NSBitmapImageRep *to =
+          catBodyBitmap(
+              pose,
+              artwork,
+              toFrame,
+              true,
+              scale,
+              paddingPoints,
+              false
+          );
+      NSBitmapImageRep *fromGlyph =
+          catGlyphBitmap(
+              pose,
+              InputIndicatorMotionState::Idle,
+              true,
+              scale,
+              paddingPoints
+          );
+      NSBitmapImageRep *toGlyph =
+          catGlyphBitmap(
+              pose,
+              InputIndicatorMotionState::Idle,
+              true,
+              scale,
+              paddingPoints
+          );
+      QVERIFY(from);
+      QVERIFY(to);
+      QVERIFY(fromGlyph);
+      QVERIFY(toGlyph);
+      const auto difference =
+          catPixelDifference(
+              from, to, tailBoundaryX
+          );
+      const int glyphChanged =
+          bitmapChangedPixels(fromGlyph, toGlyph);
+      qInfo() << "idle-tail-pixels"
+              << static_cast<int>(window.motion)
+              << "scale" << scale
+              << "tail" << difference.tail
+              << "nonTail" << difference.nonTail
+              << "glyph" << glyphChanged;
+      QVERIFY(
+          difference.tail >=
+          (scale == 1 ? 20 : 65)
+      );
+      QCOMPARE(difference.nonTail, 0);
+      QCOMPARE(glyphChanged, 0);
+      [from release];
+      [to release];
+      [fromGlyph release];
+      [toGlyph release];
+    }
+  }
+
+  for (const int scale : {1, 2}) {
+    for (const auto &motion :
+         {
+             InputIndicatorCatIdleTailMotion::RelaxedSway,
+             InputIndicatorCatIdleTailMotion::TipFlick,
+             InputIndicatorCatIdleTailMotion::CurlUnfurl,
+             InputIndicatorCatIdleTailMotion::LazySweep,
+             InputIndicatorCatIdleTailMotion::QuestionLift,
+         }) {
+      const double duration =
+          inputIndicatorCatIdleTailMotionDuration(motion);
+      int visibleTicks = 0;
+      int ticks = 0;
+      int maximumTailPixels = 0;
+      const NSInteger tailBoundaryX =
+          static_cast<NSInteger>(
+              std::ceil(
+                  (
+                      paddingPoints +
+                      macInputIndicatorDisplayPoint(
+                          {.x = 13.2, .y = 0}
+                      ).x
+                  ) *
+                  scale
+              )
+          );
+      for (double milliseconds = 0;
+           milliseconds + 75.0 < duration;
+           milliseconds += 75.0) {
+        const InputIndicatorCatIdleTailFrame fromFrame{
+            .motion = motion,
+            .progress = milliseconds / duration,
+            .active = true,
+        };
+        const InputIndicatorCatIdleTailFrame toFrame{
+            .motion = motion,
+            .progress =
+                (milliseconds + 75.0) / duration,
+            .active = true,
+        };
+        NSBitmapImageRep *from =
+            catBodyBitmap(
+                pose,
+                artwork,
+                fromFrame,
+                true,
+                scale,
+                paddingPoints,
+                false
+            );
+        NSBitmapImageRep *to =
+            catBodyBitmap(
+                pose,
+                artwork,
+                toFrame,
+                true,
+                scale,
+                paddingPoints,
+                false
+            );
+        QVERIFY(from);
+        QVERIFY(to);
+        const auto difference =
+            catPixelDifference(
+                from, to, tailBoundaryX
+            );
+        if (difference.tail > 0) {
+          ++visibleTicks;
+        }
+        maximumTailPixels =
+            std::max(
+                maximumTailPixels,
+                difference.tail
+            );
+        QCOMPARE(difference.nonTail, 0);
+        [from release];
+        [to release];
+        ++ticks;
+      }
+      qInfo() << "idle-tail-cadence"
+              << static_cast<int>(motion)
+              << "scale" << scale
+              << "visibleTicks" << visibleTicks
+              << "ticks" << ticks
+              << "maxTailPixels"
+              << maximumTailPixels;
+      QVERIFY(visibleTicks > 0);
+    }
+  }
+}
+
+void InputIndicatorGeometryTests::catPanelIdleTailFrameRepaints()
+{
+  const auto fixedCursor =
+      NSEvent.mouseLocation;
+  const InputIndicatorPoint fixedPointer{
+      .x = fixedCursor.x,
+      .y = fixedCursor.y,
+  };
+  MacInputIndicatorPanel panel(
+      {},
+      [fixedPointer] {
+        return fixedPointer;
+      }
+  );
+  const MacInputIndicatorPanelOptions options{
+      .source =
+          deskflow::input::InputIndicatorSource::LatinABC,
+      .companion = InputIndicatorCompanion::Cat,
+  };
+  QVERIFY(panel.show(options));
+
+  Class panelClass =
+      NSClassFromString(@"DeskflowInputIndicatorPanel");
+  QVERIFY(panelClass);
+  NSWindow *window = nil;
+  for (NSWindow *candidate in NSApp.windows) {
+    if ([candidate isKindOfClass:panelClass]) {
+      window = candidate;
+      break;
+    }
+  }
+  QVERIFY(window);
+  NSView *view = window.contentView;
+  QVERIFY(view);
+  [view displayIfNeeded];
+  const double beforeProgress =
+      [[view valueForKey:@"catIdleTailProgress"]
+          doubleValue];
+  const bool beforeActive =
+      [[view valueForKey:@"catIdleTailActive"]
+          boolValue];
+  QVERIFY(beforeActive);
+  NSBitmapImageRep *before =
+      [view bitmapImageRepForCachingDisplayInRect:view.bounds];
+  QVERIFY(before);
+  [view cacheDisplayInRect:view.bounds
+         toBitmapImageRep:before];
+
+  QTest::qWait(650);
+  const auto result =
+      panel.move(options.position);
+  qInfo() << "cat-panel-state"
+          << "interval"
+          << result.frameIntervalMilliseconds
+          << "motionState"
+          << [[view valueForKey:@"motionState"]
+                 integerValue]
+          << "motionX"
+          << [[view valueForKey:@"motionX"]
+                 doubleValue]
+          << "motionY"
+          << [[view valueForKey:@"motionY"]
+                 doubleValue]
+          << "facesRight"
+          << [[view valueForKey:@"facesRight"]
+                 boolValue]
+          << "facingScaleX"
+          << [[view valueForKey:@"facingScaleX"]
+                 doubleValue]
+          << "transitionProgress"
+          << [[view valueForKey:@"transitionProgress"]
+                 doubleValue]
+          << "haloPulseCount"
+          << [[view valueForKey:@"haloPulseCount"]
+                 integerValue];
+  QVERIFY(result.visible);
+  QVERIFY(result.animating);
+  QVERIFY(!result.reducedMotion);
+  QCOMPARE(result.frameIntervalMilliseconds, 75);
+  [view displayIfNeeded];
+  const double afterProgress =
+      [[view valueForKey:@"catIdleTailProgress"]
+          doubleValue];
+  const bool afterActive =
+      [[view valueForKey:@"catIdleTailActive"]
+          boolValue];
+  QVERIFY(afterActive);
+  QVERIFY(afterProgress > beforeProgress);
+  NSBitmapImageRep *after =
+      [view bitmapImageRepForCachingDisplayInRect:view.bounds];
+  QVERIFY(after);
+  [view cacheDisplayInRect:view.bounds
+         toBitmapImageRep:after];
+  const double backingScale =
+      static_cast<double>(after.pixelsWide) /
+      view.bounds.size.width;
+  const NSInteger tailBoundaryX =
+      static_cast<NSInteger>(
+          std::ceil(
+              macInputIndicatorDisplayPoint(
+                  {.x = 13.2, .y = 0}
+              ).x *
+              backingScale
+          )
+      );
+  const auto difference =
+      catPixelDifference(
+          before, after, tailBoundaryX
+      );
+  qInfo() << "cat-panel-repaint"
+          << beforeProgress << afterProgress
+          << "tail" << difference.tail
+          << "nonTail" << difference.nonTail
+          << "backingScale" << backingScale;
+  QVERIFY(difference.tail > 0);
+  QCOMPARE(difference.nonTail, 0);
+  panel.hide();
+}
+
 void InputIndicatorGeometryTests::catPoseUsesDistinctSeatedWalkRunGeometry()
 {
   const auto model =
@@ -1643,8 +2120,8 @@ void InputIndicatorGeometryTests::catIdleTailMotionsCoverFiveFinitePatterns()
           );
       QVERIFY(std::isfinite(offset.x));
       QVERIFY(std::isfinite(offset.y));
-      QVERIFY(std::abs(offset.x) <= 0.90 + 1e-12);
-      QVERIFY(std::abs(offset.y) <= 1.35 + 1e-12);
+      QVERIFY(std::abs(offset.x) <= 1.60 + 1e-12);
+      QVERIFY(std::abs(offset.y) <= 2.60 + 1e-12);
       if (sample % 20 == 0) {
         samples[motionIndex].push_back(offset);
       }
