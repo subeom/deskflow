@@ -46,6 +46,19 @@ enum class InputIndicatorMotionState
   Run
 };
 
+enum class InputIndicatorCatArtworkFrame
+{
+  IdleRise,
+  IdleNeutral,
+  IdleFall,
+  WalkReach,
+  WalkPass,
+  WalkPush,
+  RunCoil,
+  RunAir,
+  RunLand
+};
+
 struct InputIndicatorMotionPose
 {
   double bodyBob = 0;
@@ -55,10 +68,14 @@ struct InputIndicatorMotionPose
 
 struct InputIndicatorCatPose
 {
+  InputIndicatorCatArtworkFrame artworkFrame =
+      InputIndicatorCatArtworkFrame::IdleNeutral;
+  InputIndicatorRect silhouetteBounds;
   InputIndicatorRect torsoBounds;
   InputIndicatorRect headBounds;
   InputIndicatorRect frontPawBounds;
   InputIndicatorRect rearPawBounds;
+  InputIndicatorRect languageBounds;
   double bodyAngleDegrees = 0;
   double tailLength = 0;
   double tailStraightness = 0;

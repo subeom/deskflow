@@ -6,6 +6,7 @@
 #include "InputIndicatorGeometryTests.h"
 
 #include "gui/input/InputIndicatorGeometry.h"
+#include "gui/input/MacInputIndicatorCatArtwork.h"
 #include "gui/input/MacInputIndicatorPanel.h"
 
 #include <QTest>
@@ -255,10 +256,11 @@ void InputIndicatorGeometryTests::catRenderModelUsesSideProfileAndPersistentFaci
       macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
   QVERIFY(model.usesSideProfile);
   QVERIFY(model.mirrorsWithMotion);
-  QVERIFY(model.headBounds.x < model.torsoBounds.x);
+  QVERIFY(model.sourceFacesRight);
+  QVERIFY(model.headBounds.x > model.torsoBounds.x);
   QVERIFY(
-      model.tailBounds.x + model.tailBounds.width >
-      model.torsoBounds.x + model.torsoBounds.width
+      model.tailBounds.x <
+      model.torsoBounds.x
   );
   QVERIFY(model.pawBounds.y <= model.torsoBounds.y);
   QVERIFY(
@@ -295,34 +297,230 @@ void InputIndicatorGeometryTests::catRenderModelUsesSideProfileAndPersistentFaci
   ));
 }
 
+void InputIndicatorGeometryTests::catArtworkFramesFollowApprovedPoseSheet()
+{
+  QCOMPARE(
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Idle, 0.0, false
+      ).artworkFrame,
+      InputIndicatorCatArtworkFrame::IdleNeutral
+  );
+  QCOMPARE(
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Idle, 0.25, false
+      ).artworkFrame,
+      InputIndicatorCatArtworkFrame::IdleRise
+  );
+  QCOMPARE(
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Idle, 0.75, false
+      ).artworkFrame,
+      InputIndicatorCatArtworkFrame::IdleFall
+  );
+
+  QCOMPARE(
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Walk, 0.0, false
+      ).artworkFrame,
+      InputIndicatorCatArtworkFrame::WalkReach
+  );
+  QCOMPARE(
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Walk, 0.34, false
+      ).artworkFrame,
+      InputIndicatorCatArtworkFrame::WalkPass
+  );
+  QCOMPARE(
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Walk, 0.67, false
+      ).artworkFrame,
+      InputIndicatorCatArtworkFrame::WalkPush
+  );
+
+  QCOMPARE(
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Run, 0.0, false
+      ).artworkFrame,
+      InputIndicatorCatArtworkFrame::RunCoil
+  );
+  QCOMPARE(
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Run, 0.34, false
+      ).artworkFrame,
+      InputIndicatorCatArtworkFrame::RunAir
+  );
+  QCOMPARE(
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Run, 0.67, false
+      ).artworkFrame,
+      InputIndicatorCatArtworkFrame::RunLand
+  );
+  QCOMPARE(
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Run, 0.75, true
+      ).artworkFrame,
+      InputIndicatorCatArtworkFrame::IdleNeutral
+  );
+}
+
+void InputIndicatorGeometryTests::catArtworkMetricsMatchApprovedSource()
+{
+  const auto idle = inputIndicatorCatPose(
+      InputIndicatorMotionState::Idle, 0.0, false
+  );
+  const auto walk = inputIndicatorCatPose(
+      InputIndicatorMotionState::Walk, 0.0, false
+  );
+  const auto run = inputIndicatorCatPose(
+      InputIndicatorMotionState::Run, 0.34, false
+  );
+  const auto model =
+      macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
+
+  QVERIFY(std::abs(
+      idle.silhouetteBounds.width - 20.6824
+  ) < 0.02);
+  QVERIFY(std::abs(
+      idle.silhouetteBounds.height - 12.9470
+  ) < 0.02);
+  QVERIFY(std::abs(
+      walk.silhouetteBounds.width - 21.8200
+  ) < 0.02);
+  QVERIFY(std::abs(
+      walk.silhouetteBounds.height - 10.7184
+  ) < 0.02);
+  QVERIFY(std::abs(
+      run.silhouetteBounds.width - 28.0000
+  ) < 0.02);
+  QVERIFY(std::abs(
+      run.silhouetteBounds.height - 9.7445
+  ) < 0.02);
+
+  const auto assertGlyph =
+      [&model](
+          const InputIndicatorCatPose &pose,
+          double centerX,
+          double centerY
+      ) {
+        QCOMPARE(pose.languageBounds.width, 9.0);
+        QCOMPARE(pose.languageBounds.height, 8.0);
+        QVERIFY(std::abs(
+            pose.languageBounds.x +
+                pose.languageBounds.width / 2.0 -
+                centerX
+        ) < 0.02);
+        QVERIFY(std::abs(
+            pose.languageBounds.y +
+                pose.languageBounds.height / 2.0 -
+                centerY
+        ) < 0.02);
+        QVERIFY(
+            pose.languageBounds.x >= pose.silhouetteBounds.x &&
+            pose.languageBounds.y >= pose.silhouetteBounds.y &&
+            pose.languageBounds.x + pose.languageBounds.width <=
+                pose.silhouetteBounds.x +
+                    pose.silhouetteBounds.width &&
+            pose.languageBounds.y + pose.languageBounds.height <=
+                pose.silhouetteBounds.y +
+                    pose.silhouetteBounds.height
+        );
+        const auto leftBounds =
+            inputIndicatorCatLanguageBounds(pose, false);
+        const auto mirroredCenterX =
+            leftBounds.x + leftBounds.width / 2.0;
+        QVERIFY(std::abs(
+            mirroredCenterX - (model.totalWidth - centerX)
+        ) < 0.02);
+      };
+  assertGlyph(idle, 17.4985, 9.0907);
+  assertGlyph(walk, 16.3336, 10.5258);
+  assertGlyph(run, 16.6132, 11.1921);
+
+  const struct
+  {
+    InputIndicatorMotionState state;
+    double phase;
+    InputIndicatorCatArtworkFrame frame;
+  } keyframes[] = {
+      {.state = InputIndicatorMotionState::Idle,
+       .phase = 0.0,
+       .frame = InputIndicatorCatArtworkFrame::IdleNeutral},
+      {.state = InputIndicatorMotionState::Idle,
+       .phase = 0.25,
+       .frame = InputIndicatorCatArtworkFrame::IdleRise},
+      {.state = InputIndicatorMotionState::Idle,
+       .phase = 0.75,
+       .frame = InputIndicatorCatArtworkFrame::IdleFall},
+      {.state = InputIndicatorMotionState::Walk,
+       .phase = 0.0,
+       .frame = InputIndicatorCatArtworkFrame::WalkReach},
+      {.state = InputIndicatorMotionState::Walk,
+       .phase = 0.34,
+       .frame = InputIndicatorCatArtworkFrame::WalkPass},
+      {.state = InputIndicatorMotionState::Walk,
+       .phase = 0.67,
+       .frame = InputIndicatorCatArtworkFrame::WalkPush},
+      {.state = InputIndicatorMotionState::Run,
+       .phase = 0.0,
+       .frame = InputIndicatorCatArtworkFrame::RunCoil},
+      {.state = InputIndicatorMotionState::Run,
+       .phase = 0.34,
+       .frame = InputIndicatorCatArtworkFrame::RunAir},
+      {.state = InputIndicatorMotionState::Run,
+       .phase = 0.67,
+       .frame = InputIndicatorCatArtworkFrame::RunLand},
+  };
+  for (const auto &keyframe : keyframes) {
+    const auto pose = inputIndicatorCatPose(
+        keyframe.state, keyframe.phase, false
+    );
+    const auto artwork =
+        macInputIndicatorCatArtwork(keyframe.frame);
+    QCOMPARE(pose.artworkFrame, keyframe.frame);
+    QVERIFY(!artwork.near.empty());
+    QVERIFY(!artwork.far.empty());
+    QCOMPARE(
+        pose.silhouetteBounds.x,
+        artwork.silhouetteBounds.x
+    );
+    QCOMPARE(
+        pose.languageBounds.x,
+        artwork.languageBounds.x
+    );
+    assertGlyph(
+        pose,
+        artwork.languageBounds.x +
+            artwork.languageBounds.width / 2.0,
+        artwork.languageBounds.y +
+            artwork.languageBounds.height / 2.0
+    );
+  }
+}
+
 void InputIndicatorGeometryTests::catPoseUsesDistinctSeatedWalkRunGeometry()
 {
   const auto model =
       macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
   const auto idle = inputIndicatorCatPose(
-      InputIndicatorMotionState::Idle, 0.25, false
+      InputIndicatorMotionState::Idle, 0.0, false
   );
   const auto walk = inputIndicatorCatPose(
-      InputIndicatorMotionState::Walk, 0.25, false
+      InputIndicatorMotionState::Walk, 0.0, false
   );
   const auto run = inputIndicatorCatPose(
-      InputIndicatorMotionState::Run, 0.25, false
+      InputIndicatorMotionState::Run, 0.34, false
   );
 
   QVERIFY(idle.torsoBounds.height > walk.torsoBounds.height);
   QVERIFY(walk.torsoBounds.width > idle.torsoBounds.width);
   QVERIFY(run.torsoBounds.width > walk.torsoBounds.width);
   QVERIFY(run.torsoBounds.height < walk.torsoBounds.height);
-  QVERIFY(
-      run.torsoBounds.y + run.torsoBounds.height / 2 <
-      walk.torsoBounds.y + walk.torsoBounds.height / 2
-  );
   QVERIFY(std::abs(idle.bodyAngleDegrees) < 1e-9);
   QVERIFY(std::abs(walk.bodyAngleDegrees) < 1e-9);
   QVERIFY(std::abs(run.bodyAngleDegrees) > 0);
   QVERIFY(std::abs(run.bodyAngleDegrees) <= 8.0);
-  QVERIFY(run.frontPawBounds.x < walk.frontPawBounds.x);
-  QVERIFY(run.rearPawBounds.x > walk.rearPawBounds.x);
+  QVERIFY(run.frontPawBounds.x > walk.frontPawBounds.x);
+  QVERIFY(run.rearPawBounds.x < walk.rearPawBounds.x);
   QVERIFY(walk.tailStraightness > idle.tailStraightness);
   QVERIFY(run.tailStraightness > walk.tailStraightness);
 
@@ -344,11 +542,11 @@ void InputIndicatorGeometryTests::catPoseUsesDistinctSeatedWalkRunGeometry()
     QVERIFY(insideSilhouette(pose.frontPawBounds));
     QVERIFY(insideSilhouette(pose.rearPawBounds));
     QVERIFY(
-        model.languageBounds.x >= pose.torsoBounds.x &&
-        model.languageBounds.y >= pose.torsoBounds.y &&
-        model.languageBounds.x + model.languageBounds.width <=
+        pose.languageBounds.x >= pose.torsoBounds.x &&
+        pose.languageBounds.y >= pose.torsoBounds.y &&
+        pose.languageBounds.x + pose.languageBounds.width <=
             pose.torsoBounds.x + pose.torsoBounds.width &&
-        model.languageBounds.y + model.languageBounds.height <=
+        pose.languageBounds.y + pose.languageBounds.height <=
             pose.torsoBounds.y + pose.torsoBounds.height
     );
   }

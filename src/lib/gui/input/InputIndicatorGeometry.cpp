@@ -5,6 +5,7 @@
  */
 
 #include "InputIndicatorGeometry.h"
+#include "MacInputIndicatorCatArtwork.h"
 
 #include <algorithm>
 #include <cmath>
@@ -300,82 +301,81 @@ InputIndicatorCatPose inputIndicatorCatPose(
   }
   phase =
       std::fmod(std::fmod(phase, 1.0) + 1.0, 1.0);
-  const double angle = phase * 2.0 * M_PI;
-  const double stride = std::sin(angle);
+
+  InputIndicatorCatArtworkFrame artworkFrame =
+      InputIndicatorCatArtworkFrame::IdleNeutral;
   switch (state) {
   case InputIndicatorMotionState::Idle:
-    return {
-        .torsoBounds = {
-            .x = 7.0, .y = 4.5, .width = 15.5, .height = 15.0
-        },
-        .headBounds = {
-            .x = 0.5, .y = 12.5, .width = 11.5, .height = 11.0
-        },
-        .frontPawBounds = {
-            .x = 8.0, .y = 3.7, .width = 5.5, .height = 3.0
-        },
-        .rearPawBounds = {
-            .x = 16.5, .y = 4.2, .width = 5.5, .height = 3.0
-        },
-        .tailLength = 8.0,
-        .tailStraightness = 0.15,
-    };
-  case InputIndicatorMotionState::Walk: {
-    const double bob = stride * 0.45;
-    return {
-        .torsoBounds = {
-            .x = 6.5, .y = 6.8 + bob,
-            .width = 17.5, .height = 10.5
-        },
-        .headBounds = {
-            .x = 0.5, .y = 12.8 + bob,
-            .width = 11.5, .height = 10.0
-        },
-        .frontPawBounds = {
-            .x = 6.0 + stride * 1.3,
-            .y = 3.0 + std::max(-stride, 0.0) * 0.5,
-            .width = 5.5,
-            .height = 3.0,
-        },
-        .rearPawBounds = {
-            .x = 19.0 - stride * 1.3,
-            .y = 3.0 + std::max(stride, 0.0) * 0.5,
-            .width = 5.5,
-            .height = 3.0,
-        },
-        .tailLength = 8.5,
-        .tailStraightness = 0.45,
-    };
+    artworkFrame =
+        std::sin(phase * 2.0 * M_PI) > 0.34
+            ? InputIndicatorCatArtworkFrame::IdleRise
+            : std::sin(phase * 2.0 * M_PI) < -0.34
+                  ? InputIndicatorCatArtworkFrame::IdleFall
+                  : InputIndicatorCatArtworkFrame::IdleNeutral;
+    break;
+  case InputIndicatorMotionState::Walk:
+    artworkFrame =
+        phase < 1.0 / 3.0
+            ? InputIndicatorCatArtworkFrame::WalkReach
+            : phase < 2.0 / 3.0
+                  ? InputIndicatorCatArtworkFrame::WalkPass
+                  : InputIndicatorCatArtworkFrame::WalkPush;
+    break;
+  case InputIndicatorMotionState::Run:
+    artworkFrame =
+        phase < 1.0 / 3.0
+            ? InputIndicatorCatArtworkFrame::RunCoil
+            : phase < 2.0 / 3.0
+                  ? InputIndicatorCatArtworkFrame::RunAir
+                  : InputIndicatorCatArtworkFrame::RunLand;
+    break;
   }
-  case InputIndicatorMotionState::Run: {
-    const double leap = (1.0 + stride) * 0.45;
-    return {
-        .torsoBounds = {
-            .x = 6.0, .y = 6.8 + leap,
-            .width = 19.5, .height = 9.2
-        },
-        .headBounds = {
-            .x = 0.5, .y = 12.6 + leap,
-            .width = 11.5, .height = 9.5
-        },
-        .frontPawBounds = {
-            .x = 4.2 + stride * 1.8,
-            .y = 2.8 + std::max(-stride, 0.0) * 0.8,
-            .width = 5.5,
-            .height = 3.0,
-        },
-        .rearPawBounds = {
-            .x = 21.0 - stride * 1.8,
-            .y = 2.8 + std::max(stride, 0.0) * 0.8,
-            .width = 5.5,
-            .height = 3.0,
-        },
-        .bodyAngleDegrees = -4.5,
-        .tailLength = 9.0,
-        .tailStraightness = 0.85,
-    };
-  }
-  }
+
+  const auto artwork =
+      macInputIndicatorCatArtwork(artworkFrame);
+  const auto &silhouette = artwork.silhouetteBounds;
+  const double torsoY = silhouette.y + 0.2;
+  const double torsoHeight =
+      std::max(silhouette.height - 0.2, 8.0);
+  return {
+      .artworkFrame = artworkFrame,
+      .silhouetteBounds = silhouette,
+      .torsoBounds = {
+          .x = silhouette.x + silhouette.width * 0.26,
+          .y = torsoY,
+          .width = silhouette.width * 0.68,
+          .height = torsoHeight,
+      },
+      .headBounds = {
+          .x = silhouette.x + silhouette.width * 0.72,
+          .y = silhouette.y + silhouette.height * 0.35,
+          .width = silhouette.width * 0.28,
+          .height = silhouette.height * 0.65,
+      },
+      .frontPawBounds = {
+          .x = silhouette.x + silhouette.width * 0.64,
+          .y = silhouette.y,
+          .width = silhouette.width * 0.18,
+          .height = std::min(silhouette.height, 3.0),
+      },
+      .rearPawBounds = {
+          .x = silhouette.x + silhouette.width * 0.20,
+          .y = silhouette.y,
+          .width = silhouette.width * 0.18,
+          .height = std::min(silhouette.height, 3.0),
+      },
+      .languageBounds = artwork.languageBounds,
+      .bodyAngleDegrees =
+          state == InputIndicatorMotionState::Run ? 4.5 : 0,
+      .tailLength =
+          state == InputIndicatorMotionState::Run ? 9.0 : 8.0,
+      .tailStraightness =
+          state == InputIndicatorMotionState::Run
+              ? 0.85
+              : state == InputIndicatorMotionState::Walk
+                    ? 0.45
+                    : 0.15,
+  };
 }
 
 InputIndicatorTailPose inputIndicatorCatTailPose(

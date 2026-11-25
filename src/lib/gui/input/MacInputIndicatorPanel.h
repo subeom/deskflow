@@ -43,6 +43,7 @@ struct MacInputIndicatorRenderModel
   bool usesEyePrimitives = false;
   bool usesSideProfile = false;
   bool mirrorsWithMotion = false;
+  bool sourceFacesRight = false;
   bool languageMirrorsWithSilhouette = false;
   double totalWidth = 30;
   double totalHeight = 28;
@@ -365,23 +366,24 @@ constexpr MacInputIndicatorRenderModel macInputIndicatorRenderModel(
         .companion = InputIndicatorCompanion::Cat,
         .usesSideProfile = true,
         .mirrorsWithMotion = true,
+        .sourceFacesRight = true,
         .silhouetteBounds = {
-            .x = 0.5, .y = 2, .width = 29.5, .height = 24.5
+            .x = 1, .y = 2, .width = 28, .height = 16
         },
         .headBounds = {
-            .x = 0.5, .y = 11.5, .width = 11.5, .height = 14.5
+            .x = 18, .y = 8, .width = 8, .height = 8
         },
         .torsoBounds = {
-            .x = 6, .y = 4.5, .width = 20, .height = 15.5
+            .x = 8, .y = 4.5, .width = 16, .height = 10
         },
         .pawBounds = {
             .x = 3.5, .y = 2.5, .width = 23, .height = 5.5
         },
         .tailBounds = {
-            .x = 20, .y = 8, .width = 10, .height = 10
+            .x = 1, .y = 4, .width = 14, .height = 8
         },
         .languageBounds = {
-            .x = 11, .y = 8, .width = 9, .height = 8
+            .x = 12.99847, .y = 4.62789, .width = 9, .height = 8
         },
     };
   case InputIndicatorCompanion::Dog:
@@ -405,6 +407,21 @@ constexpr MacInputIndicatorRenderModel macInputIndicatorRenderModel(
         },
     };
   }
+}
+
+constexpr InputIndicatorRect inputIndicatorCatLanguageBounds(
+    const InputIndicatorCatPose &pose,
+    bool facesRight
+)
+{
+  const auto model =
+      macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
+  auto bounds = pose.languageBounds;
+  if (facesRight != model.sourceFacesRight) {
+    bounds.x =
+        model.totalWidth - bounds.x - bounds.width;
+  }
+  return bounds;
 }
 
 inline InputIndicatorCompanion inputIndicatorCompanionFromSetting(

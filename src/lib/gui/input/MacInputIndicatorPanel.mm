@@ -5,6 +5,7 @@
  */
 
 #include "MacInputIndicatorPanel.h"
+#include "MacInputIndicatorCatArtwork.h"
 
 #include "OSXHelpers.h"
 
@@ -60,7 +61,8 @@ void fillSilhouette(
 )
 {
   [edge setStroke];
-  [path setLineWidth:1.1];
+  [path setLineWidth:0.55];
+  [path setLineJoinStyle:NSLineJoinStyleRound];
   [path stroke];
   [fill setFill];
   [path fill];
@@ -86,60 +88,38 @@ void appendPath(NSBezierPath *silhouette, NSBezierPath *part)
   [silhouette appendBezierPath:part];
 }
 
-void drawCatTail(
-    const InputIndicatorTailPose &pose,
-    NSColor *fill,
-    NSColor *edge
+NSBezierPath *catArtworkPath(
+    std::span<const MacInputIndicatorCatPathCommand> commands
 )
 {
-  NSBezierPath *proximal = [NSBezierPath bezierPath];
-  [proximal moveToPoint:NSMakePoint(pose.root.x, pose.root.y)];
-  [proximal curveToPoint:NSMakePoint(
-                            pose.middle.x, pose.middle.y
-                        )
-          controlPoint1:NSMakePoint(
-                            pose.proximalControl.x,
-                            pose.proximalControl.y
-                        )
-          controlPoint2:NSMakePoint(
-                            pose.middleIncomingControl.x,
-                            pose.middleIncomingControl.y
+  NSBezierPath *path = [NSBezierPath bezierPath];
+  for (const auto &command : commands) {
+    switch (command.type) {
+    case MacInputIndicatorCatPathCommandType::Move:
+      [path moveToPoint:NSMakePoint(
+                            command.x1, command.y1
                         )];
-  [edge setStroke];
-  [proximal setLineWidth:3.6];
-  [proximal setLineCapStyle:NSLineCapStyleRound];
-  [proximal stroke];
-  [fill setStroke];
-  [proximal setLineWidth:3];
-  [proximal setLineCapStyle:NSLineCapStyleRound];
-  [proximal stroke];
-
-  NSBezierPath *tip = [NSBezierPath bezierPath];
-  [tip moveToPoint:NSMakePoint(
-                       pose.middle.x, pose.middle.y
-                   )];
-  [tip curveToPoint:NSMakePoint(pose.tip.x, pose.tip.y)
-      controlPoint1:NSMakePoint(
-                        pose.middleOutgoingControl.x,
-                        pose.middleOutgoingControl.y
-                    )
-      controlPoint2:NSMakePoint(
-                        pose.tipControl.x, pose.tipControl.y
-                    )];
-  [edge setStroke];
-  [tip setLineWidth:2.2];
-  [tip setLineCapStyle:NSLineCapStyleRound];
-  [tip stroke];
-  [fill setStroke];
-  [tip setLineWidth:1.5];
-  [tip setLineCapStyle:NSLineCapStyleRound];
-  [tip stroke];
+      break;
+    case MacInputIndicatorCatPathCommandType::Line:
+      [path lineToPoint:NSMakePoint(
+                            command.x1, command.y1
+                        )];
+      break;
+    case MacInputIndicatorCatPathCommandType::Cubic:
+      [path curveToPoint:NSMakePoint(command.x3, command.y3)
+          controlPoint1:NSMakePoint(command.x1, command.y1)
+          controlPoint2:NSMakePoint(command.x2, command.y2)];
+      break;
+    case MacInputIndicatorCatPathCommandType::Close:
+      [path closePath];
+      break;
+    }
+  }
+  return path;
 }
 
 void drawCat(
     NSRect bounds, NSColor *fill, NSColor *edge,
-    double motionX, double motionY,
-    double transitionProgress,
     InputIndicatorMotionState motionState,
     double motionPhase,
     bool reducedMotion,
@@ -150,193 +130,27 @@ void drawCat(
     MacInputIndicatorRenderAlpha alpha
 )
 {
-  const auto motion = inputIndicatorMotionPose(
-      motionState, motionPhase, reducedMotion
-  );
   const auto pose = inputIndicatorCatPose(
       motionState, motionPhase, reducedMotion
   );
+  const auto artwork =
+      macInputIndicatorCatArtwork(pose.artworkFrame);
   const auto model =
       macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
-  const double scale = bodyScale(
-      transitionProgress, motionX, motion.bodyStretch
-  );
-  const double localMotionX = facesRight ? -motionX : motionX;
-  const double bodyWidth =
-      pose.torsoBounds.width * scale;
-  const double bodyX =
-      pose.torsoBounds.x +
-      (pose.torsoBounds.width - bodyWidth) / 2.0;
-  const double sway = std::clamp(
-      localMotionX * 0.08, -0.5, 0.5
-  );
-  const double lift =
-      std::clamp(motionY * 0.12, -1.0, 1.0);
-  const auto tailPose = inputIndicatorCatTailPose(
-      {
-          .x = model.tailBounds.x + 0.5,
-          .y = pose.torsoBounds.y +
-              pose.torsoBounds.height * 0.38 + lift
-      },
-      pose.tailLength,
-      motionPhase,
-      localMotionX,
-      pose.tailStraightness,
-      reducedMotion
-  );
 
   [NSGraphicsContext saveGraphicsState];
-  if (facesRight) {
+  if (facesRight != model.sourceFacesRight) {
     NSAffineTransform *mirror = [NSAffineTransform transform];
     [mirror translateXBy:bounds.size.width yBy:0];
     [mirror scaleXBy:-1 yBy:1];
     [mirror concat];
   }
 
+  NSBezierPath *far = catArtworkPath(artwork.far);
+  NSBezierPath *near = catArtworkPath(artwork.near);
   NSBezierPath *silhouette = [NSBezierPath bezierPath];
-  appendPath(
-      silhouette,
-      [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
-                                                 bodyX,
-                                                 pose.torsoBounds.y +
-                                                     lift,
-                                                 bodyWidth,
-                                                 pose.torsoBounds.height
-                                             )
-                                     xRadius:6.5
-                                     yRadius:6.5]
-  );
-  appendPath(
-      silhouette,
-      [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
-                                                   bodyX,
-                                                   pose.torsoBounds.y +
-                                                       4 + lift,
-                                                   bodyWidth,
-                                                   std::max(
-                                                       pose.torsoBounds
-                                                                   .height -
-                                                           3.0,
-                                                       5.5
-                                                   )
-                                               )]
-  );
-  appendPath(
-      silhouette,
-      [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
-                                                  pose.headBounds.x +
-                                                      5 + sway,
-                                                  pose.torsoBounds.y +
-                                                      4.5 + lift,
-                                                  7,
-                                                  std::max(
-                                                      pose.torsoBounds
-                                                                  .height -
-                                                          4.0,
-                                                      5.5
-                                                  )
-                                              )
-                                      xRadius:3.5
-                                      yRadius:3.5]
-  );
-  appendPath(
-      silhouette,
-      [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
-                                                   pose.headBounds.x +
-                                                       0.5 + sway,
-                                                   pose.headBounds.y +
-                                                       1 + lift,
-                                                   10.5,
-                                                   std::min(
-                                                       pose.headBounds
-                                                               .height,
-                                                       8.5
-                                                   )
-                                               )]
-  );
-  appendPath(
-      silhouette,
-      [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
-                                                   pose.headBounds.x +
-                                                       sway,
-                                                   pose.headBounds.y +
-                                                       0.5 + lift,
-                                                   6.5,
-                                                   5.5
-                                               )]
-  );
-
-  NSBezierPath *ears = [NSBezierPath bezierPath];
-  [ears moveToPoint:NSMakePoint(
-                        pose.headBounds.x + 2.5 + sway,
-                        pose.headBounds.y + 7 + lift
-                    )];
-  [ears lineToPoint:NSMakePoint(
-                        pose.headBounds.x + 4.5 + sway,
-                        pose.headBounds.y +
-                            pose.headBounds.height + 2.5 + lift
-                    )];
-  [ears lineToPoint:NSMakePoint(
-                        pose.headBounds.x + 7 + sway,
-                        pose.headBounds.y + 7.5 + lift
-                    )];
-  [ears lineToPoint:NSMakePoint(
-                        pose.headBounds.x + 8.5 + sway,
-                        pose.headBounds.y +
-                            pose.headBounds.height + 1.5 + lift
-                    )];
-  [ears lineToPoint:NSMakePoint(
-                        pose.headBounds.x + 11 + sway,
-                        pose.headBounds.y + 6 + lift
-                    )];
-  [ears closePath];
-  appendPath(silhouette, ears);
-
-  const auto appendPaw =
-      [silhouette, lift, torsoY = pose.torsoBounds.y](
-          const InputIndicatorRect &pawBounds
-      ) {
-        const double pawY = pawBounds.y + lift;
-        const double legHeight =
-            std::max(torsoY + 2.0 - pawY, 2.5);
-        appendPath(
-            silhouette,
-            [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
-                                                        pawBounds.x + 1.2,
-                                                        pawY + 1.0,
-                                                        3.0,
-                                                        legHeight
-                                                    )
-                                            xRadius:1.5
-                                            yRadius:1.5]
-        );
-        appendPath(
-            silhouette,
-            [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
-                                                        pawBounds.x,
-                                                        pawY,
-                                                        pawBounds.width,
-                                                        pawBounds.height
-                                                    )
-                                            xRadius:1.5
-                                            yRadius:1.5]
-        );
-      };
-  appendPaw(pose.frontPawBounds);
-  appendPaw(pose.rearPawBounds);
-
-  if (std::abs(pose.bodyAngleDegrees) > 0.001) {
-    NSAffineTransform *lean = [NSAffineTransform transform];
-    const double centerX =
-        pose.torsoBounds.x + pose.torsoBounds.width / 2.0;
-    const double centerY =
-        pose.torsoBounds.y +
-        pose.torsoBounds.height / 2.0 + lift;
-    [lean translateXBy:centerX yBy:centerY];
-    [lean rotateByDegrees:pose.bodyAngleDegrees];
-    [lean translateXBy:-centerX yBy:-centerY];
-    [silhouette transformUsingAffineTransform:lean];
-  }
+  appendPath(silhouette, far);
+  appendPath(silhouette, near);
 
   if (!reducedMotion) {
     const auto drawHalo =
@@ -362,22 +176,26 @@ void drawCat(
     for (const auto &frame : haloFrames) {
       drawHalo(
           frame.source,
-          1.0 + (frame.scale - 1.0) * 0.45,
+          1.0 + (frame.scale - 1.0) * 0.12,
           frame.alpha * 0.28
       );
       drawHalo(
           frame.source,
-          1.0 + (frame.scale - 1.0) * 0.72,
+          1.0 + (frame.scale - 1.0) * 0.21,
           frame.alpha * 0.22
       );
       drawHalo(
-          frame.source, frame.scale, frame.alpha * 0.16
+          frame.source,
+          1.0 + (frame.scale - 1.0) * 0.30,
+          frame.alpha * 0.16
       );
     }
   }
 
-  drawCatTail(tailPose, fill, edge);
-  fillSilhouette(silhouette, fill, edge);
+  NSColor *farFill =
+      [fill blendedColorWithFraction:0.18 ofColor:edge];
+  fillSilhouette(far, farFill, edge);
+  fillSilhouette(near, fill, edge);
   [NSGraphicsContext restoreGraphicsState];
 }
 
@@ -564,16 +382,29 @@ void drawLanguageGlyph(
     deskflow::input::InputIndicatorSource source,
     double transitionProgress,
     InputIndicatorTone tone,
-    MacInputIndicatorRenderAlpha alpha
+    MacInputIndicatorRenderAlpha alpha,
+    InputIndicatorMotionState motionState,
+    double motionPhase,
+    bool reducedMotion,
+    bool facesRight
 )
 {
   const auto model =
       macInputIndicatorRenderModel(companion);
+  auto bounds = model.languageBounds;
+  if (companion == InputIndicatorCompanion::Cat) {
+    bounds = inputIndicatorCatLanguageBounds(
+        inputIndicatorCatPose(
+            motionState, motionPhase, reducedMotion
+        ),
+        facesRight
+    );
+  }
   const NSRect labelBounds = NSMakeRect(
-      model.languageBounds.x,
-      model.languageBounds.y,
-      model.languageBounds.width,
-      model.languageBounds.height
+      bounds.x,
+      bounds.y,
+      bounds.width,
+      bounds.height
   );
 
   NSMutableParagraphStyle *paragraph =
@@ -743,8 +574,6 @@ void drawLanguageGlyph(
   case deskflow::gui::input::InputIndicatorCompanion::Cat:
     deskflow::gui::input::drawCat(
         bounds, silhouetteFill, silhouetteEdge,
-        self.motionX, self.motionY,
-        self.transitionProgress,
         motionState,
         self.motionPhase,
         self.reducedMotion,
@@ -782,7 +611,11 @@ void drawLanguageGlyph(
       source,
       self.transitionProgress,
       tone,
-      alpha
+      alpha,
+      motionState,
+      self.motionPhase,
+      self.reducedMotion,
+      self.facesRight
   );
 }
 
