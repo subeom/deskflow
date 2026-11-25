@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-24  
 **Status:** Approved for implementation  
-**Revision base:** `732b06ac4cab581b59a052cda47c55104d1407fa`
+**Revision base:** `12081d1f97cd0100fb4dbcb27053f9367e4f3a91`
 
 ## Goal
 
@@ -30,11 +30,13 @@ non-activating `NSPanel` near it:
   background. The complete free-standing silhouette stays inside 30 x 28 pt
   with a 6 pt pointer gap and 6 pt screen margin.
 - Cat, Dog, and Turtle are unified filled silhouette paths, not illustrated
-  faces. Cat has distinct seated, walking, and running side-profile geometry:
-  Idle is seated with tucked paws, Walk is a level standing stride, and Run is
-  low and elongated with forward/rearward paws and a forward lean. Dog has
-  floppy ears and a tail; Turtle has a shell and tiny head/tail. All are
-  original in-code drawings with no stock asset or external dependency.
+  faces. Cat follows the approved external Cat pose sheet: three Idle contours
+  (rise/neutral/fall), three Walk contours (reach/pass/push), and three Run
+  contours (coil/air/land). The source sheet is design input only. Its
+  quadratic/cubic geometry is converted at authoring time into compiled,
+  normalized native Bézier constants; the product never loads SVG, parses path
+  strings, or stores an external asset path. Dog and Turtle remain coherent
+  original AppKit silhouettes.
 - The 8 pt semibold `A`/`한` stays inside the torso or shell. There are no eye
   dots, pupils, mouth, whiskers, face marks, or external language badge.
 - Bodies, ears, shell, tail, and paws use the configured opacity directly
@@ -147,13 +149,18 @@ the Cat run when the cursor escapes even if an instantaneous speed sample is
 incomplete. Idle returns only after 180 ms without qualifying movement.
 
 Cat pose geometry is state-specific rather than one seated silhouette with
-moving feet. Idle is upright and seated with tucked paws. Walk lowers and
-lengthens the torso into a standing stride with a forward head and alternating
-front/rear paw travel. Run uses the longest, lowest torso, extended forward and
-rear paws, bounded forward lean, a longer leap phase, and a straighter
-controlled tail. The follower remains capped at 8 pt and never delays,
-replaces, hides, or warps the native cursor. Source transition uses an eased
-200 ms glyph-color/label crossfade.
+moving feet. The selected frame is a compiled constant from the approved art:
+Idle uses rise/neutral/fall, Walk uses reach/pass/push, and Run uses
+coil/air/land. This preserves the source sheet's wider right-facing profile,
+ear and muzzle proportions, continuous rear-tail contour, and near/far paw
+placement. The normalized artwork footprint stays inside 30 x 28 pt. A pure
+frame model also records the exact in-torso glyph center for every pose.
+
+The Cat artwork is right-facing in source coordinates. When motion faces left,
+only the path transforms horizontally; the glyph center mirrors with the
+torso but the `A`/`한` itself remains upright. The follower remains capped at
+8 pt and never delays, replaces, hides, or warps the native cursor. Source
+transition uses an eased 200 ms glyph-color/label crossfade.
 
 The Cat tail is one natural two-segment cubic curve with an anchored root, a
 continuous proximal/mid tangent, and a tip that lags the root by one phase
@@ -221,6 +228,12 @@ Focused tests cover:
 - compact Cat/Dog/Turtle metrics and low-emphasis automatic opacity;
 - a two-primitive silhouette/language render plan with no tile or eye
   primitives;
+- the Cat's right-facing source outline, Idle/Walk/Run keyframe sequence, near
+  and far limb layers, and normalized label center match the approved external
+  pose sheet within explicit point tolerances;
+- the generated native path data contains only normalized compiled constants;
+  no SVG loader, XML/path parser, external dependency, runtime file path, or
+  network access exists;
 - distinct Cat head/torso/paw/tail regions in one side profile, with the
   language bounds inside the torso;
 - distinct seated, walking, and running Cat torso/head/paw geometry, including

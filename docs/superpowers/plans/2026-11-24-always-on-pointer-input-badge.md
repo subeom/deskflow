@@ -2280,3 +2280,145 @@ stable-sign.
 Expected: direct ancestry from
 `732b06ac4cab581b59a052cda47c55104d1407fa`, clean worktree, no tag, push,
 merge, release, PR, or install.
+
+---
+
+## Revision 9: Approved Cat Artwork Bézier Integration
+
+### Task 37: Record Approved Artwork RED
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+
+- [ ] **Step 1: Add the art-frame selector contract**
+
+Expose `InputIndicatorCatArtworkFrame` values for `IdleRise`, `IdleNeutral`,
+`IdleFall`, `WalkReach`, `WalkPass`, `WalkPush`, `RunCoil`, `RunAir`, and
+`RunLand`. Extend `InputIndicatorCatPose` with:
+
+```cpp
+InputIndicatorCatArtworkFrame artworkFrame;
+InputIndicatorRect silhouetteBounds;
+InputIndicatorRect languageBounds;
+```
+
+Assert:
+
+```text
+Idle phase 0 -> IdleNeutral
+Idle positive tail phase -> IdleRise
+Idle negative tail phase -> IdleFall
+Walk thirds -> Reach / Pass / Push
+Run thirds -> Coil / Air / Land
+Reduced Motion -> IdleNeutral
+```
+
+- [ ] **Step 2: Add SVG-derived proportion assertions**
+
+Use the approved sheet's union transform: source x 53.910000..654.845600,
+source y 67.875200..323.323648, output x 1..29, bottom 4, with one uniform
+scale. Assert normalized width/height for representative frames:
+
+```text
+IdleNeutral width ~= 20.6824, height ~= 11.7700
+WalkReach width ~= 21.8200, height ~= 9.7440
+RunAir width ~= 28.0000, height ~= 8.8587
+```
+
+Tolerance is 0.02 pt. This proves the wide run pose is not replaced by the
+previous primitive rounded-body drawing.
+
+- [ ] **Step 3: Assert pose-specific glyph centers**
+
+Assert language bounds center around the source sheet's normalized points:
+
+```text
+IdleNeutral center ~= (17.4985, 8.6279)
+WalkReach center ~= (16.3336, 9.9325)
+RunAir center ~= (16.6132, 10.5382)
+```
+
+Mirror the center position for a left-facing Cat while keeping
+`languageMirrorsWithSilhouette == false`. Assert the complete 9 x 8 pt bounds
+stay inside each normalized silhouette.
+
+- [ ] **Step 4: Capture RED**
+
+Build `InputIndicatorGeometryTests`. Expected failure is limited to missing art
+frames, source-derived bounds, and pose-specific language bounds.
+
+### Task 38: Generate Compiled Native Cat Path Constants
+
+**Files:**
+- Create: `src/lib/gui/input/MacInputIndicatorCatArtwork.h`
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+
+- [ ] **Step 1: Convert the approved sheet at authoring time**
+
+Use only the verified art geometry. Convert each SVG `M`, `L`, `C`, and `Q`
+command into a compiled command array; convert `Q` to cubic control points.
+Normalize every coordinate with the transform in Task 37 and invert SVG Y into
+AppKit Y. Include the far and near path for all nine keyframes.
+
+- [ ] **Step 2: Expose no runtime asset mechanism**
+
+The generated header exposes `constexpr` command arrays and a pure
+`macInputIndicatorCatArtwork(frame)` lookup. It does not expose a file name,
+URL, absolute session path, string path parser, SVG parser, file read, XML
+dependency, or network access.
+
+- [ ] **Step 3: Define art metrics next to path constants**
+
+Give each frame the exact normalized silhouette bounds and glyph center used by
+the geometry tests. Keep command count and bounds in one structure so tests,
+selection, and drawing cannot drift.
+
+### Task 39: Render the Approved Cat Art Natively
+
+**Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.cpp`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+
+- [ ] **Step 1: Replace primitive Cat construction**
+
+Delete the rounded-rect/oval Cat body/head/ear/paw composition and iterate the
+compiled command arrays into `NSBezierPath`. Draw the far path first in the
+softer off-white shadow, then the near path in the source-art off-white. Keep
+the subtle edge, Cat halo, and source tint behavior around the exact art union.
+
+- [ ] **Step 2: Mirror path and label placement separately**
+
+Source coordinates face right. Mirror the path about panel width only when
+`facesRight == false`. Derive the 9 x 8 pt label bounds from the selected
+frame's glyph center, mirror only that position when facing left, and draw the
+glyph without a transform.
+
+- [ ] **Step 3: Preserve behavior and Reduced Motion**
+
+Retain 120 Hz Walk/Run selection, Idle 75 ms timing, exact pointer lag, the
+source halo pulse history, and Space/orderFront behavior. Reduced Motion uses
+the `IdleNeutral` frame and bypasses tail/gait/halo animation.
+
+### Task 40: Verify, Commit, Package, and Audit
+
+- [ ] **Step 1: Verify focused and full gates**
+
+Run the nine focused CTest executables, then all targets and 157 eligible
+Release CTests with only `OSXClipboardTests` and `OSXKeyStateTests` excluded.
+
+- [ ] **Step 2: Commit and package**
+
+Commit the spec/plan and implementation separately with the standard trailer.
+Build
+`build/pointer-badge-artwork/deskflow-2.0.9.0-macos-arm64.dmg`, verify metadata,
+SHA-256, arm64, signature, and CDHash. Do not install or stable-sign.
+
+- [ ] **Step 3: Audit final state**
+
+Expected: direct ancestry from
+`12081d1f97cd0100fb4dbcb27053f9367e4f3a91`, clean worktree, no generated SVG
+asset/path parser/runtime file read, no tile/eye/cursor-mutation change, and no
+push/merge/tag/release/PR/install.
