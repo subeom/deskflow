@@ -497,6 +497,164 @@ void InputIndicatorGeometryTests::catArtworkMetricsMatchApprovedSource()
   }
 }
 
+void InputIndicatorGeometryTests::catLabelLayoutFitsEveryArtworkPoseAndSource()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const struct
+  {
+    Source source;
+    InputIndicatorMotionState state;
+    double fontSize;
+  } preferences[] = {
+      {.source = Source::LatinABC,
+       .state = InputIndicatorMotionState::Idle,
+       .fontSize = 8.0},
+      {.source = Source::LatinABC,
+       .state = InputIndicatorMotionState::Walk,
+       .fontSize = 8.0},
+      {.source = Source::LatinABC,
+       .state = InputIndicatorMotionState::Run,
+       .fontSize = 7.6},
+      {.source = Source::Korean2Set,
+       .state = InputIndicatorMotionState::Idle,
+       .fontSize = 6.8},
+      {.source = Source::Korean2Set,
+       .state = InputIndicatorMotionState::Walk,
+       .fontSize = 6.4},
+      {.source = Source::Korean2Set,
+       .state = InputIndicatorMotionState::Run,
+       .fontSize = 6.1},
+  };
+  for (const auto &expected : preferences) {
+    const auto preference =
+        macInputIndicatorLabelPreference(
+            expected.source, expected.state
+        );
+    QCOMPARE(preference.pointSize, expected.fontSize);
+    if (expected.source == Source::Korean2Set) {
+      QVERIFY(preference.inkYCorrection < 0);
+    } else {
+      QCOMPARE(preference.inkYCorrection, 0.0);
+    }
+  }
+
+  const struct
+  {
+    InputIndicatorMotionState state;
+    double phase;
+  } poses[] = {
+      {.state = InputIndicatorMotionState::Idle, .phase = 0.0},
+      {.state = InputIndicatorMotionState::Idle, .phase = 0.25},
+      {.state = InputIndicatorMotionState::Idle, .phase = 0.75},
+      {.state = InputIndicatorMotionState::Walk, .phase = 0.0},
+      {.state = InputIndicatorMotionState::Walk, .phase = 0.34},
+      {.state = InputIndicatorMotionState::Walk, .phase = 0.67},
+      {.state = InputIndicatorMotionState::Run, .phase = 0.0},
+      {.state = InputIndicatorMotionState::Run, .phase = 0.34},
+      {.state = InputIndicatorMotionState::Run, .phase = 0.67},
+  };
+  const Source sources[] = {Source::LatinABC, Source::Korean2Set};
+  for (const auto &poseInput : poses) {
+    const auto pose = inputIndicatorCatPose(
+        poseInput.state, poseInput.phase, false
+    );
+    for (const auto source : sources) {
+      const auto preference =
+          macInputIndicatorLabelPreference(
+              source, poseInput.state
+          );
+      const MacInputIndicatorLabelMeasurement measurement{
+          .origin = {
+              .x = preference.pointSize *
+                  (source == Source::Korean2Set ? 0.022 : 0.034),
+              .y = 0,
+          },
+          .size = {
+              .width = preference.pointSize *
+                  (source == Source::Korean2Set ? 0.831 : 0.643),
+              .height = preference.pointSize *
+                  (source == Source::Korean2Set ? 0.867 : 0.705),
+          },
+      };
+      const auto layout = macInputIndicatorLabelLayout(
+          source,
+          poseInput.state,
+          pose.languageBounds,
+          measurement
+      );
+      QVERIFY(layout);
+      QCOMPARE(layout->fontSize, preference.pointSize);
+      QVERIFY(layout->inkBounds.x >= pose.languageBounds.x);
+      QVERIFY(layout->inkBounds.y >= pose.languageBounds.y);
+      QVERIFY(
+          layout->inkBounds.x + layout->inkBounds.width <=
+          pose.languageBounds.x + pose.languageBounds.width
+      );
+      QVERIFY(
+          layout->inkBounds.y + layout->inkBounds.height <=
+          pose.languageBounds.y + pose.languageBounds.height
+      );
+      if (source == Source::Korean2Set) {
+        QVERIFY(
+            layout->inkBounds.y +
+                    layout->inkBounds.height / 2.0 <
+            pose.languageBounds.y +
+                pose.languageBounds.height / 2.0
+        );
+      }
+    }
+  }
+
+  const auto container =
+      inputIndicatorCatPose(
+          InputIndicatorMotionState::Run, 0.34, false
+      ).languageBounds;
+  const auto oversized = macInputIndicatorLabelLayout(
+      Source::Korean2Set,
+      InputIndicatorMotionState::Run,
+      container,
+      {
+          .origin = {.x = 0.25, .y = 0},
+          .size = {.width = 12.0, .height = 9.0},
+      }
+  );
+  QVERIFY(oversized);
+  QVERIFY(oversized->fontSize < 6.1);
+  QVERIFY(oversized->inkBounds.x >= container.x);
+  QVERIFY(oversized->inkBounds.y >= container.y);
+  QVERIFY(
+      oversized->inkBounds.x + oversized->inkBounds.width <=
+      container.x + container.width
+  );
+  QVERIFY(
+      oversized->inkBounds.y + oversized->inkBounds.height <=
+      container.y + container.height
+  );
+
+  QVERIFY(!macInputIndicatorLabelLayout(
+      Source::Korean2Set,
+      InputIndicatorMotionState::Idle,
+      container,
+      {
+          .origin = {.x = 0, .y = 0},
+          .size = {
+              .width = std::numeric_limits<double>::quiet_NaN(),
+              .height = 1,
+          },
+      }
+  ));
+  QVERIFY(!macInputIndicatorLabelLayout(
+      Source::Unknown,
+      InputIndicatorMotionState::Idle,
+      container,
+      {
+          .origin = {.x = 0, .y = 0},
+          .size = {.width = 1, .height = 1},
+      }
+  ));
+}
+
 void InputIndicatorGeometryTests::catPoseUsesDistinctSeatedWalkRunGeometry()
 {
   const auto model =

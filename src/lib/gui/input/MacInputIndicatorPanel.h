@@ -15,6 +15,7 @@
 #include <cmath>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace deskflow::gui::input {
@@ -61,6 +62,133 @@ enum class InputIndicatorTone
   Light,
   Dark
 };
+
+struct MacInputIndicatorLabelPreference
+{
+  double pointSize = 0;
+  double inkYCorrection = 0;
+};
+
+struct MacInputIndicatorLabelMeasurement
+{
+  InputIndicatorPoint origin;
+  InputIndicatorSize size;
+};
+
+struct MacInputIndicatorLabelLayout
+{
+  double fontSize = 0;
+  InputIndicatorPoint drawingOrigin;
+  InputIndicatorRect inkBounds;
+};
+
+constexpr MacInputIndicatorLabelPreference
+macInputIndicatorLabelPreference(
+    deskflow::input::InputIndicatorSource source,
+    InputIndicatorMotionState state
+)
+{
+  if (source ==
+      deskflow::input::InputIndicatorSource::Korean2Set) {
+    switch (state) {
+    case InputIndicatorMotionState::Idle:
+      return {.pointSize = 6.8, .inkYCorrection = -0.25};
+    case InputIndicatorMotionState::Walk:
+      return {.pointSize = 6.4, .inkYCorrection = -0.20};
+    case InputIndicatorMotionState::Run:
+      return {.pointSize = 6.1, .inkYCorrection = -0.15};
+    }
+  }
+  return {
+      .pointSize =
+          state == InputIndicatorMotionState::Run ? 7.6 : 8.0,
+      .inkYCorrection = 0,
+  };
+}
+
+inline std::optional<MacInputIndicatorLabelLayout>
+macInputIndicatorFitLabelLayout(
+    double pointSize,
+    double inkYCorrection,
+    const InputIndicatorRect &container,
+    const MacInputIndicatorLabelMeasurement &measurement
+)
+{
+  if (!std::isfinite(pointSize) || pointSize <= 0 ||
+      !std::isfinite(inkYCorrection) ||
+      !std::isfinite(container.x) ||
+      !std::isfinite(container.y) ||
+      !std::isfinite(container.width) ||
+      !std::isfinite(container.height) ||
+      container.width <= 0 || container.height <= 0 ||
+      !std::isfinite(measurement.origin.x) ||
+      !std::isfinite(measurement.origin.y) ||
+      !std::isfinite(measurement.size.width) ||
+      !std::isfinite(measurement.size.height) ||
+      measurement.size.width <= 0 ||
+      measurement.size.height <= 0) {
+    return std::nullopt;
+  }
+
+  const double scale = std::min({
+      1.0,
+      container.width / measurement.size.width,
+      container.height / measurement.size.height,
+  });
+  if (!std::isfinite(scale) || scale <= 0) {
+    return std::nullopt;
+  }
+
+  const double inkWidth =
+      measurement.size.width * scale;
+  const double inkHeight =
+      measurement.size.height * scale;
+  const double inkX =
+      container.x + (container.width - inkWidth) / 2.0;
+  const double centeredY =
+      container.y + (container.height - inkHeight) / 2.0;
+  const double inkY =
+      std::clamp(
+          centeredY + inkYCorrection * scale,
+          container.y,
+          container.y + container.height - inkHeight
+      );
+  return MacInputIndicatorLabelLayout{
+      .fontSize = pointSize * scale,
+      .drawingOrigin = {
+          .x = inkX - measurement.origin.x * scale,
+          .y = inkY - measurement.origin.y * scale,
+      },
+      .inkBounds = {
+          .x = inkX,
+          .y = inkY,
+          .width = inkWidth,
+          .height = inkHeight,
+      },
+  };
+}
+
+inline std::optional<MacInputIndicatorLabelLayout>
+macInputIndicatorLabelLayout(
+    deskflow::input::InputIndicatorSource source,
+    InputIndicatorMotionState state,
+    const InputIndicatorRect &container,
+    const MacInputIndicatorLabelMeasurement &measurement
+)
+{
+  if (source ==
+      deskflow::input::InputIndicatorSource::Unknown) {
+    return std::nullopt;
+  }
+  const auto preference =
+      macInputIndicatorLabelPreference(source, state);
+  return macInputIndicatorFitLabelLayout(
+      preference.pointSize,
+      preference.inkYCorrection,
+      container,
+      measurement
+  );
+}
 
 struct MacInputIndicatorRgb
 {

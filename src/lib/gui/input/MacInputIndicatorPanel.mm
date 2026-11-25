@@ -409,12 +409,16 @@ void drawLanguageGlyph(
 
   NSMutableParagraphStyle *paragraph =
       [[NSMutableParagraphStyle alloc] init];
-  paragraph.alignment = NSTextAlignmentCenter;
-  const auto font =
-      [NSFont systemFontOfSize:macInputIndicatorPanelStyle(companion).labelSize
-                        weight:NSFontWeightSemibold];
+  paragraph.alignment =
+      companion == InputIndicatorCompanion::Cat
+          ? NSTextAlignmentLeft
+          : NSTextAlignmentCenter;
+  constexpr NSStringDrawingOptions kDrawingOptions =
+      NSStringDrawingUsesLineFragmentOrigin |
+      NSStringDrawingUsesFontLeading |
+      NSStringDrawingUsesDeviceMetrics;
   const auto drawLabel =
-      [paragraph, font, tone, labelBounds, alpha](
+      [paragraph, companion, motionState, tone, labelBounds, bounds, alpha](
           deskflow::input::InputIndicatorSource labelSource,
           double transitionAlpha
       ) {
@@ -422,17 +426,97 @@ void drawLanguageGlyph(
         if (!label || transitionAlpha <= 0) {
           return;
         }
-        NSDictionary *attributes = @{
-          NSFontAttributeName : font,
-          NSForegroundColorAttributeName :
-              indicatorGlyphColor(
-                  labelSource,
-                  tone,
-                  alpha.detail * transitionAlpha
-              ),
-          NSParagraphStyleAttributeName : paragraph
-        };
-        [label drawInRect:labelBounds withAttributes:attributes];
+
+        const double fallbackPointSize =
+            macInputIndicatorPanelStyle(companion).labelSize;
+        if (companion != InputIndicatorCompanion::Cat) {
+          NSFont *font =
+              [NSFont systemFontOfSize:fallbackPointSize
+                                weight:NSFontWeightSemibold];
+          NSDictionary *attributes = @{
+            NSFontAttributeName : font,
+            NSForegroundColorAttributeName :
+                indicatorGlyphColor(
+                    labelSource,
+                    tone,
+                    alpha.detail * transitionAlpha
+                ),
+            NSParagraphStyleAttributeName : paragraph
+          };
+          [label drawInRect:labelBounds withAttributes:attributes];
+          return;
+        }
+
+        const auto preference =
+            macInputIndicatorLabelPreference(
+                labelSource, motionState
+            );
+        double pointSize = preference.pointSize;
+        std::optional<MacInputIndicatorLabelLayout> layout;
+        NSDictionary *attributes = nil;
+        bool stable = false;
+        for (int attempt = 0; attempt < 5; ++attempt) {
+          NSFont *font =
+              [NSFont systemFontOfSize:pointSize
+                                weight:NSFontWeightSemibold];
+          attributes = @{
+            NSFontAttributeName : font,
+            NSForegroundColorAttributeName :
+                indicatorGlyphColor(
+                    labelSource,
+                    tone,
+                    alpha.detail * transitionAlpha
+                ),
+            NSParagraphStyleAttributeName : paragraph
+          };
+          const NSRect measured = [label
+              boundingRectWithSize:NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX)
+                           options:kDrawingOptions
+                        attributes:attributes
+                           context:nil];
+          layout = macInputIndicatorFitLabelLayout(
+              pointSize,
+              preference.inkYCorrection,
+              bounds,
+              {
+                  .origin = {
+                      .x = measured.origin.x,
+                      .y = measured.origin.y,
+                  },
+                  .size = {
+                      .width = measured.size.width,
+                      .height = measured.size.height,
+                  },
+              }
+          );
+          if (!layout) {
+            return;
+          }
+          if (std::abs(
+                  layout->fontSize - pointSize
+              ) < 0.01) {
+            stable = true;
+            break;
+          }
+          pointSize = layout->fontSize;
+        }
+        if (!stable || !layout || !attributes) {
+          return;
+        }
+
+        [NSGraphicsContext saveGraphicsState];
+        [[NSBezierPath bezierPathWithRect:labelBounds] addClip];
+        [label
+            drawWithRect:NSMakeRect(
+                             layout->drawingOrigin.x,
+                             layout->drawingOrigin.y,
+                             labelBounds.size.width,
+                             labelBounds.size.height
+                         )
+                 options:kDrawingOptions
+              attributes:attributes
+                 context:nil];
+        [NSGraphicsContext restoreGraphicsState];
       };
   if (previousSource != source) {
     drawLabel(previousSource, 1.0 - transitionProgress);
