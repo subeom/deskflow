@@ -25,6 +25,8 @@ private Q_SLOTS:
   void catArtworkFramesFollowApprovedPoseSheet();
   void catArtworkMetricsMatchApprovedSource();
   void catLabelLayoutFitsEveryArtworkPoseAndSource();
+  void coreTextInkBoundsExposeGlyphOrigin();
+  void coreTextCatGlyphPixelsStayInsideSilhouette();
   void catPoseUsesDistinctSeatedWalkRunGeometry();
   void companionPaletteUsesNeutralBodyAndReadableGlyph();
   void companionHaloPulsesStayBoundedAndReducedMotionSafe();

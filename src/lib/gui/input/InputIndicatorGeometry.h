@@ -76,6 +76,8 @@ struct InputIndicatorCatPose
   InputIndicatorRect frontPawBounds;
   InputIndicatorRect rearPawBounds;
   InputIndicatorRect languageBounds;
+  InputIndicatorRect bellyBounds;
+  InputIndicatorRect innerLanguageBounds;
   double bodyAngleDegrees = 0;
   double tailLength = 0;
   double tailStraightness = 0;

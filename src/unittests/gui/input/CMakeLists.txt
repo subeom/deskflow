@@ -11,6 +11,6 @@ create_test(
 create_test(
   NAME InputIndicatorGeometryTests
   DEPENDS gui
-  SOURCE InputIndicatorGeometryTests.cpp
+  SOURCE InputIndicatorGeometryTests.mm
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/gui"
 )

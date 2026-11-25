@@ -10,6 +10,7 @@
 #include "OSXHelpers.h"
 
 #include <AppKit/AppKit.h>
+#include <CoreText/CoreText.h>
 
 #include <algorithm>
 #include <chrono>
@@ -18,6 +19,110 @@
 #include <vector>
 
 namespace deskflow::gui::input {
+
+std::optional<MacInputIndicatorCoreTextLabelMeasurement>
+macInputIndicatorCoreTextLabelMeasurement(
+    NSString *label,
+    NSFont *font
+)
+{
+  if (!label || !font) {
+    return std::nullopt;
+  }
+  NSAttributedString *attributed =
+      [[NSAttributedString alloc]
+          initWithString:label
+              attributes:@{NSFontAttributeName : font}];
+  CTLineRef line =
+      CTLineCreateWithAttributedString(
+          (__bridge CFAttributedStringRef)attributed
+      );
+  [attributed release];
+  if (!line) {
+    return std::nullopt;
+  }
+
+  const CGRect ink =
+      CTLineGetBoundsWithOptions(
+          line, kCTLineBoundsUseGlyphPathBounds
+      );
+  CGFloat ascent = 0;
+  CGFloat descent = 0;
+  CGFloat leading = 0;
+  const double width =
+      CTLineGetTypographicBounds(
+          line, &ascent, &descent, &leading
+      );
+  CFRelease(line);
+  if (!std::isfinite(ink.origin.x) ||
+      !std::isfinite(ink.origin.y) ||
+      !std::isfinite(ink.size.width) ||
+      !std::isfinite(ink.size.height) ||
+      ink.size.width <= 0 || ink.size.height <= 0 ||
+      !std::isfinite(width) || width <= 0 ||
+      !std::isfinite(ascent) ||
+      !std::isfinite(descent)) {
+    return std::nullopt;
+  }
+  return MacInputIndicatorCoreTextLabelMeasurement{
+      .ink = {
+          .origin = {
+              .x = ink.origin.x,
+              .y = ink.origin.y,
+          },
+          .size = {
+              .width = ink.size.width,
+              .height = ink.size.height,
+          },
+      },
+      .typographicBounds = {
+          .x = 0,
+          .y = -descent,
+          .width = width,
+          .height = ascent + descent,
+      },
+  };
+}
+
+void macInputIndicatorDrawCoreTextLabel(
+    CGContextRef context,
+    NSString *label,
+    NSFont *font,
+    NSColor *color,
+    const MacInputIndicatorLabelLayout &layout
+)
+{
+  if (!context || !label || !font || !color) {
+    return;
+  }
+  NSAttributedString *attributed =
+      [[NSAttributedString alloc]
+          initWithString:label
+              attributes:@{
+                NSFontAttributeName : font,
+                NSForegroundColorAttributeName : color,
+              }];
+  CTLineRef line =
+      CTLineCreateWithAttributedString(
+          (__bridge CFAttributedStringRef)attributed
+      );
+  [attributed release];
+  if (!line) {
+    return;
+  }
+  CGContextSaveGState(context);
+  CGContextSetTextMatrix(
+      context, CGAffineTransformIdentity
+  );
+  CGContextSetTextPosition(
+      context,
+      layout.drawingOrigin.x,
+      layout.drawingOrigin.y
+  );
+  CTLineDraw(line, context);
+  CGContextRestoreGState(context);
+  CFRelease(line);
+}
 
 namespace {
 
@@ -148,6 +253,16 @@ void drawCat(
 
   NSBezierPath *far = catArtworkPath(artwork.far);
   NSBezierPath *near = catArtworkPath(artwork.near);
+  NSBezierPath *belly =
+      [NSBezierPath bezierPathWithRoundedRect:
+                        NSMakeRect(
+                            pose.bellyBounds.x,
+                            pose.bellyBounds.y,
+                            pose.bellyBounds.width,
+                            pose.bellyBounds.height
+                        )
+                                xRadius:3.2
+                                yRadius:3.2];
   NSBezierPath *silhouette = [NSBezierPath bezierPath];
   appendPath(silhouette, far);
   appendPath(silhouette, near);
@@ -195,6 +310,7 @@ void drawCat(
   NSColor *farFill =
       [fill blendedColorWithFraction:0.18 ofColor:edge];
   fillSilhouette(far, farFill, edge);
+  fillSilhouette(belly, fill, edge);
   fillSilhouette(near, fill, edge);
   [NSGraphicsContext restoreGraphicsState];
 }
@@ -392,13 +508,31 @@ void drawLanguageGlyph(
   const auto model =
       macInputIndicatorRenderModel(companion);
   auto bounds = model.languageBounds;
+  NSBezierPath *catSilhouette = nil;
   if (companion == InputIndicatorCompanion::Cat) {
-    bounds = inputIndicatorCatLanguageBounds(
-        inputIndicatorCatPose(
-            motionState, motionPhase, reducedMotion
-        ),
-        facesRight
+    const auto pose = inputIndicatorCatPose(
+        motionState, motionPhase, reducedMotion
     );
+    bounds = inputIndicatorCatInnerLanguageBounds(
+        pose, facesRight
+    );
+    catSilhouette =
+        [NSBezierPath bezierPathWithRoundedRect:
+                          NSMakeRect(
+                              pose.bellyBounds.x,
+                              pose.bellyBounds.y,
+                              pose.bellyBounds.width,
+                              pose.bellyBounds.height
+                          )
+                                  xRadius:3.2
+                                  yRadius:3.2];
+    if (facesRight != model.sourceFacesRight) {
+      NSAffineTransform *mirror =
+          [NSAffineTransform transform];
+      [mirror translateXBy:model.totalWidth yBy:0];
+      [mirror scaleXBy:-1 yBy:1];
+      [catSilhouette transformUsingAffineTransform:mirror];
+    }
   }
   const NSRect labelBounds = NSMakeRect(
       bounds.x,
@@ -413,12 +547,8 @@ void drawLanguageGlyph(
       companion == InputIndicatorCompanion::Cat
           ? NSTextAlignmentLeft
           : NSTextAlignmentCenter;
-  constexpr NSStringDrawingOptions kDrawingOptions =
-      NSStringDrawingUsesLineFragmentOrigin |
-      NSStringDrawingUsesFontLeading |
-      NSStringDrawingUsesDeviceMetrics;
   const auto drawLabel =
-      [paragraph, companion, motionState, tone, labelBounds, bounds, alpha](
+      [paragraph, companion, motionState, tone, labelBounds, bounds, alpha, catSilhouette](
           deskflow::input::InputIndicatorSource labelSource,
           double transitionAlpha
       ) {
@@ -453,41 +583,23 @@ void drawLanguageGlyph(
             );
         double pointSize = preference.pointSize;
         std::optional<MacInputIndicatorLabelLayout> layout;
-        NSDictionary *attributes = nil;
         bool stable = false;
         for (int attempt = 0; attempt < 5; ++attempt) {
           NSFont *font =
               [NSFont systemFontOfSize:pointSize
                                 weight:NSFontWeightSemibold];
-          attributes = @{
-            NSFontAttributeName : font,
-            NSForegroundColorAttributeName :
-                indicatorGlyphColor(
-                    labelSource,
-                    tone,
-                    alpha.detail * transitionAlpha
-                ),
-            NSParagraphStyleAttributeName : paragraph
-          };
-          const NSRect measured = [label
-              boundingRectWithSize:NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX)
-                           options:kDrawingOptions
-                        attributes:attributes
-                           context:nil];
-          layout = macInputIndicatorFitLabelLayout(
+          const auto measured =
+              macInputIndicatorCoreTextLabelMeasurement(
+                  label, font
+              );
+          if (!measured) {
+            return;
+          }
+          layout = macInputIndicatorFitLabelInkLayout(
               pointSize,
-              preference.inkYCorrection,
+              preference.minimumPointSize,
               bounds,
-              {
-                  .origin = {
-                      .x = measured.origin.x,
-                      .y = measured.origin.y,
-                  },
-                  .size = {
-                      .width = measured.size.width,
-                      .height = measured.size.height,
-                  },
-              }
+              measured->ink
           );
           if (!layout) {
             return;
@@ -500,22 +612,29 @@ void drawLanguageGlyph(
           }
           pointSize = layout->fontSize;
         }
-        if (!stable || !layout || !attributes) {
+        if (!stable || !layout) {
           return;
         }
 
+        NSFont *font =
+            [NSFont systemFontOfSize:layout->fontSize
+                              weight:NSFontWeightSemibold];
+        NSColor *color =
+            indicatorGlyphColor(
+                labelSource,
+                tone,
+                alpha.detail * transitionAlpha
+            );
         [NSGraphicsContext saveGraphicsState];
+        [catSilhouette addClip];
         [[NSBezierPath bezierPathWithRect:labelBounds] addClip];
-        [label
-            drawWithRect:NSMakeRect(
-                             layout->drawingOrigin.x,
-                             layout->drawingOrigin.y,
-                             labelBounds.size.width,
-                             labelBounds.size.height
-                         )
-                 options:kDrawingOptions
-              attributes:attributes
-                 context:nil];
+        macInputIndicatorDrawCoreTextLabel(
+            [[NSGraphicsContext currentContext] CGContext],
+            label,
+            font,
+            color,
+            *layout
+        );
         [NSGraphicsContext restoreGraphicsState];
       };
   if (previousSource != source) {

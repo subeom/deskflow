@@ -333,7 +333,54 @@ InputIndicatorCatPose inputIndicatorCatPose(
 
   const auto artwork =
       macInputIndicatorCatArtwork(artworkFrame);
-  const auto &silhouette = artwork.silhouetteBounds;
+  const auto &artworkSilhouette =
+      artwork.silhouetteBounds;
+  const double labelCenterX =
+      artwork.languageBounds.x +
+      artwork.languageBounds.width / 2.0;
+  const double labelCenterY =
+      artwork.languageBounds.y +
+      artwork.languageBounds.height / 2.0;
+  const InputIndicatorRect innerLanguageBounds{
+      .x = labelCenterX - 4.0,
+      .y = labelCenterY - 3.5,
+      .width = 8.0,
+      .height = 7.0,
+  };
+  constexpr double bellyWidth = 11.5;
+  constexpr double bellyHeight = 8.0;
+  const InputIndicatorRect bellyBounds{
+      .x = labelCenterX - bellyWidth / 2.0,
+      .y = labelCenterY - bellyHeight / 2.0,
+      .width = bellyWidth,
+      .height = bellyHeight,
+  };
+  const InputIndicatorRect silhouette{
+      .x = std::min(
+          artworkSilhouette.x, bellyBounds.x
+      ),
+      .y = std::min(
+          artworkSilhouette.y, bellyBounds.y
+      ),
+      .width =
+          std::max(
+              artworkSilhouette.x +
+                  artworkSilhouette.width,
+              bellyBounds.x + bellyBounds.width
+          ) -
+          std::min(
+              artworkSilhouette.x, bellyBounds.x
+          ),
+      .height =
+          std::max(
+              artworkSilhouette.y +
+                  artworkSilhouette.height,
+              bellyBounds.y + bellyBounds.height
+          ) -
+          std::min(
+              artworkSilhouette.y, bellyBounds.y
+          ),
+  };
   const double torsoY = silhouette.y + 0.2;
   const double torsoHeight =
       std::max(silhouette.height - 0.2, 8.0);
@@ -365,6 +412,8 @@ InputIndicatorCatPose inputIndicatorCatPose(
           .height = std::min(silhouette.height, 3.0),
       },
       .languageBounds = artwork.languageBounds,
+      .bellyBounds = bellyBounds,
+      .innerLanguageBounds = innerLanguageBounds,
       .bodyAngleDegrees =
           state == InputIndicatorMotionState::Run ? 4.5 : 0,
       .tailLength =

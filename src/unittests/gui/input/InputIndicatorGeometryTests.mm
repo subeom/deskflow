@@ -9,6 +9,9 @@
 #include "gui/input/MacInputIndicatorCatArtwork.h"
 #include "gui/input/MacInputIndicatorPanel.h"
 
+#import <AppKit/AppKit.h>
+#import <CoreText/CoreText.h>
+
 #include <QTest>
 
 #include <algorithm>
@@ -54,6 +57,47 @@ double contrastRatio(
       std::min(foregroundLuminance, backgroundLuminance) +
       0.05
   );
+}
+
+NSBezierPath *artworkPath(
+    std::span<const MacInputIndicatorCatPathCommand> commands
+)
+{
+  NSBezierPath *path = [NSBezierPath bezierPath];
+  for (const auto &command : commands) {
+    switch (command.type) {
+    case MacInputIndicatorCatPathCommandType::Move:
+      [path moveToPoint:NSMakePoint(command.x1, command.y1)];
+      break;
+    case MacInputIndicatorCatPathCommandType::Line:
+      [path lineToPoint:NSMakePoint(command.x1, command.y1)];
+      break;
+    case MacInputIndicatorCatPathCommandType::Cubic:
+      [path curveToPoint:NSMakePoint(command.x3, command.y3)
+          controlPoint1:NSMakePoint(command.x1, command.y1)
+          controlPoint2:NSMakePoint(command.x2, command.y2)];
+      break;
+    case MacInputIndicatorCatPathCommandType::Close:
+      [path closePath];
+      break;
+    }
+  }
+  return path;
+}
+
+NSBitmapImageRep *pixelBitmap(int scale)
+{
+  return [[NSBitmapImageRep alloc]
+      initWithBitmapDataPlanes:nil
+                    pixelsWide:30 * scale
+                    pixelsHigh:28 * scale
+                 bitsPerSample:8
+               samplesPerPixel:4
+                      hasAlpha:YES
+                      isPlanar:NO
+                colorSpaceName:NSDeviceRGBColorSpace
+                   bytesPerRow:0
+                  bitsPerPixel:0];
 }
 
 } // namespace
@@ -506,25 +550,32 @@ void InputIndicatorGeometryTests::catLabelLayoutFitsEveryArtworkPoseAndSource()
     Source source;
     InputIndicatorMotionState state;
     double fontSize;
+    double minimumFontSize;
   } preferences[] = {
       {.source = Source::LatinABC,
        .state = InputIndicatorMotionState::Idle,
-       .fontSize = 8.0},
+       .fontSize = 8.0,
+       .minimumFontSize = 7.2},
       {.source = Source::LatinABC,
        .state = InputIndicatorMotionState::Walk,
-       .fontSize = 8.0},
+       .fontSize = 8.0,
+       .minimumFontSize = 7.2},
       {.source = Source::LatinABC,
        .state = InputIndicatorMotionState::Run,
-       .fontSize = 7.6},
+       .fontSize = 7.6,
+       .minimumFontSize = 7.0},
       {.source = Source::Korean2Set,
        .state = InputIndicatorMotionState::Idle,
-       .fontSize = 6.8},
+       .fontSize = 6.8,
+       .minimumFontSize = 6.3},
       {.source = Source::Korean2Set,
        .state = InputIndicatorMotionState::Walk,
-       .fontSize = 6.4},
+       .fontSize = 6.4,
+       .minimumFontSize = 6.0},
       {.source = Source::Korean2Set,
        .state = InputIndicatorMotionState::Run,
-       .fontSize = 6.1},
+       .fontSize = 6.1,
+       .minimumFontSize = 5.8},
   };
   for (const auto &expected : preferences) {
     const auto preference =
@@ -532,11 +583,10 @@ void InputIndicatorGeometryTests::catLabelLayoutFitsEveryArtworkPoseAndSource()
             expected.source, expected.state
         );
     QCOMPARE(preference.pointSize, expected.fontSize);
-    if (expected.source == Source::Korean2Set) {
-      QVERIFY(preference.inkYCorrection < 0);
-    } else {
-      QCOMPARE(preference.inkYCorrection, 0.0);
-    }
+    QCOMPARE(
+        preference.minimumPointSize,
+        expected.minimumFontSize
+    );
   }
 
   const struct
@@ -568,7 +618,9 @@ void InputIndicatorGeometryTests::catLabelLayoutFitsEveryArtworkPoseAndSource()
           .origin = {
               .x = preference.pointSize *
                   (source == Source::Korean2Set ? 0.022 : 0.034),
-              .y = 0,
+              .y = source == Source::Korean2Set
+                  ? -preference.pointSize * 0.055
+                  : 0,
           },
           .size = {
               .width = preference.pointSize *
@@ -577,50 +629,54 @@ void InputIndicatorGeometryTests::catLabelLayoutFitsEveryArtworkPoseAndSource()
                   (source == Source::Korean2Set ? 0.867 : 0.705),
           },
       };
-      const auto layout = macInputIndicatorLabelLayout(
-          source,
-          poseInput.state,
-          pose.languageBounds,
+      const auto layout = macInputIndicatorFitLabelInkLayout(
+          preference.pointSize,
+          preference.minimumPointSize,
+          pose.innerLanguageBounds,
           measurement
       );
       QVERIFY(layout);
       QCOMPARE(layout->fontSize, preference.pointSize);
-      QVERIFY(layout->inkBounds.x >= pose.languageBounds.x);
-      QVERIFY(layout->inkBounds.y >= pose.languageBounds.y);
+      QVERIFY(layout->inkBounds.x >= pose.innerLanguageBounds.x);
+      QVERIFY(layout->inkBounds.y >= pose.innerLanguageBounds.y);
       QVERIFY(
           layout->inkBounds.x + layout->inkBounds.width <=
-          pose.languageBounds.x + pose.languageBounds.width
+          pose.innerLanguageBounds.x +
+              pose.innerLanguageBounds.width
       );
       QVERIFY(
           layout->inkBounds.y + layout->inkBounds.height <=
-          pose.languageBounds.y + pose.languageBounds.height
+          pose.innerLanguageBounds.y +
+              pose.innerLanguageBounds.height
       );
       if (source == Source::Korean2Set) {
-        QVERIFY(
-            layout->inkBounds.y +
-                    layout->inkBounds.height / 2.0 <
-            pose.languageBounds.y +
-                pose.languageBounds.height / 2.0
-        );
+        QVERIFY(measurement.origin.y < 0);
       }
+      QVERIFY(pose.bellyBounds.height >=
+          (poseInput.state == InputIndicatorMotionState::Idle
+              ? 7.2
+              : 8.0));
+      QVERIFY(pose.innerLanguageBounds.width >= 8.0 - 1e-9);
+      QVERIFY(pose.innerLanguageBounds.height >= 7.0 - 1e-9);
     }
   }
 
   const auto container =
       inputIndicatorCatPose(
           InputIndicatorMotionState::Run, 0.34, false
-      ).languageBounds;
-  const auto oversized = macInputIndicatorLabelLayout(
-      Source::Korean2Set,
-      InputIndicatorMotionState::Run,
+      ).innerLanguageBounds;
+  const auto oversized = macInputIndicatorFitLabelInkLayout(
+      6.1,
+  5.8,
       container,
       {
           .origin = {.x = 0.25, .y = 0},
-          .size = {.width = 12.0, .height = 9.0},
+      .size = {.width = 8.0, .height = 7.2},
       }
   );
   QVERIFY(oversized);
   QVERIFY(oversized->fontSize < 6.1);
+  QVERIFY(oversized->fontSize >= 5.8);
   QVERIFY(oversized->inkBounds.x >= container.x);
   QVERIFY(oversized->inkBounds.y >= container.y);
   QVERIFY(
@@ -632,9 +688,9 @@ void InputIndicatorGeometryTests::catLabelLayoutFitsEveryArtworkPoseAndSource()
       container.y + container.height
   );
 
-  QVERIFY(!macInputIndicatorLabelLayout(
-      Source::Korean2Set,
-      InputIndicatorMotionState::Idle,
+  QVERIFY(!macInputIndicatorFitLabelInkLayout(
+      6.8,
+      6.3,
       container,
       {
           .origin = {.x = 0, .y = 0},
@@ -644,15 +700,226 @@ void InputIndicatorGeometryTests::catLabelLayoutFitsEveryArtworkPoseAndSource()
           },
       }
   ));
-  QVERIFY(!macInputIndicatorLabelLayout(
-      Source::Unknown,
-      InputIndicatorMotionState::Idle,
+  QVERIFY(!macInputIndicatorFitLabelInkLayout(
+      0,
+      6.0,
       container,
       {
           .origin = {.x = 0, .y = 0},
           .size = {.width = 1, .height = 1},
       }
   ));
+  QVERIFY(!macInputIndicatorFitLabelInkLayout(
+      6.1,
+      5.8,
+      container,
+      {
+          .origin = {.x = 0, .y = 0},
+          .size = {.width = 12.0, .height = 9.0},
+      }
+  ));
+}
+
+void InputIndicatorGeometryTests::coreTextInkBoundsExposeGlyphOrigin()
+{
+  @autoreleasepool {
+    NSFont *hanFont =
+        [NSFont systemFontOfSize:6.8
+                          weight:NSFontWeightSemibold];
+    const auto han =
+        macInputIndicatorCoreTextLabelMeasurement(
+            @"한", hanFont
+        );
+    QVERIFY(han);
+    QVERIFY(han->ink.origin.y < -0.30);
+    QVERIFY(han->typographicBounds.y < han->ink.origin.y);
+    QVERIFY(han->ink.size.height < han->typographicBounds.height);
+
+    NSFont *latinFont =
+        [NSFont systemFontOfSize:8
+                          weight:NSFontWeightSemibold];
+    const auto latin =
+        macInputIndicatorCoreTextLabelMeasurement(
+            @"A", latinFont
+        );
+    QVERIFY(latin);
+    QVERIFY(std::abs(latin->ink.origin.y) < 0.001);
+  }
+}
+
+void InputIndicatorGeometryTests::coreTextCatGlyphPixelsStayInsideSilhouette()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const struct
+  {
+    InputIndicatorMotionState state;
+    double phase;
+  } poses[] = {
+      {.state = InputIndicatorMotionState::Idle, .phase = 0.0},
+      {.state = InputIndicatorMotionState::Idle, .phase = 0.25},
+      {.state = InputIndicatorMotionState::Idle, .phase = 0.75},
+      {.state = InputIndicatorMotionState::Walk, .phase = 0.0},
+      {.state = InputIndicatorMotionState::Walk, .phase = 0.34},
+      {.state = InputIndicatorMotionState::Walk, .phase = 0.67},
+      {.state = InputIndicatorMotionState::Run, .phase = 0.0},
+      {.state = InputIndicatorMotionState::Run, .phase = 0.34},
+      {.state = InputIndicatorMotionState::Run, .phase = 0.67},
+  };
+  const Source sources[] = {Source::LatinABC, Source::Korean2Set};
+  const bool directions[] = {true, false};
+  constexpr NSInteger scale = 4;
+  const auto model =
+      macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
+  int cases = 0;
+  int outsidePixels = 0;
+
+  for (const auto &poseInput : poses) {
+    const auto pose = inputIndicatorCatPose(
+        poseInput.state, poseInput.phase, false
+    );
+    const auto artwork =
+        macInputIndicatorCatArtwork(pose.artworkFrame);
+    QVERIFY(pose.bellyBounds.height >=
+        (poseInput.state == InputIndicatorMotionState::Idle
+            ? 7.2
+            : 8.0));
+    const double unionLeft =
+        std::min(
+            artwork.silhouetteBounds.x,
+            pose.bellyBounds.x
+        );
+    const double unionRight =
+        std::max(
+            artwork.silhouetteBounds.x +
+                artwork.silhouetteBounds.width,
+            pose.bellyBounds.x + pose.bellyBounds.width
+        );
+    QVERIFY(
+        unionRight - unionLeft <=
+        artwork.silhouetteBounds.width + 1.5
+    );
+
+    for (const auto source : sources) {
+      NSString *label =
+          source == Source::LatinABC ? @"A" : @"한";
+      const auto preference =
+          macInputIndicatorLabelPreference(
+              source, poseInput.state
+          );
+      for (const bool facesRight : directions) {
+        int caseOutsidePixels = 0;
+        NSBitmapImageRep *bodyMask = pixelBitmap(scale);
+        NSBitmapImageRep *glyphMask = pixelBitmap(scale);
+        QVERIFY(bodyMask);
+        QVERIFY(glyphMask);
+
+        NSGraphicsContext *bodyContext =
+            [NSGraphicsContext
+                graphicsContextWithBitmapImageRep:bodyMask];
+        [NSGraphicsContext saveGraphicsState];
+        [NSGraphicsContext setCurrentContext:bodyContext];
+        CGContextRef bodyCG =
+            [bodyContext CGContext];
+        CGContextSaveGState(bodyCG);
+        CGContextScaleCTM(bodyCG, scale, scale);
+        if (!facesRight) {
+          CGContextTranslateCTM(bodyCG, model.totalWidth, 0);
+          CGContextScaleCTM(bodyCG, -1, 1);
+        }
+        [[NSColor blackColor] setFill];
+        [artworkPath(artwork.far) fill];
+        NSBezierPath *belly =
+            [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
+                                                        pose.bellyBounds.x,
+                                                        pose.bellyBounds.y,
+                                                        pose.bellyBounds.width,
+                                                        pose.bellyBounds.height
+                                                    )
+                                            xRadius:3.2
+                                            yRadius:3.2];
+        [belly fill];
+        [artworkPath(artwork.near) fill];
+        CGContextRestoreGState(bodyCG);
+        [NSGraphicsContext restoreGraphicsState];
+
+        const auto target =
+            inputIndicatorCatInnerLanguageBounds(
+                pose, facesRight
+            );
+        double pointSize = preference.pointSize;
+        std::optional<MacInputIndicatorLabelLayout> layout;
+        NSFont *font = nil;
+        for (int attempt = 0; attempt < 5; ++attempt) {
+          font =
+              [NSFont systemFontOfSize:pointSize
+                                weight:NSFontWeightSemibold];
+          const auto measured =
+              macInputIndicatorCoreTextLabelMeasurement(
+                  label, font
+              );
+          QVERIFY(measured);
+          layout = macInputIndicatorFitLabelInkLayout(
+              pointSize,
+              preference.minimumPointSize, target, measured->ink
+          );
+          QVERIFY(layout);
+          if (std::abs(
+                  layout->fontSize - pointSize
+              ) < 0.01) {
+            break;
+          }
+          pointSize = layout->fontSize;
+        }
+        QVERIFY(layout);
+        QVERIFY(font);
+
+        NSGraphicsContext *glyphContext =
+            [NSGraphicsContext
+                graphicsContextWithBitmapImageRep:glyphMask];
+        [NSGraphicsContext saveGraphicsState];
+        [NSGraphicsContext setCurrentContext:glyphContext];
+        CGContextRef glyphCG =
+            [glyphContext CGContext];
+        CGContextSaveGState(glyphCG);
+        CGContextScaleCTM(glyphCG, scale, scale);
+        macInputIndicatorDrawCoreTextLabel(
+            glyphCG,
+            label,
+            font,
+            [NSColor blackColor],
+            *layout
+        );
+        CGContextRestoreGState(glyphCG);
+        [NSGraphicsContext restoreGraphicsState];
+
+        for (NSInteger y = 0;
+             y < glyphMask.pixelsHigh;
+             ++y) {
+          for (NSInteger x = 0;
+               x < glyphMask.pixelsWide;
+               ++x) {
+            const double glyphAlpha =
+                [glyphMask colorAtX:x y:y].alphaComponent;
+            const double bodyAlpha =
+                [bodyMask colorAtX:x y:y].alphaComponent;
+            if (glyphAlpha > 0.02 &&
+                bodyAlpha <= 0.02) {
+              ++caseOutsidePixels;
+            }
+          }
+        }
+        outsidePixels += caseOutsidePixels;
+        [bodyMask release];
+        [glyphMask release];
+        ++cases;
+      }
+    }
+  }
+  qInfo() << "outsidePixels" << outsidePixels
+          << "cases" << cases;
+  QCOMPARE(cases, 36);
+  QCOMPARE(outsidePixels, 0);
 }
 
 void InputIndicatorGeometryTests::catPoseUsesDistinctSeatedWalkRunGeometry()

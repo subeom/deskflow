@@ -18,6 +18,13 @@
 #include <optional>
 #include <vector>
 
+#ifdef __OBJC__
+#include <CoreGraphics/CoreGraphics.h>
+@class NSColor;
+@class NSFont;
+@class NSString;
+#endif
+
 namespace deskflow::gui::input {
 
 enum class InputIndicatorCompanion
@@ -66,7 +73,7 @@ enum class InputIndicatorTone
 struct MacInputIndicatorLabelPreference
 {
   double pointSize = 0;
-  double inkYCorrection = 0;
+  double minimumPointSize = 0;
 };
 
 struct MacInputIndicatorLabelMeasurement
@@ -92,30 +99,33 @@ macInputIndicatorLabelPreference(
       deskflow::input::InputIndicatorSource::Korean2Set) {
     switch (state) {
     case InputIndicatorMotionState::Idle:
-      return {.pointSize = 6.8, .inkYCorrection = -0.25};
+      return {.pointSize = 6.8, .minimumPointSize = 6.3};
     case InputIndicatorMotionState::Walk:
-      return {.pointSize = 6.4, .inkYCorrection = -0.20};
+      return {.pointSize = 6.4, .minimumPointSize = 6.0};
     case InputIndicatorMotionState::Run:
-      return {.pointSize = 6.1, .inkYCorrection = -0.15};
+      return {.pointSize = 6.1, .minimumPointSize = 5.8};
     }
   }
   return {
       .pointSize =
           state == InputIndicatorMotionState::Run ? 7.6 : 8.0,
-      .inkYCorrection = 0,
+      .minimumPointSize =
+          state == InputIndicatorMotionState::Run ? 7.0 : 7.2,
   };
 }
 
 inline std::optional<MacInputIndicatorLabelLayout>
-macInputIndicatorFitLabelLayout(
+macInputIndicatorFitLabelInkLayout(
     double pointSize,
-    double inkYCorrection,
+    double minimumPointSize,
     const InputIndicatorRect &container,
     const MacInputIndicatorLabelMeasurement &measurement
 )
 {
   if (!std::isfinite(pointSize) || pointSize <= 0 ||
-      !std::isfinite(inkYCorrection) ||
+      !std::isfinite(minimumPointSize) ||
+      minimumPointSize <= 0 ||
+      minimumPointSize > pointSize ||
       !std::isfinite(container.x) ||
       !std::isfinite(container.y) ||
       !std::isfinite(container.width) ||
@@ -138,6 +148,11 @@ macInputIndicatorFitLabelLayout(
   if (!std::isfinite(scale) || scale <= 0) {
     return std::nullopt;
   }
+  const double fittedPointSize =
+      pointSize * scale;
+  if (fittedPointSize + 0.001 < minimumPointSize) {
+    return std::nullopt;
+  }
 
   const double inkWidth =
       measurement.size.width * scale;
@@ -147,48 +162,42 @@ macInputIndicatorFitLabelLayout(
       container.x + (container.width - inkWidth) / 2.0;
   const double centeredY =
       container.y + (container.height - inkHeight) / 2.0;
-  const double inkY =
-      std::clamp(
-          centeredY + inkYCorrection * scale,
-          container.y,
-          container.y + container.height - inkHeight
-      );
   return MacInputIndicatorLabelLayout{
-      .fontSize = pointSize * scale,
+      .fontSize = fittedPointSize,
       .drawingOrigin = {
           .x = inkX - measurement.origin.x * scale,
-          .y = inkY - measurement.origin.y * scale,
+          .y = centeredY - measurement.origin.y * scale,
       },
       .inkBounds = {
           .x = inkX,
-          .y = inkY,
+          .y = centeredY,
           .width = inkWidth,
           .height = inkHeight,
       },
   };
 }
 
-inline std::optional<MacInputIndicatorLabelLayout>
-macInputIndicatorLabelLayout(
-    deskflow::input::InputIndicatorSource source,
-    InputIndicatorMotionState state,
-    const InputIndicatorRect &container,
-    const MacInputIndicatorLabelMeasurement &measurement
-)
+#ifdef __OBJC__
+struct MacInputIndicatorCoreTextLabelMeasurement
 {
-  if (source ==
-      deskflow::input::InputIndicatorSource::Unknown) {
-    return std::nullopt;
-  }
-  const auto preference =
-      macInputIndicatorLabelPreference(source, state);
-  return macInputIndicatorFitLabelLayout(
-      preference.pointSize,
-      preference.inkYCorrection,
-      container,
-      measurement
-  );
-}
+  MacInputIndicatorLabelMeasurement ink;
+  InputIndicatorRect typographicBounds;
+};
+
+std::optional<MacInputIndicatorCoreTextLabelMeasurement>
+macInputIndicatorCoreTextLabelMeasurement(
+    NSString *label,
+    NSFont *font
+);
+
+void macInputIndicatorDrawCoreTextLabel(
+    CGContextRef context,
+    NSString *label,
+    NSFont *font,
+    NSColor *color,
+    const MacInputIndicatorLabelLayout &layout
+);
+#endif
 
 struct MacInputIndicatorRgb
 {
@@ -537,19 +546,30 @@ constexpr MacInputIndicatorRenderModel macInputIndicatorRenderModel(
   }
 }
 
-constexpr InputIndicatorRect inputIndicatorCatLanguageBounds(
+constexpr InputIndicatorRect
+inputIndicatorCatInnerLanguageBounds(
     const InputIndicatorCatPose &pose,
     bool facesRight
 )
 {
   const auto model =
       macInputIndicatorRenderModel(InputIndicatorCompanion::Cat);
-  auto bounds = pose.languageBounds;
+  auto bounds = pose.innerLanguageBounds;
   if (facesRight != model.sourceFacesRight) {
     bounds.x =
         model.totalWidth - bounds.x - bounds.width;
   }
   return bounds;
+}
+
+constexpr InputIndicatorRect inputIndicatorCatLanguageBounds(
+    const InputIndicatorCatPose &pose,
+    bool facesRight
+)
+{
+  return inputIndicatorCatInnerLanguageBounds(
+      pose, facesRight
+  );
 }
 
 inline InputIndicatorCompanion inputIndicatorCompanionFromSetting(
