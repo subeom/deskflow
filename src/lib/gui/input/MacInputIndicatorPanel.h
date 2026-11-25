@@ -322,6 +322,10 @@ struct MacInputIndicatorPanelStyle
 {
   double width = 0;
   double height = 0;
+  double canvasWidth = 0;
+  double canvasHeight = 0;
+  double canvasOffsetX = 0;
+  double canvasOffsetY = 0;
   double logicalWidth = 0;
   double logicalHeight = 0;
   double visualScale = 0;
@@ -422,9 +426,15 @@ constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
     InputIndicatorCompanion companion = InputIndicatorCompanion::Cat
 )
 {
+  const bool cat =
+      companion == InputIndicatorCompanion::Cat;
   return {
       .width = 33,
       .height = 31,
+      .canvasWidth = cat ? 49.0 : 33.0,
+      .canvasHeight = cat ? 49.0 : 31.0,
+      .canvasOffsetX = cat ? 8.0 : 0.0,
+      .canvasOffsetY = cat ? 9.0 : 0.0,
       .logicalWidth = 30,
       .logicalHeight = 28,
       .visualScale = 1.1,
@@ -456,6 +466,22 @@ constexpr InputIndicatorPoint macInputIndicatorDisplayPoint(
   };
 }
 
+constexpr InputIndicatorPoint macInputIndicatorCanvasPoint(
+    InputIndicatorPoint point,
+    InputIndicatorCompanion companion =
+        InputIndicatorCompanion::Cat
+)
+{
+  const auto display =
+      macInputIndicatorDisplayPoint(point);
+  const auto style =
+      macInputIndicatorPanelStyle(companion);
+  return {
+      .x = display.x + style.canvasOffsetX,
+      .y = display.y + style.canvasOffsetY,
+  };
+}
+
 constexpr InputIndicatorRect macInputIndicatorDisplayRect(
     const InputIndicatorRect &rect
 )
@@ -467,6 +493,27 @@ constexpr InputIndicatorRect macInputIndicatorDisplayRect(
       });
   const auto style =
       macInputIndicatorPanelStyle();
+  return {
+      .x = origin.x,
+      .y = origin.y,
+      .width = rect.width * style.visualScale,
+      .height = rect.height * style.visualScale,
+  };
+}
+
+constexpr InputIndicatorRect macInputIndicatorCanvasRect(
+    const InputIndicatorRect &rect,
+    InputIndicatorCompanion companion =
+        InputIndicatorCompanion::Cat
+)
+{
+  const auto origin =
+      macInputIndicatorCanvasPoint(
+          {.x = rect.x, .y = rect.y},
+          companion
+      );
+  const auto style =
+      macInputIndicatorPanelStyle(companion);
   return {
       .x = origin.x,
       .y = origin.y,
@@ -628,12 +675,12 @@ void requestMacInputIndicatorPanelPresentation(Dispatch dispatch)
 class MacInputIndicatorPanel
 {
 public:
-  using PointerLocation =
-      std::function<InputIndicatorPoint()>;
+  using TargetLocation =
+      std::function<InputIndicatorTarget()>;
 
   explicit MacInputIndicatorPanel(
       std::function<void()> presentationInvalidated = {},
-      PointerLocation pointerLocation = {}
+      TargetLocation targetLocation = {}
   );
   ~MacInputIndicatorPanel();
 

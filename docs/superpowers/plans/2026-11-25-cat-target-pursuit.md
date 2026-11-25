@@ -266,11 +266,11 @@ kRunSpeed = 720
 kRunDistance = 48
 kRunTargetSpeed = 260
 kReachedDistance = 0.25
-kPursuitFrameCap = 16
+kPursuitFrameCap = 8
 ```
 
 Run when distance >=48, target speed >=260, or the previous state is Run and
-distance >12. Otherwise Walk. Cap simulated elapsed at 16 ms and movement at
+distance >12. Otherwise Walk. Cap simulated elapsed at 8 ms and movement at
 speed * elapsed. Step only as far as remaining target distance.
 
 - [ ] **Step 4: Implement settle and heading**

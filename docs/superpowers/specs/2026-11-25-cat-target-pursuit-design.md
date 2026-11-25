@@ -83,7 +83,7 @@ Rules:
 
 Maximum chase speeds are 120 pt/s for Walk and 720 pt/s for Run. The requested
 8 ms frame therefore moves at most 0.96 pt walking or 5.76 pt running. A stalled
-input interval is capped to 16 ms of simulated pursuit per rendered frame, so
+input interval is capped to 8 ms of simulated pursuit per rendered frame, so
 the Cat cannot consume a large elapsed gap as an unshown teleport.
 
 The final segment snaps only the sub-step distance that is already inside the

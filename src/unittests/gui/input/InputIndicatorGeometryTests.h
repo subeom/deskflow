@@ -47,6 +47,17 @@ private Q_SLOTS:
   void catPanelSourceChangesTriggerOnlyOneStartle();
   void catStartleReplacesHaloAndResumesIdleTail();
   void otherCompanionsDoNotStartleOnSourceChange();
+  void catPursuitBoundsLargeJumpAndNeverTeleports();
+  void catPursuitWalksNearAndSettlesWithoutOvershoot();
+  void catPursuitHandlesEightHeadingsDeterministically();
+  void catPursuitRejectsInvalidAndHonorsReducedMotion();
+  void catPursuitTreatsPointerAndCaretTargetsIdentically();
+  void catPursuitPreservesInitializedStateAcrossRepresentationChanges();
+  void catPursuitPanelTraversesLargeTargetJump();
+  void catPursuitPanelPreservesPositionOnSourceAndSpaceChange();
+  void catPursuitRotatesSilhouetteButKeepsGlyphUpright();
+  void catPursuitCanvasContainsEightHeadings();
+  void catPursuitCaretTargetFollowsSamePath();
   void companionSettingDefaultsToCat();
   void motionOffsetClampsAndRespectsReducedMotion();
   void transitionProgressEasesAndRespectsReducedMotion();

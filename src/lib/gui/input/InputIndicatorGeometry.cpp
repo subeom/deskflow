@@ -43,6 +43,18 @@ constexpr double kCatStartleDurationMilliseconds = 300;
 constexpr double kCatStartleRecoilOffsetX = -0.45;
 constexpr double kCatStartleHorizontalScale = 0.92;
 constexpr double kCatStartleDorsalLift = 1.8;
+constexpr double kCatWalkSpeedPointsPerSecond = 120;
+constexpr double kCatRunSpeedPointsPerSecond = 720;
+constexpr double kCatRunTargetSpeedPointsPerSecond =
+    260;
+constexpr double kCatRunDistance = 48;
+constexpr double kCatRunHysteresisDistance = 12;
+constexpr double kCatReachedDistance = 0.25;
+constexpr double kCatPursuitFrameCapMilliseconds =
+    8;
+constexpr double kCatPursuitHeadingRadiansPerSecond =
+    10;
+constexpr double kCatPursuitSettleMilliseconds = 180;
 
 std::uint32_t nextCatIdleTailSeed(std::uint32_t seed)
 {
@@ -147,6 +159,24 @@ double normalizedAnimationTime(double milliseconds)
   return std::isfinite(milliseconds)
       ? std::max(milliseconds, 0.0)
       : 0.0;
+}
+
+bool finitePoint(InputIndicatorPoint point)
+{
+  return std::isfinite(point.x) &&
+         std::isfinite(point.y);
+}
+
+bool validPursuitState(
+    const InputIndicatorCatPursuitState &state
+)
+{
+  return state.initialized &&
+         finitePoint(state.position) &&
+         finitePoint(state.velocity) &&
+         std::isfinite(state.headingRadians) &&
+         std::isfinite(state.stoppedMilliseconds) &&
+         state.stoppedMilliseconds >= 0;
 }
 
 } // namespace
@@ -974,6 +1004,233 @@ InputIndicatorPoint inputIndicatorCatStartlePoint(
       horizontalWeight *
       verticalWeight;
   return point;
+}
+
+double inputIndicatorNormalizedAngle(double radians)
+{
+  if (!std::isfinite(radians)) {
+    return 0;
+  }
+  const double fullTurn = 2.0 * kPi;
+  radians =
+      std::fmod(radians + kPi, fullTurn);
+  if (radians < 0) {
+    radians += fullTurn;
+  }
+  return radians - kPi;
+}
+
+std::optional<InputIndicatorCatPursuitStep>
+inputIndicatorCatPursuitAdvance(
+    const InputIndicatorCatPursuitState &state,
+    const InputIndicatorTarget &target,
+    double targetSpeedPointsPerSecond,
+    double elapsedMilliseconds,
+    bool initialize,
+    bool reducedMotion
+)
+{
+  if (!finitePoint(target.point) ||
+      !std::isfinite(targetSpeedPointsPerSecond) ||
+      targetSpeedPointsPerSecond < 0 ||
+      !std::isfinite(elapsedMilliseconds) ||
+      elapsedMilliseconds < 0 ||
+      (!initialize && !validPursuitState(state))) {
+    return std::nullopt;
+  }
+  if (target.kind != InputIndicatorTargetKind::Pointer &&
+      target.kind != InputIndicatorTargetKind::Caret) {
+    return std::nullopt;
+  }
+
+  InputIndicatorCatPursuitStep result{
+      .state = state,
+      .targetKind = target.kind,
+  };
+  if (initialize || reducedMotion) {
+    result.movement = {
+        .x = target.point.x -
+             (initialize
+                  ? target.point.x
+                  : state.position.x),
+        .y = target.point.y -
+             (initialize
+                  ? target.point.y
+                  : state.position.y),
+    };
+    result.state.position = target.point;
+    result.state.velocity = {};
+    result.state.stoppedMilliseconds = 0;
+    result.state.motionState =
+        InputIndicatorMotionState::Idle;
+    result.state.initialized = true;
+    result.distanceMoved =
+        std::hypot(
+            result.movement.x, result.movement.y
+        );
+    result.reached = true;
+    return result;
+  }
+
+  const double deltaX =
+      target.point.x - state.position.x;
+  const double deltaY =
+      target.point.y - state.position.y;
+  const double distance =
+      std::hypot(deltaX, deltaY);
+  if (!std::isfinite(distance)) {
+    return std::nullopt;
+  }
+  if (distance <= kCatReachedDistance) {
+    result.movement = {
+        .x = deltaX,
+        .y = deltaY,
+    };
+    result.state.position = target.point;
+    result.state.velocity = {};
+    result.state.stoppedMilliseconds +=
+        elapsedMilliseconds;
+    if (result.state.stoppedMilliseconds >=
+        kCatPursuitSettleMilliseconds) {
+      result.state.motionState =
+          InputIndicatorMotionState::Idle;
+    }
+    result.distanceMoved = distance;
+    result.reached = true;
+    return result;
+  }
+
+  const double simulatedMilliseconds =
+      std::min(
+          elapsedMilliseconds,
+          kCatPursuitFrameCapMilliseconds
+      );
+  const bool run =
+      distance >= kCatRunDistance ||
+      targetSpeedPointsPerSecond >=
+          kCatRunTargetSpeedPointsPerSecond ||
+      (state.motionState ==
+           InputIndicatorMotionState::Run &&
+       distance > kCatRunHysteresisDistance);
+  const double speed =
+      run
+          ? kCatRunSpeedPointsPerSecond
+          : kCatWalkSpeedPointsPerSecond;
+  const double stepDistance =
+      std::min(
+          distance,
+          speed *
+              (simulatedMilliseconds / 1000.0)
+      );
+  const double unitX = deltaX / distance;
+  const double unitY = deltaY / distance;
+  result.movement = {
+      .x = unitX * stepDistance,
+      .y = unitY * stepDistance,
+  };
+  result.state.position = {
+      .x = state.position.x + result.movement.x,
+      .y = state.position.y + result.movement.y,
+  };
+  result.distanceMoved = stepDistance;
+  result.reached =
+      distance - stepDistance <=
+      kCatReachedDistance;
+  if (result.reached) {
+    result.movement = {
+        .x = deltaX,
+        .y = deltaY,
+    };
+    result.distanceMoved = distance;
+    result.state.position = target.point;
+  }
+
+  if (simulatedMilliseconds > 0 &&
+      result.distanceMoved > 0) {
+    const double seconds =
+        simulatedMilliseconds / 1000.0;
+    result.state.velocity = {
+        .x = result.movement.x / seconds,
+        .y = result.movement.y / seconds,
+    };
+    const double requestedHeading =
+        std::atan2(deltaY, deltaX);
+    const double headingDelta =
+        inputIndicatorNormalizedAngle(
+            requestedHeading -
+            state.headingRadians
+        );
+    const double maximumTurn =
+        kCatPursuitHeadingRadiansPerSecond *
+        seconds;
+    result.state.headingRadians =
+        inputIndicatorNormalizedAngle(
+            state.headingRadians +
+            std::clamp(
+                headingDelta,
+                -maximumTurn,
+                maximumTurn
+            )
+        );
+    result.state.motionState =
+        run
+            ? InputIndicatorMotionState::Run
+            : InputIndicatorMotionState::Walk;
+    result.state.stoppedMilliseconds = 0;
+  } else {
+    result.state.velocity = {};
+    result.state.stoppedMilliseconds +=
+        elapsedMilliseconds;
+    if (result.state.stoppedMilliseconds >=
+        kCatPursuitSettleMilliseconds) {
+      result.state.motionState =
+          InputIndicatorMotionState::Idle;
+    }
+  }
+  result.speedPointsPerSecond =
+      std::hypot(
+          result.state.velocity.x,
+          result.state.velocity.y
+      );
+  return result;
+}
+
+InputIndicatorPoint inputIndicatorCatBodyPoint(
+    InputIndicatorPoint point,
+    bool facesRight,
+    double facingHorizontalScale,
+    double headingRadians
+)
+{
+  if (!finitePoint(point) ||
+      !std::isfinite(facingHorizontalScale) ||
+      facingHorizontalScale < 0 ||
+      !std::isfinite(headingRadians)) {
+    return point;
+  }
+  if (!facesRight) {
+    point.x = 30.0 - point.x;
+  }
+  point.x =
+      15.0 +
+      (point.x - 15.0) *
+          facingHorizontalScale;
+  const double relativeHeading =
+      inputIndicatorNormalizedAngle(
+          facesRight
+              ? headingRadians
+              : headingRadians - kPi
+      );
+  const double cosine =
+      std::cos(relativeHeading);
+  const double sine =
+      std::sin(relativeHeading);
+  const double x = point.x - 15.0;
+  const double y = point.y - 14.0;
+  return {
+      .x = 15.0 + x * cosine - y * sine,
+      .y = 14.0 + x * sine + y * cosine,
+  };
 }
 
 InputIndicatorTailPose inputIndicatorCatTailPose(

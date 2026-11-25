@@ -109,6 +109,41 @@ struct InputIndicatorCatSourceStartleStep
   InputIndicatorCatStartleFrame frame;
 };
 
+enum class InputIndicatorTargetKind : unsigned char
+{
+  Pointer,
+  Caret
+};
+
+struct InputIndicatorTarget
+{
+  InputIndicatorPoint point;
+  InputIndicatorTargetKind kind =
+      InputIndicatorTargetKind::Pointer;
+};
+
+struct InputIndicatorCatPursuitState
+{
+  InputIndicatorPoint position;
+  InputIndicatorPoint velocity;
+  double headingRadians = 0;
+  double stoppedMilliseconds = 0;
+  InputIndicatorMotionState motionState =
+      InputIndicatorMotionState::Idle;
+  bool initialized = false;
+};
+
+struct InputIndicatorCatPursuitStep
+{
+  InputIndicatorCatPursuitState state;
+  InputIndicatorPoint movement;
+  InputIndicatorTargetKind targetKind =
+      InputIndicatorTargetKind::Pointer;
+  double distanceMoved = 0;
+  double speedPointsPerSecond = 0;
+  bool reached = false;
+};
+
 enum class InputIndicatorCatArtworkFrame
 {
   IdleRise,
@@ -265,6 +300,25 @@ InputIndicatorPoint inputIndicatorCatStartlePoint(
     InputIndicatorPoint point,
     const InputIndicatorCatStartleFrame &frame,
     bool dorsalContour
+);
+
+std::optional<InputIndicatorCatPursuitStep>
+inputIndicatorCatPursuitAdvance(
+    const InputIndicatorCatPursuitState &state,
+    const InputIndicatorTarget &target,
+    double targetSpeedPointsPerSecond,
+    double elapsedMilliseconds,
+    bool initialize,
+    bool reducedMotion
+);
+
+double inputIndicatorNormalizedAngle(double radians);
+
+InputIndicatorPoint inputIndicatorCatBodyPoint(
+    InputIndicatorPoint point,
+    bool facesRight,
+    double facingHorizontalScale,
+    double headingRadians
 );
 
 constexpr InputIndicatorPoint inputIndicatorCatFacingPoint(
