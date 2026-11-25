@@ -2529,8 +2529,8 @@ PR/install.
 
 **Files:**
 - Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
-- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
-- Add: `src/unittests/gui/input/InputIndicatorCoreTextRenderTests.mm`
+- Move: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp` to
+  `src/unittests/gui/input/InputIndicatorGeometryTests.mm`
 - Modify: `src/unittests/gui/input/CMakeLists.txt`
 
 - [ ] **Step 1: Replace offset assumptions in the pure fitter test**
@@ -2545,14 +2545,20 @@ Create a `CTLine` for exact `A`/`한` font candidates. Assert
 `kCTLineBoundsUseGlyphPathBounds` returns the negative Korean origin seen in
 the native evidence and that glyph size differs from typographic bounds.
 
-- [ ] **Step 3: Add offscreen pixel-containment regression**
+- [ ] **Step 3: Add belly and target invariants**
+
+For every Walk/Run frame assert the Cat belly union is at least 7.2 pt high,
+contains an inner 8 x 7 pt label target, and increases the complete source
+silhouette width by no more than 1.5 pt. Idle keeps the approved seated art.
+
+- [ ] **Step 4: Add offscreen pixel-containment regression**
 
 Render every Cat artwork frame for both sources and both directions (36 native
 cases total) into separate body-mask and glyph bitmaps. Use the production
 CoreText helper and Cat compiled path constants. Fail when any nonzero glyph
 alpha pixel is present where body-mask alpha is zero.
 
-- [ ] **Step 4: Capture RED**
+- [ ] **Step 5: Capture RED**
 
 Run the pure and native render targets. Expected: compile failure for removed
 offset-free/CoreText APIs or nonzero spill output from the old renderer path.
@@ -2560,24 +2566,33 @@ offset-free/CoreText APIs or nonzero spill output from the old renderer path.
 ### Task 45: Draw from CoreText Glyph Bounds
 
 **Files:**
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.h`
+- Modify: `src/lib/gui/input/InputIndicatorGeometry.cpp`
 - Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
 - Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
 
-- [ ] **Step 1: Remove arbitrary correction**
+- [ ] **Step 1: Add minimum-thickness belly geometry**
+
+Center a rounded 8.0 pt-high belly union on every Walk/Run label anchor while
+keeping the union inside or within 1.5 pt of the approved silhouette width.
+Return the corresponding centered 8 x 7 pt inner label target from the pure
+pose model.
+
+- [ ] **Step 2: Remove arbitrary correction**
 
 Keep only source/state maximum font sizes. Replace
 `MacInputIndicatorLabelMeasurement.origin/size` with actual glyph-path ink
 bounds relative to a CoreText baseline; retain typographic bounds only for
 diagnostic/native tests.
 
-- [ ] **Step 2: Add shared CoreText helpers**
+- [ ] **Step 3: Add shared CoreText helpers**
 
 Create attributed `CTLine`, query `kCTLineBoundsUseGlyphPathBounds`, fit the
 font until actual ink fits the inner label target, and draw at
 `targetInkOrigin - measuredInkOrigin`. Expose the native helper for the render
 test.
 
-- [ ] **Step 3: Clip to the actual Cat torso silhouette**
+- [ ] **Step 4: Clip to the actual Cat torso silhouette**
 
 For Cat only, intersect the existing label-box clip with the compiled near/far
 silhouette path. Dog/Turtle continue their existing 8 pt path.
@@ -2586,7 +2601,7 @@ silhouette path. Dog/Turtle continue their existing 8 pt path.
 
 - [ ] **Step 1: Run focused and native gates**
 
-Run InputIndicatorCoreTextRenderTests, InputIndicatorGeometryTests, policy,
+Run the native render cases in InputIndicatorGeometryTests, policy,
 settings, translation, and panel build targets. Required pre-run output is the
 native spill count, with `outsidePixels == 0` for all 36 cases.
 

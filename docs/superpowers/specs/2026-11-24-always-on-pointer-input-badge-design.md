@@ -51,6 +51,13 @@ non-activating `NSPanel` near it:
   typographic-origin inference. Invalid or oversized ink fails closed by
   scaling; the Cat silhouette plus label target clips as a final guard, so no
   glyph pixel can leave the filled torso interior.
+- Walk and Run artwork receives a small rounded belly union centered on the
+  selected language anchor. Its minimum vertical thickness is 7.2 pt (the
+  implementation uses 8.0 pt) and its inner label target is 8.0 x 7.0 pt.
+  The union may not grow the complete silhouette width by more than 1.5 pt.
+  This preserves the approved head, ear, tail, paw, and overall-width profile
+  while making the torso physically readable instead of relying on font
+  shrinking alone.
 - Bodies, ears, shell, tail, and paws use the configured opacity directly
   (default 65%, clamped to 60-100%). The body is a neutral translucent
   off-white close to the macOS cursor (`#F2F3F5`), with a subtle dark-neutral
@@ -247,6 +254,8 @@ Focused tests cover:
   rectangle contained by baseline-derived placement;
 - native offscreen coverage renders every Cat source, artwork frame, and
   direction and reports zero glyph pixels outside the filled torso silhouette;
+- every Walk/Run belly union is at least 7.2 pt thick around the label anchor
+  and changes the complete silhouette width by at most 1.5 pt;
 - the generated native path data contains only normalized compiled constants;
   no SVG loader, XML/path parser, external dependency, runtime file path, or
   network access exists;
