@@ -2423,3 +2423,100 @@ Expected: direct ancestry from
 `12081d1f97cd0100fb4dbcb27053f9367e4f3a91`, clean worktree, no generated SVG
 asset/path parser/runtime file read, no tile/eye/cursor-mutation change, and no
 push/merge/tag/release/PR/install.
+
+---
+
+## Revision 10: Source- and Gait-Aware Label Fit
+
+### Task 41: Record Label-Fit RED
+
+**Files:**
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.h`
+- Modify: `src/unittests/gui/input/InputIndicatorGeometryTests.cpp`
+
+- [ ] **Step 1: Add pure source/state preference assertions**
+
+Define a pure Cat label layout API that takes the source, motion state, label
+container, measured ink origin, and measured ink size. Assert exact preferred
+sizes:
+
+```text
+A Idle 8.0, Walk 8.0, Run 7.6
+한 Idle 6.8, Walk 6.4, Run 6.1
+```
+
+- [ ] **Step 2: Prove every label rectangle stays in its pose**
+
+For every Cat art frame and both sources, pass conservative real AppKit
+measurement ratios into the pure fitter. Assert:
+
+```text
+layout font size <= preferred size
+ink rectangle is finite and positive
+ink rectangle is wholly inside the frame's languageBounds
+Korean layout applies a negative AppKit-Y ink correction
+```
+
+- [ ] **Step 3: Add fail-closed fitting**
+
+Pass an intentionally oversized measurement to Idle, Walk, and Run. Assert
+the returned font size decreases and the fitted ink rectangle remains inside
+the 9 x 8 pt container. Pass invalid/non-finite geometry and assert
+`std::nullopt`.
+
+- [ ] **Step 4: Capture RED**
+
+Build `InputIndicatorGeometryTests`. Expected failure is limited to the
+missing preference/measurement-fit layout API.
+
+### Task 42: Measure and Draw Fitted Cat Glyphs
+
+**Files:**
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.h`
+- Modify: `src/lib/gui/input/MacInputIndicatorPanel.mm`
+
+- [ ] **Step 1: Implement pure fitting**
+
+Return one layout with preferred/fitted font size, drawing origin, and ink
+rectangle. Use uniform scaling only, center the ink, clamp the Korean baseline
+correction into the container, and reject non-finite/non-positive input.
+
+- [ ] **Step 2: Measure real AppKit glyph bounds**
+
+For each source in the label crossfade, create its source/state font, then use
+`NSString boundingRectWithSize:options:attributes:context:` with
+`NSStringDrawingUsesDeviceMetrics` and line/font-leading options. Re-run the
+pure fitter after any size reduction so the actual native measurement and the
+pure bound agree.
+
+- [ ] **Step 3: Draw by the fitted rectangle**
+
+Replace the shared 8 pt font and `drawInRect` call with a per-label measured
+rect and `drawWithRect:options:attributes:context:`. Keep paragraph
+alignment/alpha transition unchanged. Preserve the exact Dog/Turtle 8 pt
+render path.
+
+### Task 43: Verify, Package, and Audit
+
+- [ ] **Step 1: Run focused gates**
+
+Run InputIndicatorGeometryTests, InputIndicatorPolicyTests, the panel/render
+build, SettingsPagesTests, InputIndicatorSettingsTests, and TranslationFileTests.
+
+- [ ] **Step 2: Run the full Release gate**
+
+Build all targets and run 157 eligible CTests, excluding only
+`OSXClipboardTests` and `OSXKeyStateTests`.
+
+- [ ] **Step 3: Commit and package**
+
+Commit docs and implementation separately with the standard trailer. Build
+`build/pointer-badge-label-fit/deskflow-2.0.9.0-macos-arm64.dmg` and verify
+metadata, SHA-256, arm64, signature and CDHash. Do not install or stable-sign.
+
+- [ ] **Step 4: Audit final state**
+
+Expected: direct ancestry from
+`7b7d2f8fc609e72a42782d1b4f4137aeb9bb850c`, clean worktree, no label
+behavior changed outside source/state fitting, and no push/merge/tag/release/
+PR/install.

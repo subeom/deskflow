@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-24  
 **Status:** Approved for implementation  
-**Revision base:** `12081d1f97cd0100fb4dbcb27053f9367e4f3a91`
+**Revision base:** `7b7d2f8fc609e72a42782d1b4f4137aeb9bb850c`
 
 ## Goal
 
@@ -37,8 +37,17 @@ non-activating `NSPanel` near it:
   normalized native Bézier constants; the product never loads SVG, parses path
   strings, or stores an external asset path. Dog and Turtle remain coherent
   original AppKit silhouettes.
-- The 8 pt semibold `A`/`한` stays inside the torso or shell. There are no eye
-  dots, pupils, mouth, whiskers, face marks, or external language badge.
+- The semibold Cat `A` stays at 8 pt in Idle/Walk and 7.6 pt in Run. The
+  denser Korean `한` uses 6.8 pt in Idle, 6.4 pt in Walk, and 6.1 pt in Run.
+  Dog/Turtle retain their existing 8 pt label behavior. There are no eye dots,
+  pupils, mouth, whiskers, face marks, or external language badge.
+- Cat labels are centered in the selected art frame's torso box, with a small
+  negative AppKit-Y baseline correction for Korean ink. The native renderer
+  measures each exact `A`/`한` attributed string with device/font metrics,
+  then scales further to contain both the measured ink origin and size. It
+  draws with the measured fitted rectangle instead of line-layout drawing in
+  the 9 x 8 box. Invalid or oversized measurements fail closed by scaling;
+  no glyph path may extend outside the torso label region.
 - Bodies, ears, shell, tail, and paws use the configured opacity directly
   (default 65%, clamped to 60-100%). The body is a neutral translucent
   off-white close to the macOS cursor (`#F2F3F5`), with a subtle dark-neutral
@@ -230,6 +239,9 @@ Focused tests cover:
 - the Cat's right-facing source outline, Idle/Walk/Run keyframe sequence, near
   and far limb layers, and normalized label center match the approved external
   pose sheet within explicit point tolerances;
+- source/state Cat font preferences are exactly `A`: 8/8/7.6 pt and `한`:
+  6.8/6.4/6.1 pt for Idle/Walk/Run, with the final measured ink rectangle
+  contained after Korean baseline correction;
 - the generated native path data contains only normalized compiled constants;
   no SVG loader, XML/path parser, external dependency, runtime file path, or
   network access exists;
