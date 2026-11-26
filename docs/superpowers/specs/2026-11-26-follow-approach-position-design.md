@@ -93,17 +93,21 @@ bool approachHeadingValid = false;
 double approachHeadingRadians = 0;
 ```
 
-On a successful non-initial pursuit step:
+The panel keeps the previous raw cursor point as well as the previous
+pursuit position. On a successful non-initial, non-reached pursuit step:
 
 - if `distanceMoved > 0.25 pt` and the new state heading is finite, retain that
   heading and mark it valid;
+- a meaningful raw cursor delta supplies the approach heading exactly; when no
+  valid heading exists and the cursor itself did not move, seed it from the
+  cursor minus the previous pursuit **center** (origin plus half badge size);
 - if the normalized raw-heading delta is at most `0.01 rad`, keep the prior
   heading; this sub-degree deadband prevents whole-point AppKit rounding from
   moving the dynamic support target after the companion has effectively
   settled;
 - while Idle, within settled distance, or during no/zero movement, keep the
   previous heading;
-- do not derive heading from a zero-length cursor delta;
+- never derive or overwrite heading on a reached/no-movement tick;
 - Reduced Motion still places directly, ignores speed as before, and retains
   the prior heading when present.
 

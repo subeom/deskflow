@@ -475,6 +475,23 @@ Before pursuit:
 ```cpp
 const bool initializePursuit =
     !m_impl->pursuitState.initialized;
+const InputIndicatorPoint
+    previousPursuitCenter{
+        .x =
+            m_impl->pursuitState.position.x +
+            style.width / 2.0,
+        .y =
+            m_impl->pursuitState.position.y +
+            style.height / 2.0,
+    };
+const InputIndicatorPoint cursorDelta{
+    .x =
+        targetLocation.point.x -
+        m_impl->previousCursor.x,
+    .y =
+        targetLocation.point.y -
+        m_impl->previousCursor.y,
+};
 ```
 
 After a valid step:
@@ -482,15 +499,22 @@ After a valid step:
 ```cpp
 if (!initializePursuit &&
     !reducedMotion &&
+    !pursuit->reached &&
     pursuit->distanceMoved >
         kSettledDistance &&
     hadPursuitPosition) {
-  const double heading = std::atan2(
-      targetLocation.point.y -
-          previousPursuitPosition.y,
-      targetLocation.point.x -
-          previousPursuitPosition.x
-  );
+  const double heading =
+      cursorMoved
+          ? std::atan2(
+                cursorDelta.y,
+                cursorDelta.x
+            )
+          : std::atan2(
+                targetLocation.point.y -
+                    previousPursuitCenter.y,
+                targetLocation.point.x -
+                    previousPursuitCenter.x
+            );
   if (!m_impl->approachHeadingValid ||
       std::abs(inputIndicatorNormalizedAngle(
           heading -
@@ -505,9 +529,9 @@ if (!initializePursuit &&
 ```
 
 Compute the retained angle from the real cursor target and previous pursuit
-position, not from the dynamic offset target. Do not write heading for
-initialize, Reduced Motion, zero motion, invalid values, or a sub-0.01 radian
-change.
+center, not from the dynamic offset origin. A meaningful raw cursor delta is
+authoritative; center subtraction is the fallback seed only. Preserve the
+last heading through reached/no-movement ticks and sub-0.01 radian jitter.
 
 - [ ] **Step 5: Prove smooth direction reversal**
 
