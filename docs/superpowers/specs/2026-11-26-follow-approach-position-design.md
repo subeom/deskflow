@@ -97,6 +97,10 @@ On a successful non-initial pursuit step:
 
 - if `distanceMoved > 0.25 pt` and the new state heading is finite, retain that
   heading and mark it valid;
+- if the normalized raw-heading delta is at most `0.01 rad`, keep the prior
+  heading; this sub-degree deadband prevents whole-point AppKit rounding from
+  moving the dynamic support target after the companion has effectively
+  settled;
 - while Idle, within settled distance, or during no/zero movement, keep the
   previous heading;
 - do not derive heading from a zero-length cursor delta;

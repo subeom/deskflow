@@ -484,17 +484,30 @@ if (!initializePursuit &&
     !reducedMotion &&
     pursuit->distanceMoved >
         kSettledDistance &&
-    std::isfinite(
-        pursuit->state.headingRadians
-    )) {
-  m_impl->approachHeadingRadians =
-      pursuit->state.headingRadians;
-  m_impl->approachHeadingValid = true;
+    hadPursuitPosition) {
+  const double heading = std::atan2(
+      targetLocation.point.y -
+          previousPursuitPosition.y,
+      targetLocation.point.x -
+          previousPursuitPosition.x
+  );
+  if (!m_impl->approachHeadingValid ||
+      std::abs(inputIndicatorNormalizedAngle(
+          heading -
+          m_impl->approachHeadingRadians
+      )) > 0.01) {
+    m_impl->approachHeadingRadians = heading;
+    m_impl->approachHeadingValid = true;
+  }
+  nextPursuitState.headingRadians =
+      m_impl->approachHeadingRadians;
 }
 ```
 
-Do not write heading for initialize, Reduced Motion, zero motion, or invalid
-finite values.
+Compute the retained angle from the real cursor target and previous pursuit
+position, not from the dynamic offset target. Do not write heading for
+initialize, Reduced Motion, zero motion, invalid values, or a sub-0.01 radian
+change.
 
 - [ ] **Step 5: Prove smooth direction reversal**
 
