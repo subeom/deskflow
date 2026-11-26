@@ -15,6 +15,8 @@
 #include "common/ExitCodes.h"
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
+#include "common/TunnelAddress.h"
+#include "common/TunnelReconnect.h"
 #include "deskflow/Computer.h"
 #include "deskflow/DisplayException.h"
 #include "deskflow/ipc/CoreIpc.h"
@@ -50,8 +52,20 @@ ClientApp::ClientApp(IEventQueue *events, const QString &processName) : App(even
 
 void ClientApp::parseArgs()
 {
-  // save server addresses (comma-separated list supported)
-  if (const auto addressList = Settings::value(Settings::Client::RemoteHost).toString(); !addressList.isEmpty()) {
+  // The Cloudflare Tunnel is on and cannot be used (TLS off, no usable hostname): the saved address is not dialled
+  // instead
+  if (const auto block = deskflow::tunnel::remoteHostBlock(); block != deskflow::tunnel::RemoteHostBlock::None) {
+    LOG_CRIT(
+        "%s: the Cloudflare Tunnel is on but cannot be used (%s): not connecting to the saved address" BYE,
+        qPrintable(processName()), qPrintable(deskflow::tunnel::remoteHostBlockText(block)), qPrintable(processName())
+    );
+    bye(s_exitConfig);
+    return;
+  }
+
+  // save server addresses (comma-separated list supported); with a Cloudflare Tunnel in use it is the local address of
+  // the tunnel instead, otherwise exactly the saved address
+  if (const auto addressList = deskflow::tunnel::effectiveRemoteHost(); !addressList.isEmpty()) {
     const int port = Settings::value(Settings::Core::Port).toInt();
     const QStringList addresses = addressList.split(',', Qt::SkipEmptyParts);
 
@@ -165,11 +179,13 @@ void ClientApp::scheduleClientRestart(double retryTime)
   // install a timer and handler to retry later
   EventQueueTimer *timer = getEvents()->newOneShotTimer(retryTime, nullptr);
   getEvents()->addHandler(EventTypes::Timer, timer, [this, timer](const auto &e) { handleClientRestart(e, timer); });
+  ++m_reconnectAttempts;
 }
 
 void ClientApp::handleClientConnected()
 {
   LOG_DEBUG("connected to server");
+  m_reconnectAttempts = 0;
   ipcSendConnectionState(deskflow::core::ConnectionState::Connected);
   // Reset server index on successful connection
   m_currentServerIndex = 0;
@@ -314,6 +330,7 @@ void ClientApp::stopClient()
   m_client = nullptr;
   m_clientComputer = nullptr;
   m_retryCount = 0;
+  m_reconnectAttempts = 0;
 }
 
 int ClientApp::mainLoop()
@@ -389,6 +406,17 @@ ISocketFactory *ClientApp::getSocketFactory() const
 }
 
 double ClientApp::retryTime() const
+{
+  const auto direct = directRetryTime();
+  // a long retry that the user asked for (dynamic retry) is kept; the tunnel only shortens the first try and eases a
+  // long outage
+  if (direct > 1.0 || !deskflow::tunnel::TunnelConfig::fromSettings().isActive()) {
+    return direct;
+  }
+  return deskflow::tunnel::reconnectSeconds(static_cast<int>(m_reconnectAttempts));
+}
+
+double ClientApp::directRetryTime() const
 {
   if (!Settings::value(Settings::Client::DynamicConnectionRetry).toBool() || m_retryCount < 300) // 5 minutes
     return 1;

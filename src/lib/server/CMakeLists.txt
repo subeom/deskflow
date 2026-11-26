@@ -4,6 +4,10 @@
 # SPDX-License-Identifier: MIT
 
 add_library(server STATIC
+  Arrangement.cpp
+  Arrangement.h
+  MonitorEditor.cpp
+  MonitorEditor.h
   BaseClientProxy.cpp
   BaseClientProxy.h
   ClientListener.cpp
@@ -28,16 +32,25 @@ add_library(server STATIC
   ClientProxy1_7.h
   ClientProxy1_8.cpp
   ClientProxy1_8.h
+  ClientProxy1_9.cpp
+  ClientProxy1_9.h
   ClientProxyUnknown.cpp
   ClientProxyUnknown.h
   Config.cpp
   Config.h
   InputFilter.cpp
   InputFilter.h
+  MonitorGeometry.cpp
+  MonitorGeometry.h
   PrimaryClient.cpp
   PrimaryClient.h
+  ReportedMonitors.cpp
+  ReportedMonitors.h
   Server.cpp
   Server.h
+  ServerCursorEdges.cpp
+  ServerCursorEdges.h
+  ServerNeighborTraversal.h
 )
 
 target_link_libraries(server PUBLIC common)

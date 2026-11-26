@@ -22,9 +22,22 @@ private Q_SLOTS:
   void tlsTrustedServersDb();
   void tlsTrustedClientsDb();
   void checkValidSettings();
+  void clipboardTextOnly_isOffByDefaultAndRoundTrips();
+  void appearance_defaultsToTheNewLookAndRoundTrips();
+  void experimentalMultiMonitor_isOffByDefaultAndRoundTrips();
+  void macAwdlOff_isOffByDefault_isKept_andItsGroupIsNotTakenAway();
+  void macHoldPointer_isOffByDefault_canBeTurnedOn_andIsAKnownKey();
+  void monitorLayout_isEmptyByDefaultAndRoundTrips();
+  void connectTimeout_defaultsToTwoSecondsAndRoundTrips();
   void checkCleanComputerName();
   void checkCleanComputerName_LongName();
   void checkClearState();
+  void nativeWindowFrame_isTheFrameOfTheSystemOnLinuxOnlyByDefault();
+  void portableMode_keepsTheStateKeysWhenTheSettingsAreReadAgain();
+  void keys_aChoiceOfTheNewLookIsKeptWhenTheProgramIsStartedAgain_data();
+  void keys_aChoiceOfTheNewLookIsKeptWhenTheProgramIsStartedAgain();
+  void keys_everyKeyThatIsDeclaredIsEitherKeptOrAStateKey();
+  void keys_theListsOfDefaultsHaveNoKeyThatTheProgramDoesNotKnow();
 
 private:
   inline static const QString m_settingsPathTemp = QStringLiteral("tmp/test");

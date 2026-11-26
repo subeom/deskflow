@@ -12,12 +12,17 @@
 
 #include "base/Event.h"
 #include "base/EventTypes.h"
+#include "common/ConnectionDiagnosis.h"
 #include "common/Enums.h"
+#include "common/InputCapabilities.h"
 #include "deskflow/IClipboard.h"
+#include "deskflow/MonitorReport.h"
 #include "net/NetworkAddress.h"
 
 #include <climits>
+#include <optional>
 #include <string>
+#include <vector>
 
 class Event;
 class EventQueueTimer;
@@ -162,6 +167,10 @@ public:
     return m_resolvedAddressesCount;
   }
   size_t getMaximumClipboardReceiveSizeBytes() const;
+  InputCapabilities inputCapabilities() const;
+  bool semanticMediaKey(KeyID id);
+  //! The monitors of this computer, for the report to a server that asked for it; empty if it cannot tell
+  std::vector<deskflow::monitors::MonitorInfo> monitorInfo() const;
 
   //@}
 
@@ -208,16 +217,25 @@ private:
   void handleConnected();
   void handleConnectionFailed(const Event &event);
   void handleConnectTimeout();
+  void handleSecureFailed(const Event &event);
   void handleOutputError();
   void handleDisconnected();
   void handleDisconnectRequested(const Event &event);
   void handleShapeChanged();
+  void handleMonitorsChanged();
   void handleClipboardGrabbed(const Event &event);
   void handleHello();
   void handleSuspend();
   void handleResume();
   void sendClipboardThread(void *);
   void bindNetworkInterface(IDataSocket *socket) const;
+
+  //! The time limit for TCP + TLS + hello, from `client/connectTimeout`; says once when the value is not usable
+  double loadConnectTimeout();
+  //! Log, as an extra line, what a failed connection attempt to the server most likely means
+  void logConnectFailure(
+      deskflow::diagnosis::FailureKind kind, deskflow::diagnosis::Phase phase, const std::string &detail
+  ) const;
 
 private:
   std::string m_name;
@@ -244,4 +262,11 @@ private:
   int32_t m_relativeRestoreY = 0;
   size_t m_maximumClipboardSize = INT_MAX;
   size_t m_resolvedAddressesCount = 0;
+
+  // how far the current connection attempt got, for the diagnosis when it fails or the time limit is over
+  deskflow::diagnosis::Phase m_connectPhase = deskflow::diagnosis::Phase::Tcp;
+  // set when the secure handshake of the current attempt failed before the time limit was over
+  std::optional<deskflow::diagnosis::FailureKind> m_secureFailure;
+  double m_connectTimeoutSeconds = deskflow::diagnosis::kDefaultConnectTimeoutSeconds;
+  bool m_connectTimeoutWarned = false;
 };

@@ -23,6 +23,8 @@
 #include "server/ClientProxy1_6.h"
 #include "server/ClientProxy1_7.h"
 #include "server/ClientProxy1_8.h"
+#include "server/ClientProxy1_9.h"
+#include "server/ReportedMonitors.h"
 #include "server/Server.h"
 
 //
@@ -177,6 +179,10 @@ void ClientProxyUnknown::initProxy(const std::string &name, int major, int minor
       m_proxy = new ClientProxy1_8(name, m_stream, m_server, m_events);
       break;
 
+    case 9:
+      m_proxy = new ClientProxy1_9(name, m_stream, m_server, m_events);
+      break;
+
     default:
       break;
     }
@@ -193,6 +199,8 @@ void ClientProxyUnknown::handleData()
   LOG_VERBOSE("parsing hello reply");
 
   std::string name("<unknown>");
+  // what the computer said of itself is not written the way it came into a log that a program reads
+  const auto loggable = [&name] { return deskflow::server::loggableName(name); };
 
   try {
     // limit the maximum length of the hello
@@ -222,7 +230,7 @@ void ClientProxyUnknown::handleData()
     initProxy(name, major, minor);
 
     // the proxy is created and now proxy now owns the stream
-    LOG_VERBOSE("created proxy for client \"%s\" version %d.%d", name.c_str(), major, minor);
+    LOG_VERBOSE("created proxy for client \"%s\" version %d.%d", loggable().c_str(), major, minor);
     m_stream = nullptr;
 
     // wait until the proxy signals that it's ready or has disconnected
@@ -230,15 +238,15 @@ void ClientProxyUnknown::handleData()
     return;
   } catch (IncompatibleClientException &e) {
     // client is incompatible
-    LOG_WARN("client \"%s\" has incompatible version %d.%d)", name.c_str(), e.getMajor(), e.getMinor());
+    LOG_WARN("client \"%s\" has incompatible version %d.%d)", loggable().c_str(), e.getMajor(), e.getMinor());
     ProtocolUtil::writef(m_stream, kMsgEIncompatible, kProtocolMajorVersion, kProtocolMinorVersion);
   } catch (BadClientException &) {
     // client not behaving
-    LOG_WARN("protocol error from client \"%s\"", name.c_str());
+    LOG_WARN("protocol error from client \"%s\"", loggable().c_str());
     ProtocolUtil::writef(m_stream, kMsgEBad);
   } catch (BaseException &e) {
     // misc error
-    LOG_WARN("error communicating with client \"%s\": %s", name.c_str(), e.what());
+    LOG_WARN("error communicating with client \"%s\": %s", loggable().c_str(), e.what());
   }
   sendFailure();
 }

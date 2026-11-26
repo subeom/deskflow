@@ -125,6 +125,22 @@ public:
    */
   virtual bool fakeMediaKey(KeyID id) = 0;
 
+  virtual bool fakeSemanticMediaKey(KeyID)
+  {
+    return false;
+  }
+
+  //! Test if a key can be synthesized
+  /*!
+  Returns true iff the local keyboard map contains a button that can
+  synthesize \c id. The default false keeps platform behavior unchanged
+  unless a KeyState implementation supplies a key map.
+  */
+  virtual bool canSynthesizeKey(KeyID) const
+  {
+    return false;
+  }
+
   //@}
   //! @name accessors
   //@{

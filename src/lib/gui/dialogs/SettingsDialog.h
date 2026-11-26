@@ -28,6 +28,7 @@ public:
 
 Q_SIGNALS:
   void requestRemoveAllSettings();
+  void checkForUpdatesRequested();
 
 protected:
   void changeEvent(QEvent *e) override;

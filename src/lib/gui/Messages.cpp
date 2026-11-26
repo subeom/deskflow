@@ -215,10 +215,9 @@ bool showUpdateCheckOption(QWidget *parent)
   message.setText(
       QObject::tr(
           "<p>Would you like to check for updates when %1 starts?</p>"
-          "<p>Checking for updates requires an Internet connection.</p>"
-          "<p>URL: <pre>%2</pre></p>"
+          "<p>Release checks use stable releases of subeom/deskflow on GitHub.</p>"
       )
-          .arg(kAppName, Settings::value(Settings::Gui::UpdateCheckUrl).toString())
+          .arg(kAppName)
   );
 
   message.exec();

@@ -10,11 +10,13 @@
 
 #include "base/IEventQueue.h"
 #include "common/KeyboardModifier.h"
+#include "deskflow/ClipboardSharePolicy.h"
 #include "deskflow/KeyMap.h"
 #include "deskflow/KeyTypes.h"
 #include "deskflow/OptionTypes.h"
 #include "net/SocketException.h"
 #include "server/Server.h"
+#include "server/ServerCursorEdges.h"
 
 #include <assert.h>
 #include <cstdlib>
@@ -118,6 +120,35 @@ bool Config::addComputer(const std::string &name)
     superModifier = kModifierNameSuper;
   addOption(name, kOptionModifierMapForSuper, modifierIDValueFromString(superModifier));
 
+  // nothing is added for the default, so that a computer that shares is configured as it always was
+  if (!Settings::value(Settings::Computer::ShareClipboard.arg(computer)).toBool()) {
+    addOption(name, kOptionClipboardSharing, 0);
+  }
+
+  const auto f18Action = Settings::value(Settings::Computer::F18Action.arg(computer)).toString().trimmed();
+  if (f18Action.compare(QStringLiteral("hangul"), Qt::CaseInsensitive) == 0) {
+    addOption(name, kOptionCrossOSF18Key, static_cast<OptionValue>(F18Action::Hangul));
+  }
+  if (Settings::value(Settings::Computer::CrossOSInvertX.arg(computer)).toBool()) {
+    addOption(name, kOptionCrossOSInvertScrollX, 1);
+  }
+  if (Settings::value(Settings::Computer::CrossOSInvertY.arg(computer)).toBool()) {
+    addOption(name, kOptionCrossOSInvertScrollY, 1);
+  }
+  const auto invertScope = Settings::value(Settings::Computer::CrossOSInvertScope.arg(computer)).toString().trimmed();
+  if (invertScope.compare(QStringLiteral("mouseWheelOnly"), Qt::CaseInsensitive) == 0) {
+    addOption(name, kOptionCrossOSInvertScope, static_cast<OptionValue>(ScrollInvertScope::MouseWheelOnly));
+  }
+  if (Settings::value(Settings::Computer::CrossOSSemanticMedia.arg(computer)).toBool()) {
+    addOption(name, kOptionCrossOSSemanticMedia, 1);
+  }
+
+  // not an option, so nothing of it is sent: a computer that has no layout is configured as it always was
+  if (const auto layout = Settings::textValue(Settings::Computer::MonitorLayout.arg(computer));
+      !layout.trimmed().isEmpty()) {
+    setMonitorLayout(name, layout.toStdString());
+  }
+
   return true;
 }
 
@@ -216,6 +247,31 @@ bool Config::addOption(const std::string &name, OptionID option, OptionValue val
   return true;
 }
 
+bool Config::setMonitorLayout(const std::string &name, const std::string &text)
+{
+  const auto index = m_map.find(name);
+  if (index == m_map.end()) {
+    return false;
+  }
+
+  const auto trimmed = QString::fromStdString(text).trimmed().toStdString();
+  if (trimmed.empty()) {
+    index->second.m_monitorLayout.reset();
+  } else {
+    index->second.m_monitorLayout = MonitorLayoutSetting{trimmed, MonitorLayout::parse(trimmed)};
+  }
+  return true;
+}
+
+const Config::MonitorLayoutSetting *Config::getMonitorLayout(const std::string &name) const
+{
+  const auto index = m_map.find(getCanonicalName(name));
+  if (index == m_map.end() || !index->second.m_monitorLayout) {
+    return nullptr;
+  }
+  return &*index->second.m_monitorLayout;
+}
+
 bool Config::isValidComputerName(const std::string &name) const
 {
   // name is valid if matches validname
@@ -309,6 +365,7 @@ std::string Config::getCanonicalName(const std::string &name) const
 std::string Config::getNeighbor(const std::string &srcName, Direction srcSide, float position, float *positionOut) const
 {
   assert(srcSide >= Direction::FirstDirection && srcSide <= Direction::LastDirection);
+  position = clampCursorEdgeFraction(position);
 
   // find source cell
   CellMap::const_iterator index = m_map.find(getCanonicalName(srcName));
@@ -325,7 +382,10 @@ std::string Config::getNeighbor(const std::string &srcName, Direction srcSide, f
   } else {
     // compute position on neighbor
     if (positionOut != nullptr) {
-      *positionOut = dstEdge->inverseTransform(srcEdge->transform(position));
+      const auto destinationInterval = dstEdge->getInterval();
+      *positionOut = clampCursorEdgeFraction(
+          dstEdge->inverseTransform(srcEdge->transform(position)), destinationInterval.first, destinationInterval.second
+      );
     }
 
     // return neighbor's name
@@ -553,7 +613,14 @@ void Config::readSectionOptions(ConfigReadContext &s)
   addOption("", kOptionRelativeMouseMoves, Settings::value(Settings::Server::RelativeMouseMoves).toBool());
   addOption("", kOptionWin32KeepForeground, Settings::value(Settings::Server::Win32KeepForeground).toBool());
   addOption("", kOptionClipboardSharing, Settings::value(Settings::Server::EnableClipboard).toBool());
-  addOption("", kOptionClipboardSharingSize, Settings::value(Settings::Server::ClipboardSize).toUInt() * 1024);
+  // Peers only learn of text-only clipboard sharing through this size, which they already honour
+  addOption(
+      "", kOptionClipboardSharingSize,
+      ClipboardSharePolicy::sizeOptionKiB(
+          Settings::value(Settings::Server::ClipboardSize).toUInt(),
+          Settings::value(Settings::Server::ClipboardTextOnly).toBool()
+      )
+  );
 
   if (const auto address = Settings::value(Settings::Core::Interface).toString(); !address.isEmpty()) {
     m_deskflowAddress = NetworkAddress(address.toStdString(), Settings::value(Settings::Core::Port).toInt());
@@ -629,9 +696,9 @@ void Config::readSectionOptions(ConfigReadContext &s)
 
 void Config::readSectionScreens(ConfigReadContext &s)
 {
-  qWarning(
-  ) << "Your server config has a screen section. Screens have moved to the general config this section will not be "
-       "parsed.";
+  qWarning()
+      << "Your server config has a screen section. Screens have moved to the general config this section will not be "
+         "parsed.";
   std::string line;
   std::string screen;
   while (s.readLine(line)) {
@@ -715,9 +782,9 @@ void Config::readSectionLinks(ConfigReadContext &s)
 
 void Config::readSectionAliases(ConfigReadContext &s)
 {
-  qWarning(
-  ) << "Your server config has an alias section. Alias have moved to the general config this section will no be "
-       "parsed.";
+  qWarning()
+      << "Your server config has an alias section. Alias have moved to the general config this section will no be "
+         "parsed.";
   std::string line;
   while (s.readLine(line)) {
     if (line == "end") {
@@ -1203,6 +1270,11 @@ bool Config::Cell::operator==(const Cell &x) const
 {
   // compare options
   if (m_options != x.m_options) {
+    return false;
+  }
+
+  // compare monitor layouts
+  if (m_monitorLayout != x.m_monitorLayout) {
     return false;
   }
 

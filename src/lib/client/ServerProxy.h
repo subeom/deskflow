@@ -8,10 +8,15 @@
 
 #pragma once
 
+#include <chrono>
+
 #include "common/Enums.h"
 #include "deskflow/ClipboardChunk.h"
+#include "deskflow/ClipboardSender.h"
+#include "deskflow/ClipboardTransferLog.h"
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/KeyTypes.h"
+#include "deskflow/OptionTypes.h"
 
 class Client;
 class ClientInfo;
@@ -48,8 +53,19 @@ public:
   //@{
 
   void onInfoChanged();
+  //! The monitors of the computer changed and its shape did not (experimental): a protocol that reports them says so
+  virtual void onMonitorsChanged()
+  {
+  }
   bool onGrabClipboard(ClipboardID);
   void onClipboardChanged(ClipboardID, const IClipboard *);
+
+  //! Whether the data of clipboard \p id is sent to the server; the selection is not to a server that takes the
+  //! clipboard as the selection too
+  virtual bool sendsClipboardId(ClipboardID) const
+  {
+    return true;
+  }
 
   //@}
 
@@ -65,10 +81,45 @@ protected:
   virtual ConnectionResult parseMessage(const uint8_t *code);
   void keyDown(uint16_t id, uint16_t mask, uint16_t button, const std::string &lang);
   void keyRepeat(uint16_t id, uint16_t mask, uint16_t count, uint16_t button, const std::string &lang);
+  virtual void onOptionsChanged(const OptionsList &)
+  {
+  }
+  virtual bool handleSemanticMediaKey(KeyID)
+  {
+    return false;
+  }
+  virtual bool shouldSuppressKeyRepeat(KeyID, KeyModifierMask) const
+  {
+    return false;
+  }
+  virtual void transformMouseWheel(int32_t &, int32_t &)
+  {
+  }
+  virtual void deliverMouseWheel(int32_t xDelta, int32_t yDelta);
+
+  //! Whether clipboards are sent to the server as a paced stream, which needs a negotiated protocol that has one
+  virtual bool shouldPaceClipboard() const
+  {
+    return false;
+  }
+
+  //! Whether any data from the server proves that it is alive, not only its keepalives
+  virtual bool dataIsProofOfLife() const
+  {
+    return false;
+  }
 
   deskflow::IStream *getStream() const
   {
     return m_stream;
+  }
+
+  //! What the client tells the server of its shape and cursor in DINF
+  virtual ClientInfo currentInfo() const;
+
+  //! Called after every DINF that was sent
+  virtual void onInfoSent()
+  {
   }
 
 private:
@@ -77,7 +128,7 @@ private:
 
   void sendInfo(const ClientInfo &);
 
-  void resetKeepAliveAlarm();
+  void resetKeepAliveAlarm(bool isKeepAlive = true);
   void setKeepAliveRate(double);
 
   // modifier key translation
@@ -134,4 +185,8 @@ private:
   IEventQueue *m_events = nullptr;
   std::string m_clipboardDataCached;
   ClipboardChunkAssemblyState m_clipboardChunkState;
+  deskflow::clipboard::ClipboardTransferLog m_transferLog;
+  ClipboardSender m_sender;
+  std::chrono::steady_clock::time_point m_lastData = std::chrono::steady_clock::now();
+  std::chrono::steady_clock::time_point m_lastKeepAlive = std::chrono::steady_clock::now();
 };

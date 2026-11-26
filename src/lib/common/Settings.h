@@ -36,6 +36,7 @@ public:
 
   struct Client
   {
+    inline static const auto ConnectTimeout = QStringLiteral("client/connectTimeout");
     inline static const auto DynamicConnectionRetry = QStringLiteral("client/dynamicConnectionInterval");
     inline static const auto InvertYScroll = QStringLiteral("client/invertYScroll");
     inline static const auto InvertXScroll = QStringLiteral("client/invertXScroll");
@@ -47,6 +48,27 @@ public:
     inline static const auto XdpClipboardRetried = QStringLiteral("client/xdpClipboardRetried");
     inline static const auto XdpRestoreToken = QStringLiteral("client/xdpRestoreToken");
   };
+  // The client reaches the server through a Cloudflare Tunnel (a cloudflared that Deskflow runs). Off by default, and
+  // none of these keys is written until the user turns the feature on. The group is not under client/ on purpose: an
+  // older build removes the keys of a known group that it does not know, and it ignores a group that it does not know.
+  struct Tunnel
+  {
+    inline static const auto Enabled = QStringLiteral("tunnel/enabled");
+    inline static const auto Hostname = QStringLiteral("tunnel/hostname");
+    inline static const auto LocalPort = QStringLiteral("tunnel/localPort");
+    inline static const auto CloudflaredPath = QStringLiteral("tunnel/cloudflaredPath");
+    // the port that is listening right now when it is not LocalPort (that one was busy); written by the GUI
+    inline static const auto ActivePort = QStringLiteral("tunnel/activePort");
+  };
+  // macOS only (the key is there on every system, and nothing reads it anywhere else). The group is not under core/ on
+  // purpose, like the tunnel: an older build removes the keys of a known group that it does not know, and it leaves a
+  // group that it does not know alone
+  struct Network
+  {
+    // true: the wireless link of AirDrop and Handoff (awdl0) is turned off while the core runs, with the password of an
+    // administrator, asked for once for a run of the core (default false: nothing changes)
+    inline static const auto MacAwdlOff = QStringLiteral("network/macAwdlOff");
+  };
   struct Core
   {
     inline static const auto CoreMode = QStringLiteral("core/coreMode");
@@ -54,6 +76,10 @@ public:
     inline static const auto LastVersion = QStringLiteral("core/lastVersion");
     inline static const auto Port = QStringLiteral("core/port");
     inline static const auto PreventSleep = QStringLiteral("core/preventSleep");
+    // macOS server only (read nowhere else): true keeps the pointer of this Mac still while it is on a client, and
+    // holds it again when the system gives it back (default false: off, nothing of the hold is created; false is also
+    // the way it was before the hold)
+    inline static const auto MacHoldPointer = QStringLiteral("core/macHoldPointer");
     inline static const auto ProcessMode = QStringLiteral("core/processMode");
     inline static const auto ComputerName = QStringLiteral("core/computerName");
     inline static const auto Display = QStringLiteral("core/display");
@@ -76,16 +102,40 @@ public:
     inline static const auto Autohide = QStringLiteral("gui/autoHide");
     inline static const auto AutoStartCore = QStringLiteral("gui/startCoreWithGui");
     inline static const auto AutoUpdateCheck = QStringLiteral("gui/enableUpdateCheck");
-    inline static const auto UpdateCheckUrl = QStringLiteral("gui/updateCheckUrl");
+    // "deskflow": the style of this application on every OS; "system": the look that each OS gave the application
+    inline static const auto Appearance = QStringLiteral("gui/appearance");
     inline static const auto CloseReminder = QStringLiteral("gui/closeReminder");
     inline static const auto CloseToTray = QStringLiteral("gui/closeToTray");
     inline static const auto LogExpanded = QStringLiteral("gui/logExpanded");
+    // the new main window (Appearance: deskflow): the sidebar is an icon rail (true) or has its labels (false, default)
+    inline static const auto SidebarCollapsed = QStringLiteral("gui/sidebarCollapsed");
+    // the new main window: the log is shown (true) or folded away (false, default); LogExpanded stays the one of the
+    // old window
+    inline static const auto ShellLogExpanded = QStringLiteral("gui/shellLogExpanded");
+    // the new look: true gives the main window the title bar and the menu bar of the system (false, default: the window
+    // has a header of its own with the buttons of the window in it). The environment variable
+    // DESKFLOW_WINDOW_FRAME=native does the same for one run
+    inline static const auto NativeWindowFrame = QStringLiteral("gui/nativeWindowFrame");
+    // the new look: the size of text as a percent of the size that the system gives it, one of 90, 100 (default), 115,
+    // 130 and 150. Anything else is 100
+    inline static const auto TextSize = QStringLiteral("gui/textSize");
     inline static const auto SymbolicTrayIcon = QStringLiteral("gui/symbolicTrayIcon");
     inline static const auto WindowGeometry = QStringLiteral("gui/windowGeometry");
+    // the position and the size of the window of the new look: it has its own, so that the small window of the system
+    // look does not become the size of the first window of the new look, and the new look does not change what the old
+    // one saved
+    inline static const auto ShellWindowGeometry = QStringLiteral("gui/shellWindowGeometry");
     inline static const auto ShownFirstConnectedMessage = QStringLiteral("gui/shownFirstConnectedMessage");
     inline static const auto ShownServerFirstStartMessage = QStringLiteral("gui/shownServerFirstStartMessage");
     inline static const auto ShowVersionInTitle = QStringLiteral("gui/showVersionInTitle");
     inline static const auto IgnoreMissingKeyboardLayouts = QStringLiteral("gui/ignoreMissingKeyboardLayouts");
+    inline static const auto InputIndicatorEnabled = QStringLiteral("gui/inputIndicatorEnabled");
+    inline static const auto InputIndicatorCompanion = QStringLiteral("gui/inputIndicatorCompanion");
+    inline static const auto InputIndicatorPosition = QStringLiteral("gui/inputIndicatorPosition");
+    inline static const auto InputIndicatorDwellMs = QStringLiteral("gui/inputIndicatorDwellMs");
+    inline static const auto InputIndicatorOpacityPercent = QStringLiteral("gui/inputIndicatorOpacityPercent");
+    inline static const auto InputIndicatorSpeedPercent = QStringLiteral("gui/inputIndicatorSpeedPercent");
+    inline static const auto InputIndicatorTone = QStringLiteral("gui/inputIndicatorTone");
   };
   struct Log
   {
@@ -104,12 +154,15 @@ public:
   struct Server
   {
     inline static const auto ClipboardSize = QStringLiteral("server/clipboardSize");
+    inline static const auto ClipboardTextOnly = QStringLiteral("server/clipboardTextOnly");
     inline static const auto DefaultLockToComputerState = QStringLiteral("server/defaultLockToComputerState");
     inline static const auto DisableLockToComputer = QStringLiteral("server/disableLockToComputer");
     inline static const auto EnableClipboard = QStringLiteral("server/enableClipboard");
     inline static const auto EnableHeartbeat = QStringLiteral("server/enableHeartbeat");
     inline static const auto EnableSwitchDelay = QStringLiteral("server/enableSwitchDelay");
     inline static const auto EnableSwitchDoubleTap = QStringLiteral("server/enableSwitchDoubleTap");
+    // experimental: the Server maps the pointer around the holes of the desktop of a computer that has a monitor layout
+    inline static const auto ExperimentalMultiMonitor = QStringLiteral("server/experimentalMultiMonitor");
     inline static const auto ExternalConfig = QStringLiteral("server/externalConfig");
     inline static const auto ExternalConfigFile = QStringLiteral("server/externalConfigFile");
     inline static const auto GridHeight = QStringLiteral("server/gridHeight");
@@ -117,8 +170,15 @@ public:
     inline static const auto Heartbeat = QStringLiteral("server/heartbeat");
     inline static const auto Protocol = QStringLiteral("server/protocol");
     inline static const auto RelativeMouseMoves = QStringLiteral("server/relativeMouseMoves");
+    // experimental: the arrangement of the other computers is remembered for each set of displays of this computer and
+    // put back when the displays change. Only has an effect together with the two experiments above, in server mode, with
+    // the configuration of the GUI (not an external file)
+    inline static const auto RememberArrangements = QStringLiteral("server/rememberArrangements");
     inline static const auto SwitchDelay = QStringLiteral("server/switchDelay");
     inline static const auto SwitchDoubleTap = QStringLiteral("server/switchDoubleTap");
+    // experimental: the links of the server are derived from the arrangement of the computers, and the server maps the
+    // pointer around the holes of its own screen. Only has an effect when the experiment above is on
+    inline static const auto UseArrangement = QStringLiteral("server/useArrangement");
     inline static const auto Win32KeepForeground = QStringLiteral("server/win32KeepForeground");
     inline static const auto XdpClipboardRetried = QStringLiteral("server/xdpClipboardRetried");
     inline static const auto XdpRestoreToken = QStringLiteral("server/xdpRestoreToken");
@@ -137,6 +197,29 @@ public:
     inline static const auto ModifierMeta = QStringLiteral("computer_%1/modifierMeta");
     inline static const auto ModifierShift = QStringLiteral("computer_%1/modifierShift");
     inline static const auto ModifierSuper = QStringLiteral("computer_%1/modifierSuper");
+    // experimental: the arrangement of the computers. Where the origin of the coordinates of the computer is in the
+    // arrangement (no key: not placed yet), how many units of the arrangement a unit of the computer is, and the size
+    // of its screen when it has no monitor layout (0: not said)
+    inline static const auto ArrangementHeight = QStringLiteral("computer_%1/arrangementHeight");
+    inline static const auto ArrangementWidth = QStringLiteral("computer_%1/arrangementWidth");
+    inline static const auto ArrangementX = QStringLiteral("computer_%1/arrangementX");
+    inline static const auto ArrangementY = QStringLiteral("computer_%1/arrangementY");
+    inline static const auto ArrangementZoom = QStringLiteral("computer_%1/arrangementZoom");
+    // experimental: the monitors of the computer, x,y,w,h;x,y,w,h in the coordinates of the shape that it reports
+    inline static const auto MonitorLayout = QStringLiteral("computer_%1/monitorLayout");
+    // experimental: the display scale in percent of each monitor of the layout, in its order (150,100); none: the
+    // scale of the zoom. Only the monitor editor uses it, to draw the monitors as they are
+    inline static const auto MonitorScales = QStringLiteral("computer_%1/monitorScales");
+    // experimental: the monitors that the computer last reported to the server, x,y,w,h[ scale=S][ primary];x,y,w,h, as
+    // the core writes them in its log. Written by the GUI only, so that a computer that is offline is still drawn from
+    // them; the core never reads it (it uses what the computer reports while it is connected)
+    inline static const auto ReportedMonitors = QStringLiteral("computer_%1/reportedMonitors");
+    inline static const auto ShareClipboard = QStringLiteral("computer_%1/shareClipboard");
+    inline static const auto F18Action = QStringLiteral("computer_%1/f18Action");
+    inline static const auto CrossOSInvertX = QStringLiteral("computer_%1/crossOSInvertX");
+    inline static const auto CrossOSInvertY = QStringLiteral("computer_%1/crossOSInvertY");
+    inline static const auto CrossOSInvertScope = QStringLiteral("computer_%1/crossOSInvertScope");
+    inline static const auto CrossOSSemanticMedia = QStringLiteral("computer_%1/crossOSSemanticMedia");
     inline static const auto SwitchCornerSize = QStringLiteral("computer_%1/switchCornerSize");
     inline static const auto SwitchCornerTopLeft = QStringLiteral("computer_%1/switchCornerTopLeft");
     inline static const auto SwitchCornerTopRight = QStringLiteral("computer_%1/switchCornerTopRight");
@@ -195,10 +278,22 @@ public:
   static void clearState();
   static void setValue(const QString &key = QString(), const QVariant &value = QVariant());
   static QVariant value(const QString &key = QString());
+  /**
+   * @brief The value of a setting that is text, as text
+   *
+   * QSettings reads a value of a settings file that has a comma in it and no quotes, as a person types it, as a list
+   * of the parts. This joins them again, so that the text is what was written.
+   */
+  static QString textValue(const QString &key);
   static void restoreDefaultSettings();
   static QVariant defaultValue(const QString &key);
   static bool isServerConfigFileReadable();
   static bool isWritable();
+  //! The first release has the frame of the system on Linux: the default of gui/nativeWindowFrame is true there (and
+  //! false on the other systems, which have the frame of the new look). The frame of the new look is chosen with the
+  //! setting or with DESKFLOW_WINDOW_FRAME=client. This is the one place that says it (the policy of the frame reads
+  //! it)
+  static constexpr bool kLinuxNativeWindowFrameByDefault = true;
   static bool isPortableMode();
   static QString settingsFile();
   static QString settingsPath();
@@ -268,13 +363,16 @@ private:
     , QStringLiteral("daemon")
     , QStringLiteral("gui")
     , QStringLiteral("log")
+    , QStringLiteral("network")
     , QStringLiteral("security")
     , QStringLiteral("server")
+    , QStringLiteral("tunnel")
     , QStringLiteral("internalConfig")
   };
 
   inline static const QStringList m_validKeys = {
-      Client::DynamicConnectionRetry
+      Client::ConnectTimeout
+    , Client::DynamicConnectionRetry
     , Client::InvertYScroll
     , Client::InvertXScroll
     , Client::LanguageSync
@@ -287,6 +385,7 @@ private:
     , Core::LastVersion
     , Core::Port
     , Core::PreventSleep
+    , Core::MacHoldPointer
     , Core::ProcessMode
     , Core::EnableEnterCommand
     , Core::EnableExitCommand
@@ -307,26 +406,45 @@ private:
     , Gui::Autohide
     , Gui::AutoStartCore
     , Gui::AutoUpdateCheck
-    , Gui::UpdateCheckUrl
+    , Gui::Appearance
     , Gui::CloseReminder
     , Gui::CloseToTray
     , Gui::LogExpanded
+    , Gui::SidebarCollapsed
+    , Gui::ShellLogExpanded
+    , Gui::NativeWindowFrame
+    , Gui::TextSize
     , Gui::SymbolicTrayIcon
     , Gui::ShownFirstConnectedMessage
     , Gui::ShownServerFirstStartMessage
     , Gui::ShowVersionInTitle
     , Gui::IgnoreMissingKeyboardLayouts
+    , Gui::InputIndicatorEnabled
+    , Gui::InputIndicatorCompanion
+    , Gui::InputIndicatorPosition
+    , Gui::InputIndicatorDwellMs
+    , Gui::InputIndicatorOpacityPercent
+    , Gui::InputIndicatorSpeedPercent
+    , Gui::InputIndicatorTone
+    , Network::MacAwdlOff
     , Security::Certificate
     , Security::CheckPeers
     , Security::KeySize
     , Security::TlsEnabled
+    , Tunnel::Enabled
+    , Tunnel::Hostname
+    , Tunnel::LocalPort
+    , Tunnel::CloudflaredPath
+    , Tunnel::ActivePort
     , Server::ClipboardSize
+    , Server::ClipboardTextOnly
     , Server::DefaultLockToComputerState
     , Server::DisableLockToComputer
     , Server::EnableClipboard
     , Server::EnableHeartbeat
     , Server::EnableSwitchDelay
     , Server::EnableSwitchDoubleTap
+    , Server::ExperimentalMultiMonitor
     , Server::ExternalConfig
     , Server::ExternalConfigFile
     , Server::GridHeight
@@ -334,8 +452,10 @@ private:
     , Server::Heartbeat
     , Server::Protocol
     , Server::RelativeMouseMoves
+    , Server::RememberArrangements
     , Server::SwitchDelay
     , Server::SwitchDoubleTap
+    , Server::UseArrangement
     , Server::Win32KeepForeground
   };
 
@@ -343,11 +463,15 @@ private:
   inline static const QStringList m_defaultFalseValues = {
       Gui::Autohide
     , Gui::AutoStartCore
+    , Gui::SidebarCollapsed
+    , Gui::ShellLogExpanded
     , Gui::ShownFirstConnectedMessage
     , Gui::ShownServerFirstStartMessage
     , Gui::ShowVersionInTitle
     , Gui::IgnoreMissingKeyboardLayouts
+    , Gui::InputIndicatorEnabled
     , Core::PreventSleep
+    , Core::MacHoldPointer
     , Core::EnableEnterCommand
     , Core::EnableExitCommand
     , Client::DynamicConnectionRetry
@@ -357,13 +481,19 @@ private:
     , Client::XdpClipboardRetried
     , Log::ToFile
     , Log::GuiDebug
+    , Network::MacAwdlOff
+    , Tunnel::Enabled
+    , Server::ClipboardTextOnly
     , Server::DefaultLockToComputerState
     , Server::DisableLockToComputer
     , Server::EnableHeartbeat
     , Server::EnableSwitchDelay
     , Server::EnableSwitchDoubleTap
+    , Server::ExperimentalMultiMonitor
     , Server::ExternalConfig
     , Server::RelativeMouseMoves
+    , Server::RememberArrangements
+    , Server::UseArrangement
     , Server::XdpClipboardRetried
   };
 
@@ -383,6 +513,7 @@ private:
   // Settings saved in our State file
   inline static const QStringList m_stateKeys = {
       Gui::WindowGeometry
+    , Gui::ShellWindowGeometry
     , Client::XdpClipboardRetried
     , Client::XdpRestoreToken
     , Server::XdpClipboardRetried

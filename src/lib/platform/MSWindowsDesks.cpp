@@ -13,6 +13,7 @@
 #include "base/IJob.h"
 #include "base/Log.h"
 #include "base/TMethodJob.h"
+#include "deskflow/AbsolutePointer.h"
 #include "deskflow/DisplayException.h"
 #include "deskflow/IScreenSaver.h"
 #include "deskflow/win32/AppUtilWindows.h"
@@ -455,11 +456,12 @@ void MSWindowsDesks::deskMouseMove(int32_t x, int32_t y) const
   // when using absolute positioning with mouse_event(),
   // the normalized device coordinates range over only
   // the primary computer.
+  // the value of a position that is not on the primary monitor is negative or above 65535: see absoluteAxisValue
   int32_t w = GetSystemMetrics(SM_CXSCREEN);
   int32_t h = GetSystemMetrics(SM_CYSCREEN);
   send_mouse_input(
-      MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, (DWORD)((65535.0f * x) / (w - 1) + 0.5f),
-      (DWORD)((65535.0f * y) / (h - 1) + 0.5f), 0
+      MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, deskflow::pointer::absoluteAxisValue(x, w),
+      deskflow::pointer::absoluteAxisValue(y, h), 0
   );
 }
 

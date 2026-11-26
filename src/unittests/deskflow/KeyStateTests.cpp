@@ -253,4 +253,15 @@ void KeyStateTests::fakeKeyDown_langSyncDisabled_keepsLocalGroup()
   QCOMPARE(keyState.m_faked.front().m_data.m_button.m_button, kSharedButton);
 }
 
+void KeyStateTests::canSynthesizeKey_findsAnyKeyboardGroup()
+{
+  MockEventQueue eventQueue;
+  deskflow::KeyMap keyMap;
+  buildTwoGroupKeyMap(keyMap, kLatinA, kKeyHangul, kSharedButton);
+  RecordingKeyState keyState(&eventQueue, keyMap, {"en", "ko"}, true);
+
+  QVERIFY(keyState.canSynthesizeKey(kKeyHangul));
+  QVERIFY(!keyState.canSynthesizeKey(kKeyAudioPlay));
+}
+
 QTEST_MAIN(KeyStateTests)

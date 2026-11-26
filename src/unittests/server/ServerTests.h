@@ -4,12 +4,136 @@
  * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
  */
 
+#include "base/Log.h"
+
+#include <QTemporaryDir>
 #include <QTest>
+
+namespace deskflow::core::ipc {
+class CoreIpcServer;
+}
 
 class ServerTests : public QObject
 {
   Q_OBJECT
 private Q_SLOTS:
+  void initTestCase();
+  void cleanup();
   void SwitchToComputerInfo_alloc_computer();
   void KeyboardBroadcastInfo_alloc_stateAndComputers();
+  void WheelInfo_alloc_defaultsToUnknownSource();
+  void WheelInfo_alloc_keepsExplicitSource_data();
+  void WheelInfo_alloc_keepsExplicitSource();
+  void wheelEvent_relaysScrollSourceToActiveClient_data();
+  void wheelEvent_relaysScrollSourceToActiveClient();
+  void edgeOvershoot_clampsRouteFraction();
+  void namedTopology_topLeftOvershoot_selectsLeftComputer();
+  void neighborTraversal_disconnectedCycleStops();
+  void clipboardOff_sharesEveryFormatOfThePrimary();
+  void clipboardOff_theSizeLimitStillApplies();
+  void clipboardTextOnly_primaryToClient_sharesTextUpToTheLimit_data();
+  void clipboardTextOnly_primaryToClient_sharesTextUpToTheLimit();
+  void clipboardTextOnly_primaryToClient_sharesNothingElse_data();
+  void clipboardTextOnly_primaryToClient_sharesNothingElse();
+  void clipboardTextOnly_primaryToClient_stripsOtherFormats();
+  void clipboardTextOnly_primaryToClient_neverReadsHtmlOrBitmap();
+  void clipboardOff_primaryToClient_readsEveryFormat();
+  void clipboardTextOnly_clientToPrimary_stripsOtherFormats();
+  void clipboardTextOnly_clientToPrimary_sharesNothingElse_data();
+  void clipboardTextOnly_clientToPrimary_sharesNothingElse();
+  void clipboardTextOnly_clientToClient_forwardsTheTextOnly();
+  void clipboardTextOnly_clientToClient_forwardsNothingElse_data();
+  void clipboardTextOnly_clientToClient_forwardsNothingElse();
+  void clipboardTextOnly_turnedOnLater_stripsWhatIsCached();
+  void clipboardTextOnly_withASizeBoxOfZero_stillSharesText();
+  void clipboardOff_withASizeBoxOfZero_sharesNothing();
+  void clipboardTextOnly_anEmptyClipboard_isReportedAtInfoLevelOnce();
+  void clipboardTextOnly_anImage_isReportedAtInfoLevelOnce();
+  void clipboardRead_tellsThePlatformTheSizeLimit();
+  void clipboardChanged_fromAComputerThatIsNotTheOwner_isIgnored();
+  void clipboardOverTheLimit_stillIsNotSentAfterTheLimitWasRaised();
+  void clipboardRewrite_identicalWhileTheCursorIsAway_isIgnored();
+  void clipboardRewrite_withNewContentWhileTheCursorIsAway_isStillShared();
+  void clipboardRewrite_rightAfterTheServerWroteTheClipboard_isIgnored();
+  void clipboardRewrite_afterTheWindowHasPassed_isACopy();
+  void clipboardRewrite_theSameTextCopiedOnAnotherComputer_movesTheOwnership();
+  void clipboardOffForAComputer_primaryToTheOthers_skipsOnlyThatComputer();
+  void clipboardOffForAComputer_whatItCopies_isNeitherSharedNorAnnounced();
+  void clipboardOffForAComputer_theOthersStillShareAmongThemselves();
+  void clipboardOffForAComputer_aPrimaryThatDoesNotShare_doesNotEmptyTheOthers();
+  void clipboardOffForAComputer_isOffForAllComputersWhenNoneIsSetOff();
+  void clipboardOffForAComputer_isToldWithAnOptionThatWinsOverTheGlobalOne();
+  void remoteComputerName_followsThePointerAndIsEmptyOnThePrimary();
+  void pointerPin_primaryToRemote_entersWhereItAlwaysDid_data();
+  void pointerPin_primaryToRemote_entersWhereItAlwaysDid();
+  void pointerPin_remoteToPrimary_leavesWhereItAlwaysDid_data();
+  void pointerPin_remoteToPrimary_leavesWhereItAlwaysDid();
+  void pointerPin_everyEdgePixel_entersWhereItAlwaysDid_data();
+  void pointerPin_everyEdgePixel_entersWhereItAlwaysDid();
+  void pointerPin_everyWayOutOfARemote_leavesWhereItAlwaysDid_data();
+  void pointerPin_everyWayOutOfARemote_leavesWhereItAlwaysDid();
+  void pointerPin_aFlick_landsWhereItAlwaysDid_data();
+  void pointerPin_aFlick_landsWhereItAlwaysDid();
+  void pointerPin_acrossAnOfflineComputer_landsWhereItAlwaysDid_data();
+  void pointerPin_acrossAnOfflineComputer_landsWhereItAlwaysDid();
+  void pointerPin_linkIntervals_landWhereTheyAlwaysDid_data();
+  void pointerPin_linkIntervals_landWhereTheyAlwaysDid();
+  void pointerPin_cornersOfThePrimary_horizontalIsTriedFirst_data();
+  void pointerPin_cornersOfThePrimary_horizontalIsTriedFirst();
+  void pointerPin_theDesktopOfTheServer_leavesWhereItAlwaysDid_data();
+  void pointerPin_theDesktopOfTheServer_leavesWhereItAlwaysDid();
+  void pointerPin_theDesktopOfTheServer_isEnteredWhereItAlwaysWas_data();
+  void pointerPin_theDesktopOfTheServer_isEnteredWhereItAlwaysWas();
+  void primaryMonitors_theTShape_leavesThroughAnyExposedEdge_data();
+  void primaryMonitors_theTShape_leavesThroughAnyExposedEdge();
+  void primaryMonitors_whenItIsNotAsked_theBoxIsTheScreen_data();
+  void primaryMonitors_whenItIsNotAsked_theBoxIsTheScreen();
+  void primaryMonitors_everyPosition_leavesWhereTheEdgesAre();
+  void primaryMonitors_linkIntervals_pickTheNeighbourOfThePartOfTheEdge();
+  void primaryMonitors_comingBackLandsOnAMonitorAwayFromTheJumpZone_data();
+  void primaryMonitors_comingBackLandsOnAMonitorAwayFromTheJumpZone();
+  void primaryMonitors_withoutTheArrangement_comingBackIsAsItAlwaysWas();
+  void primaryMonitors_aRoundTrip_landsInTheSameRows();
+  void primaryMonitors_aScreenThatChanges_isDecidedAgain();
+  void primaryMonitors_decisions_areSaidOncePerChange();
+  void primaryMonitors_nothingIsAddedToWhatAComputerIsTold();
+  void primaryMonitors_doubleTap_isArmedAsFarFromAnInnerEdgeAsFromAnOuterOne();
+  void primaryMonitors_doubleTap_ofASecondaryWithALayout_isArmedAsItAlwaysWas();
+  void primaryMonitors_switchDelay_followsTheNeighbourThePointerSlidesTo();
+  void reportedScreens_areSaidAtInfoLevelWhileTheExperimentIsOn();
+  void monitorGeometry_enteringAHole_landsOnAMonitor();
+  void monitorGeometry_theExampleOfTheDocumentation();
+  void monitorGeometry_leavingThroughAnInnerEdge_happensAtOnce();
+  void monitorGeometry_pushedAgainstAnInnerEdge_hasNoDeadTravel();
+  void monitorGeometry_linkIntervals_areAlongTheBoundingBoxOfTheDesktop();
+  void monitorGeometry_aShapeThatChanges_dropsALayoutThatIsStale();
+  void monitorGeometry_aComputerThatConnectsAgain_isDecidedAgain();
+  void monitorGeometry_decisions_areSaidOncePerChange();
+  void monitorGeometry_everySwitch_isSaidAtInfoLevel();
+  void monitorGeometry_theScreenOfTheServer_isMappedAsItAlwaysWas();
+  void monitorGeometry_nothingIsAddedToWhatAComputerIsTold();
+  void reportedMonitors_areUsedWhenNoLayoutIsTyped();
+  void reportedMonitors_aTypedLayoutThatFits_wins();
+  void reportedMonitors_aTypedLayoutThatDoesNotFit_givesWayToTheReport();
+  void reportedMonitors_ofAnotherShape_areNotUsed();
+  void reportedMonitors_aSecondReport_isUsedAtOnce();
+  void reportedMonitors_aRectangle_isMappedAsItAlwaysWas();
+  void reportedMonitors_withTheExperimentOff_changeNothing();
+  void reportedMonitors_aComputerThatConnectsAgain_isDecidedAgain();
+  void reportedMonitors_areSaidInTheLineTheGuiReads();
+  void reportedMonitors_aReportThatIsGone_isSaidOnce();
+  void reportedMonitors_aComputerThatWillNotReport_takesBackWhatWasRemembered();
+  void reportedMonitors_withTheExperimentOff_nothingIsSaidOfAComputerThatWillNotReport();
+  void reportedMonitors_theNameOfAnUnknownComputer_cannotForgeALogLine();
+  void reportedMonitors_nothingIsAddedToWhatAComputerIsTold();
+  void reportedMonitors_namesInTheLog_areCleaned();
+  void monitorGeometry_cornersThatLockTheCursor_stillDo_data();
+  void monitorGeometry_cornersThatLockTheCursor_stillDo();
+
+private:
+  Log m_log;
+  QTemporaryDir m_settingsDir;
+  // The Server tells the GUI about its connections through the core IPC server, which has to exist. It never listens:
+  // that would take over the socket of a Deskflow that is running.
+  deskflow::core::ipc::CoreIpcServer *m_ipcServer = nullptr;
 };

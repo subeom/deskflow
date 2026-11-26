@@ -6,10 +6,44 @@ if(WIN32)
 endif()
 
 create_test(
+  NAME InputIndicatorIpcTests
+  DEPENDS app
+  LIBS arch base ${extra_libs}
+  SOURCE InputIndicatorIpcTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+if(APPLE)
+  create_test(
+    NAME CoreIpcServerSecurityTests
+    DEPENDS app
+    LIBS arch base
+    SOURCE CoreIpcServerSecurityTests.cpp
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+  )
+endif()
+
+create_test(
+  NAME CrossPlatformInputPolicyTests
+  DEPENDS app
+  LIBS arch base ${extra_libs}
+  SOURCE CrossPlatformInputPolicyTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+create_test(
   NAME ClipboardTests
   DEPENDS app
   LIBS arch base io ${extra_libs}
   SOURCE ClipboardTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+create_test(
+  NAME ClipboardSharePolicyTests
+  DEPENDS app
+  LIBS arch base io ${extra_libs}
+  SOURCE ClipboardSharePolicyTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
 )
 
@@ -22,10 +56,50 @@ create_test(
 )
 
 create_test(
+  NAME ClipboardReadHygieneTests
+  DEPENDS app
+  LIBS arch base io ${extra_libs}
+  SOURCE ClipboardReadHygieneTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+create_test(
+  NAME ClipboardSenderTests
+  DEPENDS app
+  LIBS arch base io ${extra_libs}
+  SOURCE ClipboardSenderTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+create_test(
+  NAME ClipboardTransferLogTests
+  DEPENDS app
+  LIBS arch base io ${extra_libs}
+  SOURCE ClipboardTransferLogTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+create_test(
   NAME IKeyStateTests
   DEPENDS app
   LIBS arch base ${extra_libs}
   SOURCE IKeyStateTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+create_test(
+  NAME AbsolutePointerTests
+  DEPENDS app
+  LIBS ${extra_libs}
+  SOURCE AbsolutePointerTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
+)
+
+create_test(
+  NAME MonitorReportTests
+  DEPENDS app
+  LIBS arch base io ${extra_libs}
+  SOURCE MonitorReportTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/deskflow"
 )
 

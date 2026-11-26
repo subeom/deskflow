@@ -35,3 +35,16 @@ static const ButtonID kX11ScrollWheelRight = 7;
 //@}
 
 static const uint8_t NumButtonIDs = 6;
+
+//! Kind of device that produced a scroll wheel event
+/*!
+Only a primary computer that can tell devices apart reports anything other than
+\c Unknown.  Consumers must treat \c Unknown like an input they know nothing about
+and never guess a device for it.
+*/
+enum class ScrollSource : uint8_t
+{
+  Unknown = 0,
+  Mouse = 1,
+  Trackpad = 2
+};

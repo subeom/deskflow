@@ -171,6 +171,16 @@ TransferState ClipboardChunk::assemble(
   return Error;
 }
 
+uint8_t ClipboardChunk::getMark(const void *data)
+{
+  return static_cast<uint8_t>(static_cast<const ClipboardChunk *>(data)->m_chunk[5]);
+}
+
+ClipboardID ClipboardChunk::getId(const void *data)
+{
+  return static_cast<ClipboardID>(static_cast<const ClipboardChunk *>(data)->m_chunk[0]);
+}
+
 void ClipboardChunk::send(deskflow::IStream *stream, void *data)
 {
   const auto *clipboardData = static_cast<ClipboardChunk *>(data);
@@ -201,5 +211,12 @@ void ClipboardChunk::send(deskflow::IStream *stream, void *data)
     break;
   }
 
-  ProtocolUtil::writef(stream, kMsgDClipboard, id, sequence, mark, &dataChunk);
+  write(stream, id, sequence, mark, dataChunk);
+}
+
+void ClipboardChunk::write(
+    deskflow::IStream *stream, ClipboardID id, uint32_t sequence, uint8_t mark, const std::string &data
+)
+{
+  ProtocolUtil::writef(stream, kMsgDClipboard, id, sequence, mark, &data);
 }

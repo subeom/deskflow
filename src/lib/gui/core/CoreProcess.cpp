@@ -8,11 +8,17 @@
 #include "CoreProcess.h"
 
 #include "common/ExitCodes.h"
+#include "gui/core/CoreLogText.h"
+#include "gui/core/ServiceQuit.h"
 #include "gui/ipc/CoreIpcClient.h"
 #include "gui/ipc/DaemonIpcClient.h"
+#include "gui/tunnel/ITunnelGate.h"
+#include "gui/tunnel/TunnelStartGuard.h"
+#include "gui/tunnel/TunnelTypes.h"
 
 #if defined(Q_OS_MACOS)
 #include "OSXHelpers.h"
+#include <mach/mach_time.h>
 #endif
 
 #ifdef Q_OS_LINUX
@@ -25,12 +31,54 @@
 #include <QFile>
 #include <QMetaEnum>
 #include <QMutexLocker>
+#include <QProcessEnvironment>
+#include <QRandomGenerator>
 #include <QRegularExpression>
 
 namespace deskflow::gui {
 
+namespace {
+
+#if defined(Q_OS_MACOS)
+bool isFreshInputIndicatorActivity(const deskflow::input::InputIndicatorActivity &activity)
+{
+  mach_timebase_info_data_t timebase{};
+  if (mach_timebase_info(&timebase) != KERN_SUCCESS || timebase.numer == 0) {
+    return false;
+  }
+
+  constexpr auto kMaximumAgeNanoseconds =
+      static_cast<uint64_t>(deskflow::input::kInputIndicatorMaximumEventAgeMilliseconds) * 1000000ULL;
+  const auto maximumAge =
+      kMaximumAgeNanoseconds * static_cast<uint64_t>(timebase.denom) / static_cast<uint64_t>(timebase.numer);
+  return deskflow::input::isInputIndicatorActivityFresh(activity, mach_absolute_time(), maximumAge);
+}
+#else
+bool isFreshInputIndicatorActivity(const deskflow::input::InputIndicatorActivity &)
+{
+  return false;
+}
+#endif
+
+} // namespace
+
 const int kRetryDelay = 1000;
+// how long the quit waits for the service to be reached, and then for the stop of the service core to be written to it
+const int kQuitConnectWaitMs = 1000;
+const int kQuitFlushMs = 1000;
 const auto kLineSplitRegex = QRegularExpression("\r|\n|\r\n");
+constexpr int kInputIndicatorSubscriptionRenewalMs = 20'000;
+
+QString inputIndicatorCapability()
+{
+  QByteArray bytes;
+  bytes.reserve(deskflow::input::kInputIndicatorCapabilityLength / 2);
+  auto *random = QRandomGenerator::system();
+  while (bytes.size() < deskflow::input::kInputIndicatorCapabilityLength / 2) {
+    bytes.append(static_cast<char>(random->bounded(256)));
+  }
+  return QString::fromLatin1(bytes.toHex());
+}
 
 QString CoreProcess::processModeToString(const Settings::ProcessMode mode)
 {
@@ -99,11 +147,12 @@ QString CoreProcess::wrapIpv6(const QString &address)
 // CoreProcess
 //
 
-CoreProcess::CoreProcess(const ServerConfig &serverConfig)
+CoreProcess::CoreProcess(const ServerConfig &serverConfig, DaemonClientFactory daemonClientFactory)
     : m_serverConfig(serverConfig),
-      m_daemonIpcClient{new ipc::DaemonIpcClient(this)}
+      m_daemonIpcClient{daemonClientFactory ? daemonClientFactory(this) : new ipc::DaemonIpcClient(this)}
 {
   m_appPath = QStringLiteral("%1/%2").arg(QCoreApplication::applicationDirPath(), kCoreBinName);
+  m_inputIndicatorCapability = inputIndicatorCapability();
   if (!QFile::exists(m_appPath)) {
     qCritical("core server binary does not exist");
   }
@@ -121,6 +170,10 @@ CoreProcess::CoreProcess(const ServerConfig &serverConfig)
       qDebug("retry cancelled, process state is not retry pending");
     }
   });
+  m_inputIndicatorSubscriptionTimer.setInterval(kInputIndicatorSubscriptionRenewalMs);
+  connect(
+      &m_inputIndicatorSubscriptionTimer, &QTimer::timeout, this, &CoreProcess::sendInputIndicatorSubscription
+  );
 }
 
 void CoreProcess::onProcessReadyReadStandardOutput()
@@ -232,6 +285,18 @@ void CoreProcess::startForegroundProcess(const QStringList &args)
   });
 #endif
 
+#ifdef Q_OS_MACOS
+  auto environment = QProcessEnvironment::systemEnvironment();
+  environment.insert(
+      QLatin1String(deskflow::input::kInputIndicatorCapabilityEnvironment), m_inputIndicatorCapability
+  );
+  environment.insert(
+      QLatin1String(deskflow::input::kInputIndicatorGuiPidEnvironment),
+      QString::number(QCoreApplication::applicationPid())
+  );
+  m_process->setProcessEnvironment(environment);
+#endif
+
   m_process->start(m_appPath, args);
 
   if (m_process->waitForStarted()) {
@@ -253,6 +318,9 @@ void CoreProcess::startProcessFromDaemon()
   qInfo("sending start to daemon (config file: %s)", qPrintable(configFile));
 
   auto sendStart = [this, configFile] {
+    if (m_quitting) {
+      return;
+    }
     m_daemonIpcClient->sendConfigFile(configFile);
     m_daemonIpcClient->sendStartProcess();
     setProcessState(ProcessState::Started);
@@ -261,7 +329,7 @@ void CoreProcess::startProcessFromDaemon()
   if (m_daemonIpcClient->isConnected()) {
     sendStart();
   } else {
-    connect(
+    m_pendingDaemonStart = connect(
         m_daemonIpcClient, &ipc::DaemonIpcClient::connected, this, sendStart,
         static_cast<Qt::ConnectionType>(Qt::SingleShotConnection | Qt::QueuedConnection)
     );
@@ -323,6 +391,12 @@ void CoreProcess::stopProcessFromDaemon()
     return;
   }
 
+  // the quit sends the stop itself (it waits for the service, which a queued send does not)
+  if (m_quitting) {
+    setProcessState(ProcessState::Stopped);
+    return;
+  }
+
   auto sendStop = [this] {
     m_daemonIpcClient->sendStopProcess();
     setProcessState(ProcessState::Stopped);
@@ -331,7 +405,7 @@ void CoreProcess::stopProcessFromDaemon()
   if (m_daemonIpcClient->isConnected()) {
     sendStop();
   } else {
-    connect(
+    m_pendingDaemonStop = connect(
         m_daemonIpcClient, &ipc::DaemonIpcClient::connected, this, sendStop,
         static_cast<Qt::ConnectionType>(Qt::SingleShotConnection | Qt::QueuedConnection)
     );
@@ -370,7 +444,8 @@ void CoreProcess::handleLogLines(const QString &text)
     }
 #endif
 
-    Q_EMIT logLine(line);
+    // the one line of the hold of the pointer that a macOS server writes is shown in the language of the program
+    Q_EMIT logLine(localizeCoreLogLine(line));
   }
 }
 
@@ -384,6 +459,20 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
   if (m_mode == Settings::CoreMode::None) {
     qCritical("not starting core process, no core mode set");
     return;
+  }
+
+  // Cloudflare Tunnel in service mode: the program is ending, and a start that was asked for late must not run
+  if (m_quitting) {
+    qDebug("not starting core process, the program is ending");
+    return;
+  }
+
+  // Cloudflare Tunnel: the client core starts when the tunnel listens (before the lock: the start is made again then)
+  if (m_tunnelGuard != nullptr) {
+    m_tunnelPendingMode = processModeOption;
+    if (m_tunnelGuard->intercept(m_mode == Settings::CoreMode::Client)) {
+      return;
+    }
   }
 
   QMutexLocker locker(&m_processMutex);
@@ -470,17 +559,20 @@ void CoreProcess::start(std::optional<ProcessMode> processModeOption)
               m_coreIpcClient, &ipc::CoreIpcClient::commandReceived, this, &CoreProcess::onCoreIpcMessageReceived,
               Qt::QueuedConnection
           );
-          connect(m_coreIpcClient, &ipc::CoreIpcClient::connected, this, [] {
+          connect(m_coreIpcClient, &ipc::CoreIpcClient::connected, this, [this] {
             qDebug("connected to core ipc server");
+            sendInputIndicatorSubscription();
           });
-          connect(m_coreIpcClient, &ipc::CoreIpcClient::connectionFailed, this, [] {
+          connect(m_coreIpcClient, &ipc::CoreIpcClient::connectionFailed, this, [this] {
             qWarning("failed to establish core ipc connection");
+            resetInputIndicatorState();
           });
           connect(m_coreIpcClient, &ipc::CoreIpcClient::serverShutdown, this, [this, client = m_coreIpcClient] {
             qDebug("core ipc server shut down cleanly");
             client->deleteLater();
             if (m_coreIpcClient == client)
               m_coreIpcClient = nullptr;
+            resetInputIndicatorState();
           });
 
           m_coreIpcClient->connectToServer();
@@ -507,6 +599,11 @@ void CoreProcess::stop(std::optional<ProcessMode> processModeOption)
 
   qInfo("stopping core process (%s mode)", qPrintable(processModeToString(processMode)));
 
+  if (m_coreIpcClient && m_coreIpcClient->isConnected()) {
+    m_coreIpcClient->sendInputIndicatorSubscription(false, m_inputIndicatorCapability);
+  }
+  resetInputIndicatorState();
+
   if (m_coreIpcClient && processMode != ProcessMode::Desktop) {
     m_coreIpcClient->disconnectFromServer();
     m_coreIpcClient->deleteLater();
@@ -530,6 +627,11 @@ void CoreProcess::stop(std::optional<ProcessMode> processModeOption)
   }
 
   setConnectionState(ConnectionState::Disconnected);
+
+  // Cloudflare Tunnel: the core is stopped first, the tunnel is let go second
+  if (m_tunnelGuard != nullptr) {
+    m_tunnelGuard->coreStopped();
+  }
 }
 
 void CoreProcess::restart()
@@ -579,7 +681,74 @@ void CoreProcess::cleanup()
   const auto isRunning = m_processState == ProcessState::Started;
   if (isDesktop && isRunning) {
     stop();
+  } else if (!isDesktop && m_tunnelGuard != nullptr && isTunnelRequired() &&
+             (isRunning || m_processState == ProcessState::Starting)) {
+    // Cloudflare Tunnel in service mode: the service core would keep retrying a tunnel that is gone with this program,
+    // so it is stopped with it (the stop also clears the config of the service, so it does not start at boot either).
+    // From here nothing is started or queued: a start that waits for the connection to the service is cancelled, so
+    // that a connection that comes late cannot start the core while or after the program ends.
+    m_quitting = true;
+    disconnect(m_pendingDaemonStart);
+    disconnect(m_pendingDaemonStop);
+
+    // the service was told to start the core only when the state is Started; a start that was still waiting never
+    // reached it
+    const bool serviceHasTheCore = isRunning;
+    stop();
+
+    if (serviceHasTheCore) {
+      const auto result = deliverStopToService(*m_daemonIpcClient, kQuitConnectWaitMs, kQuitFlushMs);
+      if (result != StopDelivery::Delivered) {
+        qWarning().noquote() << stopDeliveryWarning(result);
+      }
+    }
   }
+}
+
+void CoreProcess::setMode(Settings::CoreMode mode)
+{
+  // Cloudflare Tunnel: a start that waits for the tunnel is a start of the client. When the mode changes to another one
+  // it is cancelled here, in the Starting state, which the window does not stop (it stops a core that has started); the
+  // core is back to Stopped and Disconnected, and the tunnel is let go. Without a tunnel nothing waits, and this does
+  // nothing.
+  if (m_tunnelGuard != nullptr && m_tunnelGuard->isWaiting() && mode != Settings::CoreMode::Client) {
+    stop();
+  }
+  m_mode = mode;
+}
+
+void CoreProcess::setTunnelGate(deskflow::tunnel::ITunnelGate *gate)
+{
+  delete m_tunnelGuard;
+  m_tunnelGuard = nullptr;
+  m_tunnelGate = gate;
+  if (gate == nullptr) {
+    return;
+  }
+
+  deskflow::tunnel::TunnelStartGuard::Actions actions;
+  actions.waiting = [this] {
+    setProcessState(ProcessState::Starting);
+    setConnectionState(ConnectionState::Connecting);
+  };
+  actions.resume = [this] { start(m_tunnelPendingMode); };
+  actions.failed = [this](deskflow::tunnel::TunnelFailure failure, bool wasWaiting) {
+    qWarning().noquote() << "Cloudflare Tunnel failed:" << deskflow::tunnel::failureText(failure);
+    if (wasWaiting) {
+      // the core never started: the state goes back as a start that failed leaves it
+      setProcessState(ProcessState::Stopped);
+      setConnectionState(ConnectionState::Disconnected);
+    } else if (m_processState != ProcessState::Stopped) {
+      // the core would retry a tunnel that is gone for ever
+      stop();
+    }
+  };
+  m_tunnelGuard = new deskflow::tunnel::TunnelStartGuard(gate, actions, this);
+}
+
+bool CoreProcess::isTunnelRequired() const
+{
+  return m_tunnelGate != nullptr && m_mode == Settings::CoreMode::Client && m_tunnelGate->isRequired();
 }
 
 QPair<bool, QString> CoreProcess::persistServerConfig() const
@@ -621,6 +790,9 @@ void CoreProcess::setProcessState(ProcessState state)
       qPrintable(processStateToString(m_processState)), qPrintable(processStateToString(state))
   );
   m_processState = state;
+  if (state != ProcessState::Started) {
+    resetInputIndicatorState();
+  }
   Q_EMIT processStateChanged(state);
 }
 
@@ -662,6 +834,30 @@ void CoreProcess::onCoreIpcMessageReceived(const QString &command, const QString
     Q_EMIT peerFingerprint(args);
   } else if (command == "missingKeyboardLayouts") {
     Q_EMIT missingKeyboardLayouts(args);
+  } else if (command == "error" &&
+             args == QStringLiteral("invalid input indicator subscription")) {
+    qWarning("core rejected input indicator subscription");
+    resetInputIndicatorState();
+  } else if (command == QLatin1String(deskflow::input::kInputIndicatorLocalCommand)) {
+    const auto local = deskflow::input::decodeInputIndicatorBoolean(args);
+    if (!local || !m_inputIndicatorEnabled) {
+      Q_EMIT inputIndicatorStateInvalidated();
+      return;
+    }
+    const bool changed = m_inputIndicatorLocal != *local;
+    m_inputIndicatorLocal = *local;
+    if (changed) {
+      Q_EMIT inputIndicatorLocalChanged(*local);
+    }
+  } else if (command == QLatin1String(deskflow::input::kInputIndicatorActivityCommand)) {
+    const auto activity = deskflow::input::decodeInputIndicatorActivity(args);
+    if (!activity || !m_inputIndicatorEnabled || !isFreshInputIndicatorActivity(*activity) ||
+        !deskflow::input::isInputIndicatorActivityNewer(*activity, m_lastInputIndicatorSequence)) {
+      Q_EMIT inputIndicatorActivityInvalidated();
+      return;
+    }
+    m_lastInputIndicatorSequence = activity->sequence;
+    Q_EMIT inputIndicatorActivityReceived(*activity);
   }
 }
 
@@ -728,6 +924,43 @@ void CoreProcess::clearSettings()
 void CoreProcess::retryDaemon()
 {
   m_daemonIpcClient->connectToServer();
+}
+
+void CoreProcess::setInputIndicatorEnabled(bool enabled)
+{
+  if (m_inputIndicatorEnabled == enabled) {
+    return;
+  }
+  m_inputIndicatorEnabled = enabled;
+  sendInputIndicatorSubscription();
+  if (!enabled) {
+    resetInputIndicatorState();
+  }
+}
+
+void CoreProcess::sendInputIndicatorSubscription()
+{
+  if (m_coreIpcClient && m_coreIpcClient->isConnected()) {
+    m_coreIpcClient->sendInputIndicatorSubscription(m_inputIndicatorEnabled, m_inputIndicatorCapability);
+    if (m_inputIndicatorEnabled) {
+      m_inputIndicatorSubscriptionTimer.start();
+    } else {
+      m_inputIndicatorSubscriptionTimer.stop();
+    }
+  } else {
+    m_inputIndicatorSubscriptionTimer.stop();
+  }
+}
+
+void CoreProcess::resetInputIndicatorState()
+{
+  m_inputIndicatorSubscriptionTimer.stop();
+  m_lastInputIndicatorSequence = 0;
+  if (m_inputIndicatorLocal) {
+    m_inputIndicatorLocal = false;
+    Q_EMIT inputIndicatorLocalChanged(false);
+  }
+  Q_EMIT inputIndicatorStateInvalidated();
 }
 
 } // namespace deskflow::gui

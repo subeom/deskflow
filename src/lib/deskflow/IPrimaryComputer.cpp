@@ -50,11 +50,12 @@ IPrimaryComputer::MotionInfo *IPrimaryComputer::MotionInfo::alloc(int32_t x, int
 // IPrimaryComputer::WheelInfo
 //
 
-IPrimaryComputer::WheelInfo *IPrimaryComputer::WheelInfo::alloc(int32_t xDelta, int32_t yDelta)
+IPrimaryComputer::WheelInfo *IPrimaryComputer::WheelInfo::alloc(int32_t xDelta, int32_t yDelta, ScrollSource source)
 {
   auto *info = (WheelInfo *)malloc(sizeof(WheelInfo));
   info->m_xDelta = xDelta;
   info->m_yDelta = yDelta;
+  info->m_source = source;
   return info;
 }
 

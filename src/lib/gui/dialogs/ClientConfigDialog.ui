@@ -2,14 +2,6 @@
 <ui version="4.0">
  <class>ClientConfigDialog</class>
  <widget class="QDialog" name="ClientConfigDialog">
-  <property name="geometry">
-   <rect>
-    <x>0</x>
-    <y>0</y>
-    <width>482</width>
-    <height>197</height>
-   </rect>
-  </property>
   <property name="sizePolicy">
    <sizepolicy hsizetype="Maximum" vsizetype="Maximum">
     <horstretch>0</horstretch>
@@ -38,11 +30,82 @@
     </widget>
    </item>
    <item>
+    <layout class="QHBoxLayout" name="layoutConnectTimeout">
+     <item>
+      <widget class="QLabel" name="lblConnectTimeout">
+       <property name="toolTip">
+        <string>How long one attempt to connect to the server may take: the connection, the secure handshake and the server's greeting together. Raise it on a slow or far away network.</string>
+       </property>
+       <property name="text">
+        <string>Connect timeout:</string>
+       </property>
+       <property name="buddy">
+        <cstring>sbConnectTimeout</cstring>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QDoubleSpinBox" name="sbConnectTimeout">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="toolTip">
+        <string>How long one attempt to connect to the server may take: the connection, the secure handshake and the server's greeting together. Raise it on a slow or far away network.</string>
+       </property>
+       <property name="suffix">
+        <string> s</string>
+       </property>
+       <property name="decimals">
+        <number>1</number>
+       </property>
+       <property name="minimum">
+        <double>1.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>60.000000000000000</double>
+       </property>
+       <property name="singleStep">
+        <double>0.500000000000000</double>
+       </property>
+       <property name="value">
+        <double>2.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="spacerConnectTimeout">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>5</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
     <widget class="QGroupBox" name="groupBox">
      <property name="title">
-      <string>Scroll Modifiers</string>
+      <string>Local Scroll (this destination computer)</string>
      </property>
      <layout class="QGridLayout" name="gridLayout">
+      <item row="0" column="0" colspan="5">
+       <widget class="QLabel" name="lblLocalScrollDescription">
+        <property name="toolTip">
+         <string>These local inversion and scale settings apply to every wheel event on this computer. Cross-OS inversion configured per destination is separate and can compound with these values.</string>
+        </property>
+        <property name="text">
+         <string>Applies to every wheel event; can compound with Cross-OS inversion.</string>
+        </property>
+       </widget>
+      </item>
       <item row="5" column="2">
        <widget class="QCheckBox" name="cbYScrollInvert">
         <property name="text">

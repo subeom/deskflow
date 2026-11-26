@@ -12,6 +12,7 @@
 
 #include "common/KeyboardModifier.h"
 #include "common/QSettingsProxy.h"
+#include "deskflow/OptionTypes.h"
 
 #include <QIcon>
 #include <QList>
@@ -32,13 +33,31 @@ class Computer : public ComputerConfig
   friend QDataStream &operator<<(QDataStream &outStream, const Computer &computer)
   {
     return outStream << computer.name() << computer.switchCornerSize() << computer.aliases() << computer.modifiers()
-                     << computer.switchCorners() << computer.fixes() << computer.isServer();
+                     << computer.switchCorners() << computer.fixes() << computer.isServer()
+                     << static_cast<quint8>(computer.m_F18Action) << computer.m_CrossOSInvertX
+                     << computer.m_CrossOSInvertY << computer.m_CrossOSSemanticMedia
+                     << static_cast<quint8>(computer.m_CrossOSInvertScope) << computer.m_ShareClipboard
+                     << computer.m_MonitorLayout << computer.m_ArrangementPlaced << computer.m_ArrangementX
+                     << computer.m_ArrangementY << computer.m_ArrangementZoom << computer.m_ArrangementWidth
+                     << computer.m_ArrangementHeight << computer.m_MonitorScales;
   }
 
   friend QDataStream &operator>>(QDataStream &inStream, Computer &computer)
   {
-    return inStream >> computer.m_Name >> computer.m_SwitchCornerSize >> computer.m_Aliases >> computer.m_Modifiers >>
-           computer.m_SwitchCorners >> computer.m_Fixes >> computer.m_isServer;
+    quint8 f18Action = 0;
+    quint8 crossOSInvertScope = 0;
+    inStream >> computer.m_Name >> computer.m_SwitchCornerSize >> computer.m_Aliases >> computer.m_Modifiers >>
+        computer.m_SwitchCorners >> computer.m_Fixes >> computer.m_isServer >> f18Action >> computer.m_CrossOSInvertX >>
+        computer.m_CrossOSInvertY >> computer.m_CrossOSSemanticMedia >> crossOSInvertScope >>
+        computer.m_ShareClipboard >> computer.m_MonitorLayout >> computer.m_ArrangementPlaced >>
+        computer.m_ArrangementX >> computer.m_ArrangementY >> computer.m_ArrangementZoom >>
+        computer.m_ArrangementWidth >> computer.m_ArrangementHeight >> computer.m_MonitorScales;
+    computer.m_F18Action =
+        f18Action == static_cast<quint8>(F18Action::Hangul) ? F18Action::Hangul : F18Action::PassThrough;
+    computer.m_CrossOSInvertScope = crossOSInvertScope == static_cast<quint8>(ScrollInvertScope::MouseWheelOnly)
+                                        ? ScrollInvertScope::MouseWheelOnly
+                                        : ScrollInvertScope::All;
+    return inStream;
   }
 
 public:
@@ -88,6 +107,99 @@ public:
   [[nodiscard]] const QList<bool> &fixes() const
   {
     return m_Fixes;
+  }
+  [[nodiscard]] F18Action f18Action() const
+  {
+    return m_F18Action;
+  }
+  [[nodiscard]] bool crossOSInvertX() const
+  {
+    return m_CrossOSInvertX;
+  }
+  [[nodiscard]] bool crossOSInvertY() const
+  {
+    return m_CrossOSInvertY;
+  }
+  [[nodiscard]] ScrollInvertScope crossOSInvertScope() const
+  {
+    return m_CrossOSInvertScope;
+  }
+  [[nodiscard]] bool crossOSSemanticMedia() const
+  {
+    return m_CrossOSSemanticMedia;
+  }
+  [[nodiscard]] bool shareClipboard() const
+  {
+    return m_ShareClipboard;
+  }
+  //! The monitors of the computer (experimental), as the text that was set: empty when there is none
+  [[nodiscard]] const QString &monitorLayout() const
+  {
+    return m_MonitorLayout;
+  }
+
+  //! Whether the computer has a place in the arrangement (experimental)
+  [[nodiscard]] bool arrangementPlaced() const
+  {
+    return m_ArrangementPlaced;
+  }
+  //! Where the origin of the coordinates of the computer is in the arrangement
+  [[nodiscard]] double arrangementX() const
+  {
+    return m_ArrangementX;
+  }
+  [[nodiscard]] double arrangementY() const
+  {
+    return m_ArrangementY;
+  }
+  //! Arrangement units per unit of the computer: 1 for a Mac, 100 / the display scale in percent for Windows
+  [[nodiscard]] double arrangementZoom() const
+  {
+    return m_ArrangementZoom;
+  }
+  //! The size of the screen that is said for a computer that has no monitor layout; 0 when it is not said
+  [[nodiscard]] int arrangementWidth() const
+  {
+    return m_ArrangementWidth;
+  }
+  [[nodiscard]] int arrangementHeight() const
+  {
+    return m_ArrangementHeight;
+  }
+  void setArrangementOrigin(double x, double y)
+  {
+    m_ArrangementPlaced = true;
+    m_ArrangementX = x;
+    m_ArrangementY = y;
+  }
+  void clearArrangementOrigin()
+  {
+    m_ArrangementPlaced = false;
+    m_ArrangementX = 0;
+    m_ArrangementY = 0;
+  }
+  void setArrangementZoom(double zoom)
+  {
+    m_ArrangementZoom = zoom;
+  }
+  //! The display scale in percent of each monitor of the layout, in its order; empty: the scale of the zoom
+  [[nodiscard]] const QList<double> &monitorScales() const
+  {
+    return m_MonitorScales;
+  }
+  //! The monitors as the text of a monitor layout, in the coordinates that the computer reports
+  void setMonitorLayout(const QString &layout)
+  {
+    m_MonitorLayout = layout.trimmed();
+  }
+  void setMonitorScales(const QList<double> &scales)
+  {
+    m_MonitorScales = scales;
+  }
+  void setArrangementSize(int width, int height)
+  {
+    m_ArrangementWidth = width;
+    m_ArrangementHeight = height;
   }
 
   void loadSettings(QSettingsProxy &settings);
@@ -151,6 +263,30 @@ protected:
   {
     return m_Fixes;
   }
+  void setF18Action(const F18Action action)
+  {
+    m_F18Action = action;
+  }
+  void setCrossOSInvertX(const bool enabled)
+  {
+    m_CrossOSInvertX = enabled;
+  }
+  void setCrossOSInvertY(const bool enabled)
+  {
+    m_CrossOSInvertY = enabled;
+  }
+  void setCrossOSInvertScope(const ScrollInvertScope scope)
+  {
+    m_CrossOSInvertScope = scope;
+  }
+  void setCrossOSSemanticMedia(const bool enabled)
+  {
+    m_CrossOSSemanticMedia = enabled;
+  }
+  void setShareClipboard(const bool enabled)
+  {
+    m_ShareClipboard = enabled;
+  }
   void setSwapped(const bool on)
   {
     m_Swapped = on;
@@ -164,6 +300,20 @@ private:
   QList<bool> m_SwitchCorners = {false, false, false, false};
   int m_SwitchCornerSize = 0;
   QList<bool> m_Fixes{false, false, false, false};
+  F18Action m_F18Action = F18Action::PassThrough;
+  bool m_CrossOSInvertX = false;
+  bool m_CrossOSInvertY = false;
+  ScrollInvertScope m_CrossOSInvertScope = ScrollInvertScope::All;
+  bool m_CrossOSSemanticMedia = false;
+  bool m_ShareClipboard = true;
+  QString m_MonitorLayout = {};
+  bool m_ArrangementPlaced = false;
+  double m_ArrangementX = 0;
+  double m_ArrangementY = 0;
+  double m_ArrangementZoom = 1.0;
+  int m_ArrangementWidth = 0;
+  int m_ArrangementHeight = 0;
+  QList<double> m_MonitorScales = {};
   bool m_Swapped = false;
   bool m_isServer = false;
 };

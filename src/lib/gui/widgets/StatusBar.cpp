@@ -7,6 +7,7 @@
 #include "StatusBar.h"
 #include "common/Constants.h"
 #include "common/Settings.h"
+#include "common/TunnelAddress.h"
 
 #include <QEvent>
 #include <QLabel>
@@ -41,13 +42,20 @@ StatusBar::StatusBar(QWidget *parent)
   insertPermanentWidget(2, m_lblStatus, 1);
 
   m_btnUpdate->setVisible(false);
+  m_btnUpdate->setObjectName(QStringLiteral("updateButton"));
   m_btnUpdate->setFlat(true);
   m_btnUpdate->setLayoutDirection(Qt::RightToLeft);
   m_btnUpdate->setIcon(QIcon::fromTheme(QStringLiteral("software-updates-release")));
   m_btnUpdate->setFixedHeight(btnHeight);
   m_btnUpdate->setIconSize(iconSize);
   insertPermanentWidget(3, m_btnUpdate);
-  connect(m_btnUpdate, &QPushButton::clicked, this, &StatusBar::requestUpdateVersion);
+  connect(m_btnUpdate, &QPushButton::clicked, this, [this] {
+    if (m_updateStatus.action != deskflow::gui::UpdateAction::None) {
+      Q_EMIT requestUpdateAction(m_updateStatus.action);
+    } else {
+      Q_EMIT requestUpdateVersion();
+    }
+  });
 
   m_retryTimer->setInterval(1000);
   m_retryTimer->setSingleShot(false);
@@ -107,8 +115,17 @@ void StatusBar::setStatus(ConnectionState connectionState, ProcessState processS
           setSecurityIconVisible(true);
           m_connectionInterval = -1;
           if (!isServer) {
-            m_lblStatus->setText(tr("%1 is connected as client of %2")
-                                     .arg(kAppName, Settings::value(Settings::Client::RemoteHost).toString()));
+            // (a Cloudflare Tunnel is named by its host name: 127.0.0.1 is where it listens, not who the server is)
+            const auto tunnelHost = deskflow::tunnel::displayedTunnelHost();
+            if (tunnelHost.isEmpty()) {
+              m_lblStatus->setText(
+                  tr("%1 is connected as client of %2").arg(kAppName, Settings::textValue(Settings::Client::RemoteHost))
+              );
+            } else {
+              m_lblStatus->setText(
+                  tr("%1 is connected as client of %2 through a Cloudflare Tunnel").arg(kAppName, tunnelHost)
+              );
+            }
           }
           break;
         }
@@ -120,6 +137,7 @@ void StatusBar::setStatus(ConnectionState connectionState, ProcessState processS
       }
     }
   }
+  Q_EMIT changed();
 }
 // clang-format on
 void StatusBar::setServerClients(const QStringList &clients)
@@ -127,6 +145,7 @@ void StatusBar::setServerClients(const QStringList &clients)
   if (clients.isEmpty()) {
     m_lblStatus->setText(tr("%1 is waiting for clients").arg(kAppName));
     m_lblStatus->setToolTip("");
+    Q_EMIT changed();
     return;
   }
   const auto clientCount = static_cast<int>(clients.size());
@@ -141,11 +160,13 @@ void StatusBar::setServerClients(const QStringList &clients)
 
   const auto toolTipString = clientCount == 1 ? "" : tr("Clients:\n %1").arg(clients.join(newLine));
   m_lblStatus->setToolTip(toolTipString);
+  Q_EMIT changed();
 }
 
 void StatusBar::setSecurityIconVisible(bool visible)
 {
   m_lblSecurityIcon->setVisible(visible);
+  Q_EMIT changed();
 }
 
 void StatusBar::setConnectionInterval(int newInterval)
@@ -155,18 +176,84 @@ void StatusBar::setConnectionInterval(int newInterval)
 
 bool StatusBar::securityIconVisible() const
 {
-  return m_lblSecurityIcon->isVisible();
+  // a bar that the new main window keeps hidden still has the state of its icon
+  return m_headless ? !m_lblSecurityIcon->isHidden() : m_lblSecurityIcon->isVisible();
+}
+
+void StatusBar::setHeadless(bool headless)
+{
+  m_headless = headless;
+  setVisible(!headless);
 }
 
 void StatusBar::setBtnFingerprintVisible(bool visible)
 {
   m_btnFingerprint->setVisible(visible);
+  Q_EMIT changed();
 }
 
 void StatusBar::updateFound(const QString &version)
 {
-  m_btnUpdate->setVisible(true);
-  m_btnUpdate->setToolTip(tr("A new version v%1 is available").arg(version));
+  deskflow::gui::UpdateStatusView status;
+  status.version = version;
+  status.label = tr("Update available");
+  status.toolTip = tr("A new version v%1 is available").arg(version);
+  status.visible = true;
+  status.enabled = true;
+  status.action = deskflow::gui::UpdateAction::OpenRelease;
+  setUpdateStatus(status);
+}
+
+void StatusBar::setUpdateStatus(const deskflow::gui::UpdateStatusView &status)
+{
+  if (m_updateStatus == status) {
+    return;
+  }
+  m_updateStatus = status;
+  m_updateVersion = status.installable || status.action == deskflow::gui::UpdateAction::OpenRelease
+                        ? status.version
+                        : QString();
+  m_btnUpdate->setVisible(status.visible);
+  m_btnUpdate->setEnabled(status.enabled);
+  m_btnUpdate->setText(status.label);
+  m_btnUpdate->setToolTip(status.toolTip);
+  Q_EMIT changed();
+}
+
+QString StatusBar::statusText() const
+{
+  return m_lblStatus->text();
+}
+
+QString StatusBar::securityText() const
+{
+  return m_lblSecurityIcon->toolTip();
+}
+
+bool StatusBar::isEncrypted() const
+{
+  return m_encrypted;
+}
+
+bool StatusBar::fingerprintVisible() const
+{
+  // the button is not shown while the bar is not, so what was asked of it is read from its own flag
+  return !m_btnFingerprint->isHidden();
+}
+
+QString StatusBar::updateVersion() const
+{
+  return m_updateVersion;
+}
+
+QString StatusBar::fingerprintToolTip() const
+{
+  return m_btnFingerprint->toolTip();
+}
+
+QString StatusBar::updateButtonText() const
+{
+  return m_btnUpdate->text();
 }
 
 void StatusBar::changeEvent(QEvent *e)
@@ -179,7 +266,9 @@ void StatusBar::changeEvent(QEvent *e)
 void StatusBar::updateText()
 {
   m_btnFingerprint->setToolTip(tr("View local fingerprint"));
-  m_btnUpdate->setText(tr("Update available"));
+  if (m_updateStatus.label.isEmpty()) {
+    m_btnUpdate->setText(tr("Update available"));
+  }
   setSecurityLevel(m_securityLevel);
 }
 
@@ -193,6 +282,7 @@ void StatusBar::updateTimerLabel()
     m_connectionInterval--;
   }
   m_lblStatus->setText(text);
+  Q_EMIT changed();
 }
 
 void StatusBar::setSecurityIcon(bool encrypted)
@@ -208,4 +298,5 @@ void StatusBar::setSecurityLevel(const QString &securityLevel)
   m_securityLevel = securityLevel;
   const auto txt = m_encrypted ? tr("%1 Encryption Enabled").arg(m_securityLevel) : tr("Encryption Disabled");
   m_lblSecurityIcon->setToolTip(txt);
+  Q_EMIT changed();
 }

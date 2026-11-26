@@ -77,10 +77,20 @@ enum class EventTypes : uint32_t
   /// A secure socket sends this event when a remote connection has been established.
   DataSocketSecureConnected,
 
+  /** A secure socket sends this event when its TCP connection is up and the secure handshake (TLS) begins. The socket
+      handles the plain "connected" event itself, so this is how the client learns that TCP is done.
+  */
+  DataSocketTlsStarted,
+
   /** A socket sends this event when an attempt to connect to a remote port has failed.
       The data is a pointer to a ConnectionFailedInfo.
   */
   DataSocketConnectionFailed,
+
+  /** A secure socket sends this event when the secure handshake (TLS) of an outgoing connection failed.
+      The data is a malloc'ed deskflow::diagnosis::FailureKind: TlsHandshakeFailed or FingerprintRejected.
+  */
+  DataSocketSecureFailed,
 
   /// A socket sends this event when a remote connection is waiting to be accepted.
   ListenSocketConnecting,
@@ -109,6 +119,11 @@ enum class EventTypes : uint32_t
       getEventTarget().
   */
   ClientProxyDisconnected,
+
+  /** This event is sent when a client has reported its monitors, or reported that it has none, and what the server
+      knows of them is another. The target is getEventTarget() of the client proxy.
+  */
+  ClientProxyMonitorsReported,
 
   /** This event is sent when the client has correctly responded to the hello message.
       The target is this.
@@ -209,6 +224,11 @@ enum class EventTypes : uint32_t
 
   /// This event is sent whenever the computer's display shape changes.
   ComputerShapeChanged,
+
+  /** This event is sent whenever the monitors of the computer change and its display shape does not (two monitors
+      swap places, a display scale changes). A change of the shape is ComputerShapeChanged.
+  */
+  ComputerMonitorsChanged,
 
   /** This event is sent whenever the system goes to sleep or a user session is deactivated (fast
       user switching).

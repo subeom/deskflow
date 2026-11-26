@@ -10,6 +10,20 @@ if(APPLE)
   set (platform_sources
     OSXHelpers.h
     OSXHelpers.mm
+    input/MacAccessibilityProbe.h
+    input/MacAccessibilityProbe.mm
+    input/MacInputFocusMonitor.h
+    input/MacInputFocusMonitor.mm
+    input/MacInputIndicatorController.h
+    input/MacInputIndicatorController.mm
+    input/MacInputIndicatorPanel.h
+    input/MacInputIndicatorPanel.mm
+    input/MacInputPointerMonitor.h
+    input/MacInputPointerMonitor.mm
+    MacUpdateInstaller.cpp
+    MacUpdateInstaller.h
+    MacUpdateVerifier.cpp
+    MacUpdateVerifier.h
   )
 endif()
 
@@ -21,6 +35,10 @@ add_library(${target} STATIC
   Diagnostic.h
   FileTail.cpp
   FileTail.h
+  input/InputIndicatorGeometry.cpp
+  input/InputIndicatorGeometry.h
+  input/InputIndicatorPolicy.cpp
+  input/InputIndicatorPolicy.h
   Logger.cpp
   Logger.h
   MainWindow.cpp
@@ -31,6 +49,22 @@ add_library(${target} STATIC
   StyleUtils.h
   TlsUtility.cpp
   TlsUtility.h
+  UpdateInstaller.cpp
+  UpdateInstaller.h
+  UpdateCache.cpp
+  UpdateCache.h
+  UpdateIntegrity.cpp
+  UpdateIntegrity.h
+  UpdateNetwork.cpp
+  UpdateNetwork.h
+  UpdateRelease.cpp
+  UpdateRelease.h
+  UpdateStatusModel.cpp
+  UpdateStatusModel.h
+  UpdateShutdown.cpp
+  UpdateShutdown.h
+  UpdateVerifier.cpp
+  UpdateVerifier.h
   VersionChecker.cpp
   VersionChecker.h
   config/ComputerConfig.h
@@ -38,24 +72,67 @@ add_library(${target} STATIC
   config/Computer.h
   config/ComputerList.cpp
   config/ComputerList.h
+  config/MonitorEditing.cpp
+  config/MonitorEditing.h
   config/ServerConfig.cpp
   config/ServerConfig.h
+  core/CoreLogText.cpp
+  core/CoreLogText.h
   core/CoreProcess.cpp
   core/CoreProcess.h
+  core/ConnectionProbe.cpp
+  core/ConnectionProbe.h
+  core/AddressClassifier.cpp
+  core/AddressClassifier.h
+  core/ServiceQuit.cpp
+  core/ServiceQuit.h
   core/NetworkMonitor.cpp
+  core/ReportedMonitors.cpp
+  core/ReportedMonitors.h
+  core/ReportedScreen.cpp
+  core/ReportedScreen.h
   core/NetworkMonitor.h
+  layout/DisplayProvider.cpp
+  layout/DisplayProvider.h
+  layout/DisplaySignature.cpp
+  layout/DisplaySignature.h
+  layout/Layout.cpp
+  layout/Layout.h
+  layout/LayoutMatcher.cpp
+  layout/LayoutMatcher.h
+  layout/LayoutMemory.cpp
+  layout/LayoutMemory.h
+  layout/LayoutMemoryService.cpp
+  layout/LayoutMemoryService.h
+  layout/LayoutProfileStore.cpp
+  layout/LayoutProfileStore.h
+  layout/Reattach.cpp
+  layout/Reattach.h
+  layout/ServerConfigLayout.cpp
+  layout/ServerConfigLayout.h
+  layout/ServerConfigLayoutHost.cpp
+  layout/ServerConfigLayoutHost.h
+  dialogs/AboutCards.cpp
+  dialogs/AboutCards.h
   dialogs/AboutDialog.cpp
   dialogs/AboutDialog.h
   dialogs/AboutDialog.ui
   dialogs/ActionDialog.cpp
   dialogs/ActionDialog.h
   dialogs/ActionDialog.ui
+  dialogs/CardBuilders.h
+  dialogs/CardPage.cpp
+  dialogs/CardPage.h
   dialogs/ClientConfigDialog.h
   dialogs/ClientConfigDialog.cpp
   dialogs/ClientConfigDialog.ui
+  dialogs/ComputerSettingsCards.cpp
+  dialogs/ComputerSettingsCards.h
   dialogs/ComputerSettingsDialog.cpp
   dialogs/ComputerSettingsDialog.h
   dialogs/ComputerSettingsDialog.ui
+  dialogs/ConnectionTestDialog.cpp
+  dialogs/ConnectionTestDialog.h
   dialogs/FingerprintDialog.cpp
   dialogs/FingerprintDialog.h
   dialogs/HelpDialog.cpp
@@ -63,18 +140,77 @@ add_library(${target} STATIC
   dialogs/HotkeyDialog.cpp
   dialogs/HotkeyDialog.h
   dialogs/HotkeyDialog.ui
+  dialogs/LayoutProfilesDialog.cpp
+  dialogs/LayoutProfilesDialog.h
+  dialogs/MonitorEditorDialog.cpp
+  dialogs/MonitorEditorDialog.h
+  dialogs/ServerAddressesDialog.cpp
+  dialogs/ServerAddressesDialog.h
+  dialogs/ServerConfigAdvanced.cpp
+  dialogs/ServerConfigAdvanced.h
   dialogs/ServerConfigDialog.cpp
   dialogs/ServerConfigDialog.h
   dialogs/ServerConfigDialog.ui
   dialogs/SettingsDialog.cpp
   dialogs/SettingsDialog.h
   dialogs/SettingsDialog.ui
+  dialogs/TunnelTestDialog.cpp
+  dialogs/TunnelTestDialog.h
   ipc/IpcClient.cpp
   ipc/IpcClient.h
   ipc/DaemonIpcClient.cpp
   ipc/DaemonIpcClient.h
   ipc/CoreIpcClient.cpp
   ipc/CoreIpcClient.h
+  style/Appearance.cpp
+  style/Appearance.h
+  style/AccessibleInterfaces.cpp
+  style/AccessibleItems.cpp
+  style/AccessibleItems.h
+  style/AccessibleInterfaces.h
+  style/AppearanceHints.cpp
+  style/AppearanceHints.h
+  style/BackdropWidget.cpp
+  style/BackdropWidget.h
+  style/CanvasTheme.cpp
+  style/CanvasTheme.h
+  style/Contrast.cpp
+  style/Contrast.h
+  style/DeskflowStyle.cpp
+  style/DeskflowStyle.h
+  style/DesignTokens.cpp
+  style/DesignTokens.h
+  style/Icons.cpp
+  style/FontScale.h
+  style/Icons.h
+  style/FontPolicy.cpp
+  style/FontPolicy.h
+  style/LookFollower.cpp
+  style/LookFollower.h
+  style/PanelWidget.cpp
+  style/PanelWidget.h
+  style/PixelSnap.h
+  style/StatusColors.cpp
+  style/StatusColors.h
+  style/TextSize.cpp
+  style/TextSize.h
+  style/TextSizeModel.cpp
+  style/TextSizeModel.h
+  style/phosphor.qrc
+  settings/AwdlBanner.cpp
+  settings/AwdlBanner.h
+  settings/AwdlCard.cpp
+  settings/AwdlCard.h
+  settings/RestartBanner.cpp
+  settings/RestartBanner.h
+  settings/SettingEffects.cpp
+  settings/SettingEffects.h
+  settings/SettingsBinder.cpp
+  settings/SettingsBinder.h
+  settings/SettingsPage.cpp
+  settings/SettingsPage.h
+  settings/SettingsPages.cpp
+  settings/SettingsPages.h
   validators/AliasValidator.cpp
   validators/AliasValidator.h
   validators/ComputerDuplicationsValidator.cpp
@@ -95,6 +231,16 @@ add_library(${target} STATIC
   validators/ValidationError.h
   validators/IpAddressValidator.cpp
   validators/IpAddressValidator.h
+  widgets/ArrangementCanvas.cpp
+  widgets/ArrangementCanvas.h
+  widgets/ArrangementPanel.cpp
+  widgets/ArrangementPanel.h
+  widgets/DisclosureBox.cpp
+  widgets/DisclosureBox.h
+  widgets/LayoutNoticeBar.cpp
+  widgets/LayoutNoticeBar.h
+  widgets/MonitorEditorWidget.cpp
+  widgets/MonitorEditorWidget.h
   widgets/ComputerSetupView.cpp
   widgets/ComputerSetupView.h
   widgets/FingerprintPreview.cpp
@@ -111,16 +257,163 @@ add_library(${target} STATIC
   widgets/RemoveComputerWidget.h
   widgets/SearchWidget.h
   widgets/SearchWidget.cpp
+  widgets/NavRail.cpp
+  widgets/NavRail.h
+  widgets/PageTitle.cpp
+  widgets/PageTitle.h
+  widgets/SegmentedControl.cpp
+  widgets/SegmentedControl.h
+  widgets/SidebarShell.cpp
+  widgets/SidebarShell.h
+  shell/ClientConnectionSection.cpp
+  shell/ClientConnectionSection.h
+  shell/MainShell.cpp
+  shell/MainShell.h
+  shell/StatusModel.cpp
+  shell/StatusModel.h
+  shell/TunnelChip.cpp
+  shell/TunnelChip.h
+  chrome/ChromeGeometry.cpp
+  chrome/ChromeGeometry.h
+  chrome/ChromePolicy.cpp
+  chrome/ChromePolicy.h
+  chrome/FrameMessages.h
+  chrome/MenuMigration.cpp
+  chrome/MenuMigration.h
+  chrome/WindowChrome.cpp
+  chrome/WindowChrome.h
+  chrome/WindowChromeWin.cpp
+  chrome/WindowChromeWin.h
+  chrome/WindowHeader.cpp
+  chrome/WindowHeader.h
+  tray/TrayController.cpp
+  tray/TrayController.h
+  tray/TrayHeaderWidget.cpp
+  tray/TrayHeaderWidget.h
+  tray/TrayIcons.cpp
+  tray/TrayIcons.h
+  tray/TrayMenuBuilder.cpp
+  tray/TrayMenuBuilder.h
+  tray/TrayMenuModel.cpp
+  tray/TrayMenuModel.h
+  tray/TrayPolicy.cpp
+  tray/TrayPolicy.h
+  tray/TrayState.cpp
+  tray/TrayState.h
+  widgets/SectionHeader.cpp
+  widgets/SectionHeader.h
+  widgets/SettingCard.cpp
+  widgets/SettingCard.h
+  widgets/SettingRow.cpp
+  widgets/SettingRow.h
   widgets/StatusBar.cpp
   widgets/StatusBar.h
+  widgets/StatusChip.cpp
+  widgets/StatusChip.h
+  widgets/StatusHero.cpp
+  widgets/StatusHero.h
+  widgets/InlineHint.cpp
+  widgets/InlineHint.h
+  widgets/TestResultRows.cpp
+  widgets/TestResultRows.h
+  widgets/ToggleSwitch.cpp
+  widgets/ToggleSwitch.h
   widgets/SettingsDialogButtonBox.cpp
   widgets/SettingsDialogButtonBox.h
 )
+
+# the option that turns off the wireless link of AirDrop while sharing (macOS only at run time, the code builds everywhere)
+target_sources(${target} PRIVATE
+  awdl/AwdlController.cpp
+  awdl/AwdlController.h
+  awdl/AwdlModel.cpp
+  awdl/AwdlModel.h
+  awdl/AwdlPermission.cpp
+  awdl/AwdlPermission.h
+  awdl/AwdlPlatform.cpp
+  awdl/AwdlPlatform.h
+  awdl/AwdlSetup.cpp
+  awdl/AwdlSetup.h
+  awdl/AwdlTexts.cpp
+  awdl/AwdlTexts.h
+  awdl/IAwdlSystem.h
+  awdl/MacAwdlSystem.cpp
+  awdl/MacAwdlSystem.h
+)
+
+# the Cloudflare Tunnel: the logic, without a window and without a process of its own
+target_sources(${target} PRIVATE
+  tunnel/CloudflaredLaunch.cpp
+  tunnel/CloudflaredLaunch.h
+  tunnel/CloudflaredLocator.cpp
+  tunnel/CloudflaredLocator.h
+  tunnel/CloudflaredLogParser.cpp
+  tunnel/CloudflaredLogParser.h
+  tunnel/IPortProber.h
+  tunnel/ISecretStore.h
+  tunnel/ITunnelGate.h
+  tunnel/ITunnelProcess.h
+  tunnel/InMemorySecretStore.cpp
+  tunnel/InMemorySecretStore.h
+  tunnel/MacKeychainStore.cpp
+  tunnel/MacKeychainStore.h
+  tunnel/OrphanRecord.cpp
+  tunnel/OrphanRecord.h
+  tunnel/OutputLineSplitter.cpp
+  tunnel/OutputLineSplitter.h
+  tunnel/RepeatCollapser.cpp
+  tunnel/RepeatCollapser.h
+  tunnel/ProcessInspector.h
+  tunnel/QtPortProber.cpp
+  tunnel/QtPortProber.h
+  tunnel/QtTunnelProcess.cpp
+  tunnel/QtTunnelProcess.h
+  tunnel/SecretRedactor.cpp
+  tunnel/SecretRedactor.h
+  tunnel/SecretStoreFactory.cpp
+  tunnel/SecretStoreFactory.h
+  tunnel/ServiceToken.h
+  tunnel/SystemProcessInspector.cpp
+  tunnel/TunnelController.cpp
+  tunnel/TunnelController.h
+  tunnel/TunnelStartGuard.cpp
+  tunnel/TunnelStartGuard.h
+  tunnel/TunnelStateMachine.cpp
+  tunnel/TunnelStateMachine.h
+  tunnel/TunnelSupervisor.cpp
+  tunnel/TunnelSupervisor.h
+  tunnel/TunnelTestRunner.cpp
+  tunnel/TunnelTestRunner.h
+  tunnel/TunnelTypes.cpp
+  tunnel/TunnelTypes.h
+  tunnel/WindowsCredentialStore.cpp
+  tunnel/WindowsCredentialStore.h
+  tunnel/WindowsKillOnCloseJob.cpp
+  tunnel/WindowsKillOnCloseJob.h
+  widgets/TunnelSettingsGroup.cpp
+  widgets/TunnelSettingsGroup.h
+  widgets/TunnelStatusWidget.cpp
+  widgets/TunnelStatusWidget.h
+)
+
+# the secure stores of the systems that have one (each file is empty on the others); the Credential Manager is in
+# advapi32 and the keychain in the Security framework
+if(WIN32)
+  target_link_libraries(${target} PUBLIC advapi32)
+elseif(APPLE)
+  find_library(lib_Security Security REQUIRED)
+  find_library(lib_CoreFoundation CoreFoundation REQUIRED)
+  find_library(lib_ApplicationServices ApplicationServices REQUIRED)
+  target_link_libraries(${target} PUBLIC ${lib_Security} ${lib_CoreFoundation} ${lib_ApplicationServices})
+endif()
 
 target_link_libraries(${target}
   PUBLIC
     common
     platform
     net
+    server
     Qt6::Widgets
+    Qt6::Svg
+    Qt6::Network
 )

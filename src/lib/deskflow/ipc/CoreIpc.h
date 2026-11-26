@@ -11,4 +11,5 @@
 #include <QString>
 
 void ipcSendToClient(const QString &command, const QString &args = "");
+void ipcSendInputIndicatorToClient(const QString &command, const QString &args = "");
 void ipcSendConnectionState(deskflow::core::ConnectionState state);

@@ -48,6 +48,11 @@ bool PlatformComputer::fakeKeyUp(KeyButton button)
   return getKeyState()->fakeKeyUp(button);
 }
 
+bool PlatformComputer::fakeSemanticMediaKey(KeyID id)
+{
+  return getKeyState()->fakeSemanticMediaKey(id);
+}
+
 void PlatformComputer::fakeAllKeysUp()
 {
   getKeyState()->fakeAllKeysUp();
@@ -56,6 +61,11 @@ void PlatformComputer::fakeAllKeysUp()
 bool PlatformComputer::fakeCtrlAltDel()
 {
   return getKeyState()->fakeCtrlAltDel();
+}
+
+bool PlatformComputer::canSynthesizeKey(KeyID id) const
+{
+  return getKeyState()->canSynthesizeKey(id);
 }
 
 bool PlatformComputer::isKeyDown(KeyButton button) const

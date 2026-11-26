@@ -89,6 +89,11 @@ void PrimaryClient::getCursorPos(int32_t &x, int32_t &y) const
   m_computer->getCursorPos(x, y);
 }
 
+std::vector<deskflow::server::MonitorRect> PrimaryClient::getMonitors() const
+{
+  return m_computer->getMonitors();
+}
+
 void PrimaryClient::enable()
 {
   m_computer->enable();
@@ -214,6 +219,11 @@ std::string PrimaryClient::getSecureInputApp() const
 void PrimaryClient::secureInputNotification(const std::string &app) const
 {
   LOG_INFO("application \"%s\" is blocking the keyboard", app.c_str());
+}
+
+void PrimaryClient::setRemoteComputerName(const std::string &name)
+{
+  m_computer->setRemoteComputerName(name);
 }
 
 void PrimaryClient::resetOptions()

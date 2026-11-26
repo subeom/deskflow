@@ -12,6 +12,7 @@
 #include "base/IEventQueue.h"
 #include "base/Log.h"
 #include "mt/Lock.h"
+#include "net/ConnectFailureKind.h"
 #include "net/NetworkAddress.h"
 #include "net/SocketException.h"
 #include "net/SocketMultiplexer.h"
@@ -166,6 +167,18 @@ void TCPSocket::write(const void *buffer, uint32_t n)
   }
 }
 
+void TCPSocket::setBulkSend(bool active)
+{
+  // while bulk data is being written, keep only a little unsent data in the kernel so that the next input event is
+  // not queued behind it
+  constexpr uint32_t kUnsentLowWaterBytes = 16 * 1024;
+
+  Lock lock(&m_mutex);
+  if (m_socket != nullptr) {
+    ARCH->setUnsentLowWaterOnSocket(m_socket, active ? kUnsentLowWaterBytes : 0);
+  }
+}
+
 void TCPSocket::flush()
 {
   Lock lock(&m_mutex);
@@ -265,7 +278,7 @@ void TCPSocket::connect(const NetworkAddress &addr)
         m_writable = true;
       }
     } catch (const ArchNetworkException &e) {
-      throw SocketConnectException(e.what());
+      throw SocketConnectException(e.what(), deskflow::net::failureKindOf(e));
     }
   }
   setJob(newJob());
@@ -392,9 +405,9 @@ ISocketMultiplexerJob *TCPSocket::newJob()
   }
 }
 
-void TCPSocket::sendConnectionFailedEvent(const char *msg)
+void TCPSocket::sendConnectionFailedEvent(const char *msg, deskflow::diagnosis::FailureKind kind)
 {
-  auto *info = new ConnectionFailedInfo(msg);
+  auto *info = new ConnectionFailedInfo(msg, kind);
   m_events->addEvent(
       Event(EventTypes::DataSocketConnectionFailed, getEventTarget(), info, Event::EventFlags::DontFreeData)
   );
@@ -472,7 +485,7 @@ ISocketMultiplexerJob *TCPSocket::serviceConnecting(ISocketMultiplexerJob *job, 
       // connection may have failed or succeeded
       ARCH->throwErrorOnSocket(m_socket);
     } catch (const ArchNetworkException &e) {
-      sendConnectionFailedEvent(e.what());
+      sendConnectionFailedEvent(e.what(), deskflow::net::failureKindOf(e));
       onDisconnected();
       return newJob();
     }

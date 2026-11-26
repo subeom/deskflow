@@ -8,9 +8,13 @@
 
 #include "deskflow/ClipboardTypes.h"
 
+#include <cstddef>
 #include <string_view>
 
 class IEventQueue;
+
+//! Size of the data chunks of a clipboard transfer that is not paced
+inline constexpr size_t kClipboardChunkSize = 512 * 1024;
 
 class StreamChunker
 {

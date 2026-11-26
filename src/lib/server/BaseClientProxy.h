@@ -8,6 +8,7 @@
 #pragma once
 
 #include "deskflow/IClient.h"
+#include "server/ReportedMonitors.h"
 
 namespace deskflow {
 class IStream;
@@ -54,6 +55,27 @@ public:
   //@}
 
   // IComputer
+  //! The monitors that this computer reports (experimental)
+  /*!
+  The last valid report of the computer, while its bounding box is the shape that the computer reports now. Null when
+  there is none, which is what a computer that does not report says: the desktop is then the one rectangle of its
+  shape, as it always was.
+  */
+  virtual const deskflow::server::ReportedMonitors *reportedMonitors() const
+  {
+    return nullptr;
+  }
+
+  //! Whether this computer takes part in the reporting of monitors (experimental)
+  /*!
+  False for a computer that does not: one of an older version, or that the server did not invite. What such a computer
+  had reported in an earlier connection is not true any more.
+  */
+  virtual bool mayReportMonitors() const
+  {
+    return false;
+  }
+
   void *getEventTarget() const override = 0;
   bool getClipboard(ClipboardID id, IClipboard *) const override = 0;
   void getShape(int32_t &x, int32_t &y, int32_t &width, int32_t &height) const override = 0;
@@ -73,6 +95,7 @@ public:
   void mouseMove(int32_t xAbs, int32_t yAbs) override = 0;
   void mouseRelativeMove(int32_t xRel, int32_t yRel) override = 0;
   void mouseWheel(int32_t xDelta, int32_t yDelta) override = 0;
+  using IClient::mouseWheel;
   void screensaver(bool activate) override = 0;
   void resetOptions() override = 0;
   void setOptions(const OptionsList &options) override = 0;

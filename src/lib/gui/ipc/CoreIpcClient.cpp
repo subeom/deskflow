@@ -7,6 +7,7 @@
 #include "CoreIpcClient.h"
 
 #include "common/Constants.h"
+#include "deskflow/ipc/InputIndicatorIpc.h"
 
 #include <QString>
 
@@ -20,6 +21,15 @@ CoreIpcClient::CoreIpcClient(QObject *parent) : IpcClient(parent, kCoreIpcName, 
 void CoreIpcClient::sendStop()
 {
   sendMessage(QStringLiteral("stop"));
+}
+
+void CoreIpcClient::sendInputIndicatorSubscription(bool enabled, const QString &capability)
+{
+  sendMessage(
+      QStringLiteral("%1=%2")
+          .arg(QLatin1String(deskflow::input::kInputIndicatorSubscriptionCommand))
+          .arg(deskflow::input::encodeInputIndicatorSubscription(enabled, capability))
+  );
 }
 
 void CoreIpcClient::processCommand(const QString &command, const QStringList &parts)

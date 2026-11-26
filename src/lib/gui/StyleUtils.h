@@ -14,6 +14,7 @@
 #include <QStyleHints>
 
 #include "common/Constants.h"
+#include "gui/style/TextSize.h"
 
 namespace deskflow::gui {
 
@@ -61,7 +62,11 @@ inline QFont fixedFont()
 #endif
 
 #if defined(Q_OS_MACOS)
-  f.setPointSize(12);
+  // 12 points, as large again as the text is when the new look has made it larger
+  if (const auto ratio = deskflow::gui::style::fontRatio(); ratio != 1.0)
+    f.setPointSizeF(12.0 * ratio);
+  else
+    f.setPointSize(12);
 #endif
   return f;
 }

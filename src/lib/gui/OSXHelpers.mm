@@ -13,15 +13,18 @@
 #import <UserNotifications/UNNotificationContent.h>
 #import <UserNotifications/UNNotificationTrigger.h>
 #import <UserNotifications/UNUserNotificationCenter.h>
+#import <objc/message.h>
 #import <objc/runtime.h>
 
+#import <QMenu>
 #import <QtGlobal>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 namespace {
-std::function<bool()> s_shouldQuit;
+std::function<bool(bool)> s_shouldQuit;
+std::function<void()> s_nativeQuitRequestFinished;
 IMP s_originalShouldTerminate = nullptr;
 BOOL s_isSystemShuttingDown = NO;
 } // namespace
@@ -103,6 +106,21 @@ bool isOSXInterfaceStyleDark()
   return (style && [style isKindOfClass:[NSString class]] && NSOrderedSame == [style caseInsensitiveCompare:@"dark"]);
 }
 
+bool isOSXReduceTransparency()
+{
+  return [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldReduceTransparency];
+}
+
+bool isOSXReduceMotion()
+{
+  return [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldReduceMotion];
+}
+
+bool isOSXIncreaseContrast()
+{
+  return [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldIncreaseContrast];
+}
+
 void forceAppActive()
 {
   [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
@@ -117,23 +135,30 @@ void macOSNativeHide()
 
 static NSApplicationTerminateReply deskflow_applicationShouldTerminate(id self, SEL _cmd, NSApplication *sender)
 {
-  // Don't intercept a system shutdown (or logoff/restart)
-  if (!s_isSystemShuttingDown && s_shouldQuit && !s_shouldQuit()) {
-    return NSTerminateCancel;
-  }
+  const bool systemShuttingDown = s_isSystemShuttingDown;
+  // Mark system shutdown too, but let only an ordinary user Quit be canceled by the application.
+  const bool canceled =
+      s_shouldQuit && !s_shouldQuit(systemShuttingDown) && !systemShuttingDown;
 
-  // Execute Qt's applicationShouldTerminate
-  if (s_originalShouldTerminate) {
+  NSApplicationTerminateReply reply = NSTerminateCancel;
+  if (!canceled && s_originalShouldTerminate) {
     using ShouldTerminateFn = NSApplicationTerminateReply (*)(id, SEL, NSApplication *);
-    return reinterpret_cast<ShouldTerminateFn>(s_originalShouldTerminate)(self, _cmd, sender);
+    reply = reinterpret_cast<ShouldTerminateFn>(s_originalShouldTerminate)(self, _cmd, sender);
+  } else if (!canceled) {
+    reply = NSTerminateNow;
   }
+  if (s_nativeQuitRequestFinished)
+    s_nativeQuitRequestFinished();
 
-  return NSTerminateNow;
+  return reply;
 }
 
-void installQuitHandler(std::function<bool()> shouldQuit)
+void installQuitHandler(
+    std::function<bool(bool)> shouldQuit, std::function<void()> nativeQuitRequestFinished
+)
 {
   s_shouldQuit = std::move(shouldQuit);
+  s_nativeQuitRequestFinished = std::move(nativeQuitRequestFinished);
 
   Class cls = [[NSApp delegate] class];
   SEL selector = @selector(applicationShouldTerminate:);
@@ -154,4 +179,21 @@ void installQuitHandler(std::function<bool()> shouldQuit)
                                                                 Q_UNUSED(note)
                                                                 s_isSystemShuttingDown = YES;
                                                               }];
+}
+
+void showOSXMenuImages(QMenu *menu)
+{
+  if (menu == nullptr)
+    return;
+  NSMenu *nsMenu = menu->toNSMenu();
+  if (nsMenu == nil)
+    return;
+
+  // NSMenuItem.preferredImageVisibility is new in macOS 27: it is asked for by name, so that a build with an older SDK
+  // compiles, and so that the OS that does not have it is left alone. 1 is NSMenuItemImageVisibilityVisible.
+  const SEL setter = NSSelectorFromString(@"setPreferredImageVisibility:");
+  for (NSMenuItem *item in nsMenu.itemArray) {
+    if ([item respondsToSelector:setter])
+      reinterpret_cast<void (*)(id, SEL, NSInteger)>(objc_msgSend)(item, setter, 1);
+  }
 }

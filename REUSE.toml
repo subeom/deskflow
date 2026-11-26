@@ -58,6 +58,21 @@ path = "src/apps/res/icons/deskflow-**/index.theme"
 SPDX-FileCopyrightText = "Chris Rizzitello <sithlord48@gmail.com>"
 SPDX-License-Identifier = "LGPL-2.1-only"
 
+# Phosphor Icons (@phosphor-icons/core 2.1.1), the subset of the icons of the new look. MIT: the copyright notice
+# and the licence text are kept in the LICENSE file of the folder
+[[annotations]]
+path = [
+   "src/lib/gui/style/icons/phosphor/**/*.svg"
+ , "src/lib/gui/style/icons/phosphor/LICENSE"
+]
+SPDX-FileCopyrightText = "2023 Phosphor Icons"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "src/lib/gui/style/phosphor.qrc"
+SPDX-FileCopyrightText = "Deskflow Developers"
+SPDX-License-Identifier = "GPL-2.0-only"
+
 [[annotations]]
 path = [
    "src/lib/gui/MainWindow.ui"

@@ -1,0 +1,40 @@
+/*
+ * Deskflow -- mouse and keyboard sharing utility
+ * SPDX-FileCopyrightText: (C) 2026 Deskflow Developers
+ * SPDX-License-Identifier: GPL-2.0-only WITH LicenseRef-OpenSSL-Exception
+ */
+
+#pragma once
+
+#include <QTest>
+
+class UpdateInstallerTests : public QObject
+{
+  Q_OBJECT
+private Q_SLOTS:
+  void launch_requiresExplicitConfirmationAndHelperReady();
+  void launch_refusesPackageManagedSymlinkAndWrongExecutable();
+  void launch_bindsManifestReceiptPidAndProcessStartIdentity();
+  void launch_helperSelfClaimsPidTokenAndStartIdentity();
+  void apply_waitsForParentExitAndShutdownReceipt();
+  void apply_reverifiesCopiesAndAtomicallySwaps();
+  void apply_removesQuarantineOnlyAfterCandidateVerification();
+  void apply_rollsBackForRenameLaunchAndHandshakeFailure();
+  void apply_keepsCandidateWhenFinalReceiptCannotBePublished();
+  void apply_keepsOldBackupWhenRollbackRelaunchFails();
+  void apply_relaunchesOldForEveryPostParentExitFailure();
+  void apply_doesNotRelaunchOldBeforeParentExit();
+  void apply_shutdownFailureWithExitedParentRelaunchesOld();
+  void apply_shutdownFailureWithReusedPidRelaunchesOld();
+  void apply_processExitPidReuseContinuesSafely();
+  void apply_missingReceiptWithExitedParentRelaunchesOld();
+  void apply_revalidatesBundleParentAfterParentExit();
+  void apply_rechecksParentPermissionsImmediatelyBeforeRename();
+  void pathPolicy_acceptsOnlyOwnedBundleAndSafeParentPermissions();
+  void packagePolicy_usesCanonicalExecutablePathOnly();
+  void aclPolicy_requiresSuccessfulEmptyAclRead();
+  void apply_rejectsCandidateIdentityChangeBeforeAndAfterRename();
+  void apply_rejectsIdentityMutationDuringFinalVerification();
+  void apply_rejectsMismatchedPidAndReceipt();
+  void handshake_acceptsOnlyMatchingPidTokenAndVersion();
+};

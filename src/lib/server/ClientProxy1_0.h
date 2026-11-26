@@ -12,6 +12,9 @@
 #include "deskflow/ProtocolTypes.h"
 #include "server/ClientProxy.h"
 
+#include <chrono>
+#include <string>
+
 class Event;
 class EventQueueTimer;
 class IEventQueue;
@@ -58,6 +61,8 @@ public:
 protected:
   virtual bool parseHandshakeMessage(const uint8_t *code);
   virtual bool parseMessage(const uint8_t *code);
+  virtual bool isHandshakeCompleteReady() const;
+  void maybeCompleteHandshake();
 
   virtual void resetHeartbeatRate();
   virtual void setHeartbeatRate(double rate, double alarm);
@@ -65,6 +70,27 @@ protected:
   virtual void addHeartbeatTimer();
   virtual void removeHeartbeatTimer();
   virtual bool recvClipboard();
+
+  //! The clipboard transfers in flight, for the log when the client stops responding
+  virtual std::string describeClipboardActivity() const;
+
+  //! The name of the client, as it is written in the lines of the log that a program reads
+  std::string loggableName() const;
+
+  //! Tells the Server that the client took clipboard \p id
+  virtual void notifyClipboardGrabbed(ClipboardID id, uint32_t sequence);
+
+  //! How many bytes of the message that is being parsed come after its code
+  /*!
+  The stream of a client is made of packets, and the size of a packet is the one thing that says where a message ends:
+  a message that is shorter or longer than its format says must not take the bytes of the next one. It is the size of
+  the packet that holds the message, less its code, as it was before the code was read; a stream that is not made of
+  packets says its whole buffer.
+  */
+  uint32_t bytesAfterCode() const
+  {
+    return m_packetBytes > 4 ? m_packetBytes - 4 : 0;
+  }
 
 private:
   void disconnect();
@@ -100,4 +126,8 @@ private:
   EventQueueTimer *m_heartbeatTimer = nullptr;
   MessageParser m_parser = &ClientProxy1_0::parseHandshakeMessage;
   IEventQueue *m_events;
+  bool m_handshakeInfoReceived = false;
+  bool m_handshakeComplete = false;
+  uint32_t m_packetBytes = 0;
+  std::chrono::steady_clock::time_point m_lastData = std::chrono::steady_clock::now();
 };

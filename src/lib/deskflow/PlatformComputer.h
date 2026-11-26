@@ -53,8 +53,10 @@ public:
   void fakeKeyDown(KeyID id, KeyModifierMask mask, KeyButton button, const std::string &) override;
   bool fakeKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyButton button, const std::string &lang) override;
   bool fakeKeyUp(KeyButton button) override;
+  bool fakeSemanticMediaKey(KeyID id) override;
   void fakeAllKeysUp() override;
   bool fakeCtrlAltDel() override;
+  bool canSynthesizeKey(KeyID id) const override;
   bool isKeyDown(KeyButton) const override;
   KeyModifierMask getActiveModifiers() const override;
   KeyModifierMask pollActiveModifiers() const override;

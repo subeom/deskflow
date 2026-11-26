@@ -22,24 +22,30 @@
 #include "deskflow/Clipboard.h"
 #include "deskflow/DisplayInvalidException.h"
 #include "deskflow/KeyMap.h"
+#include "deskflow/ipc/CoreIpc.h"
+#include "deskflow/ipc/InputIndicatorIpc.h"
 #include "mt/CondVar.h"
 #include "mt/Lock.h"
 #include "mt/Mutex.h"
 #include "mt/Thread.h"
 #include "platform/OSXClipboard.h"
+#include "platform/OSXDisplays.h"
 #include "platform/OSXEventQueueBuffer.h"
 #include "platform/OSXKeyState.h"
 #include "platform/OSXMediaKeySupport.h"
 #include "platform/OSXPasteboardPeeker.h"
+#include "platform/OSXPointerHoldSystem.h"
 #include "platform/OSXScreenSaver.h"
 
 #include <AppKit/NSEvent.h>
 #include <AvailabilityMacros.h>
+#include <algorithm>
 #include <IOKit/hidsystem/event_status_driver.h>
 #include <dispatch/dispatch.h>
 #include <libproc.h>
 #include <mach-o/dyld.h>
 #include <math.h>
+#include <QCoreApplication>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -128,6 +134,21 @@ OSXComputer::OSXComputer(IEventQueue *events, bool isPrimary, bool enableLangSyn
       m_powerManager.disableSleep();
     }
 
+    // only a server has a pointer to hold while it is on a client, and only when the setting is turned on (it is off by
+    // default): when pointerHoldWanted() says no, none of the three objects below is made, and everything that
+    // OSXComputer does for the hold is behind the absence of m_pointerHold
+    if (deskflow::platform::pointerHoldWanted(m_isPrimary, Settings::value(Settings::Core::MacHoldPointer).toBool())) {
+      deskflow::platform::OSXPointerHoldHooks hooks;
+      hooks.tapPort = [this] { return m_eventTapPort; };
+      hooks.tapRunLoop = [this] { return retainTapRunLoop(); };
+      hooks.hideAgain = [this] { hideCursorAgain(); };
+      m_pointerHoldSystem = std::make_unique<deskflow::platform::OSXPointerHoldSystem>(std::move(hooks));
+      m_pointerHold = std::make_unique<deskflow::platform::PointerHoldController>(*m_pointerHoldSystem);
+      if (NSString *bundleId = [[NSBundle mainBundle] bundleIdentifier]) {
+        m_pointerHold->setOwnBundleId([bundleId UTF8String]);
+      }
+    }
+
     // only needed when running as a server.
     if (m_isPrimary) {
       // we can't pass options to show the dialog, this must be done by the gui.
@@ -182,10 +203,15 @@ OSXComputer::OSXComputer(IEventQueue *events, bool isPrimary, bool enableLangSyn
 
   // install the platform event queue
   m_events->adoptBuffer(new OSXEventQueueBuffer(m_events));
+  updateInputIndicatorLocalState();
 }
 
 OSXComputer::~OSXComputer()
 {
+  // the callback of the displays posts to the hold of the pointer (on the thread that the system chooses): it goes
+  // first, before anything that it uses is taken down
+  CGDisplayRemoveReconfigurationCallback(displayReconfigurationCallback, this);
+
   disable();
 
   m_events->adoptBuffer(nullptr);
@@ -214,8 +240,6 @@ OSXComputer::~OSXComputer()
 
   RemoveEventHandler(m_switchEventHandlerRef);
 
-  CGDisplayRemoveReconfigurationCallback(displayReconfigurationCallback, this);
-
   delete m_keyState;
   delete m_screensaver;
 
@@ -230,6 +254,8 @@ void *OSXComputer::getEventTarget() const
 
 bool OSXComputer::getClipboard(ClipboardID, IClipboard *dst) const
 {
+  // lets the pasteboard skip an image that is too large to be shared instead of converting it first
+  m_pasteboard.setReadLimit(dst->sizeLimit());
   Clipboard::copy(dst, &m_pasteboard);
   return true;
 }
@@ -274,6 +300,11 @@ void OSXComputer::warpCursor(int32_t x, int32_t y)
     });
     CFRunLoopWakeUp(m_eventTapRunLoop);
     return;
+  }
+
+  // the server moves the pointer on purpose: that is the place where the hold parks it (nothing when it is not parked)
+  if (m_pointerHold) {
+    m_pointerHold->repark({static_cast<double>(x), static_cast<double>(y)});
   }
 
   // move cursor without generating events
@@ -651,9 +682,14 @@ void OSXComputer::showCursor()
 
   CFRelease(propertyString);
 
-  CGError error = CGDisplayShowCursor(m_displayID);
-  if (error != kCGErrorSuccess) {
-    LOG_ERR("failed to show cursor, error=%d", error);
+  // one show for each hide that was made and not undone (at least one, as it always was): the hide count must be zero
+  const int hides = std::max(1, m_hideDepth.exchange(0));
+  for (int i = 0; i < hides; ++i) {
+    CGError error = CGDisplayShowCursor(m_displayID);
+    if (error != kCGErrorSuccess) {
+      LOG_ERR("failed to show cursor, error=%d", error);
+      break;
+    }
   }
 
   // appears to fix "mouse randomly not showing" bug
@@ -677,6 +713,8 @@ void OSXComputer::hideCursor()
   CGError error = CGDisplayHideCursor(m_displayID);
   if (error != kCGErrorSuccess) {
     LOG_ERR("failed to hide cursor, error=%d", error);
+  } else if (m_hideDepth < 16) {
+    ++m_hideDepth;
   }
 
   // appears to fix "mouse randomly not hiding" bug
@@ -684,6 +722,26 @@ void OSXComputer::hideCursor()
 
   logCursorVisibility();
 
+  m_cursorHidden = true;
+}
+
+void OSXComputer::hideCursorAgain()
+{
+  CFStringRef propertyString = CFStringCreateWithCString(nullptr, "SetsCursorInBackground", kCFStringEncodingMacRoman);
+
+  CGSSetConnectionProperty(_CGSDefaultConnection(), _CGSDefaultConnection(), propertyString, kCFBooleanTrue);
+
+  CFRelease(propertyString);
+
+  // the cursor is shown, so nothing of ours hides it any more (the system dropped it): one hide puts it back, and the
+  // hide count is one again.  The association is not touched here: the pointer is held by the caller
+  m_hideDepth = 0;
+  CGError error = CGDisplayHideCursor(m_displayID);
+  if (error != kCGErrorSuccess) {
+    LOG_ERR("failed to hide cursor again, error=%d", error);
+  } else {
+    m_hideDepth = 1;
+  }
   m_cursorHidden = true;
 }
 
@@ -730,24 +788,56 @@ void OSXComputer::enable()
       auto sem = dispatch_semaphore_create(0);
       m_eventTapThread = std::thread([this, sem]() {
         m_eventTapRunLoop = CFRunLoopGetCurrent();
+        publishTapRunLoop(m_eventTapRunLoop);
         CFRunLoopAddSource(m_eventTapRunLoop, m_eventTapRLSR, kCFRunLoopDefaultMode);
         dispatch_semaphore_signal(sem);
         CFRunLoopRun();
+        unpublishTapRunLoop();
         CFRunLoopRemoveSource(CFRunLoopGetCurrent(), m_eventTapRLSR, kCFRunLoopDefaultMode);
         m_eventTapRunLoop = nullptr;
       });
       dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
       dispatch_release(sem);
+      // the pointer may be given back by the system at any time while it is on a client: look at it when that may
+      // happen.  Whatever goes wrong here, the pointer is only not held: the core must go on
+      if (m_pointerHold) {
+        try {
+          // the old source goes only after the controller let go of it
+          m_pointerHold->detach();
+          m_pointerHoldNotifications.reset();
+          m_pointerHoldNotifications = std::make_unique<deskflow::platform::OSXPointerHoldNotifications>();
+          m_pointerHold->attach(*m_pointerHoldNotifications);
+        } catch (const std::exception &e) {
+          LOG_WARN("the pointer hold does not listen to the notifications of the system: %s", e.what());
+        } catch (...) {
+          LOG_WARN("the pointer hold does not listen to the notifications of the system");
+        }
+      }
     } else {
       LOG_ERR("failed to create a CFRunLoopSourceRef for the quartz event tap");
     }
   } else {
     LOG_ERR("failed to create quartz event tap");
   }
+
+  updateInputIndicatorLocalState();
 }
 
 void OSXComputer::disable()
 {
+  deskflow::input::setInputIndicatorLocal(false);
+  if (deskflow::input::isInputIndicatorSubscribed()) {
+    ipcSendInputIndicatorToClient(
+        QLatin1String(deskflow::input::kInputIndicatorLocalCommand),
+        deskflow::input::encodeInputIndicatorBoolean(false)
+    );
+  }
+  // stop looking at the pointer before the cursor is shown again, so that nothing hides it again behind showCursor()
+  if (m_pointerHold) {
+    m_pointerHold->detach();
+    m_pointerHold->disarm();
+  }
+
   showCursor();
 
   // FIXME -- stop watching jump zones, stop capturing input
@@ -758,6 +848,7 @@ void OSXComputer::disable()
   if (m_eventTapThread.joinable()) {
     m_eventTapThread.join();
   }
+  unpublishTapRunLoop();
 
   if (m_eventTapRLSR) {
     CFRelease(m_eventTapRLSR);
@@ -770,6 +861,7 @@ void OSXComputer::disable()
     CFRelease(m_eventTapPort);
     m_eventTapPort = nullptr;
   }
+  m_pointerHoldNotifications.reset();
   // FIXME -- allow system to enter power saving mode
 
   if (m_clipboardTimer != nullptr) {
@@ -790,6 +882,11 @@ void OSXComputer::disable()
 void OSXComputer::enter()
 {
   m_isOnComputer = true;
+  updateInputIndicatorLocalState();
+  // the pointer is on this Mac again: it is not held any more (before the cursor is shown, so that nothing hides it)
+  if (m_pointerHold) {
+    m_pointerHold->disarm();
+  }
   showCursor();
 
   if (m_isPrimary) {
@@ -831,6 +928,13 @@ void OSXComputer::leave()
 
   // now off computer
   m_isOnComputer = false;
+  updateInputIndicatorLocalState();
+
+  // park the pointer where it is: the capture above belongs to the foreground application and the core is never in the
+  // foreground, so it is looked at from now on, and held again when the system takes it back
+  if (m_isPrimary && m_pointerHold) {
+    m_pointerHold->arm();
+  }
 }
 
 bool OSXComputer::setClipboard(ClipboardID, const IClipboard *src)
@@ -1047,11 +1151,32 @@ bool OSXComputer::onMouseButton(bool pressed, uint16_t macButton)
   return true;
 }
 
-bool OSXComputer::onMouseWheel(int32_t xDelta, int32_t yDelta) const
+bool OSXComputer::onMouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource source) const
 {
   LOG_VERBOSE("event: button wheel delta=%+d,%+d", xDelta, yDelta);
-  sendEvent(EventTypes::PrimaryComputerWheel, WheelInfo::alloc(xDelta, yDelta));
+  sendEvent(EventTypes::PrimaryComputerWheel, WheelInfo::alloc(xDelta, yDelta, source));
   return true;
+}
+
+ScrollSource OSXComputer::classifyScrollEvent(CGEventRef event)
+{
+  const auto classification = m_scrollSource.update(event);
+  if (classification.changed) {
+    const char *name = "unknown";
+    if (classification.source == ScrollSource::Mouse) {
+      name = "mouse";
+    } else if (classification.source == ScrollSource::Trackpad) {
+      name = "trackpad";
+    }
+    LOG_DEBUG(
+        "scroll source changed to %s (scrollPhase=%lld momentumPhase=%lld continuous=%lld sourcePid=%lld)", name,
+        static_cast<long long>(classification.fields.scrollPhase),
+        static_cast<long long>(classification.fields.momentumPhase),
+        static_cast<long long>(classification.fields.continuous),
+        static_cast<long long>(classification.fields.sourcePid)
+    );
+  }
+  return classification.source;
 }
 
 void OSXComputer::displayReconfigurationCallback(
@@ -1074,6 +1199,7 @@ void OSXComputer::displayReconfigurationCallback(
     if (!computer->updateComputerShape(displayID, flags)) {
       LOG_ERR("failed to update computer shape during display reconfiguration");
     }
+    computer->notifyPointerHold(deskflow::platform::PointerHoldTrigger::DisplayReconfigured);
   }
 }
 
@@ -1303,6 +1429,16 @@ IKeyState *OSXComputer::getKeyState() const
   return m_keyState;
 }
 
+std::vector<deskflow::server::MonitorRect> OSXComputer::getMonitors() const
+{
+  return m_monitors;
+}
+
+std::vector<deskflow::monitors::MonitorInfo> OSXComputer::getMonitorInfo() const
+{
+  return m_monitorInfo;
+}
+
 bool OSXComputer::updateComputerShape(const CGDirectDisplayID, const CGDisplayChangeSummaryFlags flags)
 {
   return updateComputerShape();
@@ -1351,6 +1487,13 @@ bool OSXComputer::updateComputerShape()
   m_yCenter = (rect.origin.y + rect.size.height) / 2;
 
   delete[] displays;
+  // the displays, for the server that maps the pointer around the holes of its own screen
+  m_monitorInfo = deskflow::platform::osxActiveDisplayInfo();
+  m_monitors.clear();
+  for (const auto &display : m_monitorInfo) {
+    m_monitors.push_back(display.rect);
+  }
+
   // We want to notify the peer computer whether we are primary computer or not
   sendEvent(EventTypes::ComputerShapeChanged);
 
@@ -1520,11 +1663,25 @@ bool OSXComputer::checkAXPermissions()
   if (AXIsProcessTrusted()) {
     return true;
   }
+
   LOG_CRIT("process is not trusted anymore, quitting");
   disable();
   App &app = App::instance();
   app.getEvents()->addEvent(Event(EventTypes::Quit, nullptr, new ExitEventData(s_exitFailed)));
   return false;
+}
+
+void OSXComputer::updateInputIndicatorLocalState()
+{
+  const bool local = m_isPrimary && m_isOnComputer && m_eventTapPort != nullptr && m_eventTapRLSR != nullptr &&
+                     CGEventTapIsEnabled(m_eventTapPort);
+  deskflow::input::setInputIndicatorLocal(local);
+  if (deskflow::input::isInputIndicatorSubscribed()) {
+    ipcSendInputIndicatorToClient(
+        QLatin1String(deskflow::input::kInputIndicatorLocalCommand),
+        deskflow::input::encodeInputIndicatorBoolean(local)
+    );
+  }
 }
 
 #pragma mark -
@@ -1696,11 +1853,14 @@ CGEventRef OSXComputer::handleCGInputEvent(CGEventTapProxy proxy, CGEventType ty
     // off-computer the cursor is frozen (see leave()), so fall through to consume
     // the move below instead of returning (leaking) it to local apps.
     computer->onMouseMove(event);
+    // the deltas are on their way to the client; now see that the pointer of this Mac did not move with them
+    computer->holdPointerOnEvent(event);
     break;
   case kCGEventScrollWheel:
     computer->onMouseWheel(
         computer->mapScrollWheelToDeskflow(CGEventGetIntegerValueField(event, kCGScrollWheelEventDeltaAxis2)),
-        computer->mapScrollWheelToDeskflow(CGEventGetIntegerValueField(event, kCGScrollWheelEventDeltaAxis1))
+        computer->mapScrollWheelToDeskflow(CGEventGetIntegerValueField(event, kCGScrollWheelEventDeltaAxis1)),
+        computer->classifyScrollEvent(event)
     );
     break;
   case kCGEventKeyDown:
@@ -1713,10 +1873,14 @@ CGEventRef OSXComputer::handleCGInputEvent(CGEventTapProxy proxy, CGEventType ty
     if (computer->checkAXPermissions()) {
       CGEventTapEnable(computer->m_eventTapPort, true);
       LOG_INFO("quartz event tap was disabled by timeout, re-enabling");
+      computer->updateInputIndicatorLocalState();
     }
+    computer->notifyPointerHold(deskflow::platform::PointerHoldTrigger::TapDisabledByTimeout);
     break;
   case kCGEventTapDisabledByUserInput:
     LOG_ERR("quartz event tap was disabled by user input");
+    computer->updateInputIndicatorLocalState();
+    computer->notifyPointerHold(deskflow::platform::PointerHoldTrigger::TapDisabledByUser);
     break;
   case NX_NULLEVENT:
     break;
@@ -1796,6 +1960,61 @@ char *OSXComputer::CFStringRefToUTF8String(CFStringRef aString)
   }
 
   return buffer;
+}
+
+void OSXComputer::holdPointerOnEvent(CGEventRef event)
+{
+  if (m_isOnComputer || !m_pointerHold) {
+    return;
+  }
+  const CGPoint where = CGEventGetLocation(event);
+  m_pointerHold->onPointerEvent({where.x, where.y});
+}
+
+void OSXComputer::notifyPointerHold(deskflow::platform::PointerHoldTrigger trigger)
+{
+  if (m_pointerHold) {
+    m_pointerHold->onNotification(trigger);
+  }
+}
+
+CFRunLoopRef OSXComputer::retainTapRunLoop()
+{
+  std::scoped_lock lock(m_tapRunLoopMutex);
+  return m_publishedTapRunLoop != nullptr
+             ? static_cast<CFRunLoopRef>(const_cast<void *>(CFRetain(m_publishedTapRunLoop)))
+             : nullptr;
+}
+
+void OSXComputer::publishTapRunLoop(CFRunLoopRef runLoop)
+{
+  // only the hold hands work to the tap thread: nothing is published (or retained) when the hold is off
+  if (!m_pointerHold) {
+    return;
+  }
+  std::scoped_lock lock(m_tapRunLoopMutex);
+  if (m_publishedTapRunLoop == nullptr && runLoop != nullptr) {
+    m_publishedTapRunLoop = static_cast<CFRunLoopRef>(const_cast<void *>(CFRetain(runLoop)));
+  }
+}
+
+void OSXComputer::unpublishTapRunLoop()
+{
+  if (!m_pointerHold) {
+    return;
+  }
+  std::scoped_lock lock(m_tapRunLoopMutex);
+  if (m_publishedTapRunLoop != nullptr) {
+    CFRelease(m_publishedTapRunLoop);
+    m_publishedTapRunLoop = nullptr;
+  }
+}
+
+void OSXComputer::setRemoteComputerName(const std::string &name)
+{
+  if (m_pointerHold) {
+    m_pointerHold->setRemoteName(name);
+  }
 }
 
 void OSXComputer::waitForCarbonLoop() const

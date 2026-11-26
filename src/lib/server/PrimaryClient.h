@@ -8,6 +8,9 @@
 #pragma once
 
 #include "server/BaseClientProxy.h"
+#include "server/MonitorGeometry.h"
+
+#include <vector>
 
 namespace deskflow {
 class Computer;
@@ -108,6 +111,12 @@ public:
   void getShape(int32_t &x, int32_t &y, int32_t &width, int32_t &height) const override;
   void getCursorPos(int32_t &x, int32_t &y) const override;
 
+  //! The monitors of the screen of the server itself (experimental)
+  /*!
+  Empty when the platform does not tell, which means that the screen is the rectangle of its shape.
+  */
+  virtual std::vector<deskflow::server::MonitorRect> getMonitors() const;
+
   // IClient overrides
   void enter(int32_t xAbs, int32_t yAbs, uint32_t seqNum, KeyModifierMask mask, bool forScreensaver) override;
   bool leave() override;
@@ -129,6 +138,9 @@ public:
   void fileChunkSending(uint8_t mark, char *data, size_t dataSize) override;
   std::string getSecureInputApp() const override;
   void secureInputNotification(const std::string &app) const override;
+
+  //! Name the computer that has the pointer (empty when it is on this one); only the macOS server reads it
+  void setRemoteComputerName(const std::string &name);
 
   deskflow::IStream *getStream() const override
   {

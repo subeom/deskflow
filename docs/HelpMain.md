@@ -6,8 +6,24 @@ Welcome to the Deskflow Help!
 
 ## User Guides
 * [Configuration] - Configuration files
+* [Connecting across networks] - When two computers cannot reach each other: tests, causes, options, a request for IT
 * [Raising Issues] - What to do if you have found an issue.
 * [Security Policy] - Our policy around security related topics
+
+## Updates
+
+Direct macOS installations check the latest stable release of the `subeom/deskflow` fork. Deskflow downloads,
+verifies, and stages the exact CPU-architecture DMG, then waits for the `Install and restart` confirmation.
+It does not install an update in the background.
+
+Homebrew and other package-managed macOS installations remain manual. Windows x64/ARM64 and Linux also show
+the exact stable release page but do not execute MSI or package files. Open the
+[fork stable releases](https://github.com/subeom/deskflow/releases/latest) and use the package manager that owns
+the installation.
+
+Automatic staging accepts only manually published fork DMGs that carry the exact `SHA256SUMS.txt` and the pinned
+self-signed Deskflow certificate. Upstream/standard CI artifacts keep their `sums.txt` and notarized signing
+path; they are manual-only and are never mistaken for a fork auto-install candidate.
 
 ## Getting help online
 
@@ -19,6 +35,7 @@ Welcome to the Deskflow Help!
 * Start a [new discussion](https://github.com/deskflow/deskflow/discussions) on our GitHub project.
 
 [Configuration]:Configuration.md
+[Connecting across networks]:connecting-across-networks.md
 [Raising Issues]:Issues.md
 [Security Policy]:Security.md
 

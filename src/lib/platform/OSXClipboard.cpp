@@ -9,6 +9,7 @@
 
 #include "arch/ArchException.h"
 #include "base/Log.h"
+#include "deskflow/ClipboardImageSize.h"
 #include "platform/OSXClipboardBMPConverter.h"
 #include "platform/OSXClipboardHTMLConverter.h"
 #include "platform/OSXClipboardTextConverter.h"
@@ -52,6 +53,9 @@ bool OSXClipboard::empty()
   if (m_pboard == nullptr)
     return false;
 
+  // what is on it is what Deskflow writes from now on
+  m_cache.invalidate();
+
   OSStatus err = PasteboardClear(m_pboard);
   if (err != noErr) {
     LOG_WARN("failed to clear clipboard: error %i", err);
@@ -61,24 +65,79 @@ bool OSXClipboard::empty()
   return true;
 }
 
+void OSXClipboard::refresh() const
+{
+  if (m_pboard == nullptr)
+    return;
+
+  // the flags tell what changed since the last call, so a change that is seen here is kept for synchronize()
+  PasteboardSyncFlags flags = PasteboardSynchronize(m_pboard);
+  LOG_VERBOSE("flags: %x", flags);
+
+  if (flags & kPasteboardModified) {
+    m_cache.invalidate();
+    m_changePending = true;
+  }
+}
+
 bool OSXClipboard::synchronize()
 {
   if (m_pboard == nullptr)
     return false;
 
-  PasteboardSyncFlags flags = PasteboardSynchronize(m_pboard);
-  LOG_VERBOSE("flags: %x", flags);
+  refresh();
+  const bool changed = m_changePending;
+  m_changePending = false;
+  return changed;
+}
 
-  if (flags & kPasteboardModified) {
-    return true;
+void OSXClipboard::setReadLimit(size_t bytes) const
+{
+  m_readLimit = bytes;
+}
+
+size_t OSXClipboard::estimateBitmapBytes(PasteboardItemID item) const
+{
+  // The system makes the bitmap from the image on request, and that conversion is what is costly: the size of the
+  // image says what the bitmap will be, and an image is a few dozen KB to read.
+  struct Source
+  {
+    CFStringRef flavor;
+    std::optional<deskflow::clipboard::ImageSize> (*size)(std::string_view);
+  };
+  static const Source sources[] = {
+      {CFSTR("public.png"), deskflow::clipboard::pngImageSize},
+      {CFSTR("public.tiff"), deskflow::clipboard::tiffImageSize},
+  };
+
+  for (const auto &source : sources) {
+    PasteboardFlavorFlags flags;
+    if (PasteboardGetItemFlavorFlags(m_pboard, item, source.flavor, &flags) != noErr) {
+      continue;
+    }
+    CFDataRef data = nullptr;
+    if (PasteboardCopyItemFlavorData(m_pboard, item, source.flavor, &data) != noErr || data == nullptr) {
+      continue;
+    }
+    const auto size = source.size(
+        std::string_view(
+            reinterpret_cast<const char *>(CFDataGetBytePtr(data)), static_cast<size_t>(CFDataGetLength(data))
+        )
+    );
+    CFRelease(data);
+    if (size) {
+      return deskflow::clipboard::bitmapLowerBound(*size);
+    }
   }
-  return false;
+  return 0;
 }
 
 void OSXClipboard::add(Format format, const std::string &data)
 {
   if (m_pboard == nullptr)
     return;
+
+  m_cache.invalidate();
 
   LOG_DEBUG("add %d bytes to clipboard format: %d", data.size(), format);
   if (format == IClipboard::Format::Text) {
@@ -165,6 +224,13 @@ std::string OSXClipboard::get(Format format) const
   if (m_pboard == nullptr)
     return result;
 
+  // the server reads the clipboard again at every switch of computers, and nothing has changed since the last read
+  refresh();
+  if (const auto *cached = m_cache.find(static_cast<int>(format)); cached != nullptr) {
+    LOG_DEBUG("clipboard format %d from the cache, %zu bytes", static_cast<int>(format), cached->size());
+    return *cached;
+  }
+
   PasteboardGetItemIdentifier(m_pboard, (CFIndex)1, &item);
 
   // find the converter for the first clipboard format we can handle
@@ -187,6 +253,17 @@ std::string OSXClipboard::get(Format format) const
     return result;
   }
 
+  // An image that cannot be shared is not converted: the conversion of a screenshot makes a bitmap of many MB, and
+  // the clipboard would be dropped for its size after it was read. What stands in for the image is as large as the
+  // limit, which with the 12 bytes the marshalled clipboard adds is over it, so it is dropped the same way and never
+  // sent.
+  constexpr size_t kLargestStandIn = 64 * 1024 * 1024;
+  if (format == IClipboard::Format::Bitmap && m_readLimit != 0 && m_readLimit <= kLargestStandIn &&
+      deskflow::clipboard::surelyOverLimit(estimateBitmapBytes(item), m_readLimit)) {
+    LOG_DEBUG("not reading the image of the clipboard, it is larger than the limit of %zu bytes", m_readLimit);
+    return std::string(m_readLimit, '\0');
+  }
+
   // get the clipboard data.
   CFDataRef buffer = nullptr;
   try {
@@ -207,7 +284,12 @@ std::string OSXClipboard::get(Format format) const
   if (buffer != nullptr)
     CFRelease(buffer);
 
-  return converter->toIClipboard(result);
+  result = converter->toIClipboard(result);
+  // a read that failed is tried again next time
+  if (!result.empty()) {
+    m_cache.store(static_cast<int>(format), result);
+  }
+  return result;
 }
 
 void OSXClipboard::clearConverters()

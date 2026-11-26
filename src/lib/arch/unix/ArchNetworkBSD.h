@@ -87,6 +87,7 @@ public:
   void throwErrorOnSocket(ArchSocket) override;
   bool setNoDelayOnSocket(ArchSocket, bool noDelay) override;
   void setKeepAliveOnSocket(ArchSocket, bool keepAlive) override;
+  void setUnsentLowWaterOnSocket(ArchSocket, uint32_t bytes) override;
   bool setReuseAddrOnSocket(ArchSocket, bool reuse) override;
   ArchNetAddress newAnyAddr(AddressFamily) override;
   ArchNetAddress copyAddr(ArchNetAddress) override;

@@ -63,6 +63,7 @@ public:
   bool fakeKeyUp(KeyButton button) override;
   void fakeAllKeysUp() override;
   bool fakeMediaKey(KeyID id) override;
+  bool canSynthesizeKey(KeyID id) const override;
 
   bool isKeyDown(KeyButton) const override;
   KeyModifierMask getActiveModifiers() const override;

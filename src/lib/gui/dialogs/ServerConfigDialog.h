@@ -14,8 +14,14 @@
 
 #include <QDialog>
 
+#include <functional>
+#include <memory>
+
+class ArrangementPanel;
 class SettingsDialogButtonBox;
 class QItemSelection;
+class QLabel;
+class QPushButton;
 
 namespace Ui {
 class ServerConfigDialog;
@@ -60,7 +66,17 @@ protected:
   void toggleWin32Foreground(bool enabled);
 
   void toggleClipboard(bool enabled);
+  void toggleClipboardTextOnly(bool enabled);
   void setClipboardLimit(int limit);
+
+  void toggleExperimentalMultiMonitor(bool enabled);
+
+  //! Use the arrangement of the computers (experimental) or the classic grid
+  void toggleUseArrangement(bool use);
+  void editArrangementComputer(const QString &name);
+  //! Draw the monitors of a computer with the mouse
+  void editArrangementMonitors(const QString &name);
+  void removeArrangementComputer(const QString &name);
 
   void toggleHeartbeat(bool enabled);
   void setHeartbeat(int rate);
@@ -85,6 +101,9 @@ protected:
   }
 
 private:
+  void updateArrangementMode();
+  void refreshArrangement();
+  void takeReports(const QString &computer);
   void save();
   void cancel();
   void loadFromConfig();
@@ -92,6 +111,7 @@ private:
   void refreshControls();
   void initConnections() const;
   void updateControls() const;
+  void updateClipboardControls() const;
   void restoreFromDefaults();
   void setServerConfig();
   bool isGeneralConfigModified() const;
@@ -104,6 +124,14 @@ private:
   ServerConfig &m_originalServerConfig;
   NetworkProtocol m_protocol;
   bool m_enableClipboard;
+  bool m_clipboardTextOnly = false;
+  bool m_experimentalMultiMonitor = false;
+  bool m_useArrangement = false;
+  bool m_rememberArrangements = false;
+  ArrangementPanel *m_arrangementPanel = nullptr;
+  QWidget *m_arrangementBanner = nullptr;
+  // told by the configuration of the main window when a computer says its screen or monitors again, while this is open
+  std::shared_ptr<std::function<void(const QString &)>> m_reportListener;
   bool m_enableHeartbeat;
   int m_heartbeatRate;
   int m_switchDelay;

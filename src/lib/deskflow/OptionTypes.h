@@ -26,6 +26,20 @@ using OptionValue = int32_t;
 // for now, options are just pairs of integers
 using OptionsList = std::vector<uint32_t>;
 
+//! What the F18 key does on a Windows destination
+enum class F18Action : uint8_t
+{
+  PassThrough = 0,
+  Hangul = 1
+};
+
+//! Which scroll events the cross-OS scroll inversion applies to
+enum class ScrollInvertScope : uint8_t
+{
+  All = 0,
+  MouseWheelOnly = 1
+};
+
 // macro for packing 4 character strings into 4 byte integers
 #define OPTION_CODE(_s)                                                                                                \
   (static_cast<uint32_t>(static_cast<unsigned char>(_s[0]) << 24) |                                                    \
@@ -44,6 +58,11 @@ static const OptionID kOptionModifierMapForAlt = OPTION_CODE("MMFA");
 static const OptionID kOptionModifierMapForAltGr = OPTION_CODE("MMFG");
 static const OptionID kOptionModifierMapForMeta = OPTION_CODE("MMFM");
 static const OptionID kOptionModifierMapForSuper = OPTION_CODE("MMFR");
+static const OptionID kOptionCrossOSF18Key = OPTION_CODE("HGF8");
+static const OptionID kOptionCrossOSInvertScrollX = OPTION_CODE("CXIX");
+static const OptionID kOptionCrossOSInvertScrollY = OPTION_CODE("CXIY");
+static const OptionID kOptionCrossOSInvertScope = OPTION_CODE("CXIS");
+static const OptionID kOptionCrossOSSemanticMedia = OPTION_CODE("CSMT");
 static const OptionID kOptionHeartbeat = OPTION_CODE("HART");
 static const OptionID kOptionComputerSwitchCorners = OPTION_CODE("SSCM");
 static const OptionID kOptionComputerSwitchCornerSize = OPTION_CODE("SSCS");

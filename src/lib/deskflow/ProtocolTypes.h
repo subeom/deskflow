@@ -45,7 +45,7 @@ static const int16_t kProtocolMajorVersion = 1;
  * @note When incrementing the minor version, the Deskflow application version should also increment
  * @since Protocol version 1.0
  */
-static const int16_t kProtocolMinorVersion = 8;
+static const int16_t kProtocolMinorVersion = 9;
 
 /**
  * @brief Default TCP port for Deskflow connections
@@ -290,6 +290,32 @@ extern const char *const kMsgHelloBack;
  * @since Protocol version 1.0
  */
 extern const char *const kMsgHelloBackArgs;
+
+/**
+ * @brief Source computer input platform and capability information.
+ *
+ * **Direction**: Primary/server -> Secondary/client
+ * **Format**: `"DIPC%1i%4i"`
+ * **Parameters**:
+ * - `$1`: InputPlatform (1 byte)
+ * - `$2`: Input capability mask (4 bytes)
+ *
+ * Sent only after protocol 1.9 has been negotiated.
+ */
+extern const char *const kMsgDInputCapabilities;
+
+/**
+ * @brief Destination computer input platform and capability information.
+ *
+ * **Direction**: Secondary/client -> Primary/server
+ * **Format**: `"CIPC%1i%4i"`
+ * **Parameters**:
+ * - `$1`: InputPlatform (1 byte)
+ * - `$2`: Input capability mask (4 bytes)
+ *
+ * Sent only in response to DIPC after protocol 1.9 has been negotiated.
+ */
+extern const char *const kMsgCInputCapabilities;
 
 /** @} */ // end of protocol_handshake group
 
@@ -991,6 +1017,52 @@ extern const char *const kMsgDClipboard;
  * @since Protocol version 1.0
  */
 extern const char *const kMsgDInfo;
+
+/**
+ * @brief Monitors of the client computer (experimental)
+ *
+ * **Message Code**: `"DMON"`
+ * **Direction**: Secondary → Primary
+ * **Format**: `"DMON%1i%2i%1i"` and then `$3` records of @ref kMsgDMonitorsRecord
+ * **Parameters**:
+ * - `$1`: Version of the records, 1 (1 byte)
+ * - `$2`: Generation, counts the reports of one connection from 1, wrapping at 65535 (2 bytes)
+ * - `$3`: Count of monitors, 0 to 255 on the wire, 1 to 16 when valid; 0 means "forget the last report" (1 byte)
+ *
+ * Each record of a monitor is 11 bytes: `x`, `y`, `w`, `h` (2 bytes each, signed, in the coordinates of the
+ * kMsgDInfo shape of the same computer), the display scale in percent (2 bytes, 0 when unknown) and flags (1 byte,
+ * bit 0 is the primary monitor, bit 1 says that the coordinates are logical units, the points of a Mac, and not
+ * physical pixels; the other bits are 0 and ignored).
+ *
+ * The message is as long as its packet, and is valid only when the packet is 4 + 11 x `$3` bytes after the code: a
+ * receiver reads exactly the bytes of the packet, also when the message is not valid or not wanted, and ignores one
+ * whose length is not the count's (a count of 255 with no record does not take the packets behind it). The packet
+ * is what keeps the stream: nothing else says where the message ends.
+ *
+ * **Example**:
+ *
+ * One monitor at (0,0), 1920x1080 at 150 %, which is the primary one
+ * ```
+ * "DMON\x01\x00\x01\x01\x00\x00\x00\x00\x07\x80\x04\x38\x00\x96\x01"
+ * ```
+ *
+ * **When to Send**: only to a server that has advertised the monitors capability bit (kLayoutCapabilityMonitors) in
+ * kMsgDInputCapabilities, and only when the client has acknowledged it in kMsgCInputCapabilities: a receiver that does
+ * not know a message code discards everything that is buffered after it. After kMsgCInputCapabilities, after every
+ * kMsgDInfo, and when the monitors change while the shape does not. Nothing is sent when the monitors are the same
+ * as in the last report.
+ *
+ * @see kMsgDInfo, kMsgDInputCapabilities, kMsgCInputCapabilities, docs/dev/monitor-reporting.md
+ * @since Protocol version 1.9 (a capability, not a new minor version)
+ */
+extern const char *const kMsgDMonitors;
+
+/**
+ * @brief One monitor of kMsgDMonitors
+ *
+ * **Format**: `"%2i%2i%2i%2i%2i%1i"`: x, y, width, height, scale in percent, flags.
+ */
+extern const char *const kMsgDMonitorsRecord;
 
 /**
  * @brief Set client options

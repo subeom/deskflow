@@ -22,6 +22,11 @@
 
 #include <cstring>
 
+using deskflow::clipboard::ClipboardTransferLog;
+using deskflow::clipboard::describeFormats;
+using deskflow::clipboard::TransferDirection;
+using Clock = ClipboardTransferLog::Clock;
+
 //
 // ServerProxy
 //
@@ -29,7 +34,8 @@
 ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue *events)
     : m_client(client),
       m_stream(stream),
-      m_events(events)
+      m_events(events),
+      m_sender(stream, events, this, "server")
 {
   assert(m_client != nullptr);
   assert(m_stream != nullptr);
@@ -42,9 +48,6 @@ ServerProxy::ServerProxy(Client *client, deskflow::IStream *stream, IEventQueue 
   m_events->addHandler(EventTypes::StreamInputReady, m_stream->getEventTarget(), [this](const auto &) {
     handleData();
   });
-  m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
-    ClipboardChunk::send(m_stream, e.getDataObject());
-  });
 
   // send heartbeat
   setKeepAliveRate(kKeepAliveRate);
@@ -54,11 +57,13 @@ ServerProxy::~ServerProxy()
 {
   setKeepAliveRate(-1.0);
   m_events->removeHandler(EventTypes::StreamInputReady, m_stream->getEventTarget());
-  m_events->removeHandler(EventTypes::ClipboardSending, this);
 }
 
-void ServerProxy::resetKeepAliveAlarm()
+void ServerProxy::resetKeepAliveAlarm(bool isKeepAlive)
 {
+  if (isKeepAlive) {
+    m_lastKeepAlive = Clock::now();
+  }
   if (m_keepAliveAlarmTimer != nullptr) {
     m_events->removeHandler(EventTypes::Timer, m_keepAliveAlarmTimer);
     m_events->deleteTimer(m_keepAliveAlarmTimer);
@@ -78,9 +83,15 @@ void ServerProxy::setKeepAliveRate(double rate)
 
 void ServerProxy::handleData()
 {
+  m_lastData = Clock::now();
+
   // handle messages until there are no more.  first read message code.
   uint8_t code[4];
   uint32_t n = m_stream->read(code, 4);
+  if (n != 0 && dataIsProofOfLife()) {
+    // a long inbound clipboard must not look like a dead server just because no keepalive got through it
+    resetKeepAliveAlarm(false);
+  }
   while (n != 0) {
     // verify we got an entire code
     if (n != 4) {
@@ -326,7 +337,17 @@ ServerProxy::ConnectionResult ServerProxy::parseMessage(const uint8_t *code)
 
 void ServerProxy::handleKeepAliveAlarm()
 {
-  LOG_INFO("server is dead");
+  const auto now = Clock::now();
+  const auto since = [&](Clock::time_point from) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(now - from);
+  };
+  LOG_INFO(
+      "%s", deskflow::clipboard::formatKeepAliveTimeout(
+                "server", since(m_lastKeepAlive), since(m_lastData),
+                deskflow::clipboard::joinActivity(m_transferLog.describeActive(now), m_sender.describeActive())
+            )
+                .c_str()
+  );
   requestDisconnect("server is not responding");
 }
 
@@ -357,17 +378,28 @@ void ServerProxy::onInfoChanged()
 
 bool ServerProxy::onGrabClipboard(ClipboardID id)
 {
+  // the server takes the clipboard as the selection too: it is told of one grab
+  if (!sendsClipboardId(id)) {
+    return true;
+  }
+
   LOG_VERBOSE("sending clipboard %d changed", id);
+  // the grab says the data of a running upload is stale, so it must not follow the grab
+  m_sender.cancel(id);
   ProtocolUtil::writef(m_stream, kMsgCClipboard, id, m_seqNum);
   return true;
 }
 
 void ServerProxy::onClipboardChanged(ClipboardID id, const IClipboard *clipboard)
 {
+  if (!sendsClipboardId(id)) {
+    return;
+  }
+
   std::string data = IClipboard::marshall(clipboard);
   LOG_DEBUG("sending clipboard %d seqnum=%d", id, m_seqNum);
 
-  StreamChunker::sendClipboard(data, data.size(), id, m_seqNum, m_events, this);
+  m_sender.send(id, m_seqNum, data, shouldPaceClipboard());
 }
 
 void ServerProxy::flushCompressedMouse()
@@ -541,8 +573,16 @@ void ServerProxy::setClipboard()
   if (r == TransferState::Started) {
     size_t size = ClipboardChunk::getExpectedSize(m_clipboardChunkState);
     LOG_DEBUG("receiving clipboard %d size=%zu", id, size);
+    m_transferLog.begin(TransferDirection::Received, id, "server", {}, size, 0, false, Clock::now());
+  } else if (r == TransferState::InProgress) {
+    m_transferLog.addChunk(TransferDirection::Received, id);
   } else if (r == TransferState::Finished) {
     LOG_DEBUG("received clipboard %d size=%zu", id, m_clipboardDataCached.size());
+    if (const auto line = m_transferLog.finish(
+            TransferDirection::Received, id, Clock::now(), describeFormats(m_clipboardDataCached)
+        )) {
+      LOG_INFO("%s", line->c_str());
+    }
 
     // forward
     Clipboard clipboard;
@@ -553,6 +593,7 @@ void ServerProxy::setClipboard()
 
     LOG_INFO("clipboard was updated");
   } else if (r == TransferState::Error) {
+    m_transferLog.cancel(TransferDirection::Received, id);
     requestDisconnect("invalid clipboard data from server");
   }
 }
@@ -570,6 +611,10 @@ void ServerProxy::grabClipboard()
     return;
   }
 
+  // the data of a transfer that is running is stale now
+  m_sender.cancel(id);
+  m_transferLog.cancel(TransferDirection::Received, id);
+
   // forward
   m_client->grabClipboard(id);
 }
@@ -577,6 +622,10 @@ void ServerProxy::grabClipboard()
 void ServerProxy::keyDown(uint16_t id, uint16_t mask, uint16_t button, const std::string &lang)
 {
   flushCompressedMouse();
+
+  if (handleSemanticMediaKey(static_cast<KeyID>(id))) {
+    return;
+  }
 
   KeyID id2 = translateKey(static_cast<KeyID>(id));
   KeyModifierMask mask2 = translateModifierMask(static_cast<KeyModifierMask>(mask));
@@ -589,6 +638,10 @@ void ServerProxy::keyDown(uint16_t id, uint16_t mask, uint16_t button, const std
 void ServerProxy::keyRepeat(uint16_t id, uint16_t mask, uint16_t count, uint16_t button, const std::string &lang)
 {
   flushCompressedMouse();
+
+  if (shouldSuppressKeyRepeat(static_cast<KeyID>(id), static_cast<KeyModifierMask>(mask))) {
+    return;
+  }
 
   KeyID id2 = translateKey(static_cast<KeyID>(id));
   KeyModifierMask mask2 = translateModifierMask(static_cast<KeyModifierMask>(mask));
@@ -722,7 +775,16 @@ void ServerProxy::mouseWheel()
   ProtocolUtil::readf(m_stream, kMsgDMouseWheel + 4, &xDelta, &yDelta);
   LOG_VERBOSE("recv mouse wheel %+d,%+d", xDelta, yDelta);
 
+  int32_t transformedX = xDelta;
+  int32_t transformedY = yDelta;
+  transformMouseWheel(transformedX, transformedY);
+
   // forward
+  deliverMouseWheel(transformedX, transformedY);
+}
+
+void ServerProxy::deliverMouseWheel(int32_t xDelta, int32_t yDelta)
+{
   m_client->mouseWheel(xDelta, yDelta);
 }
 
@@ -744,6 +806,7 @@ void ServerProxy::resetOptions()
 
   // forward
   m_client->resetOptions();
+  onOptionsChanged({});
 
   // reset keep alive
   setKeepAliveRate(kKeepAliveRate);
@@ -768,6 +831,7 @@ void ServerProxy::setOptions()
 
   // forward
   m_client->setOptions(options);
+  onOptionsChanged(options);
 
   // update modifier table
   for (uint32_t i = 0, n = (uint32_t)options.size(); i < n; i += 2) {
@@ -796,12 +860,18 @@ void ServerProxy::setOptions()
   }
 }
 
-void ServerProxy::queryInfo()
+ClientInfo ServerProxy::currentInfo() const
 {
   ClientInfo info;
   m_client->getShape(info.m_x, info.m_y, info.m_w, info.m_h);
   m_client->getCursorPos(info.m_mx, info.m_my);
-  sendInfo(info);
+  return info;
+}
+
+void ServerProxy::queryInfo()
+{
+  sendInfo(currentInfo());
+  onInfoSent();
 }
 
 void ServerProxy::infoAcknowledgment()

@@ -25,6 +25,7 @@ elseif(UNIX)
 endif()
 
 add_library(${lib_name} STATIC ${PLATFORM_CODE}
+  AbsolutePointer.h
   App.cpp
   App.h
   AppUtil.cpp
@@ -38,6 +39,19 @@ add_library(${lib_name} STATIC ${PLATFORM_CODE}
   Clipboard.h
   ClipboardChunk.cpp
   ClipboardChunk.h
+  ClipboardIdPolicy.h
+  ClipboardImageSize.cpp
+  ClipboardImageSize.h
+  ClipboardReadCache.cpp
+  ClipboardReadCache.h
+  ClipboardSender.cpp
+  ClipboardSender.h
+  ClipboardSharePolicy.cpp
+  ClipboardSharePolicy.h
+  ClipboardTransferLog.cpp
+  ClipboardTransferLog.h
+  CrossPlatformInputPolicy.cpp
+  CrossPlatformInputPolicy.h
   Computer.cpp
   Computer.h
   DeskflowException.cpp
@@ -63,7 +77,11 @@ add_library(${lib_name} STATIC ${PLATFORM_CODE}
   KeyMap.h
   KeyState.cpp
   KeyState.h
+  MonitorReport.cpp
+  MonitorReport.h
   MouseTypes.h
+  NativeMonitors.cpp
+  NativeMonitors.h
   OptionTypes.h
   PacketStreamFilter.cpp
   PacketStreamFilter.h
@@ -87,6 +105,8 @@ add_library(${lib_name} STATIC ${PLATFORM_CODE}
   ipc/CoreIpc.h
   ipc/CoreIpcServer.cpp
   ipc/CoreIpcServer.h
+  ipc/InputIndicatorIpc.cpp
+  ipc/InputIndicatorIpc.h
 )
 
 target_link_libraries(${lib_name}

@@ -10,7 +10,9 @@
 
 #include "deskflow/PlatformComputer.h"
 #include "platform/OSXClipboard.h"
+#include "platform/OSXPointerHold.h"
 #include "platform/OSXPowerManager.h"
+#include "platform/OSXScrollSource.h"
 
 #include <Carbon/Carbon.h>
 #include <IOKit/IOMessage.h>
@@ -19,9 +21,11 @@
 #include <mach/mach_interface.h>
 #include <mach/mach_port.h>
 
+#include <atomic>
 #include <bitset>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -41,6 +45,11 @@ class OSXScreenSaver;
 class IEventQueue;
 class Mutex;
 
+namespace deskflow::platform {
+class OSXPointerHoldSystem;
+class OSXPointerHoldNotifications;
+} // namespace deskflow::platform
+
 //! Implementation of IPlatformComputer for OS X
 class OSXComputer : public PlatformComputer
 {
@@ -59,6 +68,10 @@ public:
   bool getClipboard(ClipboardID id, IClipboard *) const override;
   void getShape(int32_t &x, int32_t &y, int32_t &width, int32_t &height) const override;
   void getCursorPos(int32_t &x, int32_t &y) const override;
+
+  //! The displays, in points: the same numbers as the shape is made of (experimental)
+  std::vector<deskflow::server::MonitorRect> getMonitors() const override;
+  std::vector<deskflow::monitors::MonitorInfo> getMonitorInfo() const override;
 
   // IPrimaryComputer overrides
   void reconfigure(uint32_t activeSides) override;
@@ -94,6 +107,7 @@ public:
   void setSequenceNumber(uint32_t) override;
   bool isPrimary() const override;
   std::string getSecureInputApp() const override;
+  void setRemoteComputerName(const std::string &name) override;
 
   void waitForCarbonLoop() const;
 
@@ -118,7 +132,11 @@ private:
   // event, false if it is a mouseup event.  macButton is the index
   // of the button pressed using the mac button mapping.
   bool onMouseButton(bool pressed, uint16_t macButton);
-  bool onMouseWheel(int32_t xDelta, int32_t yDelta) const;
+  bool onMouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource source = ScrollSource::Unknown) const;
+
+  // classify a scroll wheel event as mouse or trackpad.  logs the raw event fields at
+  // debug level, but only when the classification changes, never for every event.
+  ScrollSource classifyScrollEvent(CGEventRef event);
 
   void constructMouseButtonEventMap();
 
@@ -131,6 +149,17 @@ private:
   // Added here to allow the carbon cursor hack to be called.
   void showCursor();
   void hideCursor();
+  // the system gave the pointer back and shows the cursor: hide it again, with the hide count at one
+  void hideCursorAgain();
+
+  // while the pointer is on a client, the pointer of this Mac is held where it was parked (see OSXPointerHold.h)
+  void holdPointerOnEvent(CGEventRef event);
+  void notifyPointerHold(deskflow::platform::PointerHoldTrigger trigger);
+  // the run loop of the tap thread for a thread that is not the tap thread, retained (the caller releases it), or null
+  // when the tap thread does not run.  m_eventTapRunLoop is only for the thread that starts and stops the tap
+  CFRunLoopRef retainTapRunLoop();
+  void publishTapRunLoop(CFRunLoopRef runLoop);
+  void unpublishTapRunLoop();
 
   // map deskflow mouse button to mac buttons
   ButtonID mapDeskflowButtonToMac(uint16_t) const;
@@ -159,6 +188,7 @@ private:
   void handleConfirmSleep(const Event &event);
 
   bool checkAXPermissions();
+  void updateInputIndicatorLocalState();
 
   // global hotkey operating mode
   static bool isGlobalHotKeyOperatingModeAvailable();
@@ -221,8 +251,8 @@ private:
   // true if screen is being used as a primary screen, false otherwise
   bool m_isPrimary;
 
-  // true if mouse has entered the screen
-  bool m_isOnComputer;
+  // true if mouse has entered the screen (written by the core thread, read by the tap thread)
+  std::atomic<bool> m_isOnComputer;
 
   // the display
   CGDirectDisplayID m_displayID;
@@ -231,6 +261,9 @@ private:
   // screen shape stuff
   int32_t m_x, m_y;
   int32_t m_w, m_h;
+  // the displays that the shape is of, read at the same time
+  std::vector<deskflow::server::MonitorRect> m_monitors;
+  std::vector<deskflow::monitors::MonitorInfo> m_monitorInfo;
   int32_t m_xCenter, m_yCenter;
 
   // mouse state
@@ -239,6 +272,10 @@ private:
 
   // mouse event number (needed for macOS 27)
   uint32_t m_mouseEventNumber = 0;
+
+  // remembers the last scroll classification so only a change is logged;
+  // only touched from the event tap callback
+  OSXScrollSource m_scrollSource;
 
   /* FIXME: this data structure is explicitly marked mutable due
      to a need to track the state of buttons since the remote
@@ -250,7 +287,10 @@ private:
   using MouseButtonEventMapType = std::map<uint16_t, CGEventType>;
   std::vector<MouseButtonEventMapType> MouseButtonEventMap;
 
-  bool m_cursorHidden;
+  // written by the core thread (hideCursor, showCursor) and by the tap thread (hideCursorAgain), read by the tap
+  std::atomic<bool> m_cursorHidden;
+  // how many times the cursor was hidden and not shown again: showCursor() shows it that many times
+  std::atomic<int> m_hideDepth{0};
 
   // keyboard stuff
   OSXKeyState *m_keyState;
@@ -304,6 +344,10 @@ private:
   CFRunLoopSourceRef m_eventTapRLSR;
   std::thread m_eventTapThread;
   CFRunLoopRef m_eventTapRunLoop = nullptr;
+  // the same run loop, retained, for the threads that hand work to the tap thread (a notification of the system, a
+  // display reconfiguration): the tap thread can end at any moment, and a run loop that is not retained ends with it
+  std::mutex m_tapRunLoopMutex;
+  CFRunLoopRef m_publishedTapRunLoop = nullptr;
 
   // for double click coalescing.
   double m_lastClickTime;
@@ -320,6 +364,12 @@ private:
   CondVar<bool> *m_carbonLoopReady;
 
   OSXPowerManager m_powerManager;
+
+  // the hold of the pointer while it is on a client.  All three are null on a client computer and, unless
+  // core/macHoldPointer is turned on (it is off by default), on a server too: see pointerHoldWanted()
+  std::unique_ptr<deskflow::platform::OSXPointerHoldSystem> m_pointerHoldSystem;
+  std::unique_ptr<deskflow::platform::OSXPointerHoldNotifications> m_pointerHoldNotifications;
+  std::unique_ptr<deskflow::platform::PointerHoldController> m_pointerHold;
 
   class OSXComputerImpl *m_impl;
 };

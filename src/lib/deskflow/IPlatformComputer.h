@@ -13,7 +13,11 @@
 #include "deskflow/IKeyState.h"
 #include "deskflow/IPrimaryComputer.h"
 #include "deskflow/ISecondaryComputer.h"
+#include "deskflow/MonitorReport.h"
 #include "deskflow/OptionTypes.h"
+#include "server/MonitorGeometry.h"
+
+#include <vector>
 
 class IClipboard;
 
@@ -135,6 +139,16 @@ public:
   */
   virtual std::string getSecureInputApp() const = 0;
 
+  //! Name the computer that has the pointer while it is not on this one
+  /*!
+  Called by the server whenever the pointer goes to another computer (\p name is its name) and when it comes back (an
+  empty name).  Only the macOS server reads it, for one line of its log; every other platform does nothing.
+  */
+  virtual void setRemoteComputerName(const std::string &name)
+  {
+    (void)name;
+  }
+
   //@}
   //! @name accessors
   //@{
@@ -144,6 +158,32 @@ public:
   Return true iff this computer is a primary computer.
   */
   virtual bool isPrimary() const = 0;
+
+  //! Get the monitors of this computer (experimental)
+  /*!
+  The monitors that the desktop of this computer is made of, in the coordinates of \c getShape(). Empty when they are
+  not known, which is what every platform that does not tell says: the desktop is then the one rectangle of its shape,
+  as it always was. Read by the server for its own screen only; it never leaves the computer.
+  */
+  virtual std::vector<deskflow::server::MonitorRect> getMonitors() const
+  {
+    return {};
+  }
+
+  //! The monitors of this computer with what a client reports of them (experimental)
+  /*!
+  The same monitors as \c getMonitors(), in the same coordinates, and the display scale of each and which one is the
+  primary one. A platform that knows only the rectangles does not need to override it; empty means that this computer
+  cannot report its monitors, and then it does not, whatever the server says.
+  */
+  virtual std::vector<deskflow::monitors::MonitorInfo> getMonitorInfo() const
+  {
+    std::vector<deskflow::monitors::MonitorInfo> info;
+    for (const auto &rect : getMonitors()) {
+      info.push_back({rect, 0, false});
+    }
+    return info;
+  }
 
   //@}
   // IKeyState overrides

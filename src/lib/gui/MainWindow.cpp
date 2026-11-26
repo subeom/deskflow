@@ -15,10 +15,13 @@
 
 #include "dialogs/AboutDialog.h"
 #include "dialogs/ClientConfigDialog.h"
+#include "dialogs/ConnectionTestDialog.h"
 #include "dialogs/FingerprintDialog.h"
 #include "dialogs/HelpDialog.h"
+#include "dialogs/ServerAddressesDialog.h"
 #include "dialogs/ServerConfigDialog.h"
 #include "dialogs/SettingsDialog.h"
+#include "dialogs/TunnelTestDialog.h"
 
 #include "common/PlatformInfo.h"
 #include "common/Settings.h"
@@ -26,17 +29,57 @@
 #include "common/VersionInfo.h"
 #include "gui/Messages.h"
 #include "gui/TlsUtility.h"
+#include "gui/UpdateInstaller.h"
+#include "gui/UpdateRelease.h"
+#include "gui/UpdateShutdown.h"
+#include "gui/UpdateStatusModel.h"
+#include "gui/awdl/AwdlController.h"
+#include "gui/awdl/AwdlPlatform.h"
+#include "gui/awdl/AwdlSetup.h"
+#include "gui/chrome/ChromeGeometry.h"
+#include "gui/chrome/MenuMigration.h"
+#include "gui/chrome/WindowChrome.h"
+#include "gui/chrome/WindowHeader.h"
 #include "gui/core/CoreProcess.h"
+#ifdef Q_OS_MACOS
+#include "gui/input/MacInputIndicatorController.h"
+#endif
 #include "gui/ipc/DaemonIpcClient.h"
+#include "gui/layout/DisplayProvider.h"
+#include "gui/layout/LayoutMemoryService.h"
+#include "gui/settings/AwdlBanner.h"
+#include "gui/settings/RestartBanner.h"
+#include "gui/settings/SettingEffects.h"
+#include "gui/settings/SettingsPage.h"
+#include "gui/settings/SettingsPages.h"
+#include "gui/shell/ClientConnectionSection.h"
+#include "gui/shell/MainShell.h"
+#include "gui/shell/StatusModel.h"
+#include "gui/shell/TunnelChip.h"
+#include "gui/style/Appearance.h"
+#include "gui/style/Icons.h"
+#include "gui/style/TextSize.h"
+#include "gui/tray/TrayController.h"
+#include "gui/tray/TrayMenuModel.h"
+#include "gui/tray/TrayPolicy.h"
+#include "gui/tunnel/TunnelController.h"
+#include "gui/widgets/InlineHint.h"
+#include "gui/widgets/LayoutNoticeBar.h"
 #include "gui/widgets/LogDock.h"
+#include "gui/widgets/NavRail.h"
+#include "gui/widgets/SidebarShell.h"
+#include "gui/widgets/TunnelStatusWidget.h"
 #include "net/FingerprintDatabase.h"
 #include "widgets/StatusBar.h"
 
+#include <QBoxLayout>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QFileDialog>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QMenu>
@@ -44,18 +87,19 @@
 #include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkInterface>
+#include <QOperatingSystemVersion>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QScreen>
+#include <QSaveFile>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QStandardPaths>
+#include <QStackedLayout>
+#include <QVersionNumber>
 
 #include <memory>
-
-#if defined(Q_OS_MACOS)
-#include <ApplicationServices/ApplicationServices.h>
-#endif
 
 using namespace deskflow::gui;
 
@@ -67,6 +111,9 @@ MainWindow::MainWindow()
       m_daemonIpcClient{new ipc::DaemonIpcClient(this)},
       m_logDock{new LogDock(this)},
       m_statusBar{new StatusBar(this)},
+      m_updateStatus{new deskflow::gui::UpdateStatusModel(this)},
+      m_updateInstaller{deskflow::gui::createPlatformUpdateInstaller()},
+      m_updateShutdown{new deskflow::gui::UpdateShutdown(15'000, 10'000, this)},
       m_menuFile{new QMenu(this)},
       m_menuEdit{new QMenu(this)},
       m_menuView{new QMenu(this)},
@@ -135,6 +182,8 @@ MainWindow::MainWindow()
   updateText();
   connectSlots();
   setupTrayIcon();
+  setupTunnel();
+  setupAwdl();
   updateComputerName();
   setHelpFilePath();
 
@@ -157,16 +206,49 @@ MainWindow::MainWindow()
   }
 
   applyConfig();
+  setupLayoutMemory();
   m_statusBar->setSecurityIcon(TlsUtility::isEnabled());
+  if (deskflow::gui::style::isDeskflowStyleInstalled()) {
+    setupShell();
+    attachTunnelToShell();
+    attachAwdlToShell();
+    applyWindowChrome();
+  }
   restoreWindow();
 
 #ifdef Q_OS_MACOS
-  // Route native quits (Cmd+Q / Apple menu Quit / Dock "Quit") to the usual close-to-tray decision instead.
-  installQuitHandler([this] { return !maybeHideToTray(); });
+  m_inputIndicatorController = new deskflow::gui::input::MacInputIndicatorController(this);
+  connect(
+      m_inputIndicatorController, &deskflow::gui::input::MacInputIndicatorController::enabledChanged,
+      &m_coreProcess, &CoreProcess::setInputIndicatorEnabled
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::inputIndicatorLocalChanged, m_inputIndicatorController,
+      &deskflow::gui::input::MacInputIndicatorController::inputIndicatorLocalChanged
+  );
+  connect(
+      &m_coreProcess, &CoreProcess::inputIndicatorStateInvalidated, m_inputIndicatorController,
+      &deskflow::gui::input::MacInputIndicatorController::inputIndicatorStateInvalidated
+  );
+  m_coreProcess.setInputIndicatorEnabled(m_inputIndicatorController->isEnabled());
+
+  // Native Quit is an explicit termination, not a request to close the main window into the tray.
+  installQuitHandler(
+      [this](bool systemShuttingDown) {
+        return shouldQuitForNativeRequest(systemShuttingDown);
+      },
+      [this] { nativeQuitRequestFinished(); }
+  );
 #endif
 }
 MainWindow::~MainWindow()
 {
+  // the remembering of layouts works on the server configuration of this window: it goes first
+  if (m_layoutMemory != nullptr) {
+    delete m_layoutMemory;
+    m_layoutMemory = nullptr;
+  }
+
   // Stop network monitoring
   if (m_networkMonitor) {
     m_networkMonitor->stopMonitoring();
@@ -174,26 +256,72 @@ MainWindow::~MainWindow()
 
   m_guiDupeChecker->close();
   m_coreProcess.cleanup();
+  // Cloudflare Tunnel: the core is stopped first, the tunnel second
+  if (m_tunnelController != nullptr) {
+    m_tunnelController->shutdown();
+  }
+}
+
+const QString &MainWindow::windowGeometryKey() const
+{
+  // the window of the new look has a position and a size of its own (see Settings::Gui::ShellWindowGeometry)
+  return m_shell ? Settings::Gui::ShellWindowGeometry : Settings::Gui::WindowGeometry;
+}
+
+QSize MainWindow::firstShellSize(const QSize &wanted, const QRect &workArea) const
+{
+  // the window of the system has its frame around the size that is asked for
+  const QSize frame = m_frame.clientSide() ? QSize() : QSize(16, 40);
+  return deskflow::gui::chrome::firstWindowSize(
+      wanted, minimumSize().expandedTo(minimumSizeHint()), workArea.size(), frame
+  );
 }
 
 void MainWindow::restoreWindow()
 {
-  auto windowGeometry = Settings::value(Settings::Gui::WindowGeometry).toRect();
-  const auto totalGeometry = QGuiApplication::primaryScreen()->availableGeometry();
+  auto windowGeometry = Settings::value(windowGeometryKey()).toRect();
+  const auto totalGeometry = s_workArea ? s_workArea() : QGuiApplication::primaryScreen()->availableGeometry();
   if (!windowGeometry.isValid()) {
-    adjustSize();
+    if (m_shell) {
+      // a window that can be resized has a size to start with: wide enough for the sidebar with its labels, and not
+      // larger than the work area of the screen (a small screen at a large scale has less than 700 px)
+      resize(firstShellSize(QSize(qMax(sizeHint().width(), 1000), qMax(minimumSizeHint().height(), 620)), totalGeometry)
+      );
+    } else {
+      adjustSize();
+    }
     windowGeometry = geometry();
   } else {
     setGeometry(windowGeometry);
+    // the size that was kept is of a screen that may not be this one: the new look keeps the window inside of the work
+    // area
+    if (m_shell) {
+      const auto fitted = firstShellSize(windowGeometry.size(), totalGeometry);
+      if (fitted != windowGeometry.size()) {
+        resize(fitted);
+        windowGeometry = geometry();
+      }
+    }
   }
   m_expandedSize = geometry().size();
+  if (m_shell) {
+    // the log says what the window was given and why, so that a window that is larger than the screen can be explained
+    qInfo().noquote() << QStringLiteral("window size: opened %1x%2 (least %3x%4) in a work area of %5x%6")
+                             .arg(width())
+                             .arg(height())
+                             .arg(minimumSizeHint().width())
+                             .arg(minimumSizeHint().height())
+                             .arg(totalGeometry.width())
+                             .arg(totalGeometry.height());
+  }
 
   if (!totalGeometry.contains(windowGeometry)) {
     QRect screenGeometry = QGuiApplication::primaryScreen()->geometry();
     move(screenGeometry.center() - rect().center());
   }
 
-  if (!Settings::value(Settings::Gui::LogExpanded).toBool())
+  // the window of the new look is resized by the user at any time; the old one keeps its size while the log is folded
+  if (!m_shell && !Settings::value(Settings::Gui::LogExpanded).toBool())
     setFixedSize(size());
 }
 
@@ -203,12 +331,17 @@ void MainWindow::setupControls()
 
   ui->btnConfigureServer->setIcon(QIcon::fromTheme(QStringLiteral("configure")));
   ui->btnConfigureClient->setIcon(QIcon::fromTheme(QStringLiteral("configure")));
+  ui->cbHostname->lineEdit()->setPlaceholderText(tr("LAN address first, then the VPN address, separated by commas"));
 
   if (Settings::value(Settings::Core::LastVersion).toString() != kVersion) {
     Settings::setValue(Settings::Core::LastVersion, kVersion);
   }
 
-  if (!Settings::value(Settings::Gui::LogExpanded).toBool()) {
+  // the new look has its own setting for the log: it is folded until the user unfolds it (or an error does)
+  const bool logExpanded = deskflow::gui::style::isDeskflowStyleInstalled()
+                               ? Settings::value(Settings::Gui::ShellLogExpanded).toBool()
+                               : Settings::value(Settings::Gui::LogExpanded).toBool();
+  if (!logExpanded) {
     m_logDock->hide();
   }
 
@@ -270,8 +403,10 @@ void MainWindow::connectSlots()
   connect(m_actionStopCore, &QAction::triggered, this, &MainWindow::stopCore);
   connect(m_actionShowHelp, &QAction::triggered, this, &MainWindow::showHelpViewer);
 
-  // Mac os tray will only show a menu
-  if (!deskflow::platform::isMac())
+  // The tray menu is opened by the OS on macOS and by the tray extension on GNOME: a click is not taken there
+  if (deskflow::gui::tray::clickTogglesWindow(
+          deskflow::platform::isMac(), qEnvironmentVariable("XDG_CURRENT_DESKTOP")
+      ))
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, &MainWindow::trayIconActivated);
 
   connect(&m_coreProcess, &CoreProcess::connectedClientsChanged, this, &MainWindow::serverClientsChanged);
@@ -291,6 +426,8 @@ void MainWindow::connectSlots()
   connect(ui->btnSaveServerConfig, &QPushButton::clicked, this, &MainWindow::saveServerConfig);
   connect(ui->btnConfigureServer, &QPushButton::clicked, this, [this] { showConfigureServer(""); });
   connect(ui->btnConfigureClient, &QPushButton::clicked, this, [this] { showConfigureClient(); });
+  connect(ui->btnTestConnection, &QPushButton::clicked, this, &MainWindow::showConnectionTest);
+  connect(ui->lblIpAddresses, &QLabel::linkActivated, this, &MainWindow::showServerAddresses);
   connect(ui->lblComputerName, &QLabel::linkActivated, this, &MainWindow::openSettings);
 
   connect(ui->rbModeServer, &QRadioButton::toggled, this, &MainWindow::coreModeToggled);
@@ -299,8 +436,26 @@ void MainWindow::connectSlots()
   connect(m_logDock->toggleViewAction(), &QAction::toggled, this, &MainWindow::toggleLogVisible);
 
   connect(m_statusBar, &StatusBar::requestShowMyFingerprints, this, &MainWindow::showMyFingerprint);
-  connect(m_statusBar, &StatusBar::requestUpdateVersion, this, &MainWindow::openGetNewVersionUrl);
-  connect(&m_versionChecker, &VersionChecker::updateFound, m_statusBar, &StatusBar::updateFound);
+  connect(
+      &m_versionChecker, &VersionChecker::statusChanged, m_updateStatus,
+      &deskflow::gui::UpdateStatusModel::setStatus, Qt::UniqueConnection
+  );
+  connect(
+      m_updateStatus, &deskflow::gui::UpdateStatusModel::changed, this,
+      &MainWindow::refreshUpdateStatus, Qt::UniqueConnection
+  );
+  connect(
+      m_statusBar, &StatusBar::requestUpdateAction, this, &MainWindow::handleUpdateAction,
+      Qt::UniqueConnection
+  );
+  connect(
+      m_updateShutdown, &deskflow::gui::UpdateShutdown::completed, this,
+      &MainWindow::updateShutdownCompleted, Qt::UniqueConnection
+  );
+  connect(
+      m_updateShutdown, &deskflow::gui::UpdateShutdown::failed, this,
+      &MainWindow::updateShutdownFailed, Qt::UniqueConnection
+  );
 
   connect(m_guiDupeChecker, &QLocalServer::newConnection, this, &MainWindow::showAndActivate);
 
@@ -317,6 +472,14 @@ void MainWindow::toggleLogVisible(bool visible)
   // but we don't want to hide the log in this case since we would need to un-hide it when the window is shown again.
   if (!isVisible() || isMinimized()) {
     qDebug() << "not toggling log, window not visible";
+    return;
+  }
+
+  // the window of the new look can be resized: the log comes and goes inside it, and what the user chose is remembered
+  // (not what an error did)
+  if (m_shell) {
+    if (!m_logShownByError)
+      Settings::setValue(Settings::Gui::ShellLogExpanded, visible);
     return;
   }
 
@@ -344,6 +507,13 @@ void MainWindow::toggleLogVisible(bool visible)
 
 void MainWindow::settingsChanged(const QString &key)
 {
+  // the remembering of layouts looks again when what it depends on changes (it does nothing while it is off)
+  if (m_layoutMemory != nullptr &&
+      (key == Settings::Server::RememberArrangements || key == Settings::Server::ExperimentalMultiMonitor ||
+       key == Settings::Server::UseArrangement || key == Settings::Server::ExternalConfig ||
+       key == Settings::Core::CoreMode))
+    m_layoutMemory->settingsChanged();
+
   if (key == Settings::Log::Level) {
     m_coreProcess.applyLogLevel();
     return;
@@ -370,6 +540,50 @@ void MainWindow::settingsChanged(const QString &key)
 void MainWindow::serverConfigSaving()
 {
   m_serverConfig.commit();
+  updateShellComputers();
+}
+
+void MainWindow::setupLayoutMemory()
+{
+  using namespace deskflow::gui::layout;
+  HostHooks hooks;
+  hooks.serverMode = [this] { return m_coreProcess.mode() == CoreMode::Server; };
+  hooks.coreRunning = [this] { return m_coreProcess.isStarted(); };
+  hooks.restartCore = [this] { m_coreProcess.restart(); };
+  m_layoutMemory = new LayoutMemoryService(m_serverConfig, makePlatformDisplayProvider(), hooks, {}, this);
+
+  // one line above the controls, hidden until the remembering of layouts has something to say
+  m_layoutNoticeBar = new LayoutNoticeBar(this);
+  if (auto *box = qobject_cast<QBoxLayout *>(ui->topLevelWidget->layout()))
+    box->insertWidget(0, m_layoutNoticeBar);
+  connect(m_layoutMemory, &LayoutMemoryService::noticeChanged, this, &MainWindow::updateLayoutNotice);
+  connect(m_layoutNoticeBar, &LayoutNoticeBar::undoRequested, this, [this] { m_layoutMemory->undo(); });
+  connect(m_layoutNoticeBar, &LayoutNoticeBar::dismissRequested, m_layoutMemory, &LayoutMemoryService::dismissNotice);
+
+  // nothing runs unless the switch, the experiments and the mode ask for it
+  m_layoutMemory->settingsChanged();
+}
+
+void MainWindow::updateLayoutNotice()
+{
+  if (m_layoutMemory == nullptr || m_layoutNoticeBar == nullptr)
+    return;
+  const auto &notice = m_layoutMemory->notice();
+  const bool wasShown = !m_layoutNoticeBar->isHidden();
+  // a window of a fixed size keeps the room of its controls: the bar takes its height from outside it
+  const bool fixedSize = minimumSize() == maximumSize();
+  m_layoutNoticeBar->setNotice(notice);
+  const bool shown = !m_layoutNoticeBar->isHidden();
+  if (fixedSize && shown != wasShown) {
+    const int extra = m_layoutNoticeBar->sizeHint().height() + ui->topLevelWidget->layout()->spacing();
+    setFixedSize(width(), height() + (shown ? extra : -extra));
+  }
+
+  // the window is often hidden in the tray: the change is told there as well
+  if (notice && (!isVisible() || isMinimized()) && m_trayIcon->isVisible() && QSystemTrayIcon::supportsMessages())
+    m_trayIcon->showMessage(
+        kAppName, deskflow::gui::layout::LayoutMemoryService::noticeText(*notice), QSystemTrayIcon::Information, 10000
+    );
 }
 
 void MainWindow::trayIconActivated(QSystemTrayIcon::ActivationReason reason)
@@ -398,6 +612,13 @@ void MainWindow::coreProcessError(CoreProcess::Error error)
                          .arg(mode, Settings::serverConfigFile()));
     }
     QMessageBox::warning(this, kAppName, message);
+    m_trayStartFailed = true;
+    updateTray();
+    if (m_shell)
+      m_shell->status()->setError(
+          tr("Cannot start"),
+          tr("The Core executable %1 could not be started. See the message for what to check.").arg(kCoreBinName)
+      );
   }
 }
 
@@ -410,7 +631,9 @@ void MainWindow::startCore()
   }
 
   // Invalid client settings
-  if (m_coreProcess.mode() == CoreMode::Client && Settings::value(Settings::Client::RemoteHost).toString().isEmpty()) {
+  // (with a Cloudflare Tunnel the saved address is not needed)
+  if (m_coreProcess.mode() == CoreMode::Client && Settings::textValue(Settings::Client::RemoteHost).isEmpty() &&
+      !m_coreProcess.isTunnelRequired()) {
     qDebug().noquote() << "skipping core start, undefined remotehost";
     return;
   }
@@ -448,6 +671,10 @@ void MainWindow::clearSettings()
 
   m_coreProcess.stop();
   m_coreProcess.clearSettings();
+  // Cloudflare Tunnel: cloudflared ends before the settings and the Service Token are removed
+  if (m_tunnelController != nullptr) {
+    m_tunnelController->shutdown();
+  }
 
   m_saveOnExit = false;
   diagnostic::clearSettings(true);
@@ -473,14 +700,268 @@ void MainWindow::openAboutDialog()
 
 void MainWindow::openGetNewVersionUrl() const
 {
-  QDesktopServices::openUrl(QUrl(kUrlDownload));
+  const auto url = m_updateStatus->status().releaseUrl;
+  static const QRegularExpression releasePage(
+      QStringLiteral(R"(^/subeom/deskflow/releases/tag/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$)")
+  );
+  if (url.scheme() != QStringLiteral("https") ||
+      url.host() != QStringLiteral("github.com") ||
+      !url.userInfo().isEmpty() || (url.port() != -1 && url.port() != 443) ||
+      !url.query().isEmpty() || !url.fragment().isEmpty() ||
+      !releasePage.match(url.path(QUrl::FullyEncoded)).hasMatch()) {
+    qWarning() << "refusing to open an invalid update release URL";
+    return;
+  }
+  QDesktopServices::openUrl(url);
+}
+
+void MainWindow::checkForUpdates()
+{
+  if (m_updateApplying) {
+    return;
+  }
+  m_versionChecker.checkLatest(UpdateCheckReason::Manual);
+}
+
+void MainWindow::publishUpdateHandshake()
+{
+  const auto handshake = qApp->property("deskflowUpdateHandshakePath").toString();
+  const auto token = qApp->property("deskflowUpdateHandshakeToken").toString();
+  const auto receiptPath = qApp->property("deskflowUpdateReceiptPath").toString();
+  if (handshake.isEmpty() && token.isEmpty() && receiptPath.isEmpty()) {
+    return;
+  }
+
+  static const QRegularExpression safeToken(QStringLiteral(R"(^[A-Za-z0-9-]{1,128}$)"));
+  const auto transactions = QFileInfo(
+      QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation))
+          .filePath(QStringLiteral("updates/transactions"))
+  );
+  const auto handshakeInfo = QFileInfo(handshake);
+  const auto receiptInfo = QFileInfo(receiptPath);
+  if (!safeToken.match(token).hasMatch() ||
+      handshakeInfo.fileName().startsWith(QStringLiteral("handshake-")) == false ||
+      handshakeInfo.suffix() != QStringLiteral("json") ||
+      handshakeInfo.isSymLink() || QFileInfo::exists(handshake) ||
+      receiptInfo.isSymLink() ||
+      (receiptInfo.exists() && !receiptInfo.isFile()) ||
+      transactions.canonicalFilePath() != receiptInfo.absolutePath() ||
+      transactions.canonicalFilePath() != handshakeInfo.absolutePath()) {
+    qWarning() << "refusing to publish an invalid update handshake";
+    return;
+  }
+
+  const auto stableVersion = deskflow::gui::normalizeUpdateVersion(QString::fromLatin1(kVersion));
+  if (!stableVersion) {
+    qWarning() << "refusing to publish an invalid Deskflow version in the update handshake";
+    return;
+  }
+  QSaveFile handshakeFile(handshake);
+  const auto handshakeJson = QJsonDocument(QJsonObject{
+      {QStringLiteral("state"), QStringLiteral("ready")},
+      {QStringLiteral("pid"), QCoreApplication::applicationPid()},
+      {QStringLiteral("token"), token},
+      {QStringLiteral("version"), *stableVersion},
+  }).toJson(QJsonDocument::Compact);
+  if (!handshakeFile.open(QIODevice::WriteOnly) ||
+      handshakeFile.write(handshakeJson) != handshakeJson.size() ||
+      !handshakeFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner) ||
+      !handshakeFile.commit()) {
+    qWarning() << "failed to publish update relaunch readiness";
+    return;
+  }
+
+  QFile receipt(receiptPath);
+  if (!receipt.open(QIODevice::ReadOnly) || receipt.size() > 16 * 1024) {
+    return;
+  }
+  QJsonParseError parseError;
+  const auto document = QJsonDocument::fromJson(receipt.readAll(), &parseError);
+  if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+    return;
+  }
+  const auto state = document.object().value(QStringLiteral("state")).toString();
+  if (state == QStringLiteral("rolled-back") ||
+      state == QStringLiteral("rolled-back-pending")) {
+    UpdateStatusSnapshot rollback;
+    rollback.phase = UpdateStatusSnapshot::Phase::Failed;
+    rollback.version = *stableVersion;
+    rollback.userError = tr("The previous Deskflow version was restored.");
+    m_updateStatus->setStatus(rollback);
+  } else if (state == QStringLiteral("success")) {
+    m_updateStatus->setStatus(
+        {UpdateStatusSnapshot::Phase::UpToDate, *stableVersion, {}, {}, false}
+    );
+  }
+}
+
+void MainWindow::refreshUpdateStatus()
+{
+  const auto &view = m_updateStatus->view();
+  m_statusBar->setUpdateStatus(view);
+  if (m_shell) {
+    m_shell->setUpdateStatus(view);
+    scheduleShellRefresh();
+  }
+  updateTray();
+}
+
+void MainWindow::handleUpdateAction(deskflow::gui::UpdateAction action)
+{
+  using deskflow::gui::UpdateAction;
+  switch (action) {
+  case UpdateAction::OpenRelease:
+    openGetNewVersionUrl();
+    break;
+  case UpdateAction::ConfirmInstall:
+    confirmAndInstallUpdate();
+    break;
+  case UpdateAction::Retry:
+  {
+    QMessageBox failure(this);
+    failure.setIcon(QMessageBox::Warning);
+    failure.setWindowTitle(tr("Update failed"));
+    failure.setText(
+        m_updateStatus->view().toolTip.isEmpty()
+            ? tr("The update could not be completed")
+            : m_updateStatus->view().toolTip
+    );
+    failure.addButton(QMessageBox::Cancel);
+    auto *retry = failure.addButton(tr("Retry"), QMessageBox::AcceptRole);
+    failure.setDefaultButton(retry);
+    failure.exec();
+    if (failure.clickedButton() == retry) {
+      checkForUpdates();
+    }
+    break;
+  }
+  case UpdateAction::None:
+    break;
+  }
+}
+
+void MainWindow::confirmAndInstallUpdate()
+{
+  if (m_updateApplying || !m_updateInstaller || !m_versionChecker.staged()) {
+    return;
+  }
+  const auto &staged = *m_versionChecker.staged();
+
+  QMessageBox confirmation(this);
+  confirmation.setIcon(QMessageBox::Question);
+  confirmation.setWindowTitle(tr("Install Deskflow update"));
+  confirmation.setText(tr("Install Deskflow v%1?").arg(staged.version));
+  confirmation.setInformativeText(
+      tr("Deskflow will stop sharing, replace the app, and restart.")
+  );
+  confirmation.addButton(QMessageBox::Cancel);
+  const auto *install =
+      confirmation.addButton(tr("Install and restart"), QMessageBox::AcceptRole);
+  confirmation.setDefaultButton(QMessageBox::Cancel);
+  confirmation.exec();
+  if (confirmation.clickedButton() != install) {
+    return;
+  }
+
+  const auto started = m_updateInstaller->start(staged, true);
+  if (!started.ok) {
+    updateShutdownFailed(
+        started.error.isEmpty() ? tr("The update helper could not start.") : started.error
+    );
+    return;
+  }
+  m_updateReceiptPath = started.receiptPath;
+  m_updateApplying = true;
+  m_updateExitAuthorized = false;
+  Settings::setValue(
+      Settings::Gui::AutoStartCore,
+      m_coreProcess.processState() == ProcessState::Started ||
+          m_coreProcess.processState() == ProcessState::Starting ||
+          m_coreProcess.processState() == ProcessState::RetryPending
+  );
+  Settings::save();
+
+  UpdateStatusSnapshot applying = m_updateStatus->status();
+  applying.phase = UpdateStatusSnapshot::Phase::Applying;
+  applying.installable = false;
+  applying.userError.clear();
+  m_updateStatus->setStatus(applying);
+
+  deskflow::gui::UpdateShutdownTargets targets;
+  targets.stopCore = [this] { m_coreProcess.stop(); };
+  targets.coreStopped = [this] {
+    return m_coreProcess.processState() == ProcessState::Stopped;
+  };
+  targets.restoreCore = [this] { startCore(); };
+  targets.stopTunnel = [this] {
+    if (m_tunnelController != nullptr) {
+      m_tunnelController->shutdown();
+    }
+  };
+  targets.tunnelStopped = [this] {
+    return m_tunnelController == nullptr ||
+           m_tunnelController->status().state == deskflow::tunnel::TunnelState::Idle;
+  };
+  targets.restoreTunnel = [this] {
+    if (m_tunnelController != nullptr && m_tunnelController->isRequired()) {
+      m_tunnelController->acquire();
+    }
+  };
+  targets.markReceipt = [](const QString &path, const QString &state) {
+#if defined(Q_OS_MACOS)
+    return deskflow::gui::markUpdateReceiptState(path, state);
+#else
+    Q_UNUSED(path)
+    Q_UNUSED(state)
+    return deskflow::gui::UpdateInstallResult{
+        false, QStringLiteral("automatic updates are unavailable"), {}
+    };
+#endif
+  };
+  m_updateShutdown->begin(targets, m_updateReceiptPath);
+}
+
+void MainWindow::updateShutdownCompleted()
+{
+  if (!m_updateApplying) {
+    return;
+  }
+  Settings::save();
+  qInfo() << "update shutdown complete, leaving the old GUI for the detached helper";
+  m_updateExitAuthorized = true;
+  m_saveOnExit = false;
+  QApplication::quit();
+}
+
+void MainWindow::updateShutdownFailed(const QString &message)
+{
+  m_updateApplying = false;
+  m_updateExitAuthorized = false;
+  qWarning().noquote() << "update installation cancelled:" << message.left(240);
+  auto status = m_updateStatus->status();
+  status.phase = UpdateStatusSnapshot::Phase::Failed;
+  status.installable = false;
+  status.userError = message.left(240);
+  m_updateStatus->setStatus(status);
 }
 
 void MainWindow::openSettings()
 {
+  // the settings of the new look are pages of the window: the entry of the menu goes to the first one
+  if (m_shell) {
+    m_shell->showPage(deskflow::gui::settings::SettingsPages::generalId());
+    if (!isVisible() || isMinimized())
+      showAndActivate();
+    return;
+  }
+
   auto dialog = SettingsDialog(this, m_serverConfig);
 
   connect(&dialog, &SettingsDialog::requestRemoveAllSettings, this, &MainWindow::clearSettings, Qt::UniqueConnection);
+  connect(
+      &dialog, &SettingsDialog::checkForUpdatesRequested, this, &MainWindow::checkForUpdates,
+      Qt::UniqueConnection
+  );
   if (dialog.exec() == QDialog::Accepted) {
     Settings::save();
     disconnect(&dialog, &SettingsDialog::requestRemoveAllSettings, nullptr, nullptr);
@@ -524,6 +1005,11 @@ void MainWindow::coreModeToggled(bool checked)
   if (m_coreProcess.isStarted() && m_coreProcess.mode() != mode)
     m_coreProcess.stop();
   m_coreProcess.setMode(mode);
+  // Cloudflare Tunnel: a switch to the server stops the tunnel
+  if (m_tunnelController != nullptr) {
+    m_tunnelController->setClientMode(mode == Settings::CoreMode::Client);
+    m_tunnelStatus->refresh();
+  }
 
   Settings::setValue(Settings::Core::CoreMode, mode);
   Settings::save();
@@ -557,6 +1043,15 @@ void MainWindow::updateModeControls()
 
   if (isServer || isClient)
     updateModeControlLabels();
+
+  if (m_shell) {
+    m_shell->setMode(
+        isServer   ? deskflow::gui::MainShell::Mode::Server
+        : isClient ? deskflow::gui::MainShell::Mode::Client
+                   : deskflow::gui::MainShell::Mode::None
+    );
+    updateShellComputers();
+  }
 }
 
 void MainWindow::updateModeControlLabels()
@@ -585,6 +1080,14 @@ void MainWindow::updateModeControlLabels()
   m_actionStartCore->setIcon(startIcon);
   m_actionStopCore->setText(stopText);
   m_actionStopCore->setIcon(stopIcon);
+
+  // the button of the state is the primary button of the new look: its icons are the ones of the look, in the colour of
+  // what is on the accent
+  if (m_shell) {
+    using deskflow::gui::style::IconColor;
+    startIcon = deskflow::gui::style::icon(isServer ? "play" : "plugs-connected", IconColor::OnAccent);
+    stopIcon = deskflow::gui::style::icon(isServer ? "stop" : "plug", IconColor::OnAccent);
+  }
 
   if (isStarted) {
     ui->btnToggleCore->setText(stopText);
@@ -621,6 +1124,9 @@ void MainWindow::serverConnectionConfigureClient(const QString &clientName)
   m_serverConfigDialogVisible = true;
   ServerConfigDialog dialog(this, m_serverConfig);
   if (dialog.addClient(clientName) && dialog.exec() == QDialog::Accepted) {
+    // the arrangement that was saved is what is remembered for the displays that there are
+    if (m_layoutMemory != nullptr)
+      m_layoutMemory->configSaved();
     m_coreProcess.restart();
   }
   m_serverConfigDialogVisible = false;
@@ -663,15 +1169,21 @@ void MainWindow::open()
   if (Settings::value(Settings::Gui::AutoStartCore).toBool()) {
     startCore();
   }
+  publishUpdateHandshake();
 }
 
 void MainWindow::createMenuBar()
 {
-  m_menuFile->addAction(m_actionStartCore);
-  m_menuFile->addAction(m_actionRestartCore);
-  m_menuFile->addAction(m_actionStopCore);
-  m_menuFile->addSeparator();
-  m_menuFile->addAction(m_actionQuit);
+  const bool newLook = deskflow::gui::style::isDeskflowStyleInstalled();
+  if (newLook) {
+    createSharingMenu();
+  } else {
+    m_menuFile->addAction(m_actionStartCore);
+    m_menuFile->addAction(m_actionRestartCore);
+    m_menuFile->addAction(m_actionStopCore);
+    m_menuFile->addSeparator();
+    m_menuFile->addAction(m_actionQuit);
+  }
 
   m_menuEdit->addAction(m_actionSettings);
 
@@ -682,41 +1194,421 @@ void MainWindow::createMenuBar()
 
   auto menuBar = new QMenuBar(this);
   menuBar->addMenu(m_menuFile);
-  menuBar->addMenu(m_menuEdit);
+  // macOS has Preferences in the menu of the application (by its role): the menu of the new look has no menu of its own for it
+  if (!(newLook && deskflow::platform::isMac()))
+    menuBar->addMenu(m_menuEdit);
   menuBar->addMenu(m_menuView);
   menuBar->addMenu(m_menuHelp);
 
   setMenuBar(menuBar);
 }
 
+void MainWindow::createSharingMenu()
+{
+  using deskflow::gui::style::icon;
+  const bool mac = deskflow::platform::isMac();
+  const auto make = [this, mac](const QString &iconName, auto slot) {
+    auto *action = new QAction(this);
+    action->setMenuRole(QAction::NoRole);
+    // the menu bar of macOS has no pictures: the menus of the system have none
+    if (!mac)
+      action->setIcon(icon(iconName));
+    connect(action, &QAction::triggered, this, slot);
+    m_menuFile->addAction(action);
+    return action;
+  };
+  m_sharingStart = make(QStringLiteral("play"), &MainWindow::startCore);
+  m_sharingRestart = make(QStringLiteral("arrow-clockwise"), &MainWindow::resetCore);
+  m_sharingStop = make(QStringLiteral("stop"), &MainWindow::stopCore);
+  m_menuFile->addSeparator();
+  m_sharingTestConnection = make(QStringLiteral("network"), &MainWindow::showConnectionTest);
+  m_sharingFingerprint = make(QStringLiteral("fingerprint"), &MainWindow::showMyFingerprint);
+  m_menuFile->addSeparator();
+  m_sharingMinimize = make(QStringLiteral("sidebar-simple"), &MainWindow::hide);
+  // Preferences and Quit are what the menu of the application of macOS takes by their roles; elsewhere Quit ends the menu
+  if (mac) {
+    m_menuFile->addAction(m_actionSettings);
+    m_menuFile->addAction(m_actionQuit);
+  } else {
+    m_menuFile->addSeparator();
+    m_menuFile->addAction(m_actionQuit);
+  }
+}
+
+void MainWindow::updateSharingMenu(const deskflow::gui::tray::TrayInput &input)
+{
+  if (m_sharingStart == nullptr)
+    return;
+  using deskflow::gui::tray::TrayCommand;
+  m_sharingStart->setText(input.labels.value(TrayCommand::Start));
+  m_sharingRestart->setText(input.labels.value(TrayCommand::Restart));
+  m_sharingStop->setText(input.labels.value(TrayCommand::Stop));
+  m_sharingTestConnection->setText(input.labels.value(TrayCommand::TestConnection));
+  m_sharingFingerprint->setText(m_statusBar->fingerprintToolTip());
+  m_sharingMinimize->setText(input.labels.value(TrayCommand::Minimize));
+  m_sharingStart->setShortcut(input.shortcuts.value(TrayCommand::Start));
+  m_sharingRestart->setShortcut(input.shortcuts.value(TrayCommand::Restart));
+  m_sharingStop->setShortcut(input.shortcuts.value(TrayCommand::Stop));
+
+  const auto state = deskflow::gui::tray::sharingMenuState(input, TlsUtility::isEnabled() && !m_fingerprint.data.isEmpty());
+  m_sharingStart->setEnabled(state.start);
+  m_sharingRestart->setEnabled(state.restart);
+  m_sharingStop->setEnabled(state.stop);
+  m_sharingTestConnection->setEnabled(state.testConnection);
+  m_sharingFingerprint->setEnabled(state.fingerprint);
+  m_sharingMinimize->setEnabled(state.minimize);
+}
+
 void MainWindow::setupTrayIcon()
 {
+  // Qt before 6.11.3 ends the program at a click on the status item of macOS 27 (QTBUG-147449)
+  if (deskflow::gui::tray::trayClickCanCrash(
+          QVersionNumber::fromString(QString::fromLatin1(qVersion())),
+          deskflow::platform::isMac() ? QOperatingSystemVersion::current().majorVersion() : 0
+      ))
+    qWarning() << "this build uses Qt" << qVersion() << ": a click on the tray icon can end the program on macOS 27";
+
   auto trayMenu = new QMenu(this);
-  trayMenu->addActions(
-      {m_actionStartCore, m_actionRestartCore, m_actionStopCore, m_actionMinimize, m_actionRestore, m_actionTrayQuit}
-  );
-  trayMenu->insertSeparator(m_actionMinimize);
-  trayMenu->insertSeparator(m_actionTrayQuit);
+  if (deskflow::gui::style::isDeskflowStyleInstalled()) {
+    setupTrayController(trayMenu);
+  } else {
+    trayMenu->addActions(
+        {m_actionStartCore, m_actionRestartCore, m_actionStopCore, m_actionMinimize, m_actionRestore, m_actionTrayQuit}
+    );
+    trayMenu->insertSeparator(m_actionMinimize);
+    trayMenu->insertSeparator(m_actionTrayQuit);
+  }
   m_trayIcon->setContextMenu(trayMenu);
 
   setTrayIcon();
+  updateTray();
   m_trayIcon->show();
 }
 
-void MainWindow::applyConfig()
+void MainWindow::setupTrayController(QMenu *menu)
+{
+  using deskflow::gui::tray::TrayController;
+  m_trayController = new TrayController(m_trayIcon, menu, deskflow::gui::tray::TrayPlatform::current(), this);
+  connect(m_trayController, &TrayController::commandRequested, this, &MainWindow::trayCommand);
+}
+
+void MainWindow::trayCommand(deskflow::gui::tray::TrayCommand command)
+{
+  using deskflow::gui::tray::TrayCommand;
+  switch (command) {
+  case TrayCommand::Start:
+    startCore();
+    break;
+  case TrayCommand::Restart:
+    resetCore();
+    break;
+  case TrayCommand::Stop:
+    stopCore();
+    break;
+  case TrayCommand::TestConnection:
+    showConnectionTest();
+    break;
+  case TrayCommand::OpenWindow:
+    showAndActivate();
+    break;
+  case TrayCommand::Minimize:
+    hide();
+    break;
+  case TrayCommand::Preferences:
+    openSettings();
+    break;
+  case TrayCommand::OpenUpdate:
+    handleUpdateAction(m_updateStatus->view().action);
+    break;
+  case TrayCommand::Quit:
+    close();
+    break;
+  }
+}
+
+void MainWindow::updateTray()
+{
+  if (m_trayController == nullptr)
+    return;
+  using deskflow::gui::tray::TrayCommand;
+  const bool isServer = m_coreProcess.mode() == CoreMode::Server;
+  const bool isClient = m_coreProcess.mode() == CoreMode::Client;
+
+  deskflow::gui::tray::TrayInput input;
+  input.process = m_coreProcess.processState();
+  input.connection = m_coreProcess.connectionState();
+  input.isServer = isServer;
+  input.hasMode = isServer || isClient;
+  input.startFailed = m_trayStartFailed;
+  input.canStart = m_actionStartCore->isEnabled();
+  input.canTestConnection = isClient && ui->btnTestConnection->isEnabled();
+  if (m_shell) {
+    input.headline = m_shell->status()->view().headline;
+    input.detail = m_shell->status()->view().detail;
+  }
+  if (isServer)
+    input.computers = m_connectedClients;
+  else if (isClient && input.connection == ConnectionState::Connected && input.process == ProcessState::Started)
+    input.computers = {Settings::textValue(Settings::Client::RemoteHost)};
+  const auto update = m_updateStatus->view();
+  if (update.visible && update.action != deskflow::gui::UpdateAction::None) {
+    input.updateVersion = update.version;
+    input.updateLabel = update.label;
+  }
+  // the window is shown when the menu does not offer to show it (the action of the window that does is hidden then)
+  input.windowShown = !m_actionRestore->isVisible();
+  input.appName = kAppName;
+  input.labels = {
+      {TrayCommand::Start, m_actionStartCore->text()},
+      {TrayCommand::Restart, m_actionRestartCore->text()},
+      {TrayCommand::Stop, m_actionStopCore->text()},
+      {TrayCommand::TestConnection, ui->btnTestConnection->text()},
+      {TrayCommand::OpenWindow, m_actionRestore->text()},
+      {TrayCommand::Minimize, m_actionMinimize->text()},
+      {TrayCommand::Preferences, m_actionSettings->text()},
+      {TrayCommand::Quit, m_actionTrayQuit->text()},
+  };
+  input.shortcuts = {
+      {TrayCommand::Start, m_actionStartCore->shortcut()},
+      {TrayCommand::Restart, m_actionRestartCore->shortcut()},
+      {TrayCommand::Stop, m_actionStopCore->shortcut()},
+      {TrayCommand::Quit, m_actionTrayQuit->shortcut()},
+  };
+  m_trayController->setInput(input);
+  updateSharingMenu(input);
+}
+
+void MainWindow::updateWindowTitle()
 {
   if (Settings::value(Settings::Gui::ShowVersionInTitle).toBool()) {
     setWindowTitle(QStringLiteral("%1 - %2").arg(kAppName, kDisplayVersion));
   } else {
     setWindowTitle(kAppName);
   }
+}
 
-  const auto host = Settings::value(Settings::Client::RemoteHost).toString();
+// Cloudflare Tunnel: everything that the main window does for it is in these functions and in the lines that name it
+void MainWindow::setupTunnel()
+{
+  m_tunnelController = deskflow::tunnel::TunnelController::createSystem(this);
+  m_coreProcess.setTunnelGate(m_tunnelController);
+
+  // The window of the new look has no place under the options of the client for the two lines (its connection is a card
+  // of the shell, which is made later: see attachTunnelToShell). The widget is there for what the lines say, in a
+  // holder that is never shown; the window of the system look has the lines where it always had them
+  const bool shellLook = deskflow::gui::style::isDeskflowStyleInstalled();
+  if (shellLook) {
+    m_tunnelHolder = new QWidget(this);
+    m_tunnelHolder->hide();
+  }
+  m_tunnelStatus = new TunnelStatusWidget(m_tunnelController, shellLook ? m_tunnelHolder : this);
+  if (!shellLook) {
+    // under the row of the options of the client: while the tunnel is used it takes the place of the address field
+    ui->verticalLayout->insertWidget(ui->verticalLayout->indexOf(ui->widgetModeOptions) + 1, m_tunnelStatus);
+  }
+  connect(m_tunnelStatus, &TunnelStatusWidget::usedChanged, this, &MainWindow::tunnelUsedChanged);
+  connect(
+      m_tunnelController, &deskflow::tunnel::TunnelController::statusChanged, this,
+      [this](const deskflow::tunnel::TunnelStatus &) {
+        m_updateShutdown->tunnelStateChanged();
+      }
+  );
+
+  // the log: what the tunnel does and what cloudflared writes (already without the token)
+  connect(m_tunnelController, &deskflow::tunnel::TunnelController::logLine, this, [](const QString &line) {
+    qInfo().noquote() << "tunnel:" << line;
+  });
+
+  if (shellLook) {
+    // the tray of the new look makes its menu from what it is told: the line of the tunnel is a row of it
+    connect(m_tunnelStatus, &TunnelStatusWidget::statusTextChanged, this, &MainWindow::updateTunnelShell);
+    connect(m_tunnelStatus, &TunnelStatusWidget::pathTextChanged, this, &MainWindow::updateTunnelShell);
+  } else {
+    // the tray menu: a line that says how the tunnel is
+    m_actionTunnelStatus = new QAction(this);
+    m_actionTunnelStatus->setEnabled(false);
+    m_actionTunnelStatus->setVisible(false);
+    m_actionTunnelStatus->setMenuRole(QAction::NoRole);
+    if (auto *trayMenu = m_trayIcon->contextMenu(); trayMenu != nullptr) {
+      trayMenu->insertAction(m_actionStartCore, m_actionTunnelStatus);
+    }
+    connect(m_tunnelStatus, &TunnelStatusWidget::statusTextChanged, this, [this](const QString &text) {
+      m_actionTunnelStatus->setText(text);
+    });
+  }
+  // with the tunnel off nothing of the window is touched
+  if (m_tunnelStatus->isTunnelUsed()) {
+    tunnelUsedChanged(true);
+  }
+}
+
+void MainWindow::tunnelUsedChanged(bool used)
+{
+  if (m_tunnelHolder != nullptr) {
+    updateTunnelShell();
+  } else {
+    // the saved address stays where it is, only not shown: switching the tunnel off shows it again as it was
+    ui->m_pLabelServerName->setVisible(!used);
+    ui->cbHostname->setVisible(!used);
+    m_actionTunnelStatus->setVisible(used);
+    m_actionTunnelStatus->setText(m_tunnelStatus->statusText());
+  }
+  if (used) {
+    ui->btnTestConnection->setEnabled(true);
+  } else {
+    ui->btnTestConnection->setEnabled(!ui->cbHostname->currentText().trimmed().isEmpty());
+  }
+  toggleCanRunCore(canRunCore());
+}
+
+// The window of the new look: where the tunnel is told in the shell. Nothing of it is there while the tunnel is not
+// used (the address field, no line, no chip, no row of the tray)
+void MainWindow::attachTunnelToShell()
+{
+  if (m_shell == nullptr || m_tunnelStatus == nullptr)
+    return;
+  auto *section = m_shell->clientSection();
+
+  // the path line takes the place of the address field (the second of the stack that holds it), as a line that cannot
+  // be typed in and can be selected; what does not fit is cut and is in the tool tip
+  m_tunnelPathLine = new QLabel(section);
+  m_tunnelPathLine->setObjectName(QStringLiteral("tunnelPathLine"));
+  m_tunnelPathLine->setWordWrap(false);
+  m_tunnelPathLine->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  m_tunnelPathLine->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  section->addressStack()->addWidget(m_tunnelPathLine);
+
+  // the status line is the one under the row of the address
+  // (a line of a hint: smaller text in the colour of a secondary one, and it wraps, which a failure that has a sentence
+  // of what to do needs: the page scrolls)
+  m_tunnelStatusLine = new InlineHint(section);
+  m_tunnelStatusLine->setObjectName(QStringLiteral("tunnelStatusLine"));
+  m_tunnelStatusLine->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+  updateTunnelShell();
+}
+
+void MainWindow::setupAwdl()
+{
+  // nothing is made where there is no such link (Windows, Linux), and nothing where the window has no screen (a test
+  // gives its own system): the option does not exist there
+  if (!deskflow::awdl::platformSupported())
+    return;
+  auto *system = deskflow::awdl::createSystem(this);
+  if (system == nullptr)
+    return;
+  m_awdl = deskflow::awdl::makeController(system, this);
+}
+
+void MainWindow::attachAwdlToShell()
+{
+  if (m_shell == nullptr || m_awdl == nullptr)
+    return;
+  m_settingsPages->setAwdlController(m_awdl);
+  // the banner says what the controller says, and its button is the same as the button of the card
+  auto *banner = m_shell->awdlBanner();
+  const auto show = [this, banner] {
+    banner->setStats(m_awdl->latency());
+    banner->setBusy(m_awdl->isAsking());
+    banner->setPending(m_awdl->hintVisible());
+  };
+  connect(m_awdl, &deskflow::awdl::AwdlController::hintChanged, this, show);
+  connect(m_awdl, &deskflow::awdl::AwdlController::latencyChanged, this, show);
+  connect(m_awdl, &deskflow::awdl::AwdlController::askingChanged, this, show);
+  connect(
+      banner, &deskflow::gui::settings::AwdlBanner::turnOffRequested, m_awdl,
+      &deskflow::awdl::AwdlController::turnOffNow
+  );
+}
+
+void MainWindow::updateTunnelShell()
+{
+  if (m_tunnelStatus == nullptr)
+    return;
+  const bool used = m_tunnelStatus->isTunnelUsed();
+  const auto status = m_tunnelController->status();
+  // a tunnel that stopped or failed has not reached the server: a later connection is not a reconnect
+  if (status.state == deskflow::tunnel::TunnelState::Idle || status.state == deskflow::tunnel::TunnelState::Failed) {
+    m_tunnelLinkTracker.reset();
+    if (m_tunnelServerLink == deskflow::tunnel::ServerLink::Reconnecting) {
+      m_tunnelServerLink = deskflow::tunnel::ServerLink::Unknown;
+      m_tunnelStatus->setServerLink(m_tunnelServerLink);
+    }
+  }
+  const auto statusText = used ? m_tunnelStatus->statusText() : QString();
+
+  // the menu of the tray
+  if (m_trayController != nullptr)
+    m_trayController->setExternalRow(QStringLiteral("tunnel"), statusText);
+
+  if (m_shell == nullptr || m_tunnelPathLine == nullptr)
+    return;
+  auto *section = m_shell->clientSection();
+  m_tunnelPathLine->setText(m_tunnelStatus->pathText());
+  m_tunnelPathLine->setToolTip(m_tunnelStatus->pathText());
+  m_tunnelStatusLine->setText(m_tunnelStatus->statusText());
+  m_tunnelStatusLine->setToolTip(m_tunnelStatus->statusText());
+  // a tunnel that failed, or that listens and has a failure to tell, is the colour of a problem
+  // (unless the server was reached before and the failure is one of the path that passes: the client is reconnecting)
+  m_tunnelStatusLine->setDanger(deskflow::tunnel::tunnelStatusIsProblem(status, m_tunnelServerLink));
+  section->addressStack()->setCurrentIndex(used ? 1 : 0);
+  if (used && section->statusLineCount() == 0)
+    section->addStatusLine(m_tunnelStatusLine);
+  else if (!used && section->statusLineCount() > 0)
+    section->removeStatusLine(m_tunnelStatusLine);
+  m_tunnelStatusLine->setVisible(used);
+
+  // the chip beside the state of sharing
+  // (short: a chip is as wide as its text, and the whole line is under the address)
+  if (used) {
+    const auto chip = deskflow::gui::tunnelChip(status, m_tunnelServerLink);
+    m_shell->status()->setExternalChip(QStringLiteral("tunnel"), chip.text, chip.kind);
+  } else {
+    m_shell->status()->clearExternalChip(QStringLiteral("tunnel"));
+  }
+}
+
+void MainWindow::updateTunnelServerLink(ConnectionState state)
+{
+  using deskflow::tunnel::ServerLink;
+  if (m_tunnelStatus == nullptr) {
+    return;
+  }
+
+  using deskflow::tunnel::ServerObservation;
+  if (state == ConnectionState::Connected) {
+    m_tunnelController->notifyServerConnected();
+  }
+  const auto observation = state == ConnectionState::Connected    ? ServerObservation::Connected
+                           : state == ConnectionState::Connecting ? ServerObservation::Connecting
+                                                                  : ServerObservation::Disconnected;
+  const auto running = m_coreProcess.processState() == ProcessState::Started ||
+                       m_coreProcess.processState() == ProcessState::Starting ||
+                       m_coreProcess.processState() == ProcessState::RetryPending;
+  m_tunnelServerLink = m_tunnelLinkTracker.update(observation, running);
+  m_tunnelStatus->setServerLink(m_tunnelServerLink);
+  // the chip of the new look says the link too (the line of the status may not have changed)
+  if (m_tunnelHolder != nullptr)
+    updateTunnelShell();
+}
+
+void MainWindow::applyConfig()
+{
+  updateWindowTitle();
+
+  const auto host = Settings::textValue(Settings::Client::RemoteHost);
   QSignalBlocker hostnameBlocker(ui->cbHostname);
   ui->cbHostname->clear();
   ui->cbHostname->addItems(Settings::value(Settings::Client::RecentRemoteHosts).toStringList());
   if (!host.isEmpty())
     ui->cbHostname->setCurrentText(host);
+  // the signals of the field are blocked here, so the button is not told about the text. With a Cloudflare Tunnel the
+  // test goes through the tunnel and needs no saved address (the tunnel can be on from the start of the program, which
+  // no change of it tells the window)
+  ui->btnTestConnection->setEnabled(
+      !ui->cbHostname->currentText().trimmed().isEmpty() ||
+      (m_tunnelStatus != nullptr && m_tunnelStatus->isTunnelUsed())
+  );
 
   updateFingerprintButton();
   setTrayIcon();
@@ -727,6 +1619,10 @@ void MainWindow::applyConfig()
   }
 
   coreModeToggled(true);
+  // Cloudflare Tunnel: the lines for the tunnel show what the dialog saved
+  if (m_tunnelStatus != nullptr) {
+    m_tunnelStatus->refresh();
+  }
 }
 
 void MainWindow::saveSettings() const
@@ -744,6 +1640,13 @@ void MainWindow::saveSettings() const
 
 void MainWindow::setTrayIcon()
 {
+  // the icon of the new look tells the state: it is chosen by the tray, which knows it
+  if (m_trayController) {
+    m_trayController->setColoredIcon(!Settings::value(Settings::Gui::SymbolicTrayIcon).toBool());
+    m_trayController->refreshIcon();
+    return;
+  }
+
   static const auto fallbackPath = QStringLiteral(":/icons/%1-%2/apps/64/%3");
 
   QString themeIcon = kRevFqdnName;
@@ -776,6 +1679,13 @@ void MainWindow::setTrayIcon()
 void MainWindow::handleLogLine(const QString &line)
 {
   m_logDock->appendLine(line);
+  if (m_shell)
+    autoShowLogOnError(line);
+
+  // what a computer that connected says its screen is, for the arrangement of the computers
+  m_serverConfig.takeReportedScreenFromLog(line);
+  // and the monitors that it says its desktop is made of, which are drawn on the canvas
+  m_serverConfig.takeReportedMonitorsFromLog(line);
 }
 
 void MainWindow::handleUnrecognisedClient(const QString &clientName)
@@ -818,7 +1728,7 @@ void MainWindow::handleConnectionRefused(deskflow::core::ConnectionRefusal reaso
   m_clientErrorVisible = true;
   showAndActivate();
 
-  const auto address = Settings::value(Settings::Client::RemoteHost).toString();
+  const auto address = Settings::textValue(Settings::Client::RemoteHost);
   QMessageBox::warning(
       this, tr("%1 Connection Error").arg(kAppName),
       tr("<p>Failed to connect to the server '%1'.</p>"
@@ -901,29 +1811,74 @@ void MainWindow::handlePeerFingerprint(const QString &fingerprint)
 
 bool MainWindow::maybeHideToTray()
 {
-  if (!Settings::value(Settings::Gui::CloseToTray).toBool()) {
+  using deskflow::gui::tray::CloseAction;
+  const auto action =
+      deskflow::gui::tray::closeActionFor(Settings::value(Settings::Gui::CloseToTray).toBool(), m_trayAvailable());
+  if (action == CloseAction::Quit) {
     return false;
+  }
+
+  if (action == CloseAction::Minimize) {
+    // there is no tray (GNOME without its extension): a window that is hidden could not be found again
+    qDebug() << "no system tray, minimizing instead of hiding to tray";
+    Settings::setValue(windowGeometryKey(), geometry());
+    showMinimized();
+    return true;
   }
 
   if (Settings::value(Settings::Gui::CloseReminder).toBool()) {
     messages::showCloseReminder(this);
     Settings::setValue(Settings::Gui::CloseReminder, false);
   }
-  Settings::setValue(Settings::Gui::WindowGeometry, geometry());
+  Settings::setValue(windowGeometryKey(), geometry());
   qDebug() << "hiding to tray";
   hide();
   return true;
 }
 
+bool MainWindow::shouldQuitForNativeRequest(bool systemShuttingDown)
+{
+  if (!systemShuttingDown && !canQuitApplication())
+    return false;
+
+  m_nativeQuitRequested = true;
+  m_nativeSystemShutdown = systemShuttingDown;
+  return true;
+}
+
+void MainWindow::nativeQuitRequestFinished()
+{
+  m_nativeQuitRequested = false;
+  m_nativeSystemShutdown = false;
+}
+
+bool MainWindow::canQuitApplication()
+{
+  if (!m_updateApplying || m_updateExitAuthorized) {
+    return true;
+  }
+  qWarning() << "cannot quit while an update helper is active";
+  showAndActivate();
+  return false;
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-  if (event->spontaneous() && maybeHideToTray()) {
+  const auto nativeQuitRequested = m_nativeQuitRequested;
+  const auto nativeSystemShutdown = m_nativeSystemShutdown;
+  nativeQuitRequestFinished();
+
+  if (!nativeSystemShutdown && !canQuitApplication()) {
+    event->ignore();
+    return;
+  }
+  if (event->spontaneous() && !nativeQuitRequested && maybeHideToTray()) {
     event->ignore();
     return;
   }
 
   if (m_saveOnExit) {
-    Settings::setValue(Settings::Gui::WindowGeometry, geometry());
+    Settings::setValue(windowGeometryKey(), geometry());
     Settings::setValue(Settings::Gui::AutoStartCore, m_coreProcess.isStarted());
   }
   qDebug() << "quitting application";
@@ -947,6 +1902,8 @@ void MainWindow::showFirstConnectedMessage()
 void MainWindow::updateStatus()
 {
   using enum ProcessState;
+  // a state that the core comes to is a new state: what failed before it is told no more
+  m_trayStartFailed = false;
   const auto connection = m_coreProcess.connectionState();
   const auto process = m_coreProcess.processState();
   const bool isServer = (m_coreProcess.mode() == CoreMode::Server);
@@ -955,12 +1912,29 @@ void MainWindow::updateStatus()
     ui->btnEditName->setVisible(process == Stopped);
   }
   m_statusBar->setStatus(connection, process, isServer);
+  if (m_shell) {
+    // a core that is not running has no computers connected, and a core that starts has a new run to show an error in
+    if (process == Stopped)
+      m_connectedClients.clear();
+    if (process == Starting)
+      m_logShownByErrorThisRun = false;
+    // a core that is stopped or starts reads the settings as they are now: nothing is left to restart
+    if (process == Stopped || process == Starting)
+      m_shell->restartBanner()->setPending(false);
+    m_shell->status()->setClients(m_connectedClients);
+    m_shell->status()->setCore(connection, process, isServer);
+    updateShellComputers();
+  }
+  updateTray();
 }
 
 void MainWindow::coreProcessStateChanged(ProcessState state)
 {
   using enum ProcessState;
   updateStatus();
+  // a run of the core is one that starts and is not stopped: a retry is part of it (the password is asked once for it)
+  if (m_awdl != nullptr)
+    m_awdl->setCoreRunning(state == Starting || state == Started || state == RetryPending);
   if (state == Started) {
     qDebug() << "recording that core has started";
     Settings::setValue(Settings::Gui::AutoStartCore, true);
@@ -995,6 +1969,7 @@ void MainWindow::coreProcessStateChanged(ProcessState state)
     m_actionStopCore->setEnabled(false);
   }
   updateModeControlLabels();
+  m_updateShutdown->coreStateChanged();
 }
 
 void MainWindow::coreConnectionStateChanged(ConnectionState state)
@@ -1002,6 +1977,7 @@ void MainWindow::coreConnectionStateChanged(ConnectionState state)
   qDebug() << "core connection state changed:" << static_cast<int>(state);
 
   updateStatus();
+  updateTunnelServerLink(state);
 
   // always assume connection is not secure when connection changes
   // to anything except connected. the only way the padlock shows is
@@ -1009,7 +1985,8 @@ void MainWindow::coreConnectionStateChanged(ConnectionState state)
   if (state != ConnectionState::Connected) {
     secureSocket(false);
   } else {
-    if (m_coreProcess.mode() == CoreMode::Client) {
+    // (through a Cloudflare Tunnel the saved address is not what connected, so it is not put in the recent ones)
+    if (m_coreProcess.mode() == CoreMode::Client && !m_coreProcess.isTunnelRequired()) {
       if (const auto host = ui->cbHostname->currentText(); !host.isEmpty()) {
         QStringList recentHosts = Settings::value(Settings::Client::RecentRemoteHosts).toStringList();
         if (recentHosts.isEmpty() || recentHosts.first() != host) {
@@ -1046,6 +2023,7 @@ void MainWindow::hide()
 #endif
   m_actionRestore->setVisible(true);
   m_actionMinimize->setVisible(false);
+  updateTray();
 }
 
 void MainWindow::changeEvent(QEvent *e)
@@ -1057,11 +2035,16 @@ void MainWindow::changeEvent(QEvent *e)
     setTrayIcon();
   } else if (e->type() == QEvent::LanguageChange) {
     ui->retranslateUi(this);
+    m_updateStatus->retranslate();
     updateModeControlLabels();
     updateNetworkInfo();
     updateStatus();
     serverClientsChanged({});
     updateText();
+    if (m_shell)
+      updateShellTexts();
+    if (m_header)
+      m_header->retranslate();
   }
 }
 
@@ -1081,7 +2064,10 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 
 void MainWindow::updateText()
 {
-  m_menuFile->setTitle(tr("&File"));
+  // the menu of the application of macOS is not a "file" menu: with the new look it is the menu of what is shared
+  m_menuFile->setTitle(
+      deskflow::gui::style::isDeskflowStyleInstalled() && deskflow::platform::isMac() ? tr("&Sharing") : tr("&File")
+  );
   m_menuEdit->setTitle(tr("&Edit"));
   m_menuView->setTitle(tr("&View"));
   m_menuHelp->setTitle(tr("&Help"));
@@ -1112,19 +2098,32 @@ void MainWindow::updateText()
     m_actionQuit->setShortcut(QKeySequence(tr("Ctrl+Q")));
     m_actionTrayQuit->setShortcut(QKeySequence(tr("Ctrl+Q")));
   }
+  updateTray();
 }
 
 void MainWindow::showConfigureServer(const QString &message)
 {
   ServerConfigDialog dialog(this, serverConfig());
   dialog.message(message);
-  if ((dialog.exec() == QDialog::Accepted) && m_coreProcess.isStarted()) {
+  const bool accepted = dialog.exec() == QDialog::Accepted;
+  // the arrangement that was saved is what is remembered for the displays that there are
+  if (accepted && m_layoutMemory != nullptr)
+    m_layoutMemory->configSaved();
+  if (accepted && m_coreProcess.isStarted()) {
     m_coreProcess.restart();
   }
 }
 
 void MainWindow::showConfigureClient()
 {
+  // the settings of the new look are pages of the window: the settings of the client are the page of the client
+  if (m_shell) {
+    m_shell->showPage(deskflow::gui::settings::SettingsPages::clientId());
+    if (!isVisible() || isMinimized())
+      showAndActivate();
+    return;
+  }
+
   ClientConfigDialog dialog(this);
   if (dialog.exec() == QDialog::Accepted) {
     applyConfig();
@@ -1132,6 +2131,30 @@ void MainWindow::showConfigureClient()
       m_coreProcess.restart();
     }
   }
+}
+
+void MainWindow::showConnectionTest()
+{
+  // Cloudflare Tunnel: the test goes the way that the client goes, through the tunnel
+  if (m_tunnelController != nullptr && m_tunnelController->isRequired()) {
+    deskflow::tunnel::TunnelTestRunner::Dependencies dependencies;
+    dependencies.controller = m_tunnelController;
+    TunnelTestDialog dialog(this, dependencies);
+    dialog.runTest();
+    dialog.exec();
+    return;
+  }
+
+  // what is typed in the field, which may not be what the core was started with
+  ConnectionTestDialog dialog(this, ui->cbHostname->currentText(), Settings::value(Settings::Core::Port).toInt());
+  dialog.runTest();
+  dialog.exec();
+}
+
+void MainWindow::showServerAddresses()
+{
+  ServerAddressesDialog dialog(this, m_serverAddresses);
+  dialog.exec();
 }
 
 void MainWindow::secureSocket(bool secureSocket)
@@ -1161,6 +2184,7 @@ void MainWindow::showAndActivate()
   m_actionMinimize->setVisible(true);
   if (!wasVisible)
     restoreWindow();
+  updateTray();
 }
 
 void MainWindow::showHostNameEditor()
@@ -1238,6 +2262,13 @@ bool MainWindow::generateCertificate()
 
 void MainWindow::serverClientsChanged(const QStringList &clients)
 {
+  if (m_shell) {
+    const bool active = m_coreProcess.mode() == CoreMode::Server && m_coreProcess.isStarted();
+    m_connectedClients = active ? clients : QStringList();
+    m_shell->status()->setClients(m_connectedClients);
+    updateShellComputers();
+    updateTray();
+  }
   if (m_coreProcess.mode() != CoreMode::Server || !m_coreProcess.isStarted())
     return;
   m_statusBar->setServerClients(clients);
@@ -1257,12 +2288,14 @@ void MainWindow::toggleCanRunCore(bool enableButtons)
   ui->btnRestartCore->setEnabled(enableButtons && isStarted);
   m_actionStartCore->setEnabled(enableButtons);
   m_actionStopCore->setEnabled(enableButtons && isStarted);
+  updateTray();
 }
 
 void MainWindow::remoteHostChanged(const QString &newRemoteHost)
 {
   m_coreProcess.setAddress(newRemoteHost);
-  toggleCanRunCore(!newRemoteHost.isEmpty() && ui->rbModeClient->isChecked());
+  ui->btnTestConnection->setEnabled(!newRemoteHost.trimmed().isEmpty());
+  toggleCanRunCore((!newRemoteHost.isEmpty() || m_coreProcess.isTunnelRequired()) && ui->rbModeClient->isChecked());
   if (newRemoteHost.isEmpty()) {
     Settings::setValue(Settings::Client::RemoteHost);
   } else {
@@ -1313,6 +2346,27 @@ void MainWindow::updateIpLabel(const QStringList &addresses)
     toolTipText = toolTipText.arg(tr("one of the following IPs:<br/>%1").arg(ipList.join("<br/>")));
   }
 
+  // With more than one address to choose from, say which network card each is on and what it is for, so that a
+  // client is not given the address of a network it cannot reach. With one address nothing changes.
+  m_serverAddresses.clear();
+  if (mode == CoreMode::Server && !fixedIP) {
+    for (const auto &info : usableIpv4Addresses()) {
+      if (ipList.contains(info.address)) {
+        m_serverAddresses.append(info);
+      }
+    }
+  }
+  if (m_serverAddresses.size() >= 2) {
+    labelText.append(
+        QStringLiteral(" (<a href=\"addresses\">%1</a>)").arg(tr("all %1 addresses").arg(m_serverAddresses.size()))
+    );
+    toolTipText = tr("<p>If connecting via the hostname fails, try one of the following IPs:</p>") +
+                  addressListToolTip(m_serverAddresses);
+    if (!IPValid) {
+      toolTipText.append(tr("<p>A bound IP is now invalid, you may need to restart the server.</p>"));
+    }
+  }
+
   ui->lblIpAddresses->setText(labelText);
   ui->lblIpAddresses->setToolTip(mode == CoreMode::Server ? toolTipText : QString());
 }
@@ -1360,5 +2414,381 @@ bool MainWindow::canRunCore() const
   const auto mode = m_coreProcess.mode();
   const bool isServer = mode == Settings::CoreMode::Server;
   const bool isClient = mode == Settings::CoreMode::Client;
-  return ((isServer || isClient) && (isClient && !ui->cbHostname->currentText().isEmpty()) || isServer);
+  return (
+      (isServer || isClient) &&
+          (isClient && (!ui->cbHostname->currentText().isEmpty() || m_coreProcess.isTunnelRequired())) ||
+      isServer
+  );
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// The main window of the new look
+//////////////////////////////////////////////////////////////////////////////
+
+void MainWindow::setupShell()
+{
+  using deskflow::gui::MainShell;
+  using deskflow::gui::MainShellParts;
+
+  MainShellParts parts;
+  parts.central = ui->topLevelWidget;
+  parts.oldGroup = ui->groupBox;
+  parts.nameRow = ui->widget;
+  parts.ipLabel = ui->lblIpAddresses;
+  parts.modeServer = ui->rbModeServer;
+  parts.modeClient = ui->rbModeClient;
+  parts.noMode = ui->lblNoMode;
+  parts.configureServer = ui->btnConfigureServer;
+  parts.exportServer = ui->btnSaveServerConfig;
+  parts.configureClient = ui->btnConfigureClient;
+  parts.testConnection = ui->btnTestConnection;
+  parts.toggleCore = ui->btnToggleCore;
+  parts.restartCore = ui->btnRestartCore;
+  parts.hostLabel = ui->m_pLabelServerName;
+  parts.hostname = ui->cbHostname;
+  parts.noticeBar = m_layoutNoticeBar;
+  m_shell = new MainShell(parts, this);
+
+  // what the user pressed in the sidebar
+  connect(m_shell->rail(), &NavRail::activated, this, &MainWindow::shellEntryActivated);
+  // the sidebar that is folded is remembered; the one that a narrow window folded is not
+  m_shell->sidebar()->setCollapsed(Settings::value(Settings::Gui::SidebarCollapsed).toBool());
+  connect(m_shell->sidebar(), &SidebarShell::collapsedChanged, this, [](bool collapsed) {
+    Settings::setValue(Settings::Gui::SidebarCollapsed, collapsed);
+  });
+  connect(m_logDock->toggleViewAction(), &QAction::toggled, m_shell, &deskflow::gui::MainShell::setLogShown);
+  m_shell->setLogShown(!m_logDock->isHidden());
+
+  // the View menu folds and unfolds the sidebar as its button does. Ctrl+B is the shortcut of the sidebar in the
+  // editors of code and is free here; the Mac has its own for a sidebar (Control+Command+S)
+  m_actionToggleSidebar = new QAction(this);
+  m_actionToggleSidebar->setShortcut(
+      deskflow::platform::isMac() ? QKeySequence(Qt::CTRL | Qt::META | Qt::Key_S) : QKeySequence(Qt::CTRL | Qt::Key_B)
+  );
+  m_actionToggleSidebar->setMenuRole(QAction::NoRole);
+  connect(m_actionToggleSidebar, &QAction::triggered, this, [this] { m_shell->rail()->toggleButton()->click(); });
+  connect(m_shell->rail(), &NavRail::expandedChanged, this, [this] {
+    m_actionToggleSidebar->setText(m_shell->rail()->toggleButton()->accessibleName());
+  });
+  m_menuView->addAction(m_actionToggleSidebar);
+
+  // the size of text: larger, smaller, and back to Automatic. They are keys of the window (the menu bar is not shown
+  // with the header), and they write the setting, which the page of the settings and the service follow
+  const auto textSizeAction = [this](const QString &name, const QList<QKeySequence> &keys, int direction) {
+    auto *action = new QAction(this);
+    action->setObjectName(name);
+    action->setShortcuts(keys);
+    action->setMenuRole(QAction::NoRole);
+    connect(action, &QAction::triggered, this, [direction] {
+      const auto current = deskflow::gui::style::snapTextPercent(Settings::value(Settings::Gui::TextSize).toInt());
+      Settings::setValue(Settings::Gui::TextSize, deskflow::gui::style::stepTextPercent(current, direction));
+    });
+    addAction(action);
+    return action;
+  };
+  m_actionTextLarger = textSizeAction(
+      QStringLiteral("actionTextLarger"),
+      {QKeySequence(Qt::CTRL | Qt::Key_Equal), QKeySequence(Qt::CTRL | Qt::Key_Plus)}, 1
+  );
+  m_actionTextSmaller =
+      textSizeAction(QStringLiteral("actionTextSmaller"), {QKeySequence(Qt::CTRL | Qt::Key_Minus)}, -1);
+  m_actionTextReset = textSizeAction(QStringLiteral("actionTextReset"), {QKeySequence(Qt::CTRL | Qt::Key_0)}, 0);
+
+  // the settings are pages of the sidebar; a change is written at once and sharing is restarted by the banner
+  m_settingsPages = new deskflow::gui::settings::SettingsPages(this);
+  for (const auto &entry : m_settingsPages->entries()) {
+    if (entry.parentId.isEmpty())
+      m_shell->addSettingsPage(entry.id, entry.icon, entry.title(), entry.page);
+    else
+      m_shell->addSubPage(entry.id, entry.parentId, entry.page);
+  }
+  connect(m_settingsPages, &deskflow::gui::settings::SettingsPages::pageRequested, m_shell, [this](const QString &id) {
+    m_shell->showPage(id);
+  });
+  connect(m_settingsPages, &deskflow::gui::settings::SettingsPages::applied, this, &MainWindow::settingApplied);
+  connect(
+      m_settingsPages, &deskflow::gui::settings::SettingsPages::fingerprintRequested, this,
+      &MainWindow::showMyFingerprint
+  );
+  connect(
+      m_settingsPages, &deskflow::gui::settings::SettingsPages::removeAllSettingsRequested, this,
+      &MainWindow::clearSettings
+  );
+  connect(
+      m_settingsPages, &deskflow::gui::settings::SettingsPages::checkForUpdatesRequested, this,
+      &MainWindow::checkForUpdates, Qt::UniqueConnection
+  );
+  // the page of the client: the Cloudflare Tunnel that it saved is what the window says from now on, and the list of
+  // the servers that it cleared is what the address field has
+  connect(m_settingsPages, &deskflow::gui::settings::SettingsPages::tunnelSaved, this, [this] {
+    if (m_tunnelStatus != nullptr)
+      m_tunnelStatus->refresh();
+    toggleCanRunCore(canRunCore());
+  });
+  connect(m_settingsPages, &deskflow::gui::settings::SettingsPages::serverHistoryCleared, this, [this] {
+    const auto host = ui->cbHostname->currentText();
+    QSignalBlocker hostnameBlocker(ui->cbHostname);
+    ui->cbHostname->clear();
+    ui->cbHostname->addItems(Settings::value(Settings::Client::RecentRemoteHosts).toStringList());
+    ui->cbHostname->setCurrentText(host);
+  });
+  connect(m_shell->restartBanner(), &deskflow::gui::settings::RestartBanner::restartRequested, this, [this] {
+    m_shell->restartBanner()->setPending(false);
+    resetCore();
+  });
+
+  // the status bar is what says the state (the sentence, the encryption, the buttons): it is kept as the source,
+  // hidden, and the shell shows it
+  m_statusBar->setHeadless(true);
+  connect(m_statusBar, &StatusBar::changed, this, &MainWindow::scheduleShellRefresh);
+  // the tray says what the status says: its header is the headline of the window
+  connect(m_shell->status(), &deskflow::gui::StatusModel::changed, this, &MainWindow::updateTray);
+
+  // the log says what the size of text is, and why: a person who finds the text small can tell what the program was
+  // given
+  if (auto *textSize = deskflow::gui::style::TextSize::instance()) {
+    qInfo().noquote() << textSize->describe();
+    connect(textSize, &deskflow::gui::style::TextSize::planChanged, this, [textSize] {
+      qInfo().noquote() << textSize->describe();
+    });
+  }
+
+  // the window is usable down to a width that follows the size of text, and never asks for more than the screen has
+  const auto sizeWindow = [this] {
+    int width = deskflow::gui::MainShell::minimumWindowWidth();
+    if (const auto *screen = this->screen())
+      width = qMin(width, qMax(deskflow::gui::MainShell::kMinimumWindowWidth, screen->availableGeometry().width()));
+    setMinimumWidth(width);
+    m_shell->setLeastWindowWidth(width);
+  };
+  sizeWindow();
+  deskflow::gui::style::onTextSizeChanged(this, sizeWindow);
+  updateModeControls();
+  updateModeControlLabels();
+  updateShellTexts();
+  updateStatus();
+}
+
+void MainWindow::applyWindowChrome()
+{
+  using namespace deskflow::gui::chrome;
+  if (!m_shell)
+    return;
+  m_frame = decideFrame(ChromeEnvironment::current());
+  qInfo().noquote() << "window frame:" << (m_frame.clientSide() ? "client side" : "native") << "("
+                    << reasonName(m_frame.reason) << ")";
+  if (!m_frame.clientSide())
+    return;
+
+  // a Mac has the buttons of the window in its title bar, and the title there; the others have them in the header
+  const bool mac = deskflow::platform::isMac();
+  WindowHeader::Options options;
+  options.captionButtons = !mac;
+  options.leftInset = mac ? WindowHeader::kTrafficLightsInset : 0;
+  options.title = !mac;
+  auto *header = new WindowHeader(options, this);
+  auto *chrome = new WindowChrome(this, header, this);
+  if (!chrome->apply()) {
+    qWarning() << "the frame of the new look could not be made: the window keeps the frame of the system";
+    delete chrome;
+    delete header;
+    m_frame = FrameDecision{FrameKind::Native, FrameReason::PlatformPluginUnsupported};
+    return;
+  }
+  m_header = header;
+  m_chrome = chrome;
+  m_shell->setHeader(header);
+  header->setTitle(windowTitle());
+  connect(this, &QWidget::windowTitleChanged, header, &WindowHeader::setTitle);
+  connect(header, &WindowHeader::closeRequested, this, &MainWindow::closeFromHeader);
+  buildHeaderMenu();
+  // the menu bar of a Mac is the one of the system, at the top of the screen
+  if (!mac)
+    hideMenuBar();
+}
+
+QAction *MainWindow::actionFor(deskflow::gui::chrome::MenuAction action) const
+{
+  using deskflow::gui::chrome::MenuAction;
+  switch (action) {
+  case MenuAction::Start:
+    return m_sharingStart;
+  case MenuAction::Restart:
+    return m_sharingRestart;
+  case MenuAction::Stop:
+    return m_sharingStop;
+  case MenuAction::TestConnection:
+    return m_sharingTestConnection;
+  case MenuAction::ViewFingerprint:
+    return m_sharingFingerprint;
+  case MenuAction::MinimizeToTray:
+    return m_sharingMinimize;
+  case MenuAction::Quit:
+    return m_actionQuit;
+  case MenuAction::Preferences:
+    return m_actionSettings;
+  case MenuAction::ToggleLog:
+    return m_logDock->toggleViewAction();
+  case MenuAction::ToggleSidebar:
+    return m_actionToggleSidebar;
+  case MenuAction::About:
+    return m_actionAbout;
+  case MenuAction::ViewHelp:
+    return m_actionShowHelp;
+  }
+  return nullptr;
+}
+
+void MainWindow::buildHeaderMenu()
+{
+  using namespace deskflow::gui::chrome;
+  auto *menu = new QMenu(this);
+  menu->setObjectName(QStringLiteral("headerMenu"));
+  // the rows are the actions of the window, in the order of the table of what the old menus did: their texts, their
+  // state and their keys follow the window, and the table is what the tests check
+  int group = -1;
+  for (const auto &entry : menuMigrations(deskflow::platform::isMac())) {
+    auto *action = actionFor(entry.action);
+    if (!action)
+      continue;
+    if (group >= 0 && entry.group != group)
+      menu->addSeparator();
+    group = entry.group;
+    menu->addAction(action);
+  }
+  m_header->setMenu(menu);
+}
+
+void MainWindow::hideMenuBar()
+{
+  // a key that belongs to an action of a menu that is not shown would not work: the actions are the window's as well
+  QList<QMenu *> menus{m_menuFile, m_menuEdit, m_menuView, m_menuHelp};
+  if (m_header && m_header->menu())
+    menus << m_header->menu();
+  for (auto *menu : std::as_const(menus)) {
+    for (auto *action : menu->actions()) {
+      if (!action->isSeparator())
+        addAction(action);
+    }
+  }
+  menuBar()->hide();
+}
+
+void MainWindow::closeFromHeader()
+{
+  // the close of the system goes to the tray, or ends the program, as the settings say
+  if (!maybeHideToTray())
+    close();
+}
+
+void MainWindow::settingApplied(const QString &key)
+{
+  // what the window shows follows at once
+  if (key == Settings::Gui::ShowVersionInTitle)
+    updateWindowTitle();
+  else if (key == Settings::Gui::SymbolicTrayIcon)
+    setTrayIcon();
+
+  // what the core reads is in use when the core starts again
+  using deskflow::gui::settings::Effect;
+  const auto effect = deskflow::gui::settings::effectOf(key);
+  const auto state = m_coreProcess.processState();
+  if (effect == Effect::RestartSharing && (state == ProcessState::Started || state == ProcessState::Starting))
+    m_shell->restartBanner()->setPending(true);
+}
+
+void MainWindow::updateShellTexts()
+{
+  deskflow::gui::MainShell::Texts texts;
+  texts.preferences = m_actionSettings->text();
+  texts.log = m_logDock->toggleViewAction()->text();
+  texts.about = m_actionAbout->text();
+  texts.fingerprint = m_statusBar->fingerprintToolTip();
+  texts.updateAvailable = m_statusBar->updateButtonText();
+  m_shell->setTexts(texts);
+  m_shell->clientSection()->setAddressHint(tr("LAN address first, then the VPN address, separated by commas"));
+  m_actionToggleSidebar->setText(m_shell->rail()->toggleButton()->accessibleName());
+  for (const auto &entry : m_settingsPages->entries()) {
+    if (entry.parentId.isEmpty())
+      m_shell->setPageText(entry.id, entry.title());
+  }
+  m_shell->restartBanner()->retranslate();
+  m_shell->awdlBanner()->retranslate();
+  updateShellComputers();
+  refreshShell();
+}
+
+void MainWindow::scheduleShellRefresh()
+{
+  if (!m_shell || m_shellRefreshPending)
+    return;
+  m_shellRefreshPending = true;
+  QMetaObject::invokeMethod(this, &MainWindow::refreshShell, Qt::QueuedConnection);
+}
+
+void MainWindow::refreshShell()
+{
+  m_shellRefreshPending = false;
+  if (!m_shell)
+    return;
+  m_shell->status()->setDetail(m_statusBar->statusText());
+  m_shell->status()->setSecurity(
+      m_statusBar->securityIconVisible(), m_statusBar->isEncrypted(), m_statusBar->securityText()
+  );
+  m_shell->setFingerprintVisible(m_statusBar->fingerprintVisible());
+  m_shell->setUpdateStatus(m_updateStatus->view());
+  m_shell->setEncryptionEnabled(TlsUtility::isEnabled());
+  // the tray says the sentence of the status and the update as well
+  updateTray();
+}
+
+void MainWindow::updateShellComputers()
+{
+  if (!m_shell)
+    return;
+  const auto &reported = m_serverConfig.reportedMonitorsByComputer();
+  const auto thisComputer = Settings::value(Settings::Core::ComputerName).toString();
+
+  QList<deskflow::gui::MainShell::ComputerEntry> entries;
+  for (const auto &computer : std::as_const(m_serverConfig).computers()) {
+    if (computer.isNull() || computer.isServer() || computer.name() == thisComputer)
+      continue;
+    deskflow::gui::MainShell::ComputerEntry entry;
+    entry.name = computer.name();
+    entry.connected = m_connectedClients.contains(computer.name());
+    if (const auto found = reported.constFind(computer.name()); found != reported.constEnd() && !found->isEmpty()) {
+      const auto count = found->monitors.size();
+      entry.detail = (count == 1 ? tr("1 monitor") : tr("%1 monitors").arg(count)) + QStringLiteral(" · ") +
+                     tr("Reported by the computer");
+    }
+    entries.append(entry);
+  }
+  m_shell->setComputers(entries);
+}
+
+void MainWindow::shellEntryActivated(const QString &id)
+{
+  if (id == QLatin1String("preferences"))
+    openSettings();
+  else if (id == QLatin1String("log"))
+    m_logDock->toggleViewAction()->toggle();
+  else if (id == QLatin1String("about"))
+    openAboutDialog();
+  else if (id == QLatin1String("fingerprint"))
+    showMyFingerprint();
+  else if (id == QLatin1String("update"))
+    handleUpdateAction(m_updateStatus->view().action);
+}
+
+void MainWindow::autoShowLogOnError(const QString &line)
+{
+  static const QRegularExpression errorLine(QStringLiteral(R"(^\[[^\]]*\]\s+(ERROR|CRITICAL|FATAL):)"));
+  if (m_logShownByErrorThisRun || !m_logDock->isHidden() || !isVisible() || isMinimized())
+    return;
+  if (!errorLine.match(line).hasMatch())
+    return;
+  m_logShownByErrorThisRun = true;
+  m_logShownByError = true;
+  m_logDock->show();
+  m_logShownByError = false;
 }

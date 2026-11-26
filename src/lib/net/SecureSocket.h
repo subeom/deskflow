@@ -78,6 +78,8 @@ private:
   bool showCertificate() const;
   void checkResult(int n, int &retry);
   void disconnect();
+  //! Tell the client side why the secure handshake of this outgoing connection failed
+  void sendSecureFailedEvent(deskflow::diagnosis::FailureKind kind);
   bool verifyCertFingerprint(const QString &FingerprintDatabasePath) const;
 
   ISocketMultiplexerJob *serviceConnect(ISocketMultiplexerJob *const socket, bool, bool, bool);

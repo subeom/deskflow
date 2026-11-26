@@ -9,9 +9,11 @@
 #include "AboutDialog.h"
 #include "ui_AboutDialog.h"
 
+#include "AboutCards.h"
 #include "common/Constants.h"
 #include "common/Settings.h"
 #include "common/VersionInfo.h"
+#include "gui/style/Appearance.h"
 
 #include <QClipboard>
 
@@ -45,6 +47,10 @@ AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent), ui{std::make_unique
 
   ui->btnOk->setDefault(true);
   connect(ui->btnOk, &QPushButton::clicked, this, &AboutDialog::close);
+
+  // the new look: the credits are cards, and the dialog is as small as it was
+  if (deskflow::gui::style::isDeskflowStyleInstalled())
+    deskflow::gui::applyAboutCards(this);
 }
 
 void AboutDialog::copyVersionText() const

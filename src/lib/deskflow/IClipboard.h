@@ -111,6 +111,29 @@ public:
   */
   virtual bool has(Format) const = 0;
 
+  //! Check if a format is wanted
+  /*!
+  Return false if this clipboard has no use for data in the given format.  copy() then does not even read the format
+  from its source, which matters because reading some formats is expensive (a platform may have to convert an image
+  to a bitmap first), and a clipboard that does not want a format should ignore it when it is added.  Every format is
+  wanted unless a subclass says otherwise.
+  */
+  virtual bool wants(Format) const
+  {
+    return true;
+  }
+
+  //! The size of the largest clipboard that is shared, in bytes, 0 if there is no limit
+  /*!
+  A platform that has to convert an image to read it may use this to not read an image that cannot be shared anyway.
+  What it returns instead of the image must make the marshalled clipboard larger than this number, so that the
+  clipboard is dropped as it is when the image is read.
+  */
+  virtual size_t sizeLimit() const
+  {
+    return 0;
+  }
+
   //! Get data
   /*!
   Return the data in the given format.  Returns the empty string

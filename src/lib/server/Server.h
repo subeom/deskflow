@@ -12,13 +12,17 @@
 #include "base/Stopwatch.h"
 #include "common/NetworkProtocol.h"
 #include "deskflow/Clipboard.h"
+#include "deskflow/ClipboardSharePolicy.h"
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/KeyTypes.h"
 #include "deskflow/MouseTypes.h"
 #include "server/Config.h"
 
+#include <array>
+#include <chrono>
 #include <climits>
 #include <map>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -153,6 +157,17 @@ public:
   This will disconnect any clients no longer in the configuration.
   */
   bool setConfig(const ServerConfig &);
+
+  //! Set how long a grab of the primary clipboard is looked at as a possible echo of a write by Deskflow
+  /*!
+  A program that rewrites a clipboard with what is on it (Universal Clipboard, a clipboard manager) makes the computer
+  grab it again.  For \p window after Deskflow wrote the clipboard of the primary computer, a grab of what Deskflow
+  wrote is ignored.  The default is two seconds.
+  */
+  void setClipboardEchoWindow(std::chrono::milliseconds window)
+  {
+    m_clipboardEchoWindow = window;
+  }
 
   //! Add a client
   /*!
@@ -303,8 +318,77 @@ private:
   // process options from configuration
   void processOptions();
 
+  // whether the clipboard is shared with \p client: not when the computer is set to leave it out
+  bool sharesClipboardWith(const BaseClientProxy *client) const;
+
+  // whether \p sender holds the same shared clipboard that was last passed on
+  bool clipboardUnchanged(const BaseClientProxy *sender, ClipboardID id) const;
+
+  // whether the primary computer's clipboard was written by Deskflow so recently that a grab of it is likely an echo
+  bool primaryClipboardWrittenRecently(ClipboardID id) const;
+  void logDisabledForComputer(ClipboardID id, const BaseClientProxy *client) const;
+
+  // share the whole clipboard, or the text of it only
+  void setClipboardTextOnly(bool textOnly);
+
+  // The experiment: the monitor layouts of computers, see deskflow::server::MonitorLayout. It is on when the setting is
+  // and then, for a computer that has a layout, the pointer is mapped around the holes of its desktop. Everything below
+  // is for a Server that is not set to the experiment, or a computer that has no layout that fits it, to not do.
+
+  // turn the experiment on or off, and say what is decided for each computer when it is on
+  void setMonitorGeometry(bool on);
+
+  // the layout to map the pointer by on \p client: when the experiment is on, the computer has a layout, that is valid,
+  // is of the screen that the computer reports, and is not a rectangle. The layout that the user set for the computer
+  // is that layout while it fits the screen of the computer; when it does not, or there is none, it is the monitors
+  // that the computer reported (see docs/dev/monitor-reporting.md). Otherwise nullptr, which is the mapping that there
+  // always was; \p reason says why, if given (and is empty when there is nothing to say about the computer).
+  const deskflow::server::MonitorLayout *
+  monitorLayoutFor(const BaseClientProxy *client, std::string *reason = nullptr) const;
+
+  // the layout that the user set for \p client, when it is valid, is of the screen of the computer and is not a
+  // rectangle; \p fits is true when the layout is valid and of the screen, which is when it is the user's choice
+  const deskflow::server::MonitorLayout *
+  typedLayoutFor(const BaseClientProxy *client, std::string *reason, bool *fits) const;
+
+  // the monitors that \p client reports, when they are of the screen that it reports and are not a rectangle
+  const deskflow::server::MonitorLayout *reportedLayoutFor(const BaseClientProxy *client, std::string *reason) const;
+
+  // say the monitors that \p client reports, if they are not what was said last, while the experiment is on: the GUI
+  // reads it
+  void sayReportedMonitors(const BaseClientProxy *client);
+
+  // say what is decided for \p client, if it is not what was said last
+  void sayMonitorGeometry(const BaseClientProxy *client);
+
+  // say the screen that \p client reports, if it is not what was said last, while the experiment is on: the GUI reads
+  // it
+  void sayReportedScreen(const BaseClientProxy *client);
+
+  // say about a switch of computers, when the experiment is on
+  void sayMonitorGeometrySwitch(const BaseClientProxy *destination, int32_t x, int32_t y);
+
+  // The layout of the screen of the server itself, from what its platform says its monitors are: when the experiment
+  // is on, the arrangement is used, the monitors are valid and are of the screen that the platform reports, and are not
+  // a rectangle. Otherwise nullptr, which is the mapping that there always was; \p reason says why, if given.
+  const deskflow::server::MonitorLayout *primaryLayout(std::string *reason = nullptr) const;
+
+  // put the pointer on the monitor of \p layout that it enters on, entering through the side opposite to \p srcSide, at
+  // least \p minDepth pixels in
+  void enterOnMonitor(
+      const deskflow::server::MonitorLayout &layout, Direction srcSide, int32_t &x, int32_t &y, int32_t minDepth = 0
+  ) const;
+
+  // how far in the pointer has to be taken, when it enters the primary computer, to be away from its jump zone: the
+  // size of the zone if the primary computer has a neighbour on the side that it is entered through, at that place
+  int32_t jumpZoneDepth(const deskflow::server::MonitorLayout &layout, Direction srcSide, int32_t x, int32_t y) const;
+
+  // the pointer is moved by \p dx, \p dy on a computer that has a layout to map the pointer by
+  void onMouseMoveSecondaryOnMonitors(const deskflow::server::MonitorLayout &layout, int32_t dx, int32_t dy);
+
   // event handlers
   void handleShapeChanged(BaseClientProxy *client);
+  void handleMonitorsReported(BaseClientProxy *client);
   void handleClipboardGrabbed(const Event &event, BaseClientProxy *client);
   void handleClipboardChanged(const Event &event, BaseClientProxy *client);
   void handleKeyDownEvent(const Event &event);
@@ -334,7 +418,7 @@ private:
   void onMouseUp(ButtonID);
   bool onMouseMovePrimary(int32_t x, int32_t y);
   void onMouseMoveSecondary(int32_t dx, int32_t dy);
-  void onMouseWheel(int32_t xDelta, int32_t yDelta);
+  void onMouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource source = ScrollSource::Unknown);
 
   // add client to list and attach event handlers for client
   bool addClient(BaseClientProxy *);
@@ -370,8 +454,16 @@ private:
     std::string m_clipboardData;
     std::string m_clipboardOwner;
     uint32_t m_clipboardSeqNum = 0;
+    // what was read last was dropped for its size: what is kept of it is not to be sent, whatever the limit is by now
+    bool m_oversize = false;
   };
   // Order suggested by clang
+
+  // when Deskflow last wrote the clipboard of the primary computer
+  std::array<std::optional<std::chrono::steady_clock::time_point>, kClipboardEnd> m_primaryClipboardWritten;
+
+  // how long after Deskflow wrote the clipboard of the primary computer a grab of it is looked at as a possible echo
+  std::chrono::milliseconds m_clipboardEchoWindow{2000};
 
   // the Primary Computer Client
   PrimaryClient *m_primaryClient = nullptr;
@@ -418,6 +510,12 @@ private:
 
   // clipboard cache
   ClipboardInfo m_clipboards[kClipboardEnd];
+
+  // what of a clipboard is shared: all of it, or the text of it only
+  ClipboardSharePolicy m_clipboardPolicy;
+
+  // the clipboards that were not shared last, so that each is reported once
+  ClipboardRejectionLog m_clipboardRejections[kClipboardEnd];
 
   // used in hello message sent to the client
   NetworkProtocol m_protocol = NetworkProtocol::Barrier;
@@ -468,4 +566,35 @@ private:
   bool m_defaultLockToComputerState = false;
   bool m_disableLockToComputer = false;
   bool m_enableClipboard = true;
+
+  // the experiment is on
+  bool m_multiMonitor = false;
+
+  // the links come from the arrangement of the computers, and the server maps the pointer around the holes of its own
+  // screen; has an effect only while the experiment is on
+  bool m_useArrangement = false;
+
+  // the monitors of the screen of the server that the layout below is of, and the layout
+  mutable std::optional<std::vector<deskflow::server::MonitorRect>> m_primaryMonitors;
+  mutable deskflow::server::MonitorLayoutResult m_primaryLayout;
+
+  // what was said last about each computer, by name: on or off, and why
+  std::map<std::string, std::string> m_monitorGeometrySaid;
+
+  // the screen that each computer was last said to report, by name
+  std::map<std::string, std::string> m_reportedScreenSaid;
+
+  // the monitors that each computer was last said to report, by name; empty when it was said to report none
+  std::map<std::string, std::string> m_reportedMonitorsSaid;
+  // the computers that were said not to report, for as long as they are connected
+  std::set<std::string> m_noMonitorsSaid;
+
+  // the side and fraction of the last edge that the pointer was taken over, for what is said about a switch
+  struct Crossing
+  {
+    bool known = false;
+    Direction side = Direction::NoDirection;
+    float fraction = 0.0f;
+  };
+  mutable Crossing m_crossing;
 };

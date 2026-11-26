@@ -6,6 +6,7 @@
 
 #include "Settings.h"
 
+#include "ConnectionDiagnosis.h"
 #include "LogLevel.h"
 #include "NetworkProtocol.h"
 #include "UrlConstants.h"
@@ -253,13 +254,18 @@ void Settings::upgradeSettings()
 
 void Settings::cleanSettings()
 {
+  // in portable mode there is no state file: the state keys are written to the settings file (see setValue) and are
+  // not to be taken away with the keys that no version of the program has
+  const bool portable = isPortableMode();
   const QStringList keys = m_settings->allKeys();
   for (const QString &key : keys) {
     if (m_oldServerConfigKeys.contains(key) || key.startsWith("screen_"))
       m_settings->remove(key);
     if (key.startsWith(QStringLiteral("internalConfig")))
       continue;
-    if (const auto group = key.mid(0, key.indexOf('/')); !m_validKeys.contains(key) && m_validGroup.contains(group))
+    const bool keptState = portable && m_stateKeys.contains(key);
+    if (const auto group = key.mid(0, key.indexOf('/'));
+        !keptState && !m_validKeys.contains(key) && m_validGroup.contains(group))
       m_settings->remove(key);
     if (!m_settings->value(key).isValid())
       m_settings->remove(key);
@@ -325,6 +331,9 @@ QVariant Settings::defaultValue(const QString &key)
     return computerDefaults(computerKey);
   }
 
+  if (key == Gui::NativeWindowFrame)
+    return kLinuxNativeWindowFrameByDefault && QSysInfo::kernelType() == QLatin1String("linux");
+
   if (m_defaultFalseValues.contains(key))
     return false;
 
@@ -346,13 +355,39 @@ QVariant Settings::defaultValue(const QString &key)
   if (key == Daemon::Elevate)
     return !Settings::isPortableMode();
 
-  if (key == Gui::UpdateCheckUrl)
-    return kUrlUpdateCheck;
+  // The look of the application when none is chosen: its own (the one that is the same on every OS). gui/style says it
+  // too (kDefaultMode), and a test keeps the two the same
+  if (key == Gui::Appearance)
+    return QStringLiteral("deskflow");
+
+  if (key == Gui::TextSize)
+    return 100;
+
+  if (key == Gui::InputIndicatorPosition)
+    return QStringLiteral("cursorBottomRight");
+
+  if (key == Gui::InputIndicatorCompanion)
+    return QStringLiteral("cat");
+
+  if (key == Gui::InputIndicatorDwellMs)
+    return 1500;
+
+  if (key == Gui::InputIndicatorOpacityPercent)
+    return 65;
+
+  if (key == Gui::InputIndicatorSpeedPercent)
+    return 100;
+
+  if (key == Gui::InputIndicatorTone)
+    return QStringLiteral("automatic");
 
   if (key == Server::ExternalConfigFile)
     return QStringLiteral("%1/%2-server.conf").arg(Settings::settingsPath(), kAppId);
 
   if (key == Core::Port)
+    return 24800;
+
+  if (key == Tunnel::LocalPort)
     return 24800;
 
   if (key == Core::ProcessMode) {
@@ -368,6 +403,9 @@ QVariant Settings::defaultValue(const QString &key)
 
   if (key == Client::YScrollScale || key == Client::XScrollScale)
     return 1.0;
+
+  if (key == Client::ConnectTimeout)
+    return deskflow::diagnosis::kDefaultConnectTimeoutSeconds;
 
   if (key == Server::Protocol)
     return networkProtocolToOption(NetworkProtocol::Barrier);
@@ -501,6 +539,13 @@ QVariant Settings::value(const QString &key)
   return settings->value(key, defaultValue(key));
 }
 
+QString Settings::textValue(const QString &key)
+{
+  const auto stored = value(key);
+  if (stored.metaType().id() == QMetaType::QStringList)
+    return stored.toStringList().join(QLatin1Char(','));
+  return stored.toString();
+}
 void Settings::restoreDefaultSettings()
 {
   for (const auto &key : m_validKeys) {
@@ -527,6 +572,25 @@ void Settings::removeUnknownComputers(const QStringList &knownComputers)
 
 QVariant Settings::computerDefaults(const QString &key)
 {
+  // a configuration that predates the setting shares the clipboard with every computer, as it always did
+  if (key == "shareClipboard")
+    return true;
+  if (key == "f18Action")
+    return QStringLiteral("passthrough");
+  if (key == "crossOSInvertScope")
+    return QStringLiteral("all");
+  if (key == "crossOSInvertX" || key == "crossOSInvertY" || key == "crossOSSemanticMedia")
+    return false;
+  // a configuration that predates the setting has no monitor layout for a computer: it is mapped as it always was
+  if (key == "monitorLayout" || key == "monitorScales" || key == "reportedMonitors")
+    return QString();
+  // and no arrangement: a computer that is not placed has no position
+  if (key == "arrangementZoom")
+    return 1.0;
+  if (key == "arrangementWidth" || key == "arrangementHeight")
+    return 0;
+  if (key == "arrangementX" || key == "arrangementY")
+    return QVariant();
   if (key.contains(QStringLiteral("halfDuplex")) || key.contains("xtestIsXineramaUnaware") || key.contains("X11") ||
       key.contains("Left") || key.contains("Right"))
     return false;

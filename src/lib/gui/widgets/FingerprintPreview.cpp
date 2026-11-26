@@ -6,6 +6,7 @@
 
 #include "FingerprintPreview.h"
 #include "common/PlatformInfo.h"
+#include "gui/style/Appearance.h"
 
 #include <QDebug>
 #include <QFont>
@@ -24,8 +25,9 @@ FingerprintPreview::FingerprintPreview(
   setFrameStyle(QFrame::Sunken);
   setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
 
+  // the size is that of the view that is taller (the image): the frame does not change its size when the view does
   if (fingerprint.type == QCryptographicHash::Sha256) {
-    setLayout(sha256Layout(fingerprint, titleText, hashMode));
+    setLayout(sha256Layout(fingerprint, titleText, false));
   } else {
     qWarning() << "cannot render fingerprint, unsupported type:" << Fingerprint::typeToString(fingerprint.type);
     setLayout(emptyLayout());
@@ -43,6 +45,26 @@ FingerprintPreview::FingerprintPreview(
   if (deskflow::platform::isMac())
     artPadding = 32;
   setFixedSize(m_lblArt->width() + artPadding, height());
+  toggleMode(hashMode);
+}
+
+bool FingerprintPreview::hashFirst()
+{
+  return deskflow::gui::style::isDeskflowStyleInstalled();
+}
+
+QString FingerprintPreview::groupedHash(const QByteArray &data, int groupSize, int groupsPerLine)
+{
+  const QString hex = QString::fromLatin1(data.toHex().toUpper());
+  QString grouped;
+  int groups = 0;
+  for (int at = 0; at < hex.size(); at += groupSize) {
+    if (groups > 0)
+      grouped.append(groups % groupsPerLine == 0 ? QLatin1Char('\n') : QLatin1Char(' '));
+    grouped.append(QStringView(hex).mid(at, groupSize));
+    ++groups;
+  }
+  return grouped;
 }
 
 void FingerprintPreview::toggleMode(bool hashMode)
@@ -72,15 +94,19 @@ QLayout *FingerprintPreview::sha256Layout(const Fingerprint &fingerprint, const 
   labelTitle->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
   labelTitle->setVisible(!titleText.isEmpty());
 
-  m_lblHash = new QLabel(deskflow::formatSSLFingerprintColumns(fingerprint.data), this);
+  m_lblHash = new QLabel(
+      hashFirst() ? groupedHash(fingerprint.data) : deskflow::formatSSLFingerprintColumns(fingerprint.data), this
+  );
   m_lblHash->setAlignment(Qt::AlignVCenter | Qt::AlignHCenter);
   m_lblHash->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  m_lblHash->setObjectName(QStringLiteral("lblFingerprintHash"));
   m_lblHash->setVisible(hashMode);
   m_lblHash->setFont(fixedFont());
 
   m_lblArt = new QLabel(deskflow::generateFingerprintArt(fingerprint.data), this);
   m_lblArt->setAlignment(Qt::AlignVCenter | Qt::AlignHCenter);
   m_lblArt->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  m_lblArt->setObjectName(QStringLiteral("lblFingerprintArt"));
   m_lblArt->setVisible(!hashMode);
   m_lblArt->setFont(fixedFont());
 

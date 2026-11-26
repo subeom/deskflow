@@ -12,8 +12,17 @@
 #include "common/Hotkey.h"
 #include "gui/config/ComputerConfig.h"
 #include "gui/config/ComputerList.h"
+#include "gui/core/ReportedMonitors.h"
+#include "server/Arrangement.h"
 
+#include <QHash>
 #include <QList>
+#include <QRect>
+
+#include <functional>
+#include <memory>
+#include <optional>
+#include <vector>
 
 class QTextStream;
 class QSettings;
@@ -57,6 +66,103 @@ public:
   bool useExternalConfig() const;
   void addClient(const QString &clientName);
 
+  //! @name Experimental: the arrangement of the computers
+  //@{
+
+  //! Whether the links are made from the arrangement: the experiment is on, and so is the use of the arrangement
+  bool usesArrangement() const;
+
+  //! Whether the computers have been put in the arrangement
+  bool hasArrangement() const;
+
+  //! The computers of the grid, with their monitors, zoom and place in the arrangement
+  /*!
+  A server has the displays of this computer, a computer that has a monitor layout has those monitors, a computer that
+  has neither is one monitor of the size that was said (1920 x 1080 if none was). A computer that has no place is put
+  beside the others, apart from them; if none has one, this is the classic grid as an arrangement.
+  */
+  deskflow::server::arrangement::Arrangement arrangement() const;
+
+  //! The same, with \p serverMonitors as the displays of this computer instead of what the operating system says
+  /*!
+  For a situation that is not the present one: what the arrangement was with the displays that the server had.
+  */
+  deskflow::server::arrangement::Arrangement arrangementWith(const std::vector<deskflow::server::MonitorRect> &serverMonitors
+  ) const;
+
+  //! The classic grid as an arrangement, which is where the arrangement begins
+  deskflow::server::arrangement::GridConversion classicGridAsArrangement() const;
+
+  //! Take the places of the computers from \p arrangement
+  void setArrangement(const deskflow::server::arrangement::Arrangement &arrangement);
+
+  //! What a computer that is connected said its screen is: its position and size in its own coordinates
+  /*!
+  Only known while the server runs and the computer is connected, and it is not saved. It is what a computer that has no
+  monitors and no size that was said is drawn as.
+  */
+  void setReportedScreen(const QString &computer, const QRect &shape);
+  //! The one rectangle of a computer, drawn on the canvas, is \p width x \p height in the units of the computer: its
+  //! monitor if it has a layout of one, else its size
+  void setComputerSize(const QString &computer, int width, int height);
+  //! The whole of a computer was scaled on the canvas: \p zoom arrangement units for a unit of the computer. Its
+  //! monitors and its size are what they were; the scales of the monitors that were drawn follow the zoom
+  void setComputerZoom(const QString &computer, double zoom);
+  //! The computers that the arrangement has to draw with a size that it assumed: they have no monitors and no size
+  QStringList assumedSizes() const;
+  //! Takes what a line of the log of the core says about the screen of a computer, if it does
+  bool takeReportedScreenFromLog(const QString &line);
+  std::optional<QRect> reportedScreen(const QString &computer) const;
+  const QHash<QString, QRect> &reportedScreens() const
+  {
+    return m_reportedScreens;
+  }
+  void setReportedScreens(const QHash<QString, QRect> &screens)
+  {
+    m_reportedScreens = screens;
+  }
+
+  //! Takes what a line of the log of the core says about the monitors of a computer, if it does (experimental)
+  /*!
+  Only while the experiment is on and for a computer of the configuration. What a computer reported is kept in the
+  settings (one key for each computer, which only this class writes), so that a computer that is offline is still drawn
+  from what it reported last; a computer that says it has none takes it back.
+  */
+  bool takeReportedMonitorsFromLog(const QString &line);
+  //! The monitors that a computer reported last, if it did and they are valid
+  std::optional<deskflow::gui::ReportedMonitors> reportedMonitors(const QString &computer) const;
+  //! By the name of the computer in lower case
+  const QHash<QString, deskflow::gui::ReportedMonitors> &reportedMonitorsByComputer() const
+  {
+    return m_reportedMonitors;
+  }
+  void setReportedMonitorsByComputer(const QHash<QString, deskflow::gui::ReportedMonitors> &monitors)
+  {
+    m_reportedMonitors = monitors;
+  }
+  //! The computers that are drawn from the monitors that they reported: they have no layout of the user's
+  QStringList monitorsFromReport() const;
+  //! \p listener is called with the name of a computer when a line of the log said something new about its screen or
+  //! its monitors, for as long as \p listener is alive (the configuration only keeps a weak reference to it)
+  void listenToReports(const std::shared_ptr<std::function<void(const QString &)>> &listener)
+  {
+    m_reportListener = listener;
+  }
+
+  //! Make the screen that a computer reported its size, when it has no monitors and no size that was said
+  /*!
+  A size is only taken from a report where the screen begins at 0,0: another one needs its monitors said.
+  */
+  void adoptReportedScreens();
+
+  //! The displays of this computer, as the operating system says: nothing if it does not
+  static std::vector<deskflow::server::MonitorRect> serverMonitors();
+
+  //! Say what the displays of this computer are, or that the operating system is asked again; for the tests
+  static void overrideServerMonitors(const std::optional<std::vector<deskflow::server::MonitorRect>> &monitors);
+
+  //@}
+
 private:
   void recall();
   void setupComputers();
@@ -80,6 +186,13 @@ private:
     return m_Hotkeys;
   }
   int adjacentComputerIndex(int idx, int deltaColumn, int deltaRow) const;
+  std::vector<deskflow::server::arrangement::Computer> arrangementComputers(
+      const std::vector<deskflow::server::MonitorRect> &display
+  ) const;
+  deskflow::server::arrangement::GridConversion classicGridAsArrangement(
+      const std::vector<deskflow::server::MonitorRect> &display
+  ) const;
+  void adoptZoomOfFirstReport(Computer &computer, const deskflow::gui::ReportedMonitors &reported);
   bool findComputerName(const QString &name, int &index);
   bool fixNoServer(const QString &name, int &index);
 
@@ -87,6 +200,11 @@ private:
   HotkeyList m_Hotkeys;
 
   ComputerList m_computers;
+  // by the name of the computer in lower case
+  QHash<QString, QRect> m_reportedScreens;
+  // by the name of the computer in lower case: what each computer reported of its monitors last
+  QHash<QString, deskflow::gui::ReportedMonitors> m_reportedMonitors;
+  std::weak_ptr<std::function<void(const QString &)>> m_reportListener;
   int m_columns;
   int m_rows;
 };

@@ -7,6 +7,8 @@
 #pragma once
 
 #include <QObject>
+#include <QByteArray>
+#include <QHash>
 #include <QSet>
 
 class QLocalServer;
@@ -24,6 +26,7 @@ public:
 
   void listen();
   void broadcastCommand(const QString &command, const QString &args = "");
+  QString fullServerName() const;
 
 Q_SIGNALS:
   void logLevelChanged(const QString &logLevel);
@@ -40,9 +43,16 @@ protected:
    * \param message The message to write (without trailing newline).
    */
   void writeToClientSocket(QLocalSocket *&clientSocket, const QString &message) const;
+  bool isClientRegistered(const QLocalSocket *clientSocket) const;
+  virtual void clientDisconnected(QLocalSocket *clientSocket)
+  {
+    Q_UNUSED(clientSocket)
+  }
 
 private:
   void processMessage(QLocalSocket *clientSocket, const QString &message);
+  void processRawMessage(QLocalSocket *clientSocket, const QByteArray &message);
+  void rejectClient(QLocalSocket *clientSocket);
   virtual void processCommand(QLocalSocket *clientSocket, const QString &command, const QStringList &parts) = 0;
   void handleNewConnection();
   void handleReadyRead();
@@ -51,6 +61,8 @@ private:
 
   QLocalServer *m_server;
   QSet<QLocalSocket *> m_clients;
+  QSet<QLocalSocket *> m_registeredClients;
+  QHash<QLocalSocket *, QByteArray> m_readBuffers;
   QString m_serverName;
   QStringList m_pendingMessages;
   QByteArray m_typeName;

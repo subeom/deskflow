@@ -54,6 +54,18 @@ function(create_test)
 endfunction()
 
 enable_testing()
+
+# the version that is read from the tags of a checkout (repositories made in a scratch directory)
+find_package(Git)
+if(GIT_FOUND)
+  add_test(
+    NAME GitVersionTests
+    COMMAND
+      ${CMAKE_COMMAND} -DGIT_VERSION_CMAKE=${CMAKE_SOURCE_DIR}/cmake/GitVersion.cmake
+      -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/git-version-test -P ${CMAKE_SOURCE_DIR}/cmake/tests/GitVersionTest.cmake
+  )
+endif()
+
 find_package(Qt6 ${REQUIRED_QT_VERSION} REQUIRED COMPONENTS Test)
 
 add_subdirectory(arch)

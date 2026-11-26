@@ -12,6 +12,9 @@ configure_file(VersionInfo.h.in VersionInfo.h @ONLY)
 add_library(common STATIC
   Action.cpp
   Action.h
+  ClipboardCapabilities.h
+  ConnectionDiagnosis.cpp
+  ConnectionDiagnosis.h
   Coordinate.h
   Enums.h
   ExitCodes.h
@@ -19,6 +22,7 @@ add_library(common STATIC
   Hotkey.h
   I18N.h
   I18N.cpp
+  InputCapabilities.h
   KeyModifierID.h
   KeyboardModifier.h
   KeySequence.h
@@ -30,6 +34,10 @@ add_library(common STATIC
   Settings.cpp
   QSettingsProxy.cpp
   QSettingsProxy.h
+  TunnelAddress.cpp
+  TunnelAddress.h
+  TunnelReconnect.cpp
+  TunnelReconnect.h
   UrlConstants.h
   ${CMAKE_CURRENT_BINARY_DIR}/Constants.h
   ${CMAKE_CURRENT_BINARY_DIR}/VersionInfo.h

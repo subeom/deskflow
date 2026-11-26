@@ -2,14 +2,6 @@
 <ui version="4.0">
  <class>ComputerSettingsDialog</class>
  <widget class="QDialog" name="ComputerSettingsDialog">
-  <property name="geometry">
-   <rect>
-    <x>0</x>
-    <y>0</y>
-    <width>503</width>
-    <height>600</height>
-   </rect>
-  </property>
   <property name="windowTitle">
    <string>Computer settings</string>
   </property>
@@ -78,6 +70,19 @@
         </property>
         <property name="alignment">
          <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="ToggleSwitch" name="chkShareClipboard">
+        <property name="toolTip">
+         <string>Turn this off to keep this computer out of clipboard sharing: its clipboard is not sent to the other computers and theirs is not sent to it.</string>
+        </property>
+        <property name="text">
+         <string>Share clipboard with this computer</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
         </property>
        </widget>
       </item>
@@ -433,7 +438,7 @@
           <item>
            <layout class="QHBoxLayout" name="layoutDeadCornersTop">
             <item>
-             <widget class="QCheckBox" name="chkDeadTopLeft">
+             <widget class="ToggleSwitch" name="chkDeadTopLeft">
               <property name="minimumSize">
                <size>
                 <width>0</width>
@@ -449,7 +454,7 @@
              </widget>
             </item>
             <item>
-             <widget class="QCheckBox" name="chkDeadTopRight">
+             <widget class="ToggleSwitch" name="chkDeadTopRight">
               <property name="minimumSize">
                <size>
                 <width>0</width>
@@ -508,7 +513,7 @@
           <item>
            <layout class="QHBoxLayout" name="layoutDeadCornersBottom">
             <item>
-             <widget class="QCheckBox" name="chkDeadBottomLeft">
+             <widget class="ToggleSwitch" name="chkDeadBottomLeft">
               <property name="minimumSize">
                <size>
                 <width>0</width>
@@ -521,7 +526,7 @@
              </widget>
             </item>
             <item>
-             <widget class="QCheckBox" name="chkDeadBottomRight">
+             <widget class="ToggleSwitch" name="chkDeadBottomRight">
               <property name="minimumSize">
                <size>
                 <width>0</width>
@@ -552,7 +557,7 @@
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_3">
           <item>
-           <widget class="QCheckBox" name="chkFixScrollLock">
+           <widget class="ToggleSwitch" name="chkFixScrollLock">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
               <horstretch>0</horstretch>
@@ -565,7 +570,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="chkFixCapsLock">
+           <widget class="ToggleSwitch" name="chkFixCapsLock">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
               <horstretch>0</horstretch>
@@ -578,7 +583,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="chkFixNumLock">
+           <widget class="ToggleSwitch" name="chkFixNumLock">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
               <horstretch>0</horstretch>
@@ -591,7 +596,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="chkFixXTest">
+           <widget class="ToggleSwitch" name="chkFixXTest">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
               <horstretch>0</horstretch>
@@ -607,7 +612,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="chkWeakX11Focus">
+           <widget class="ToggleSwitch" name="chkWeakX11Focus">
             <property name="toolTip">
              <string>X11 computers Only, When enabled the client will not give focus to its focused window as soon as the client is switched to. This can help prevent unwanted focus stealing with some X11 setups.</string>
             </property>
@@ -735,6 +740,190 @@
     </layout>
    </item>
    <item>
+    <widget class="QGroupBox" name="groupCrossOSInput">
+     <property name="toolTip">
+      <string>These options apply only when this computer is a Windows destination and the source negotiates protocol 1.9. Scroll inversion applies to all scrolling unless you choose "Mouse wheel only", which is a best-effort check based on macOS scroll phases.</string>
+     </property>
+     <property name="title">
+      <string>Cross-OS Input (macOS source to Windows destination)</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutCrossOSInput">
+      <item>
+       <widget class="QLabel" name="lblCrossOSInputDescription">
+        <property name="text">
+         <string>Command is always the Windows key. F18 can act as the Korean-English key.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QFormLayout" name="formCrossOSInput">
+        <item row="0" column="0">
+         <widget class="QLabel" name="lblF18Key">
+          <property name="text">
+           <string>F18 key</string>
+          </property>
+          <property name="buddy">
+           <cstring>comboF18Key</cstring>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QComboBox" name="comboF18Key">
+          <property name="toolTip">
+           <string>Command always acts as the Windows key. Choose whether F18 is sent to Windows unchanged or acts as the Korean-English (Hangul) key. The Windows computer must be using a Korean keyboard layout for the Hangul key to work.</string>
+          </property>
+          <item>
+           <property name="text">
+            <string>Pass through (default)</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Korean-English toggle (Hangul)</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item row="1" column="0" colspan="2">
+         <layout class="QHBoxLayout" name="layoutCrossOSInvert">
+          <item>
+           <widget class="ToggleSwitch" name="chkCrossOSInvertX">
+            <property name="toolTip">
+             <string>Inverts horizontal scrolling sent from the macOS source. Scroll inversion in Client Configuration is applied afterwards, so enabling both can compound.</string>
+            </property>
+            <property name="text">
+             <string>Invert horizontal scrolling</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ToggleSwitch" name="chkCrossOSInvertY">
+            <property name="toolTip">
+             <string>Inverts vertical scrolling sent from the macOS source. Scroll inversion in Client Configuration is applied afterwards, so enabling both can compound.</string>
+            </property>
+            <property name="text">
+             <string>Invert vertical scrolling</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item row="2" column="0">
+         <widget class="QLabel" name="lblCrossOSInvertScope">
+          <property name="text">
+           <string>Apply to</string>
+          </property>
+          <property name="buddy">
+           <cstring>comboCrossOSInvertScope</cstring>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="QComboBox" name="comboCrossOSInvertScope">
+          <property name="toolTip">
+           <string>Choose which scrolling the inversion above applies to. "Mouse wheel only" leaves trackpad scrolling unchanged. Devices that report scroll or momentum phases (trackpads, Magic Mouse, and some smoothing utilities) count as a trackpad.</string>
+          </property>
+          <item>
+           <property name="text">
+            <string>All scrolling</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Mouse wheel only (trackpad unchanged)</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item row="3" column="0" colspan="2">
+         <widget class="ToggleSwitch" name="chkCrossOSSemanticMedia">
+          <property name="toolTip">
+           <string>Enable volume, previous/next track, play/pause, and stop keys through Windows virtual media keys.</string>
+          </property>
+          <property name="text">
+           <string>Use semantic media keys</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLabel" name="lblCrossOSScrollLayering">
+        <property name="toolTip">
+         <string>Destination-local scroll inversion in Client Configuration is separate and is applied after these cross-OS options; enabling both can compound.</string>
+        </property>
+        <property name="text">
+         <string>Client Configuration scroll inversion can compound with these.</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupMonitorLayout">
+     <property name="toolTip">
+      <string>Experimental. For a computer whose monitors do not make up a rectangle (monitors of different sizes, an L shape, a portrait monitor beside a landscape one). With the layout set, the pointer enters on a monitor and leaves through any edge, and not into the holes. Without it, or when it is not valid or not of the screen size the computer reports, Deskflow behaves exactly as before.</string>
+     </property>
+     <property name="title">
+      <string>Monitor layout (experimental)</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutMonitorLayout">
+      <item>
+       <widget class="QPlainTextEdit" name="textMonitorLayout">
+        <property name="toolTip">
+         <string>The monitors of this computer as x,y,w,h, one to a line or separated by ;, in the coordinates that the computer reports its screen in. The diagnostic tools print them in a block to paste. The monitors have to make up the screen size that the computer reports to the server: the server log says when they do not, and the layout is not used then.</string>
+        </property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="sizeAdjustPolicy">
+         <enum>QAbstractScrollArea::SizeAdjustPolicy::AdjustToContents</enum>
+        </property>
+        <property name="lineWrapMode">
+         <enum>QPlainTextEdit::LineWrapMode::NoWrap</enum>
+        </property>
+        <property name="tabChangesFocus">
+         <bool>true</bool>
+        </property>
+        <property name="placeholderText">
+         <string notr="true">x,y,w,h
+0,0,2560,1440
+2560,0,1920,1080</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="layoutMonitorLayoutImport">
+        <item>
+         <widget class="QPushButton" name="btnImportMonitorLayout">
+          <property name="text">
+           <string>Import from diagnostic file...</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="lblMonitorLayoutStatus">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QDialogButtonBox" name="buttonBox">
      <property name="minimumSize">
       <size>
@@ -754,6 +943,7 @@
  </widget>
  <tabstops>
   <tabstop>lineNameEdit</tabstop>
+  <tabstop>chkShareClipboard</tabstop>
   <tabstop>comboMeta</tabstop>
   <tabstop>comboShift</tabstop>
   <tabstop>comboCtrl</tabstop>
@@ -773,7 +963,21 @@
   <tabstop>btnAddAlias</tabstop>
   <tabstop>listAliases</tabstop>
   <tabstop>btnRemoveAlias</tabstop>
+  <tabstop>comboF18Key</tabstop>
+  <tabstop>chkCrossOSInvertX</tabstop>
+  <tabstop>chkCrossOSInvertY</tabstop>
+  <tabstop>comboCrossOSInvertScope</tabstop>
+  <tabstop>chkCrossOSSemanticMedia</tabstop>
+  <tabstop>textMonitorLayout</tabstop>
+  <tabstop>btnImportMonitorLayout</tabstop>
  </tabstops>
+ <customwidgets>
+  <customwidget>
+   <class>ToggleSwitch</class>
+   <extends>QCheckBox</extends>
+   <header>widgets/ToggleSwitch.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

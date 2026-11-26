@@ -51,6 +51,11 @@ void StreamFilter::flush()
   getStream()->flush();
 }
 
+void StreamFilter::setBulkSend(bool active)
+{
+  getStream()->setBulkSend(active);
+}
+
 void StreamFilter::shutdownInput()
 {
   getStream()->shutdownInput();

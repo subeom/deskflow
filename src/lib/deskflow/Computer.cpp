@@ -237,9 +237,25 @@ void Computer::keyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyButto
   m_computer->fakeKeyRepeat(id, mask, count, button, lang);
 }
 
+bool Computer::semanticMediaKey(KeyID id)
+{
+  assert(!m_isPrimary);
+  return m_computer->fakeSemanticMediaKey(id);
+}
+
 void Computer::keyUp(KeyID, KeyModifierMask, KeyButton button)
 {
   m_computer->fakeKeyUp(button);
+}
+
+void Computer::prepareInputCapabilities()
+{
+  m_computer->updateKeyMap();
+}
+
+bool Computer::canSynthesizeKey(KeyID id) const
+{
+  return m_computer->canSynthesizeKey(id);
 }
 
 void Computer::mouseDown(ButtonID button)
@@ -379,6 +395,16 @@ void Computer::getCursorCenter(int32_t &x, int32_t &y) const
   m_computer->getCursorCenter(x, y);
 }
 
+std::vector<deskflow::server::MonitorRect> Computer::getMonitors() const
+{
+  return m_computer->getMonitors();
+}
+
+std::vector<deskflow::monitors::MonitorInfo> Computer::getMonitorInfo() const
+{
+  return m_computer->getMonitorInfo();
+}
+
 KeyModifierMask Computer::getActiveModifiers() const
 {
   return m_computer->getActiveModifiers();
@@ -465,6 +491,11 @@ void Computer::leaveSecondary()
 std::string Computer::getSecureInputApp() const
 {
   return m_computer->getSecureInputApp();
+}
+
+void Computer::setRemoteComputerName(const std::string &name)
+{
+  m_computer->setRemoteComputerName(name);
 }
 
 } // namespace deskflow

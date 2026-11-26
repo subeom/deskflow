@@ -11,9 +11,11 @@
 #include "base/IEventQueue.h"
 #include "base/Log.h"
 #include "deskflow/AppUtil.h"
+#include "deskflow/ClipboardTransferLog.h"
 #include "deskflow/Computer.h"
 #include "deskflow/DeskflowException.h"
 #include "deskflow/IPlatformComputer.h"
+#include "deskflow/MonitorReport.h"
 #include "deskflow/OptionTypes.h"
 #include "deskflow/PacketStreamFilter.h"
 #include "deskflow/ProtocolTypes.h"
@@ -24,6 +26,9 @@
 #include "server/ClientProxy.h"
 #include "server/ClientProxyUnknown.h"
 #include "server/PrimaryClient.h"
+#include "server/ReportedMonitors.h"
+#include "server/ServerCursorEdges.h"
+#include "server/ServerNeighborTraversal.h"
 
 #ifdef _WIN32
 #include <algorithm>
@@ -33,8 +38,49 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <format>
 
 using namespace deskflow::server;
+using deskflow::clipboard::formatSkipLine;
+using deskflow::clipboard::SkipReason;
+
+namespace {
+
+Direction oppositeOf(Direction side)
+{
+  using enum Direction;
+  switch (side) {
+  case Left:
+    return Right;
+  case Right:
+    return Left;
+  case Top:
+    return Bottom;
+  case Bottom:
+    return Top;
+  default:
+    return NoDirection;
+  }
+}
+
+const char *sideText(Direction side)
+{
+  using enum Direction;
+  switch (side) {
+  case Left:
+    return "left";
+  case Right:
+    return "right";
+  case Top:
+    return "top";
+  case Bottom:
+    return "bottom";
+  default:
+    return "no";
+  }
+}
+
+} // namespace
 
 //
 // Server
@@ -253,7 +299,11 @@ void Server::adoptClient(BaseClientProxy *client)
 
   // name must be in our configuration
   if (!m_config->isComputer(client->getName())) {
-    LOG_WARN("unrecognised client name \"%s\", check server config", client->getName().c_str());
+    // the name is whatever the computer said: it is not written the way it came into a log that a program reads
+    LOG_WARN(
+        "unrecognised client name \"%s\", check server config",
+        deskflow::server::loggableName(client->getName()).c_str()
+    );
     ipcSendToClient("unrecognisedClient", QString::fromStdString(client->getName()));
     closeClient(client, kMsgEUnknown);
     return;
@@ -438,6 +488,10 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
 
   LOG_INFO("switch from \"%s\" to \"%s\" at %d,%d", getName(m_active).c_str(), getName(dst).c_str(), x, y);
 
+  if (m_multiMonitor && m_active != dst) {
+    sayMonitorGeometrySwitch(dst, x, y);
+  }
+
   // stop waiting to switch
   stopSwitch();
 
@@ -462,7 +516,7 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
 
     // update the primary client's clipboards if we're leaving the
     // primary computer.
-    if (m_active == m_primaryClient && m_enableClipboard) {
+    if (m_active == m_primaryClient && m_enableClipboard && sharesClipboardWith(m_primaryClient)) {
       for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
         const ClipboardInfo &clipboard = m_clipboards[id];
         if (clipboard.m_clipboardOwner == getName(m_primaryClient)) {
@@ -485,6 +539,7 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
 
     // cut over
     m_active = dst;
+    m_primaryClient->setRemoteComputerName(dst == m_primaryClient ? std::string() : getName(dst));
 
     // increment enter sequence number
     ++m_seqNum;
@@ -492,14 +547,23 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
     // enter new computer
     m_active->enter(x, y, m_seqNum, m_primaryClient->getToggleMask(), forScreensaver);
 
-    if (m_enableClipboard) {
+    if (m_enableClipboard && sharesClipboardWith(m_active)) {
       // send the clipboard data to new active computer
       for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
         // Hackity hackity hack
-        if (m_clipboards[id].m_clipboard.marshall().size() > (m_maximumClipboardSize * 1024)) {
+        if (m_clipboards[id].m_oversize ||
+            m_clipboards[id].m_clipboard.marshall().size() > (m_maximumClipboardSize * 1024)) {
+          continue;
+        }
+        // The primary computer that does not share its clipboard stays the owner of the empty clipboards the Server
+        // starts with, and sending those would empty the clipboard of every computer the cursor enters
+        if (m_clipboards[id].m_clipboardOwner == getName(m_primaryClient) && !sharesClipboardWith(m_primaryClient)) {
           continue;
         }
         m_active->setClipboard(id, &m_clipboards[id].m_clipboard);
+        if (m_active == m_primaryClient) {
+          m_primaryClipboardWritten[id] = std::chrono::steady_clock::now();
+        }
       }
     }
 
@@ -522,6 +586,11 @@ void Server::jumpToComputer(BaseClientProxy *newComputer)
   int32_t y;
   newComputer->getJumpCursorPos(x, y);
 
+  // there is no edge that the pointer was taken over
+  if (m_multiMonitor) {
+    m_crossing.known = false;
+  }
+
   switchComputer(newComputer, x, y, false);
 }
 
@@ -536,11 +605,11 @@ float Server::mapToFraction(const BaseClientProxy *client, Direction dir, int32_
     using enum Direction;
   case Left:
   case Right:
-    return (y - sy + 0.5f) / static_cast<float>(sh);
+    return deskflow::server::getCursorEdgeFraction(y, sy, sh);
 
   case Top:
   case Bottom:
-    return (x - sx + 0.5f) / static_cast<float>(sw);
+    return deskflow::server::getCursorEdgeFraction(x, sx, sw);
 
   case NoDirection:
     assert(0 && "bad direction");
@@ -595,35 +664,42 @@ BaseClientProxy *Server::getNeighbor(const BaseClientProxy *src, Direction dir, 
   // convert position to fraction
   float t = mapToFraction(src, dir, x, y);
 
-  // search for the closest neighbor that exists in direction dir
-  float tTmp;
-  for (;;) {
-    std::string dstName(m_config->getNeighbor(srcName, dir, t, &tTmp));
+  const auto traversal = deskflow::server::traverseConnectedNeighbor(
+      srcName, t,
+      [this, dir](const std::string &source, float position) -> std::optional<deskflow::server::NeighborPosition> {
+        float positionOut = 0.0f;
+        const auto destination = m_config->getNeighbor(source, dir, position, &positionOut);
+        if (destination.empty()) {
+          return std::nullopt;
+        }
+        return deskflow::server::NeighborPosition{destination, positionOut};
+      },
+      [this](const std::string &computer) { return m_clients.contains(computer); },
+      [dir](const std::string &source, const deskflow::server::NeighborPosition &destination) {
+        LOG_VERBOSE("ignored \"%s\" on %s of \"%s\"", destination.name.c_str(), Config::dirName(dir), source.c_str());
+      }
+  );
 
-    // if nothing in that direction then return nullptr. if the
-    // destination is the source then we can make no more
-    // progress in this direction.  since we haven't found a
-    // connected neighbor we return nullptr.
-    if (dstName.empty()) {
+  if (traversal.status != deskflow::server::NeighborTraversalStatus::Connected) {
+    if (traversal.status == deskflow::server::NeighborTraversalStatus::Cycle) {
+      LOG_WARN(
+          "neighbor cycle at \"%s\" while searching %s from \"%s\"", traversal.destination.name.c_str(),
+          Config::dirName(dir), srcName.c_str()
+      );
+    } else {
       LOG_VERBOSE("no neighbor on %s of \"%s\"", Config::dirName(dir), srcName.c_str());
-      return nullptr;
     }
-
-    // look up neighbor cell.  if the computer is connected and
-    // ready then we can stop.
-    if (ClientList::const_iterator index = m_clients.find(dstName); index != m_clients.end()) {
-      LOG_VERBOSE("\"%s\" is on %s of \"%s\" at %f", dstName.c_str(), Config::dirName(dir), srcName.c_str(), t);
-      mapToPixel(index->second, dir, tTmp, x, y);
-      return index->second;
-    }
-
-    // skip over unconnected computer
-    LOG_VERBOSE("ignored \"%s\" on %s of \"%s\"", dstName.c_str(), Config::dirName(dir), srcName.c_str());
-    srcName = dstName;
-
-    // use position on skipped computer
-    t = tTmp;
+    return nullptr;
   }
+
+  ClientList::const_iterator index = m_clients.find(traversal.destination.name);
+  assert(index != m_clients.end());
+  LOG_VERBOSE(
+      "\"%s\" is on %s of \"%s\" at %f", traversal.destination.name.c_str(), Config::dirName(dir), srcName.c_str(),
+      traversal.destination.position
+  );
+  mapToPixel(index->second, dir, traversal.destination.position, x, y);
+  return index->second;
 }
 
 BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, Direction srcSide, int32_t &x, int32_t &y) const
@@ -631,6 +707,11 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, Direction srcSide, 
   // note -- must be locked on entry
 
   assert(src != nullptr);
+
+  // what is said about the switch, if there is one
+  if (m_multiMonitor) {
+    m_crossing = {true, srcSide, mapToFraction(src, srcSide, x, y)};
+  }
 
   // get the first neighbor
   BaseClientProxy *dst = getNeighbor(src, srcSide, x, y);
@@ -726,11 +807,18 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, Direction srcSide, 
   assert(lastGoodComputer != nullptr);
   dst = lastGoodComputer;
 
+  // a computer that has a layout is entered on a monitor of it, and the primary one away from the jump zone of its edge
+  const auto *layout = monitorLayoutFor(dst);
+  if (layout != nullptr) {
+    enterOnMonitor(*layout, srcSide, x, y, dst == m_primaryClient ? jumpZoneDepth(*layout, srcSide, x, y) : 0);
+  }
+
   // if entering primary computer then be sure to move in far enough
   // to avoid the jump zone.  if entering a side that doesn't have
   // a neighbor (i.e. an asymmetrical side) then we don't need to
   // move inwards because that side can't provoke a jump.
-  avoidJumpZone(dst, srcSide, x, y);
+  if (layout == nullptr || dst != m_primaryClient)
+    avoidJumpZone(dst, srcSide, x, y);
 
   return dst;
 }
@@ -801,8 +889,11 @@ bool Server::isSwitchOkay(
   bool allowSwitch = false;
 
   // note if the switch direction has changed.  save the new
-  // direction and computer if so.
-  bool isNewDirection = (dir != m_switchDir);
+  // direction and computer if so.  with the arrangement used, a side has several neighbours, one for each part of the
+  // edge, and sliding along the edge into the rows of another one is as new as another direction.
+  const bool slidToAnother =
+      m_multiMonitor && m_useArrangement && m_switchComputer != nullptr && newComputer != m_switchComputer;
+  bool isNewDirection = (dir != m_switchDir) || slidToAnother;
   if (isNewDirection || m_switchComputer == nullptr) {
     m_switchDir = dir;
     m_switchComputer = newComputer;
@@ -905,7 +996,14 @@ void Server::armSwitchTwoTap(int32_t x, int32_t y)
       if (tapZone < m_switchTwoTapZone) {
         tapZone = m_switchTwoTapZone;
       }
-      if (x >= ax + tapZone && x < ax + aw - tapZone && y >= ay + tapZone && y < ay + ah - tapZone) {
+      // the tap zone is as far from an edge of the screen that is an inner edge as from one on the bounding box, for
+      // the screen of the server when the arrangement is used; every other computer is its bounding box, as it was
+      const auto *layout = m_active == m_primaryClient && m_useArrangement ? monitorLayoutFor(m_active) : nullptr;
+      const bool awayFromTheEdges =
+          layout != nullptr ? layout->contains(x - tapZone, y) && layout->contains(x + tapZone, y) &&
+                                  layout->contains(x, y - tapZone) && layout->contains(x, y + tapZone)
+                            : x >= ax + tapZone && x < ax + aw - tapZone && y >= ay + tapZone && y < ay + ah - tapZone;
+      if (awayFromTheEdges) {
         // win32 can generate bogus mouse events that appear to
         // move in the opposite direction that the mouse actually
         // moved.  try to ignore that crap here.
@@ -1073,6 +1171,13 @@ void Server::sendOptions(BaseClientProxy *client) const
     }
   }
 
+  // a client reads the options in order and the last one wins, so what a computer is set to is said last, after the
+  // global option it overrides
+  if (!sharesClipboardWith(client)) {
+    optionsList.push_back(kOptionClipboardSharing);
+    optionsList.push_back(0);
+  }
+
   // send the options
   client->resetOptions();
   client->setOptions(optionsList);
@@ -1129,6 +1234,523 @@ void Server::processOptions()
   }
   m_relativeMoves = newRelativeMoves;
   m_protocol = Settings::networkProtocol();
+  setClipboardTextOnly(Settings::value(Settings::Server::ClipboardTextOnly).toBool());
+  const auto useArrangement = Settings::value(Settings::Server::UseArrangement).toBool();
+  if (useArrangement != m_useArrangement) {
+    m_useArrangement = useArrangement;
+    // what is decided for the screen of the server is decided again, and said if it is another
+    m_monitorGeometrySaid.erase(getName(m_primaryClient));
+  }
+  setMonitorGeometry(Settings::value(Settings::Server::ExperimentalMultiMonitor).toBool());
+}
+
+bool Server::sharesClipboardWith(const BaseClientProxy *client) const
+{
+  const auto *options = m_config->getOptions(getName(client));
+  if (options == nullptr) {
+    return true;
+  }
+  const auto option = options->find(kOptionClipboardSharing);
+  return option == options->end() || option->second != 0;
+}
+
+void Server::logDisabledForComputer(ClipboardID id, const BaseClientProxy *client) const
+{
+  // the clipboard and the selection are told apart by id, but are one copy for the user: say it once
+  if (id == kClipboardClipboard) {
+    LOG_INFO("%s", formatSkipLine(id, getName(client), SkipReason::DisabledForComputer).c_str());
+  } else {
+    LOG_DEBUG("%s", formatSkipLine(id, getName(client), SkipReason::DisabledForComputer).c_str());
+  }
+}
+
+bool Server::clipboardUnchanged(const BaseClientProxy *sender, ClipboardID id) const
+{
+  // 4 bytes: a clipboard of no format, which is what nothing known looks like, and is never "the same"
+  const auto &known = m_clipboards[id].m_clipboardData;
+  if (known.size() <= 4) {
+    return false;
+  }
+
+  // what would be shared of it now, read the way onClipboardChanged() reads it
+  Clipboard current;
+  current.setTextOnly(m_clipboardPolicy.textOnly());
+  current.setSizeLimit(m_maximumClipboardSize * 1024);
+  sender->getClipboard(id, &current);
+  if (m_clipboardPolicy.apply(current).action == ClipboardSharePolicy::Action::Drop) {
+    return false;
+  }
+  return current.marshall() == known;
+}
+
+bool Server::primaryClipboardWrittenRecently(ClipboardID id) const
+{
+  const auto &written = m_primaryClipboardWritten[id];
+  return written && std::chrono::steady_clock::now() - *written < m_clipboardEchoWindow;
+}
+
+void Server::setClipboardTextOnly(bool textOnly)
+{
+  if (m_clipboardPolicy.textOnly() != textOnly) {
+    if (textOnly) {
+      LOG_INFO("clipboard sharing is limited to text of up to %zu bytes", ClipboardSharePolicy::kTextOnlyMaxTextBytes);
+    } else {
+      LOG_INFO("clipboard sharing is not limited to text any more");
+    }
+  }
+
+  m_clipboardPolicy = ClipboardSharePolicy(textOnly);
+  for (auto &clipboard : m_clipboards) {
+    clipboard.m_clipboard.setTextOnly(textOnly);
+    if (textOnly) {
+      // what was kept from before is held to it as well
+      m_clipboardPolicy.apply(clipboard.m_clipboard);
+      clipboard.m_clipboardData = clipboard.m_clipboard.marshall();
+    }
+  }
+}
+
+void Server::setMonitorGeometry(bool on)
+{
+  if (m_multiMonitor != on) {
+    m_multiMonitor = on;
+    m_monitorGeometrySaid.clear();
+    m_reportedScreenSaid.clear();
+    m_reportedMonitorsSaid.clear();
+    m_noMonitorsSaid.clear();
+    m_crossing.known = false;
+    LOG_INFO("experimental multi-monitor aware cursor mapping is %s", on ? "on" : "off");
+  }
+  if (!on) {
+    return;
+  }
+  for (const auto &[name, client] : m_clients) {
+    sayMonitorGeometry(client);
+  }
+}
+
+const MonitorLayout *Server::monitorLayoutFor(const BaseClientProxy *client, std::string *reason) const
+{
+  if (!m_multiMonitor) {
+    return nullptr;
+  }
+
+  if (client == m_primaryClient && m_useArrangement)
+    return primaryLayout(reason);
+
+  if (client == m_primaryClient) {
+    if (reason != nullptr && m_config->getMonitorLayout(getName(client)) != nullptr) {
+      *reason = "the screen of the server itself is not supported yet";
+    }
+    return nullptr;
+  }
+
+  // what the user set for the computer is the user's choice, and wins while it fits the screen of the computer
+  // (this runs for every move of the pointer: the texts are made only when they are asked for)
+  bool fits = false;
+  std::string typedReason;
+  const auto *typed = typedLayoutFor(client, reason != nullptr ? &typedReason : nullptr, &fits);
+  if (fits) {
+    if (reason != nullptr) {
+      *reason = typedReason;
+    }
+    return typed;
+  }
+
+  // otherwise the monitors that the computer reported, which are better than the one rectangle that there is without
+  std::string reportedReason;
+  const auto *reported = reportedLayoutFor(client, reason != nullptr ? &reportedReason : nullptr);
+  if (reported != nullptr) {
+    if (reason != nullptr) {
+      *reason = "reported by the computer, " + reportedReason;
+      if (m_config->getMonitorLayout(getName(client)) != nullptr) {
+        *reason += " (the layout that is set is not used: " + typedReason + ")";
+      }
+    }
+    return reported;
+  }
+
+  // a report that cannot be used says why; with none, it is the layout that the user set, or the absence of one
+  if (reason != nullptr) {
+    *reason = reportedReason.empty() ? typedReason : reportedReason;
+  }
+  return nullptr;
+}
+
+const MonitorLayout *Server::typedLayoutFor(const BaseClientProxy *client, std::string *reason, bool *fits) const
+{
+  *fits = false;
+  const auto *setting = m_config->getMonitorLayout(getName(client));
+  if (setting == nullptr) {
+    if (reason != nullptr) {
+      *reason = "no monitor layout is set";
+    }
+    return nullptr;
+  }
+  if (!setting->parsed) {
+    if (reason != nullptr) {
+      *reason = "the monitor layout is not valid: " + setting->parsed.error;
+    }
+    return nullptr;
+  }
+
+  // the layout is of the screen that the computer reports now, or it is of another one
+  const auto &layout = *setting->parsed.layout;
+  const auto box = layout.boundingBox();
+  int32_t x;
+  int32_t y;
+  int32_t w;
+  int32_t h;
+  client->getShape(x, y, w, h);
+  if (box.x != x || box.y != y || box.w != w || box.h != h) {
+    if (reason != nullptr) {
+      *reason = std::format(
+          "the monitor layout does not match the screen size the computer reported (layout {},{} {}x{}, reported "
+          "{},{} {}x{})",
+          box.x, box.y, box.w, box.h, x, y, w, h
+      );
+    }
+    return nullptr;
+  }
+
+  // it is the layout of the screen of the computer: the choice of the user, which says that the monitors are these
+  *fits = true;
+
+  // a rectangle is mapped as it always was
+  if (layout.isPlainRectangle()) {
+    if (reason != nullptr) {
+      *reason = "the monitors make up a rectangle, nothing to correct";
+    }
+    return nullptr;
+  }
+
+  if (reason != nullptr) {
+    *reason = std::format("{} monitors, {},{} {}x{}", layout.monitors().size(), box.x, box.y, box.w, box.h);
+  }
+  return &layout;
+}
+
+const MonitorLayout *Server::reportedLayoutFor(const BaseClientProxy *client, std::string *reason) const
+{
+  const auto *reported = client->reportedMonitors();
+  if (reported == nullptr) {
+    return nullptr;
+  }
+
+  // the report is of the screen that the computer reports now, or of another one (its shape changed after it)
+  const auto &layout = reported->layout;
+  const auto box = layout.boundingBox();
+  int32_t x;
+  int32_t y;
+  int32_t w;
+  int32_t h;
+  client->getShape(x, y, w, h);
+  if (box.x != x || box.y != y || box.w != w || box.h != h) {
+    if (reason != nullptr) {
+      *reason = std::format(
+          "the monitors that the computer reports do not match the screen size it reported (monitors {},{} {}x{}, "
+          "screen {},{} {}x{})",
+          box.x, box.y, box.w, box.h, x, y, w, h
+      );
+    }
+    return nullptr;
+  }
+
+  // a rectangle is mapped as it always was
+  if (layout.isPlainRectangle()) {
+    if (reason != nullptr) {
+      *reason = "the monitors make up a rectangle, nothing to correct";
+    }
+    return nullptr;
+  }
+
+  if (reason != nullptr) {
+    *reason = std::format("{} monitors, {},{} {}x{}", layout.monitors().size(), box.x, box.y, box.w, box.h);
+  }
+  return &layout;
+}
+
+const MonitorLayout *Server::primaryLayout(std::string *reason) const
+{
+  // the monitors are asked for on every move of the pointer on the primary computer; they are only made into a layout
+  // again when they are others
+  const auto monitors = m_primaryClient->getMonitors();
+  if (monitors.empty()) {
+    if (reason != nullptr)
+      *reason = "the platform does not tell the monitors of the screen of this computer";
+    return nullptr;
+  }
+  if (!m_primaryMonitors || *m_primaryMonitors != monitors) {
+    m_primaryMonitors = monitors;
+    m_primaryLayout = MonitorLayout::create(monitors);
+  }
+  if (!m_primaryLayout) {
+    if (reason != nullptr)
+      *reason = "the monitors of the screen of this computer are not valid: " + m_primaryLayout.error;
+    return nullptr;
+  }
+
+  const auto &layout = *m_primaryLayout.layout;
+  const auto box = layout.boundingBox();
+  int32_t x;
+  int32_t y;
+  int32_t w;
+  int32_t h;
+  m_primaryClient->getShape(x, y, w, h);
+  if (box.x != x || box.y != y || box.w != w || box.h != h) {
+    if (reason != nullptr) {
+      *reason = std::format(
+          "the monitors do not match the screen size of this computer (monitors {},{} {}x{}, screen {},{} {}x{})",
+          box.x, box.y, box.w, box.h, x, y, w, h
+      );
+    }
+    return nullptr;
+  }
+  if (layout.isPlainRectangle()) {
+    if (reason != nullptr)
+      *reason = "the monitors make up a rectangle, nothing to correct";
+    return nullptr;
+  }
+
+  if (reason != nullptr)
+    *reason = std::format("{} monitors, {},{} {}x{}", layout.monitors().size(), box.x, box.y, box.w, box.h);
+  return &layout;
+}
+
+void Server::sayReportedScreen(const BaseClientProxy *client)
+{
+  // the screen of the server itself is its own
+  if (!m_multiMonitor || client == m_primaryClient) {
+    return;
+  }
+
+  int32_t x;
+  int32_t y;
+  int32_t w;
+  int32_t h;
+  client->getShape(x, y, w, h);
+  const auto name = getName(client);
+  const auto screen = std::format("{},{} {}x{}", x, y, w, h);
+  auto &said = m_reportedScreenSaid[name];
+  if (said != screen) {
+    said = screen;
+    LOG_INFO("computer \"%s\" reports its screen: %s", name.c_str(), screen.c_str());
+  }
+}
+
+void Server::sayReportedMonitors(const BaseClientProxy *client)
+{
+  // the screen of the server itself is its own
+  if (!m_multiMonitor || client == m_primaryClient) {
+    return;
+  }
+
+  const auto name = deskflow::server::loggableName(getName(client));
+  const auto *reported = client->reportedMonitors();
+  auto &said = m_reportedMonitorsSaid[getName(client)];
+  if (reported == nullptr) {
+    // a computer that reported takes it back; one that will not report at all (an older version) is not what it was
+    // when it reported in a connection of the past, and that is said once, for the GUI that keeps what it was told
+    const bool oldNews = !client->mayReportMonitors() && m_noMonitorsSaid.insert(getName(client)).second;
+    if (!said.empty() || oldNews) {
+      said.clear();
+      LOG_INFO("computer \"%s\" reports no monitors", name.c_str());
+    }
+    return;
+  }
+
+  const auto monitors = deskflow::monitors::formatMonitorEntries(reported->monitors);
+  if (said != monitors) {
+    said = monitors;
+    LOG_INFO("computer \"%s\" reports %zu monitors: %s", name.c_str(), reported->monitors.size(), monitors.c_str());
+  }
+}
+
+void Server::handleMonitorsReported(BaseClientProxy *client)
+{
+  LOG_DEBUG("computer \"%s\" reported its monitors", deskflow::server::loggableName(getName(client)).c_str());
+  sayMonitorGeometry(client);
+}
+
+void Server::sayMonitorGeometry(const BaseClientProxy *client)
+{
+  if (!m_multiMonitor) {
+    return;
+  }
+
+  sayReportedScreen(client);
+  sayReportedMonitors(client);
+
+  std::string reason;
+  const bool on = monitorLayoutFor(client, &reason) != nullptr;
+  if (reason.empty()) {
+    return;
+  }
+
+  const auto name = getName(client);
+  const auto decision = std::format("{}: {}", on ? "on" : "off", reason);
+  auto &said = m_monitorGeometrySaid[name];
+  if (said != decision) {
+    said = decision;
+    LOG_INFO("monitor geometry %s for \"%s\": %s", on ? "on" : "off", name.c_str(), reason.c_str());
+  }
+}
+
+void Server::sayMonitorGeometrySwitch(const BaseClientProxy *destination, int32_t x, int32_t y)
+{
+  const auto describe = [this](const BaseClientProxy *client) {
+    int32_t sx;
+    int32_t sy;
+    int32_t sw;
+    int32_t sh;
+    client->getShape(sx, sy, sw, sh);
+    return std::format("\"{}\" ({},{} {}x{})", getName(client), sx, sy, sw, sh);
+  };
+
+  const auto edge = m_crossing.known ? std::format("{} edge at {:.4f}", sideText(m_crossing.side), m_crossing.fraction)
+                                     : std::string("jump");
+  m_crossing.known = false;
+  const auto text = std::format(
+      "monitor geometry: switch {} -> {}: {}, enters at {},{}, geometry of \"{}\" {}, geometry of \"{}\" {}",
+      describe(m_active), describe(destination), edge, x, y, getName(m_active),
+      monitorLayoutFor(m_active) != nullptr ? "on" : "off", getName(destination),
+      monitorLayoutFor(destination) != nullptr ? "on" : "off"
+  );
+  LOG_INFO("%s", text.c_str());
+}
+
+void Server::enterOnMonitor(
+    const MonitorLayout &layout, Direction srcSide, int32_t &x, int32_t &y, int32_t minDepth
+) const
+{
+  const auto entered = oppositeOf(srcSide);
+  if (entered == Direction::NoDirection) {
+    return;
+  }
+
+  // the row or the column is the one that the mapping of the computers gave; the way in is not the edge of the bounding
+  // box, which may be a hole, but the edge of the monitor that has the row or the column, as far in as the pointer was
+  // taken over it
+  const auto box = layout.boundingBox();
+  const bool alongY = srcSide == Direction::Left || srcSide == Direction::Right;
+  int32_t depth = 0;
+  switch (entered) {
+    using enum Direction;
+  case Left:
+    depth = x - box.x;
+    break;
+  case Right:
+    depth = box.right() - 1 - x;
+    break;
+  case Top:
+    depth = y - box.y;
+    break;
+  default:
+    depth = box.bottom() - 1 - y;
+    break;
+  }
+  const auto at =
+      layout.entryPoint(entered, layout.edgeFraction(entered, alongY ? y : x), std::max({depth, minDepth, int32_t{0}}));
+  x = at.x;
+  y = at.y;
+}
+
+int32_t Server::jumpZoneDepth(const MonitorLayout &layout, Direction srcSide, int32_t x, int32_t y) const
+{
+  const auto entered = oppositeOf(srcSide);
+  if (entered == Direction::NoDirection)
+    return 0;
+  const bool alongY = srcSide == Direction::Left || srcSide == Direction::Right;
+  const auto fraction = layout.edgeFraction(entered, alongY ? y : x);
+  // the jump zone only matters where the pointer could jump out of it: the side it is entered through has a neighbour
+  if (m_config->getNeighbor(getName(m_primaryClient), entered, fraction, nullptr).empty())
+    return 0;
+  return getJumpZoneSize(m_primaryClient);
+}
+
+void Server::onMouseMoveSecondaryOnMonitors(const MonitorLayout &layout, int32_t dx, int32_t dy)
+{
+  // save old position
+  const int32_t xOld = m_x;
+  const int32_t yOld = m_y;
+
+  // save last delta
+  m_xDelta2 = m_xDelta;
+  m_yDelta2 = m_yDelta;
+  m_xDelta = dx;
+  m_yDelta = dy;
+
+  // the pointer goes over the monitors, and along an edge that it is pushed against, not into a hole
+  const auto moved = layout.move({xOld, yOld}, dx, dy);
+  m_x = moved.position.x;
+  m_y = moved.position.y;
+
+  // The side it is pushed out through, a horizontal one before a vertical one, like it is when the computer is a
+  // rectangle. The computer on that side is found from where the pointer would be beyond the edge.
+  using enum Direction;
+  const auto box = layout.boundingBox();
+  auto dir = NoDirection;
+  int32_t x = m_x;
+  int32_t y = m_y;
+  if (moved.restX < 0) {
+    dir = Left;
+    x = box.x + moved.restX;
+  } else if (moved.restX > 0) {
+    dir = Right;
+    x = box.right() - 1 + moved.restX;
+  } else if (moved.restY < 0) {
+    dir = Top;
+    y = box.y + moved.restY;
+  } else if (moved.restY > 0) {
+    dir = Bottom;
+    y = box.bottom() - 1 + moved.restY;
+  }
+
+  BaseClientProxy *newComputer = m_active;
+  bool jump = false;
+  if (dir == NoDirection) {
+    // we haven't left the computer.  if waiting and the pointer is not on the edge we're waiting on then stop waiting,
+    // and arm the double tap
+    if (m_switchComputer != nullptr) {
+      bool clearWait;
+      switch (m_switchDir) {
+      case Left:
+        clearWait = layout.contains(m_x - 1, m_y);
+        break;
+
+      case Right:
+        clearWait = layout.contains(m_x + 1, m_y);
+        break;
+
+      case Top:
+        clearWait = layout.contains(m_x, m_y - 1);
+        break;
+
+      case Bottom:
+        clearWait = layout.contains(m_x, m_y + 1);
+        break;
+
+      default:
+        clearWait = false;
+        break;
+      }
+      if (clearWait) {
+        noSwitch(m_x, m_y);
+      }
+    }
+  } else {
+    // try to switch computer.  get the neighbor and see if we should switch
+    newComputer = mapToNeighbor(m_active, dir, x, y);
+    jump = isSwitchOkay(newComputer, dir, x, y, m_x, m_y);
+  }
+
+  if (jump) {
+    switchComputer(newComputer, x, y, false);
+  } else if (m_x != xOld || m_y != yOld) {
+    // same computer.  warp cursor if it moved.
+    LOG_VERBOSE("move on %s to %d,%d", getName(m_active).c_str(), m_x, m_y);
+    m_active->mouseMove(m_x, m_y);
+  }
 }
 
 void Server::handleShapeChanged(BaseClientProxy *client)
@@ -1138,6 +1760,9 @@ void Server::handleShapeChanged(BaseClientProxy *client)
   }
 
   LOG_DEBUG("computer \"%s\" shape changed", getName(client).c_str());
+
+  // the layout of the computer may not be of its screen any more, or be again
+  sayMonitorGeometry(client);
 
   // update jump coordinate
   int32_t x;
@@ -1173,11 +1798,33 @@ void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber
   }
   const auto *info = static_cast<const IComputer::ClipboardInfo *>(event.getData());
 
+  // a computer that is set to not share its clipboard takes no part
+  if (!sharesClipboardWith(grabber)) {
+    logDisabledForComputer(info->m_id, grabber);
+    return;
+  }
+
   // ignore grab if sequence number is old.  always allow primary
   // computer to grab.
   ClipboardInfo &clipboard = m_clipboards[info->m_id];
   if (grabber != m_primaryClient && info->m_sequenceNumber < clipboard.m_clipboardSeqNum) {
     LOG_DEBUG("ignored computer \"%s\" grab of clipboard %d", getName(grabber).c_str(), info->m_id);
+    return;
+  }
+
+  // The primary computer grabs the clipboard again with what is already shared when another program rewrites it
+  // (Universal Clipboard and Handoff do it with what Deskflow wrote to another Mac, a clipboard manager with what it
+  // saw), which is what feeds a loop of grabs and transfers. Nothing differs but the change count, so nothing is
+  // announced, cleared or sent. That is only looked at when the clipboard is not about to be read anyway for the
+  // computer the cursor is on, because a read costs: while the cursor is on another computer, or right after Deskflow
+  // wrote the clipboard. A grab by another computer carries no data yet and is always taken.
+  if (grabber == m_primaryClient && (m_active != m_primaryClient || primaryClipboardWrittenRecently(info->m_id)) &&
+      clipboardUnchanged(grabber, info->m_id)) {
+    if (info->m_id == kClipboardClipboard) {
+      LOG_INFO("%s", formatSkipLine(info->m_id, getName(grabber), SkipReason::IdenticalContent).c_str());
+    } else {
+      LOG_DEBUG("%s", formatSkipLine(info->m_id, getName(grabber), SkipReason::IdenticalContent).c_str());
+    }
     return;
   }
 
@@ -1188,6 +1835,7 @@ void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber
   );
   clipboard.m_clipboardOwner = getName(grabber);
   clipboard.m_clipboardSeqNum = info->m_sequenceNumber;
+  clipboard.m_oversize = false;
 
   // clear the clipboard data (since it's not known at this point)
   if (clipboard.m_clipboard.open(0)) {
@@ -1202,7 +1850,7 @@ void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber
     BaseClientProxy *client = index->second;
     if (client == grabber) {
       client->setClipboardDirty(info->m_id, false);
-    } else {
+    } else if (sharesClipboardWith(client)) {
       client->grabClipboard(info->m_id);
     }
   }
@@ -1220,6 +1868,10 @@ void Server::handleClipboardChanged(const Event &event, BaseClientProxy *client)
     return;
   }
   const auto *info = static_cast<const IComputer::ClipboardInfo *>(event.getData());
+  if (!sharesClipboardWith(client)) {
+    logDisabledForComputer(info->m_id, client);
+    return;
+  }
   onClipboardChanged(client, info->m_id, info->m_sequenceNumber);
 }
 
@@ -1270,7 +1922,7 @@ void Server::handleMotionSecondaryEvent(const Event &event)
 void Server::handleWheelEvent(const Event &event)
 {
   const auto *info = static_cast<IPlatformComputer::WheelInfo *>(event.getData());
-  onMouseWheel(info->m_xDelta, info->m_yDelta);
+  onMouseWheel(info->m_xDelta, info->m_yDelta, info->m_source);
 }
 
 void Server::handleSwitchWaitTimeout()
@@ -1447,21 +2099,51 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
     return;
   }
 
-  // should be the expected client
-  assert(sender == m_clients.find(clipboard.m_clipboardOwner)->second);
-
-  // get data
-  sender->getClipboard(id, &clipboard.m_clipboard);
-
-  std::string data = clipboard.m_clipboard.marshall();
-  if (data.size() > m_maximumClipboardSize * 1024) {
-    LOG_WARN("not sending clipboard data, exceeds limit: %i KB", m_maximumClipboardSize);
+  // should be the expected client: another computer may still send what it had, because it was not told that the
+  // clipboard is not its own any more (a computer that is not told of a grab of the selection)
+  const auto owner = m_clients.find(clipboard.m_clipboardOwner);
+  if (owner == m_clients.end() || owner->second != sender) {
+    LOG_DEBUG("ignored computer \"%s\" update of clipboard %d (not the owner)", getName(sender).c_str(), id);
     return;
   }
 
+  // get data, and of it only what is shared: a computer that is not asked for the formats that are not does not have
+  // to read them either
+  clipboard.m_clipboard.setTextOnly(m_clipboardPolicy.textOnly());
+  clipboard.m_clipboard.setSizeLimit(m_maximumClipboardSize * 1024);
+  sender->getClipboard(id, &clipboard.m_clipboard);
+
+  const auto decision = m_clipboardPolicy.apply(clipboard.m_clipboard);
+  const bool firstTime = m_clipboardRejections[id].report(decision);
+  if (decision.action == ClipboardSharePolicy::Action::Drop) {
+    // every switch to another computer reads the clipboard again, so a clipboard is reported once
+    const std::string name = getName(sender);
+    const std::string why = decision.reason == ClipboardSharePolicy::Reason::TextTooLarge
+                                ? "its text is " + std::to_string(decision.textBytes) + " bytes, only text of up to " +
+                                      std::to_string(ClipboardSharePolicy::kTextOnlyMaxTextBytes) + " bytes is shared"
+                                : "it has no text, only text is shared";
+    // the clipboard and the selection are one copy on Windows and macOS, which are read from the same pasteboard:
+    // the clipboard is the one that is reported
+    if (firstTime && id == kClipboardClipboard) {
+      LOG_INFO("not sharing clipboard %d of \"%s\": %s", id, name.c_str(), why.c_str());
+    } else {
+      LOG_DEBUG("still not sharing clipboard %d of \"%s\": %s", id, name.c_str(), why.c_str());
+    }
+    return;
+  }
+
+  std::string data = clipboard.m_clipboard.marshall();
+  if (data.size() > m_maximumClipboardSize * 1024) {
+    const auto detail = std::format("{} B exceeds the {} KB limit", data.size(), m_maximumClipboardSize);
+    LOG_WARN("%s", formatSkipLine(id, clipboard.m_clipboardOwner, SkipReason::OverSize, detail).c_str());
+    clipboard.m_oversize = true;
+    return;
+  }
+  clipboard.m_oversize = false;
+
   // ignore if data hasn't changed
   if (data == clipboard.m_clipboardData) {
-    LOG_DEBUG("ignored computer \"%s\" update of clipboard %d (unchanged)", clipboard.m_clipboardOwner.c_str(), id);
+    LOG_INFO("%s", formatSkipLine(id, clipboard.m_clipboardOwner, SkipReason::IdenticalContent).c_str());
     return;
   }
 
@@ -1472,11 +2154,18 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
   // tell all clients except the sender that the clipboard is dirty
   for (ClientList::const_iterator index = m_clients.begin(); index != m_clients.end(); ++index) {
     BaseClientProxy *client = index->second;
-    client->setClipboardDirty(id, client != sender);
+    if (sharesClipboardWith(client)) {
+      client->setClipboardDirty(id, client != sender);
+    }
   }
 
   // send the new clipboard to the active computer
-  m_active->setClipboard(id, &clipboard.m_clipboard);
+  if (sharesClipboardWith(m_active)) {
+    m_active->setClipboard(id, &clipboard.m_clipboard);
+    if (m_active == m_primaryClient) {
+      m_primaryClipboardWritten[id] = std::chrono::steady_clock::now();
+    }
+  }
 }
 
 void Server::onScreensaver(bool activated)
@@ -1638,41 +2327,68 @@ bool Server::onMouseMovePrimary(int32_t x, int32_t y)
   m_active->getShape(ax, ay, aw, ah);
   int32_t zoneSize = getJumpZoneSize(m_active);
 
-  // clamp position to computer
-  int32_t xc = x;
-  int32_t yc = y;
-  if (xc < ax + zoneSize) {
-    xc = ax;
-  } else if (xc >= ax + aw - zoneSize) {
-    xc = ax + aw - 1;
-  }
-  if (yc < ay + zoneSize) {
-    yc = ay;
-  } else if (yc >= ay + ah - zoneSize) {
-    yc = ay + ah - 1;
-  }
-
-  // see if we should change computers
-  // when the cursor is in a corner, there may be a computer either
-  // horizontally or vertically.  check both directions.
   using enum Direction;
   auto dirh = NoDirection;
   auto dirv = NoDirection;
+  int32_t xc = x;
+  int32_t yc = y;
   int32_t xh = x;
   int32_t yv = y;
-  if (x < ax + zoneSize) {
-    xh -= zoneSize;
-    dirh = Left;
-  } else if (x >= ax + aw - zoneSize) {
-    xh += zoneSize;
-    dirh = Right;
-  }
-  if (y < ay + zoneSize) {
-    yv -= zoneSize;
-    dirv = Top;
-  } else if (y >= ay + ah - zoneSize) {
-    yv += zoneSize;
-    dirv = Bottom;
+  // the layout of the screen of the server is only asked for when it can be used
+  if (const auto *layout = m_multiMonitor && m_useArrangement ? primaryLayout() : nullptr; layout != nullptr) {
+    // The screen is not a rectangle. A pointer on an exposed edge of it, which is a pixel that has no monitor zoneSize
+    // away on one side, is where the pointer leaves, whether that edge is on the bounding box or not; the computer on
+    // that side is found from where the pointer would be beyond the bounding box, as it always is. The system keeps
+    // the pointer on a monitor, so a pointer that is pushed against an edge is on its pixel. A position that is in a
+    // hole is judged from the nearest pixel of a monitor.
+    const auto box = layout->boundingBox();
+    const auto pixel = layout->contains(x, y) ? MonitorPoint{x, y} : layout->nearest(x, y);
+    x = xc = xh = pixel.x;
+    y = yc = yv = pixel.y;
+    if (!layout->contains(pixel.x - zoneSize, pixel.y)) {
+      xh = box.x - zoneSize;
+      dirh = Left;
+    } else if (!layout->contains(pixel.x + zoneSize, pixel.y)) {
+      xh = box.right() - 1 + zoneSize;
+      dirh = Right;
+    }
+    if (!layout->contains(pixel.x, pixel.y - zoneSize)) {
+      yv = box.y - zoneSize;
+      dirv = Top;
+    } else if (!layout->contains(pixel.x, pixel.y + zoneSize)) {
+      yv = box.bottom() - 1 + zoneSize;
+      dirv = Bottom;
+    }
+  } else {
+    // clamp position to computer
+    if (xc < ax + zoneSize) {
+      xc = ax;
+    } else if (xc >= ax + aw - zoneSize) {
+      xc = ax + aw - 1;
+    }
+    if (yc < ay + zoneSize) {
+      yc = ay;
+    } else if (yc >= ay + ah - zoneSize) {
+      yc = ay + ah - 1;
+    }
+
+    // see if we should change computers
+    // when the cursor is in a corner, there may be a computer either
+    // horizontally or vertically.  check both directions.
+    if (x < ax + zoneSize) {
+      xh -= zoneSize;
+      dirh = Left;
+    } else if (x >= ax + aw - zoneSize) {
+      xh += zoneSize;
+      dirh = Right;
+    }
+    if (y < ay + zoneSize) {
+      yv -= zoneSize;
+      dirv = Top;
+    } else if (y >= ay + ah - zoneSize) {
+      yv += zoneSize;
+      dirv = Bottom;
+    }
   }
   if (dirh == NoDirection && dirv == NoDirection) {
     // still on local computer
@@ -1738,6 +2454,12 @@ void Server::onMouseMoveSecondary(int32_t dx, int32_t dy)
   if (m_relativeMoves && isLockedToComputerServer()) {
     LOG_VERBOSE("relative move on %s by %d,%d", getName(m_active).c_str(), dx, dy);
     m_active->mouseRelativeMove(dx, dy);
+    return;
+  }
+
+  // a computer that has a layout to map the pointer by has it moved over its monitors
+  if (const auto *layout = monitorLayoutFor(m_active); layout != nullptr) {
+    onMouseMoveSecondaryOnMonitors(*layout, dx, dy);
     return;
   }
 
@@ -1877,13 +2599,13 @@ void Server::onMouseMoveSecondary(int32_t dx, int32_t dy)
   }
 }
 
-void Server::onMouseWheel(int32_t xDelta, int32_t yDelta)
+void Server::onMouseWheel(int32_t xDelta, int32_t yDelta, ScrollSource source)
 {
-  LOG_VERBOSE("onMouseWheel %+d,%+d", xDelta, yDelta);
+  LOG_VERBOSE("onMouseWheel %+d,%+d source=%d", xDelta, yDelta, static_cast<int>(source));
   assert(m_active != nullptr);
 
   // relay
-  m_active->mouseWheel(xDelta, yDelta);
+  m_active->mouseWheel(xDelta, yDelta, source);
 }
 
 bool Server::addClient(BaseClientProxy *client)
@@ -1896,6 +2618,9 @@ bool Server::addClient(BaseClientProxy *client)
   // add event handlers
   m_events->addHandler(EventTypes::ComputerShapeChanged, client->getEventTarget(), [this, client](const auto &) {
     handleShapeChanged(client);
+  });
+  m_events->addHandler(EventTypes::ClientProxyMonitorsReported, client->getEventTarget(), [this, client](const auto &) {
+    handleMonitorsReported(client);
   });
   m_events->addHandler(EventTypes::ClipboardGrabbed, client->getEventTarget(), [this, client](const auto &e) {
     handleClipboardGrabbed(e, client);
@@ -1917,6 +2642,8 @@ bool Server::addClient(BaseClientProxy *client)
   // tell primary client about the active sides
   m_primaryClient->reconfigure(getActivePrimarySides());
 
+  sayMonitorGeometry(client);
+
   return true;
 }
 
@@ -1931,10 +2658,15 @@ bool Server::removeClient(BaseClientProxy *client)
 
   // remove event handlers
   m_events->removeHandler(ComputerShapeChanged, client->getEventTarget());
+  m_events->removeHandler(ClientProxyMonitorsReported, client->getEventTarget());
   m_events->removeHandler(ClipboardGrabbed, client->getEventTarget());
   m_events->removeHandler(ClipboardChanged, client->getEventTarget());
 
   // remove from list
+  m_monitorGeometrySaid.erase(getName(client));
+  m_reportedScreenSaid.erase(getName(client));
+  m_reportedMonitorsSaid.erase(getName(client));
+  m_noMonitorsSaid.erase(getName(client));
   m_clients.erase(getName(client));
   m_clientSet.erase(i);
 

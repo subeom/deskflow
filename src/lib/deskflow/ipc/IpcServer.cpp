@@ -8,11 +8,18 @@
 
 #include "base/Log.h"
 #include "common/VersionInfo.h"
+#include "deskflow/ipc/InputIndicatorIpc.h"
 
 #include <QLocalServer>
 #include <QLocalSocket>
 
 namespace deskflow::core::ipc {
+
+namespace {
+
+constexpr qsizetype kMaximumRawMessageSize = 4096;
+
+} // namespace
 
 IpcServer::IpcServer(QObject *parent, const QString &serverName, const QString &typeName)
     : QObject(parent),
@@ -38,8 +45,16 @@ void IpcServer::listen()
   if (m_server->listen(m_serverName)) {
     LOG_DEBUG("%s ipc server listening on: %s", m_typeName.constData(), m_serverName.toUtf8().constData());
   } else {
-    LOG_ERR("%s ipc server failed to listen on: %s", m_typeName.constData(), m_serverName.toUtf8().constData());
+    LOG_ERR(
+        "%s ipc server failed to listen on: %s (%s)", m_typeName.constData(), m_serverName.toUtf8().constData(),
+        m_server->errorString().toUtf8().constData()
+    );
   }
+}
+
+QString IpcServer::fullServerName() const
+{
+  return m_server->fullServerName();
 }
 
 void IpcServer::handleNewConnection()
@@ -63,25 +78,36 @@ void IpcServer::handleReadyRead()
   const auto clientSocket = qobject_cast<QLocalSocket *>(sender());
   LOG_VERBOSE("%s ipc server ready to read data", m_typeName.constData());
 
-  QByteArray data = clientSocket->readAll();
+  auto &data = m_readBuffers[clientSocket];
+  data += clientSocket->readAll();
   if (data.isEmpty()) {
     LOG_WARN("%s ipc server got empty message", m_typeName.constData());
     return;
   }
 
-  // we don't handle incomplete messages yet; each socket read must have delimiters.
-  if (!data.contains('\n')) {
-    LOG_WARN("%s ipc server got incomplete message: %s", m_typeName.constData(), data.constData());
+  if (!data.contains('\n') && data.size() > kMaximumRawMessageSize) {
+    LOG_WARN("%s ipc server got oversized incomplete message", m_typeName.constData());
+    rejectClient(clientSocket);
     return;
   }
 
   // each message is delimited by a newline to keep the protocol super simple.
   while (data.contains('\n')) {
     const auto index = data.indexOf('\n');
-    QByteArray messageData = data.left(index);
+    const QByteArray messageData = data.left(index);
     data.remove(0, index + 1);
-    QString message = QString::fromUtf8(messageData);
-    processMessage(clientSocket, message);
+    if (messageData.size() > kMaximumRawMessageSize) {
+      LOG_WARN("%s ipc server got oversized message", m_typeName.constData());
+      rejectClient(clientSocket);
+      return;
+    }
+    processRawMessage(clientSocket, messageData);
+    if (!m_clients.contains(clientSocket)) {
+      return;
+    }
+  }
+  if (data.isEmpty()) {
+    m_readBuffers.remove(clientSocket);
   }
 }
 
@@ -90,6 +116,9 @@ void IpcServer::handleDisconnected()
   const auto clientSocket = qobject_cast<QLocalSocket *>(sender());
   LOG_DEBUG("%s ipc server client disconnected", m_typeName.constData());
   m_clients.remove(clientSocket);
+  m_registeredClients.remove(clientSocket);
+  m_readBuffers.remove(clientSocket);
+  clientDisconnected(clientSocket);
   clientSocket->deleteLater();
 }
 
@@ -103,6 +132,9 @@ void IpcServer::handleErrorOccurred()
   }
 
   m_clients.remove(clientSocket);
+  m_registeredClients.remove(clientSocket);
+  m_readBuffers.remove(clientSocket);
+  clientDisconnected(clientSocket);
   clientSocket->deleteLater();
 }
 
@@ -140,6 +172,7 @@ void IpcServer::processMessage(QLocalSocket *clientSocket, const QString &messag
     }
 
     LOG_DEBUG("%s ipc server sending hello back", m_typeName.constData());
+    m_registeredClients.insert(clientSocket);
     writeToClientSocket(clientSocket, QStringLiteral("hello=%1").arg(versionId));
 
     // Replay messages that were queued before any clients connected.
@@ -157,6 +190,40 @@ void IpcServer::processMessage(QLocalSocket *clientSocket, const QString &messag
   }
 
   clientSocket->flush();
+}
+
+void IpcServer::processRawMessage(QLocalSocket *clientSocket, const QByteArray &message)
+{
+  const auto indicator = deskflow::input::parseInputIndicatorRawMessage(message);
+  if (indicator.state == deskflow::input::InputIndicatorRawMessageState::Invalid) {
+    LOG_WARN(
+        "%s ipc server got invalid indicator message: %s", m_typeName.constData(),
+        qPrintable(deskflow::input::redactInputIndicatorMessage(message))
+    );
+    rejectClient(clientSocket);
+    return;
+  }
+  if (indicator.state == deskflow::input::InputIndicatorRawMessageState::Valid) {
+    processCommand(clientSocket, indicator.command, {indicator.command, indicator.payload});
+    clientSocket->flush();
+    return;
+  }
+  processMessage(clientSocket, QString::fromUtf8(message));
+}
+
+bool IpcServer::isClientRegistered(const QLocalSocket *clientSocket) const
+{
+  return m_registeredClients.contains(const_cast<QLocalSocket *>(clientSocket));
+}
+
+void IpcServer::rejectClient(QLocalSocket *clientSocket)
+{
+  m_clients.remove(clientSocket);
+  m_registeredClients.remove(clientSocket);
+  m_readBuffers.remove(clientSocket);
+  clientDisconnected(clientSocket);
+  clientSocket->disconnectFromServer();
+  clientSocket->deleteLater();
 }
 
 void IpcServer::broadcastCommand(const QString &command, const QString &args)

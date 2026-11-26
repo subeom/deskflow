@@ -147,6 +147,7 @@ This table lists all protocol messages in alphabetical order. For a typical sequ
 | [**CBYE**](@ref kMsgCClose) | @ref kMsgCClose | Command | Server→Client | Close connection | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
 | [**CCLP**](@ref kMsgCClipboard) | @ref kMsgCClipboard | Command | Both | Clipboard ownership notification | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
 | [**CIAK**](@ref kMsgCInfoAck) | @ref kMsgCInfoAck | Command | Server→Client | Acknowledge info message | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
+| [**CIPC**](@ref kMsgCInputCapabilities) | @ref kMsgCInputCapabilities | Handshake | Client→Server | Destination input platform and capabilities | [MsgSize](#constraint-protocol-max-message-length) | 1.9+ |
 | [**CINN**](@ref kMsgCEnter) | @ref kMsgCEnter | Command | Server→Client | Enter computer | [MsgSize](#constraint-protocol-max-message-length), [ComputerEntrySync](#constraint-computer-entry-sync) | 1.0+ |
 | [**CNOP**](@ref kMsgCNoop) | @ref kMsgCNoop | Command | Both | No operation | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
 | [**COUT**](@ref kMsgCLeave) | @ref kMsgCLeave | Command | Server→Client | Leave computer | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
@@ -156,6 +157,7 @@ This table lists all protocol messages in alphabetical order. For a typical sequ
 | [**DDRG**](@ref kMsgDDragInfo) | @ref kMsgDDragInfo | Data | Server→Client | Drag file info | [MsgSize](#constraint-protocol-max-message-length), [ListSize](#constraint-max-list) | 1.5+ |
 | [**DFTR**](@ref kMsgDFileTransfer) | @ref kMsgDFileTransfer | Data | Both | File transfer data | [MsgSize](#constraint-protocol-max-message-length) | 1.5+ |
 | [**DINF**](@ref kMsgDInfo) | @ref kMsgDInfo | Data | Client→Server | Computer information | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
+| [**DIPC**](@ref kMsgDInputCapabilities) | @ref kMsgDInputCapabilities | Handshake | Server→Client | Source input platform and capabilities | [MsgSize](#constraint-protocol-max-message-length) | 1.9+ |
 | [**DKDL**](@ref kMsgDKeyDown) | @ref kMsgDKeyDown | Data | Server→Client | Key down with language | [MsgSize](#constraint-protocol-max-message-length), [KeyMap](#constraint-keymap) | 1.8+ |
 | [**DKDN**](@ref kMsgDKeyDown1_1) | @ref kMsgDKeyDown1_1 | Data | Server→Client | Key down | [MsgSize](#constraint-protocol-max-message-length), [KeyMap](#constraint-keymap) | 1.1+ |
 | [**DKDN**](@ref kMsgDKeyDown1_0) | @ref kMsgDKeyDown1_0 | Data | Server→Client | Key down (legacy) | [MsgSize](#constraint-protocol-max-message-length), [KeyMap](#constraint-keymap) | 1.0 |
@@ -166,6 +168,7 @@ This table lists all protocol messages in alphabetical order. For a typical sequ
 | [**DKUP**](@ref kMsgDKeyUp1_0) | @ref kMsgDKeyUp1_0 | Data | Server→Client | Key up (legacy) | [MsgSize](#constraint-protocol-max-message-length), [KeyMap](#constraint-keymap) | 1.0 |
 | [**DMDN**](@ref kMsgDMouseDown) | @ref kMsgDMouseDown | Data | Server→Client | Mouse down | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
 | [**DMMV**](@ref kMsgDMouseMove) | @ref kMsgDMouseMove | Data | Server→Client | Mouse move (absolute) | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
+| [**DMON**](@ref kMsgDMonitors) | @ref kMsgDMonitors | Data | Client→Server | Monitors of the computer (experimental, negotiated by capability bit 12) | [MsgSize](#constraint-protocol-max-message-length) | 1.9+ (capability) |
 | [**DMRM**](@ref kMsgDMouseRelMove) | @ref kMsgDMouseRelMove | Data | Server→Client | Mouse move (relative) | [MsgSize](#constraint-protocol-max-message-length) | 1.2+ |
 | [**DMUP**](@ref kMsgDMouseUp) | @ref kMsgDMouseUp | Data | Server→Client | Mouse up | [MsgSize](#constraint-protocol-max-message-length) | 1.0+ |
 | [**DMWM**](@ref kMsgDMouseWheel) | @ref kMsgDMouseWheel | Data | Server→Client | Mouse wheel | [MsgSize](#constraint-protocol-max-message-length) | 1.3+ |
@@ -188,7 +191,9 @@ This table lists all protocol messages in alphabetical order. For a typical sequ
 
 A typical control flow is as follows:
 1.  **Handshake**: The server and client exchange `Hello` and `HelloBack` messages to agree on a protocol version.
-2.  **Information Exchange**: The server requests client information with `QINF`, and the client responds with `DINF`.
+2.  **Information Exchange**: The server requests client information with `QINF`. For protocol 1.9 it
+    also sends language synchronization and `DIPC`; the client responds with `DINF` and `CIPC`.
+    A 1.9 connection is not ready until both responses have been received.
 3.  **Options**: The server sends `DSOP` to configure client options.
 4.  **Keep-Alive**: The server and client periodically exchange `CALV` messages to maintain the connection.
 5.  **Computer Entry**: The server sends `CINN` to grant control to the client.
@@ -248,6 +253,232 @@ A modifier (modifier mask) represents the state of modifier keys (like Shift, Co
 - The server can command clients to remap modifier keys via the @ref kMsgDSetOptions message
 - The client processes the @ref kMsgDSetOptions message and updates the modifier translation table accordingly
 
+### Input Platform Capability Exchange
+
+Protocol 1.9 adds two handshake messages:
+
+- @ref kMsgDInputCapabilities (`DIPC%1i%4i`) is sent by the source computer to advertise its
+  `InputPlatform` and capability mask.
+- @ref kMsgCInputCapabilities (`CIPC%1i%4i`) is sent by the destination computer in response.
+
+Both messages contain a one-byte platform value (`Unknown`, `Windows`, `macOS`, `Linux`, or
+`Other`) and a four-byte capability mask. They are sent only after both peers negotiate
+protocol 1.9. If the peer reports an unknown platform or lacks the capability, implementations
+must retain the existing input behavior.
+
+Current capability bits:
+
+- bit 0: protocol 1.9 input capability exchange is supported
+- bit 1: destination can synthesize `kKeyHangul`
+- bit 2: destination can synthesize supported semantic media keys
+- bit 3: destination can apply negotiated cross-platform scroll inversion
+- bit 8: the peer paces its clipboard stream and counts any received data as proof of life (see
+  [Paced Clipboard Stream](#paced-clipboard-stream)); sent by both sides, not an input capability
+- bit 9: the peer takes the data of clipboard id 0 from a Windows or macOS sender as the selection (id 1)
+  too (see [One Clipboard Id for Windows and macOS](#one-clipboard-id-for-windows-and-macos)); sent by
+  both sides, not an input capability
+- bit 12 (`kLayoutCapabilityMonitors`, `common/MonitorCapabilities.h`): in `DIPC` the server invites the
+  computer to report its monitors; in `CIPC` the computer says it does (see
+  [Monitor Reporting](#monitor-reporting-dmon))
+
+The destination advertises bit 1 only if its current key-map inventory can synthesize
+`kKeyHangul` (on Windows only the Korean keyboard layout provides that key) and advertises bits 2
+and 3 on Windows. Unknown platforms and missing bits always fall back to existing input behavior.
+
+Protocol 1.9 does not change the formats of @ref kMsgDKeyDown, @ref kMsgDKeyRepeat,
+@ref kMsgDKeyUp, or @ref kMsgDMouseWheel. A peer using protocol 1.8 or older never sends or receives
+`DIPC`/`CIPC` and continues to use the existing input packets unchanged.
+
+#### Multi-Monitor Aware Cursor Mapping (no wire change)
+
+The experimental multi-monitor aware cursor mapping (see [multi-monitor.md](multi-monitor.md)) changes
+nothing on the wire: there is no message for it, no option id that a peer has to understand and no
+capability bit. The monitor layout of a computer is read from the server's settings and is never sent;
+it only changes which coordinates the server computes before it sends the existing @ref kMsgCEnter and
+@ref kMsgDMouseMove messages, which always lie inside the shape that the computer reported with
+`DINF`. Every client, including ones that never heard of it, works with a server that has it on. The
+monitors can also be reported by the client, which is a message of its own and is negotiated (see
+[Monitor Reporting](#monitor-reporting-dmon)).
+
+The experimental **arrangement of the computers** (see [arrangement.md](arrangement.md)) changes
+nothing on the wire either. The arrangement lives in the server's GUI settings and the server configuration
+file that it writes (the `left(0,38.7513) = Name(0,100)` links that the core has always read); the server's
+own monitors are read from its operating system. Nothing about it is sent to a computer, and the size that a
+computer reported with `DINF` is only read (the GUI learns it from a line of the server log, not from a new
+message).
+
+#### Monitor Reporting (DMON)
+<a id="monitor-reporting-dmon"></a>
+
+An experimental, negotiated message through which a client tells the server the monitors that its
+desktop is made of (see [monitor-reporting.md](monitor-reporting.md)). Nothing is sent unless both ends
+have capability bit 12 (`kLayoutCapabilityMonitors`):
+
+- the server sets it in `DIPC` only while `server/experimentalMultiMonitor` is on. With the setting off,
+  and for every server that predates the bit, the mask of `DIPC` is what it always was;
+- the client sets it in `CIPC` only when it saw it in `DIPC` **and** can list its monitors. It is the
+  acknowledgement, there is no other reply;
+- the client sends @ref kMsgDMonitors (`DMON`) only after that, and the server expects one only from a
+  client that acknowledged. The handshake does not wait for it: the server uses the rectangle of `DINF`
+  until a valid report arrives.
+
+The message is `"DMON%1i%2i%1i"` (version 1, generation, count) followed by `count` records of
+`"%2i%2i%2i%2i%2i%1i"` (x, y, width, height as signed 16-bit numbers in the coordinates of the `DINF`
+shape of the same client; the display scale in percent, 0 if unknown; flags, bit 0 is the primary
+monitor, bit 1 says that the coordinates are logical units, the points of a Mac, and not physical
+pixels): 8 + 11 x count bytes. **The message is as long as its packet**: a `DMON` is valid only when its
+packet is `4 + 11 x count` bytes after the code, and a receiver reads exactly the bytes of the packet, also when it
+ignores the message or the message is not valid or not wanted. What is behind it in the stream stays where it is:
+an unexpected or invalid `DMON` (a count of 255 and no record, a count of 1 and three records, a header that ends in
+the middle) never costs the connection, never takes the packets behind it and never makes the receiver discard the
+buffer, which is what an unknown message code does. `ProtocolUtil` itself does not frame messages: the packet that
+the stream is made of is the only thing that says where a message ends, so the receiver takes the length of the
+packet before it reads the code.
+
+A client sends a report after its `CIPC`, after every `DINF`, and when its monitors change while its shape
+does not (two monitors swap places); never when the monitors are the same as in the last report. A client
+whose monitors do not tile exactly the shape that it reports in `DINF` sends no report, and `count = 0`
+if it had sent one. The server accepts 1 to 16 monitors of a size that do not overlap, form one connected
+shape, fit in 16 bits and whose bounding box is the latest `DINF` shape, and uses the report only while that
+stays true; anything else is dropped with one INFO line. Protocol 1.8 and older never have the capability
+and treat `DMON` as the unknown message that it is for them.
+
+#### F18 to Hangul Mapping
+
+On a negotiated macOS-to-Windows protocol 1.9 link, the F18 key can be sent as the Korean-English
+(Hangul) key. The option pair is carried by @ref kMsgDSetOptions:
+
+- `HGF8` (`kOptionCrossOSF18Key`): `1` is `F18Action::Hangul`. `0`, an absent option and any other
+  value mean `F18Action::PassThrough`, for which the server sends no option at all.
+
+The mapping is applied by the **source**, in `ClientProxy1_9`, so no new message or capability
+bit is needed and the key messages keep their formats. It applies only when the source is macOS,
+the destination is Windows, the destination reported capability bit 1, and `HGF8` is `1`:
+
+1. A @ref kMsgDKeyDown for `kKeyF18` is written as a @ref kMsgDKeyDown for `kKeyHangul`. The
+   modifier mask and the `KeyButton` of the source's key are kept, because the destination pairs a
+   release with its press by that `KeyButton`.
+2. A @ref kMsgDKeyRepeat for the F18 key is not written, and neither is a second @ref kMsgDKeyDown
+   for a key that is still held, so that holding F18 toggles the input mode once.
+3. The matching @ref kMsgDKeyUp is written as a @ref kMsgDKeyUp for `kKeyHangul` with the same
+   `KeyButton`. The proxy remembers which presses it sent as Hangul, so the release follows how the
+   press was sent even if the options changed meanwhile. A macOS source writes the release of an
+   ordinary key with `kKeyNone` and only the `KeyButton` says which key went up, so the proxy
+   matches a release (and a repeat) to the remembered press by `KeyButton` alone, never by key id.
+   That memory is dropped on @ref kMsgCLeave, which makes the destination release every key.
+
+Every other case, including every other key, F13 to F17 and F19 onwards among them, a link below
+1.9, a destination that is not Windows or did not report bit 1, and `HGF8` being absent, writes
+exactly the bytes it wrote before `HGF8` existed. The destination never maps the key itself and
+ignores `HGF8`, so a destination that already advertises bit 1 needs no change.
+
+Command is not touched by protocol 1.9: `kKeySuper_L` and `kKeySuper_R` are written as the source
+saw them. A macOS source reports both Command keys as `kKeySuper_L`, as it did before 1.9.
+
+#### Cross-OS Scroll Inversion Scope
+
+On a negotiated macOS-to-Windows protocol 1.9 link, wheel inversion is configured with these
+option pairs carried by @ref kMsgDSetOptions:
+
+- `CXIX` / `CXIY` (`kOptionCrossOSInvertScrollX` / `kOptionCrossOSInvertScrollY`): invert the
+  horizontal / vertical wheel delta when non-zero.
+- `CXIS` (`kOptionCrossOSInvertScope`): which events the inversion applies to. `0` is `All`
+  and is also the meaning when the option is absent or unrecognised; `1` is `MouseWheelOnly`.
+
+With scope `All` the source forwards `CXIX`/`CXIY` and the destination inverts every
+@ref kMsgDMouseWheel it receives, exactly as before `CXIS` existed.
+
+With scope `MouseWheelOnly` the inversion is applied by the **source**, so no new message or
+capability bit is needed and @ref kMsgDMouseWheel stays byte-for-byte identical:
+
+1. The macOS primary classifies each scroll event as `ScrollSource::Mouse`,
+   `ScrollSource::Trackpad`, or leaves it `ScrollSource::Unknown` (the default for every other
+   primary platform) and carries that value alongside the wheel deltas to the server.
+2. `ClientProxy1_9` inverts the X/Y deltas (as selected by `CXIX`/`CXIY`) of `Mouse` events
+   before writing @ref kMsgDMouseWheel. `Trackpad` and `Unknown` events are written unchanged,
+   so an event that cannot be classified is never inverted.
+3. `ClientProxy1_9` does not forward `CXIX`/`CXIY` to the destination while the scope is
+   `MouseWheelOnly`, so a destination that predates `CXIS` cannot invert a second time. The
+   other option pairs, and their order, are forwarded unchanged.
+4. A destination that implements `CXIS` also fails closed: under `MouseWheelOnly` it never
+   inverts the wheel deltas it receives.
+
+Peers that do not know `CXIS` ignore it. The destination-local **Client Configuration**
+inversion and scale are independent of this scope and are applied after it.
+
+The macOS classification rule is: an event is a trackpad event iff its
+`kCGScrollWheelEventScrollPhase` or `kCGScrollWheelEventMomentumPhase` field is non-zero,
+otherwise it is a mouse event. It is a heuristic with known limits: a Magic Mouse reports phases
+and is classified as a trackpad, and scroll smoothing utilities are classified by the phases they
+emit. `kCGScrollWheelEventIsContinuous` and the source process id are not part of the rule.
+When the classification changes, the macOS primary logs the raw fields once at `DEBUG` level
+(`scroll source changed to ...`); it never logs per event.
+
+### Paced Clipboard Stream
+
+Large clipboards used to be pushed into the connection all at once. The mouse, keys and keepalives
+written afterwards waited behind them, and a slow link delayed the keepalives long enough for the
+client to declare the server dead. A protocol 1.9 link therefore sends @ref kMsgDClipboard as a
+paced, low priority stream **inside the same TCP connection** (see `docs/dev/clipboard-transfer.md`
+for the design and for what was deliberately not done).
+
+The messages do not change. A transfer is still `start`, `data`... and `end` chunks (the mark byte of
+@ref kMsgDClipboard), and every receiver of protocol 1.6 and later reassembles any chunk size
+(`ClipboardChunk::assemble`). Only the chunk boundaries and the timing differ from the legacy
+stream:
+
+- the data is cut into chunks of 32 KiB (the legacy sender uses 512 KiB), and only one data chunk is
+  written each time the connection reports that its output has drained. The start chunk goes out with
+  the first data chunk and the end chunk with the last one;
+- the transfers of the two clipboard ids are sent one after the other;
+- a new transfer for a clipboard id replaces a transfer of that id that is running or waiting. The old
+  one stops without an end chunk: the receiver drops its partial data when the next start chunk
+  arrives. A @ref kMsgCClipboard for an id also stops the transfer of that id, because the grab says
+  its data is stale.
+- while a paced transfer runs, the sender limits the unsent data in the kernel send buffer
+  (`TCP_NOTSENT_LOWAT`, 16 KiB) where the platform has that option, so the backlog stays in the
+  user space queue behind the input messages. Platforms without the option only get the pacing.
+
+**Gate.** Pacing changes what is on the wire, so it is used only on a link that completed the
+protocol 1.9 handshake (the peer's `DIPC`/`CIPC` was received). A peer of protocol 1.8 or older, and a
+1.9 connection before the peer's capabilities are known, get the legacy stream byte for byte. The
+sender does not need the peer to advertise anything for this: a 1.9 receiver that predates the
+capability reassembles the stream like any other.
+
+**Capability bit.** `DIPC` and `CIPC` carry one more capability bit, defined in
+`common/ClipboardCapabilities.h`:
+
+- bit 8 (`kClipboardCapabilityPaced`): the peer sends clipboards as a paced stream and counts any
+  data it receives as proof of life.
+
+Peers that predate the bit ignore it, so the layout of `DIPC` and `CIPC` is unchanged. A client whose
+server advertised the bit resets its keepalive alarm for any data it receives, not only for `CALV`,
+so that a long inbound clipboard cannot make it declare the server dead. Without the bit the client
+resets the alarm for `CALV` only, as before. (The server already resets its alarm for any data
+received from a client.)
+
+### One Clipboard Id for Windows and macOS
+
+The selection (clipboard id 1, @ref kMsgDClipboard and @ref kMsgCClipboard) only means something on
+X11. Windows and macOS ignore the id when they set a clipboard, so they received the same data twice
+and wrote it to their clipboard twice. A sender now leaves out the data **and the grab** of id 1 when
+the computer it is sent to ignores the id:
+
+- **server to client**: the server sends the data and the grab of id 0 only to a client that reported
+  `Windows` or `macOS` in `CIPC`. It needs no capability bit: those receivers ignore the id, so a client
+  built before this change also takes only id 0. The grab is left out too, because a Windows client empties
+  its clipboard when it is told that another computer took it, whatever the id, and no data of id 1 follows
+  to fill it again. A client that reported `Linux`, `Other` or an unknown platform, and a link that has not
+  completed the 1.9 handshake, get both ids as before;
+- **client to server**: a client leaves the data and the grab of id 1 out only when it is on Windows or
+  macOS itself (the selection of an X11 computer is its own, and the server may pass it on to another one),
+  the server reported `Windows` or `macOS` in `DIPC` **and** advertised bit 9
+  (`kClipboardCapabilitySingleId`). A server that advertises it takes a grab and the data of id 0 from a
+  Windows or macOS client as the same for id 1: it tells itself of the grab of id 1 right after that of id 0,
+  and of the change of id 1 right after that of id 0, so the computers that need the selection still get it,
+  and the grab of an id is always seen before its data. A server without the bit (it may serve X11 clients
+  that need id 1), or one that is on X11 itself, keeps receiving both ids.
+
 ## Timing and Synchronization
 
 <a id="constraint-keep-alive"></a>
@@ -260,8 +491,9 @@ A modifier (modifier mask) represents the state of modifier keys (like Shift, Co
 
 **Client-Side Behavior:**
 - Upon receiving a kMsgCKeepAlive message, the client must immediately send a kMsgCKeepAlive message back
-- The client maintains a timeout that is reset each time any message is received
-- If no message is received for 9.0 seconds (3 × @ref kKeepAliveRate), client must disconnect
+- The client maintains a timeout that is reset each time a kMsgCKeepAlive message is received. When the server
+  advertised the paced clipboard capability (bit 8 of kMsgDInputCapabilities) any received data resets it too
+- If the timeout is not reset for 9.0 seconds (3 × @ref kKeepAliveRate), client must disconnect
 - This is handled by the  (private) ServerProxy::handleKeepAliveAlarm method
 
 <a id="constraint-computer-entry-sync"></a>
@@ -292,6 +524,7 @@ A modifier (modifier mask) represents the state of modifier keys (like Shift, Co
 | **1.6** | Jan 2014 | Synergy | Clipboard streaming | 1.6+ |
 | **1.7** | Sep 2021 | Synergy | Secure input notifications | 1.7+ |
 | **1.8** | Nov 2021 | Synergy | Language synchronization | 1.8+ |
+| **1.9** | 2026 | Deskflow | Input platform and capability negotiation (@ref kMsgDInputCapabilities, @ref kMsgCInputCapabilities) | 1.9+ |
 
 ### Version Migration Guide
 
@@ -493,6 +726,7 @@ For platform-specific implementation details, refer to:
   - Clipboard grab notifications
   - Data transfer (@ref kMsgDClipboard - text, images, HTML)
   - Streaming for large data (v1.6+)
+  - Size limit: the server's `CLSZ` option, in kilobytes, which is what both sides compare the marshalled clipboard with. The server's "share text only (up to 10 KB)" mode (see `docs/Configuration.md`) only lowers this value and strips the other formats on the server; it adds nothing to the protocol.
 
 - **File Transfer** (v1.5+)
   - Drag-and-drop initiation

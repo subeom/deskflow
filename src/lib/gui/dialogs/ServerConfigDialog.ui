@@ -344,21 +344,21 @@
            <number>6</number>
           </property>
           <item>
-           <widget class="QCheckBox" name="cbDisableLockToComputer">
+           <widget class="ToggleSwitch" name="cbDisableLockToComputer">
             <property name="text">
              <string>Disable lock to computer (scroll lock key)</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="cbDefaultLockToComputerState">
+           <widget class="ToggleSwitch" name="cbDefaultLockToComputerState">
             <property name="text">
              <string>Enable lock to computer at startup</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="cbRelativeMouseMoves">
+           <widget class="ToggleSwitch" name="cbRelativeMouseMoves">
             <property name="enabled">
              <bool>true</bool>
             </property>
@@ -368,7 +368,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QCheckBox" name="cbWin32KeepForeground">
+           <widget class="ToggleSwitch" name="cbWin32KeepForeground">
             <property name="enabled">
              <bool>true</bool>
             </property>
@@ -380,7 +380,7 @@
           <item>
            <layout class="QHBoxLayout" name="layoutClipboard">
             <item>
-             <widget class="QCheckBox" name="cbEnableClipboard">
+             <widget class="ToggleSwitch" name="cbEnableClipboard">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
                 <horstretch>0</horstretch>
@@ -455,6 +455,19 @@
             </item>
            </layout>
           </item>
+          <item>
+           <widget class="ToggleSwitch" name="cbClipboardTextOnly">
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="toolTip">
+             <string>Only plain text of up to 10 KB is shared. Images, formatted (HTML) text and longer text are not shared, and text is never cut short. The size limit above does not apply.</string>
+            </property>
+            <property name="text">
+             <string>Share text only (max 10 KB)</string>
+            </property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>
@@ -487,7 +500,7 @@
           <item>
            <layout class="QHBoxLayout" name="_5">
             <item>
-             <widget class="QCheckBox" name="cbSwitchDelay">
+             <widget class="ToggleSwitch" name="cbSwitchDelay">
               <property name="enabled">
                <bool>true</bool>
               </property>
@@ -558,7 +571,7 @@
           <item>
            <layout class="QHBoxLayout" name="_6">
             <item>
-             <widget class="QCheckBox" name="cbSwitchDoubleTap">
+             <widget class="ToggleSwitch" name="cbSwitchDoubleTap">
               <property name="enabled">
                <bool>true</bool>
               </property>
@@ -657,7 +670,7 @@
               <number>1</number>
              </property>
              <item>
-              <widget class="QCheckBox" name="cbHeartbeat">
+              <widget class="ToggleSwitch" name="cbHeartbeat">
                <property name="enabled">
                 <bool>true</bool>
                </property>
@@ -759,6 +772,37 @@
              </widget>
             </item>
            </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupExperimental">
+         <property name="title">
+          <string>Experimental</string>
+         </property>
+         <layout class="QVBoxLayout" name="layoutExperimental">
+          <property name="leftMargin">
+           <number>6</number>
+          </property>
+          <property name="topMargin">
+           <number>6</number>
+          </property>
+          <property name="rightMargin">
+           <number>6</number>
+          </property>
+          <property name="bottomMargin">
+           <number>6</number>
+          </property>
+          <item>
+           <widget class="ToggleSwitch" name="cbExperimentalMultiMonitor">
+            <property name="toolTip">
+             <string>For computers whose monitors do not make up a rectangle: the pointer is put on a monitor and not in a hole, and leaves through any edge. It works for the computers that have a monitor layout (in their computer settings) that is of the screen size they report; nothing changes for the others. This is an experiment: off = Deskflow behaves exactly as before.</string>
+            </property>
+            <property name="text">
+             <string>Experimental: multi-monitor aware cursor mapping</string>
+            </property>
+           </widget>
           </item>
          </layout>
         </widget>
@@ -900,6 +944,11 @@ Enabling this setting will disable the server config GUI.</string>
    <extends>QLabel</extends>
    <header>widgets/NewComputerWidget.h</header>
   </customwidget>
+  <customwidget>
+   <class>ToggleSwitch</class>
+   <extends>QCheckBox</extends>
+   <header>widgets/ToggleSwitch.h</header>
+  </customwidget>
  </customwidgets>
  <tabstops>
   <tabstop>computerSetupView</tabstop>
@@ -917,9 +966,11 @@ Enabling this setting will disable the server config GUI.</string>
   <tabstop>sbSwitchDoubleTap</tabstop>
   <tabstop>cbEnableClipboard</tabstop>
   <tabstop>sbClipboardSizeLimit</tabstop>
+  <tabstop>cbClipboardTextOnly</tabstop>
   <tabstop>cbHeartbeat</tabstop>
   <tabstop>sbHeartbeat</tabstop>
   <tabstop>cbRelativeMouseMoves</tabstop>
+  <tabstop>cbExperimentalMultiMonitor</tabstop>
   <tabstop>tabWidget</tabstop>
  </tabstops>
  <resources/>

@@ -10,11 +10,14 @@
 
 #include "base/IEventQueue.h"
 #include "base/Log.h"
+#include "deskflow/ClipboardTransferLog.h"
 #include "deskflow/DeskflowException.h"
 #include "deskflow/ProtocolUtil.h"
 #include "io/IStream.h"
+#include "server/ReportedMonitors.h"
 
 #include <cstring>
+#include <format>
 
 //
 // ClientProxy1_0
@@ -107,13 +110,16 @@ void ClientProxy1_0::setHeartbeatRate(double, double alarm)
 
 void ClientProxy1_0::handleData()
 {
+  m_lastData = std::chrono::steady_clock::now();
+
   // handle messages until there are no more.  first read message code.
   uint8_t code[4];
+  m_packetBytes = getStream()->getSize();
   uint32_t n = getStream()->read(code, 4);
   while (n != 0) {
     // verify we got an entire code
     if (n != 4) {
-      LOG_ERR("incomplete message from \"%s\": %d bytes", getName().c_str(), n);
+      LOG_ERR("incomplete message from \"%s\": %d bytes", loggableName().c_str(), n);
       disconnect();
       return;
     }
@@ -123,7 +129,7 @@ void ClientProxy1_0::handleData()
       LOG_VERBOSE("msg from \"%s\": %c%c%c%c", getName().c_str(), code[0], code[1], code[2], code[3]);
       if (!(this->*m_parser)(code)) {
         LOG(
-            (CLOG_ERR "invalid message from client \"%s\": %c%c%c%c", getName().c_str(), code[0], code[1], code[2],
+            (CLOG_ERR "invalid message from client \"%s\": %c%c%c%c", loggableName().c_str(), code[0], code[1], code[2],
              code[3])
         );
         // not possible to determine message boundaries
@@ -132,12 +138,13 @@ void ClientProxy1_0::handleData()
           ;
       }
     } catch (const BadClientException &e) {
-      LOG_ERR("protocol error from client \"%s\": %s", getName().c_str(), e.what());
+      LOG_ERR("protocol error from client \"%s\": %s", loggableName().c_str(), e.what());
       disconnect();
       return;
     }
 
     // next message
+    m_packetBytes = getStream()->getSize();
     n = getStream()->read(code, 4);
   }
 
@@ -155,12 +162,28 @@ bool ClientProxy1_0::parseHandshakeMessage(const uint8_t *code)
     // future messages get parsed by parseMessage
     m_parser = &ClientProxy1_0::parseMessage;
     if (recvInfo()) {
-      m_events->addEvent(Event(EventTypes::ClientProxyReady, getEventTarget()));
-      addHeartbeatTimer();
+      m_handshakeInfoReceived = true;
+      maybeCompleteHandshake();
       return true;
     }
   }
   return false;
+}
+
+bool ClientProxy1_0::isHandshakeCompleteReady() const
+{
+  return true;
+}
+
+void ClientProxy1_0::maybeCompleteHandshake()
+{
+  if (m_handshakeComplete || !m_handshakeInfoReceived || !isHandshakeCompleteReady()) {
+    return;
+  }
+
+  m_handshakeComplete = true;
+  m_events->addEvent(Event(EventTypes::ClientProxyReady, getEventTarget()));
+  addHeartbeatTimer();
 }
 
 bool ClientProxy1_0::parseMessage(const uint8_t *code)
@@ -183,6 +206,12 @@ bool ClientProxy1_0::parseMessage(const uint8_t *code)
   return false;
 }
 
+std::string ClientProxy1_0::loggableName() const
+{
+  // until the Server recognises the computer, its name is what it said: it must not be able to make lines of the log
+  return deskflow::server::loggableName(getName());
+}
+
 void ClientProxy1_0::handleDisconnect()
 {
   LOG_DEBUG("client \"%s\" has disconnected", getName().c_str());
@@ -191,15 +220,25 @@ void ClientProxy1_0::handleDisconnect()
 
 void ClientProxy1_0::handleWriteError()
 {
-  LOG_WARN("error writing to client \"%s\"", getName().c_str());
+  LOG_WARN("error writing to client \"%s\"", loggableName().c_str());
   disconnect();
 }
 
 void ClientProxy1_0::handleFlatline()
 {
   // didn't get a heartbeat fast enough.  assume client is dead.
-  LOG_DEBUG("client \"%s\" is dead", getName().c_str());
+  const auto silence =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_lastData);
+  const auto who = std::format("client \"{}\"", loggableName());
+  LOG_INFO(
+      "%s", deskflow::clipboard::formatKeepAliveTimeout(who, silence, silence, describeClipboardActivity()).c_str()
+  );
   disconnect();
+}
+
+std::string ClientProxy1_0::describeClipboardActivity() const
+{
+  return "none";
 }
 
 bool ClientProxy1_0::getClipboard(ClipboardID id, IClipboard *clipboard) const
@@ -430,11 +469,15 @@ bool ClientProxy1_0::recvGrabClipboard()
     return false;
   }
 
-  // notify
-  auto *info = new ClipboardInfo;
-  info->m_id = id;
-  info->m_sequenceNumber = seqNum;
-  m_events->addEvent(Event(EventTypes::ClipboardGrabbed, getEventTarget(), info));
+  notifyClipboardGrabbed(id, seqNum);
 
   return true;
+}
+
+void ClientProxy1_0::notifyClipboardGrabbed(ClipboardID id, uint32_t sequence)
+{
+  auto *info = new ClipboardInfo;
+  info->m_id = id;
+  info->m_sequenceNumber = sequence;
+  m_events->addEvent(Event(EventTypes::ClipboardGrabbed, getEventTarget(), info));
 }

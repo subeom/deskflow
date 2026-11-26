@@ -14,9 +14,12 @@
 #include "client/ServerProxy.h"
 #include "client/ServerProxy1_7.h"
 #include "client/ServerProxy1_8.h"
+#include "client/ServerProxy1_9.h"
 #include "common/NetworkProtocol.h"
+#include "common/PlatformInfo.h"
 #include "common/Settings.h"
 #include "deskflow/Clipboard.h"
+#include "deskflow/ClipboardTransferLog.h"
 #include "deskflow/Computer.h"
 #include "deskflow/DeskflowException.h"
 #include "deskflow/IPlatformComputer.h"
@@ -25,15 +28,53 @@
 #include "deskflow/ProtocolUtil.h"
 #include "deskflow/StreamChunker.h"
 #include "deskflow/ipc/CoreIpc.h"
+#include "net/ConnectFailureKind.h"
 #include "net/IDataSocket.h"
 #include "net/ISocketFactory.h"
 #include "net/SecureSocket.h"
+#include "net/SocketException.h"
 #include "net/TCPSocket.h"
 
 #include <QMetaEnum>
 
 #include <cstdlib>
 #include <cstring>
+#include <format>
+
+namespace {
+
+using deskflow::diagnosis::FailureKind;
+using deskflow::diagnosis::Phase;
+
+struct ConnectError
+{
+  FailureKind kind;
+  Phase phase;
+  std::string detail;
+};
+
+ConnectError describeConnectError(const BaseException &error)
+{
+  if (const auto *connectError = dynamic_cast<const SocketConnectException *>(&error)) {
+    return {connectError->kind(), Phase::Tcp, connectError->detail()};
+  }
+  if (const auto *addressError = dynamic_cast<const SocketAddressException *>(&error)) {
+    return {deskflow::net::failureKindOf(*addressError), Phase::Resolving, error.what()};
+  }
+  return {FailureKind::Unknown, Phase::Tcp, error.what()};
+}
+
+// what a peer that is not a Deskflow server greeted with, without bytes that would garble the log
+std::string printable(const std::string &text)
+{
+  std::string result;
+  for (const auto character : text) {
+    result.push_back(character >= 0x20 && character < 0x7f ? character : '?');
+  }
+  return result;
+}
+
+} // namespace
 
 //
 // Client
@@ -127,6 +168,8 @@ void Client::connect(size_t addressIndex)
 
     // connect
     LOG_VERBOSE("connecting to server");
+    m_connectPhase = Phase::Tcp;
+    m_secureFailure.reset();
     setupConnecting();
     setupTimer();
     socket->connect(m_serverAddress);
@@ -135,6 +178,8 @@ void Client::connect(size_t addressIndex)
     cleanupConnecting();
     cleanupStream();
     LOG_VERBOSE("connection failed");
+    const auto error = describeConnectError(e);
+    logConnectFailure(error.kind, error.phase, error.detail);
     sendConnectionFailedEvent(e.what());
     return;
   }
@@ -153,6 +198,23 @@ void Client::disconnect(const char *msg)
 
 void Client::refuseConnection(deskflow::core::ConnectionRefusal reason, const char *msg)
 {
+  using deskflow::core::ConnectionRefusal;
+  auto kind = FailureKind::Unknown;
+  switch (reason) {
+  case ConnectionRefusal::UnknownClient:
+    kind = FailureKind::UnknownClientName;
+    break;
+  case ConnectionRefusal::AlreadyConnected:
+    kind = FailureKind::AlreadyConnected;
+    break;
+  case ConnectionRefusal::IncompatibleVersion:
+    kind = FailureKind::VersionMismatch;
+    break;
+  case ConnectionRefusal::ProtocolError:
+    break;
+  }
+  logConnectFailure(kind, Phase::Hello, kind == FailureKind::Unknown && msg != nullptr ? msg : "");
+
   const auto metaEnum = QMetaEnum::fromType<deskflow::core::ConnectionRefusal>();
   ipcSendToClient("connectionRefused", metaEnum.valueToKey(static_cast<int>(reason)));
 
@@ -194,6 +256,29 @@ NetworkAddress Client::getServerAddress() const
 size_t Client::getMaximumClipboardReceiveSizeBytes() const
 {
   return m_maximumClipboardSize * 1024;
+}
+
+InputCapabilities Client::inputCapabilities() const
+{
+  auto capabilities = deskflow::platform::currentInputCapabilities();
+  if (deskflow::platform::isWindows()) {
+    capabilities.capabilities |= kInputCapabilityCrossOSScroll;
+    capabilities.capabilities |= kInputCapabilitySemanticMedia;
+  }
+  if (m_computer != nullptr && m_computer->canSynthesizeKey(kKeyHangul)) {
+    capabilities.capabilities |= kInputCapabilityHangul;
+  }
+  return capabilities;
+}
+
+std::vector<deskflow::monitors::MonitorInfo> Client::monitorInfo() const
+{
+  return m_computer != nullptr ? m_computer->getMonitorInfo() : std::vector<deskflow::monitors::MonitorInfo>{};
+}
+
+bool Client::semanticMediaKey(KeyID id)
+{
+  return m_computer->semanticMediaKey(id);
 }
 
 void *Client::getEventTarget() const
@@ -379,11 +464,17 @@ void Client::sendClipboard(ClipboardID id)
   assert(m_computer != nullptr);
   assert(m_server != nullptr);
 
+  // the server does not want this id (it takes the clipboard as the selection too): do not even read the clipboard
+  if (!m_server->sendsClipboardId(id)) {
+    return;
+  }
+
   // get clipboard data.  set the clipboard time to the last
   // clipboard time before getting the data from the computer
   // as the computer may detect an unchanged clipboard and
   // avoid copying the data.
   Clipboard clipboard;
+  clipboard.setSizeLimit(m_maximumClipboardSize * 1024);
   if (clipboard.open(m_timeClipboard[id])) {
     clipboard.close();
   }
@@ -394,7 +485,11 @@ void Client::sendClipboard(ClipboardID id)
     // marshall the data
     std::string data = clipboard.marshall();
     if (data.size() >= m_maximumClipboardSize * 1024) {
-      LOG_WARN("not sending clipboard data, exceeds limit: %zu KB", m_maximumClipboardSize);
+      const auto detail = std::format("{} B exceeds the {} KB limit", data.size(), m_maximumClipboardSize);
+      LOG_WARN(
+          "%s",
+          deskflow::clipboard::formatSkipLine(id, "server", deskflow::clipboard::SkipReason::OverSize, detail).c_str()
+      );
       return;
     }
 
@@ -405,6 +500,11 @@ void Client::sendClipboard(ClipboardID id)
       m_sentClipboard[id] = true;
       m_dataClipboard[id] = data;
       m_server->onClipboardChanged(id, &clipboard);
+    } else {
+      LOG_INFO(
+          "%s",
+          deskflow::clipboard::formatSkipLine(id, "server", deskflow::clipboard::SkipReason::IdenticalContent).c_str()
+      );
     }
   }
 }
@@ -427,6 +527,13 @@ void Client::setupConnecting()
   assert(m_stream != nullptr);
 
   if (Settings::value(Settings::Security::TlsEnabled).toBool()) {
+    // the TCP connection is up and the secure handshake runs from here until the secure connection is reported
+    m_events->addHandler(EventTypes::DataSocketTlsStarted, m_stream->getEventTarget(), [this](const auto &) {
+      m_connectPhase = Phase::Tls;
+    });
+    m_events->addHandler(EventTypes::DataSocketSecureFailed, m_stream->getEventTarget(), [this](const auto &e) {
+      handleSecureFailed(e);
+    });
     m_events->addHandler(EventTypes::DataSocketSecureConnected, m_stream->getEventTarget(), [this](const auto &) {
       handleConnected();
     });
@@ -469,6 +576,9 @@ bool Client::setupComputer(int16_t protocolMinor)
   assert(m_server == nullptr);
 
   m_ready = false;
+  if (protocolMinor >= 9) {
+    m_computer->prepareInputCapabilities();
+  }
 
   // only 1.6 and later have a proxy: the clipboard, mouse wheel and key message formats
   // differ below that, and nothing older (synergy 1.4 and earlier) still needs supporting.
@@ -483,6 +593,9 @@ bool Client::setupComputer(int16_t protocolMinor)
   case 8:
     m_server = new ServerProxy1_8(this, m_stream, m_events);
     break;
+  case 9:
+    m_server = new ServerProxy1_9(this, m_stream, m_events);
+    break;
   default:
     break;
   }
@@ -490,6 +603,9 @@ bool Client::setupComputer(int16_t protocolMinor)
   if (m_server != nullptr) {
     m_events->addHandler(EventTypes::ComputerShapeChanged, getEventTarget(), [this](const auto &) {
       handleShapeChanged();
+    });
+    m_events->addHandler(EventTypes::ComputerMonitorsChanged, getEventTarget(), [this](const auto &) {
+      handleMonitorsChanged();
     });
     m_events->addHandler(EventTypes::ClipboardGrabbed, getEventTarget(), [this](const auto &e) {
       handleClipboardGrabbed(e);
@@ -501,8 +617,41 @@ bool Client::setupComputer(int16_t protocolMinor)
 void Client::setupTimer()
 {
   assert(m_timer == nullptr);
-  m_timer = m_events->newOneShotTimer(2.0, nullptr);
+  m_connectTimeoutSeconds = loadConnectTimeout();
+  m_timer = m_events->newOneShotTimer(m_connectTimeoutSeconds, nullptr);
   m_events->addHandler(EventTypes::Timer, m_timer, [this](const auto &) { handleConnectTimeout(); });
+}
+
+double Client::loadConnectTimeout()
+{
+  const auto raw = Settings::value(Settings::Client::ConnectTimeout);
+  const auto timeout = deskflow::diagnosis::connectTimeoutFromSetting(raw);
+  if (!timeout.valid && !m_connectTimeoutWarned) {
+    m_connectTimeoutWarned = true;
+    LOG_WARN(
+        "ignoring %s=%s: it must be a number of seconds from %g to %g, using the default of %g s",
+        qPrintable(Settings::Client::ConnectTimeout), qPrintable(Settings::textValue(Settings::Client::ConnectTimeout)),
+        deskflow::diagnosis::kMinConnectTimeoutSeconds, deskflow::diagnosis::kMaxConnectTimeoutSeconds,
+        deskflow::diagnosis::kDefaultConnectTimeoutSeconds
+    );
+  }
+  return timeout.seconds;
+}
+
+void Client::logConnectFailure(FailureKind kind, Phase phase, const std::string &detail) const
+{
+  deskflow::diagnosis::Failure failure;
+  failure.kind = kind;
+  failure.phase = phase;
+  failure.host = m_serverAddress.getHostname();
+  if (m_serverAddress.getAddress() != nullptr) {
+    failure.resolvedAddress = ARCH->addrToString(m_serverAddress.getAddress());
+  }
+  failure.port = m_serverAddress.getPort();
+  failure.timeoutSeconds = m_connectTimeoutSeconds;
+  failure.detail = detail;
+  failure.platform = deskflow::platform::currentInputPlatform();
+  LOG_WARN("%s", deskflow::diagnosis::diagnose(failure).line().c_str());
 }
 
 void Client::cleanup()
@@ -518,7 +667,9 @@ void Client::cleanupConnecting()
 {
   if (m_stream != nullptr) {
     m_events->removeHandler(EventTypes::DataSocketConnected, m_stream->getEventTarget());
+    m_events->removeHandler(EventTypes::DataSocketTlsStarted, m_stream->getEventTarget());
     m_events->removeHandler(EventTypes::DataSocketSecureConnected, m_stream->getEventTarget());
+    m_events->removeHandler(EventTypes::DataSocketSecureFailed, m_stream->getEventTarget());
     m_events->removeHandler(EventTypes::DataSocketConnectionFailed, m_stream->getEventTarget());
   }
 }
@@ -545,6 +696,7 @@ void Client::cleanupComputer()
       m_ready = false;
     }
     m_events->removeHandler(EventTypes::ComputerShapeChanged, getEventTarget());
+    m_events->removeHandler(EventTypes::ComputerMonitorsChanged, getEventTarget());
     m_events->removeHandler(EventTypes::ClipboardGrabbed, getEventTarget());
     delete m_server;
     m_server = nullptr;
@@ -569,6 +721,7 @@ void Client::cleanupStream()
 void Client::handleConnected()
 {
   LOG_VERBOSE("connected, waiting for hello");
+  m_connectPhase = Phase::Hello;
   cleanupConnecting();
   setupConnection();
 
@@ -584,6 +737,7 @@ void Client::handleConnectionFailed(const Event &event)
 {
   auto *info = static_cast<IDataSocket::ConnectionFailedInfo *>(event.getData());
 
+  logConnectFailure(info->m_kind, Phase::Tcp, info->m_what);
   cleanupTimer();
   cleanupConnecting();
   cleanupStream();
@@ -594,12 +748,25 @@ void Client::handleConnectionFailed(const Event &event)
 
 void Client::handleConnectTimeout()
 {
+  // the time limit covers TCP, TLS and the hello together: say which part was reached, or that the handshake had
+  // already failed (the attempt still ends here, as it always did)
+  if (m_secureFailure.has_value()) {
+    logConnectFailure(*m_secureFailure, Phase::Tls, {});
+  } else {
+    logConnectFailure(FailureKind::TimedOut, m_connectPhase, {});
+  }
   cleanupTimer();
   cleanupConnecting();
   cleanupConnection();
   cleanupStream();
   LOG_VERBOSE("connection timed out");
   sendConnectionFailedEvent("Timed out");
+}
+
+void Client::handleSecureFailed(const Event &event)
+{
+  const auto *kind = static_cast<const FailureKind *>(event.getData());
+  m_secureFailure = kind != nullptr ? *kind : FailureKind::TlsHandshakeFailed;
 }
 
 void Client::handleOutputError()
@@ -641,6 +808,12 @@ void Client::handleShapeChanged()
   m_server->onInfoChanged();
 }
 
+void Client::handleMonitorsChanged()
+{
+  LOG_DEBUG("monitors changed");
+  m_server->onMonitorsChanged();
+}
+
 void Client::handleClipboardGrabbed(const Event &event)
 {
   if (!m_enableClipboard || (m_maximumClipboardSize == 0)) {
@@ -679,6 +852,9 @@ void Client::handleHello()
   if (const auto proto = networkProtocolFromString(QString::fromStdString(protocolName));
       proto == NetworkProtocol::Unknown) {
     LOG_WARN("hello back received with protocol: '%s'", protocolName.c_str());
+    logConnectFailure(
+        FailureKind::NotDeskflowServer, Phase::Hello, "it greeted with '" + printable(protocolName) + "'"
+    );
     sendConnectionFailedEvent("got invalid hello message from server");
     cleanupTimer();
     cleanupConnection();
@@ -687,6 +863,13 @@ void Client::handleHello()
 
   if (serverMajor != kProtocolMajorVersion) {
     LOG_WARN("server protocol version not compatible: %d.%d", serverMajor, serverMinor);
+    logConnectFailure(
+        FailureKind::VersionMismatch, Phase::Hello,
+        std::format(
+            "the server speaks {}.{}, this computer {}.{}", serverMajor, serverMinor, kProtocolMajorVersion,
+            kProtocolMinorVersion
+        )
+    );
     sendConnectionFailedEvent(IncompatibleClientException(serverMajor, serverMinor).what());
     cleanupTimer();
     cleanupConnection();
@@ -707,6 +890,13 @@ void Client::handleHello()
   // when it picks a client proxy
   if (!setupComputer(helloBackMinor)) {
     LOG_WARN("server protocol version not supported: %d.%d", serverMajor, serverMinor);
+    logConnectFailure(
+        FailureKind::VersionMismatch, Phase::Hello,
+        std::format(
+            "the server speaks {}.{}, this computer {}.{}", serverMajor, serverMinor, kProtocolMajorVersion,
+            kProtocolMinorVersion
+        )
+    );
     sendConnectionFailedEvent(IncompatibleClientException(serverMajor, serverMinor).what());
     cleanupTimer();
     cleanupConnection();

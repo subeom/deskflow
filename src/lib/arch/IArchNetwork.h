@@ -241,6 +241,18 @@ public:
   */
   virtual void setKeepAliveOnSocket(ArchSocket, bool keepAlive) = 0;
 
+  //! Limit the unsent data the socket keeps in the kernel
+  /*!
+  Bounds how much unsent data the kernel send buffer of \c s holds (TCP_NOTSENT_LOWAT), so that data written later
+  is not queued behind more than that. A limit of 0 removes the bound. This is best effort and does nothing on
+  platforms without such an option.
+  */
+  virtual void setUnsentLowWaterOnSocket(ArchSocket s, uint32_t bytes)
+  {
+    static_cast<void>(s);
+    static_cast<void>(bytes);
+  }
+
   //! Turn address reuse on or off on socket
   /*!
   Allows the address this socket is bound to to be reused while in the

@@ -58,6 +58,8 @@ if(WIN32)
     MSWindowsHook.h
     MSWindowsKeyState.cpp
     MSWindowsKeyState.h
+    MSWindowsMonitors.cpp
+    MSWindowsMonitors.h
     MSWindowsPowerManager.cpp
     MSWindowsPowerManager.h
     MSWindowsProcess.cpp
@@ -94,16 +96,28 @@ elseif(APPLE)
     OSXCocoaApp.m
     OSXComputer.h
     OSXComputer.mm
+    OSXDisplays.cpp
+    OSXDisplays.h
     OSXEventQueueBuffer.cpp
     OSXEventQueueBuffer.h
+    OSXInputIndicatorRelay.cpp
+    OSXInputIndicatorRelay.h
+    OSXInputSource.h
+    OSXInputSource.mm
     OSXKeyLayoutResource.cpp
     OSXKeyLayoutResource.h
+    OSXKeyGroupResolver.cpp
+    OSXKeyGroupResolver.h
     OSXKeyState.cpp
     OSXKeyState.h
     OSXMediaKeySupport.h
     OSXMediaKeySupport.m
     OSXPasteboardPeeker.h
     OSXPasteboardPeeker.m
+    OSXPointerHold.cpp
+    OSXPointerHold.h
+    OSXPointerHoldSystem.h
+    OSXPointerHoldSystem.mm
     OSXPowerManager.cpp
     OSXPowerManager.h
     OSXScreenSaver.cpp
@@ -111,6 +125,8 @@ elseif(APPLE)
     OSXScreenSaverControl.h
     OSXScreenSaverUtil.h
     OSXScreenSaverUtil.m
+    OSXScrollSource.cpp
+    OSXScrollSource.h
   )
 elseif(UNIX)
   set(PLATFORM_SOURCES

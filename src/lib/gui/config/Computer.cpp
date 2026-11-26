@@ -10,6 +10,25 @@
 #include "config/ComputerConfig.h"
 #include <common/Settings.h>
 
+#include <algorithm>
+#include <cmath>
+
+namespace {
+
+// the scales of two computers are the same when each monitor has the same one, or none (NaN) in both
+bool sameScales(const QList<double> &a, const QList<double> &b)
+{
+  if (a.size() != b.size())
+    return false;
+  for (qsizetype i = 0; i < a.size(); ++i) {
+    if (a[i] != b[i] && !(std::isnan(a[i]) && std::isnan(b[i])))
+      return false;
+  }
+  return true;
+}
+
+} // namespace
+
 using enum KeyboardModifier;
 using enum ComputerConfig::SwitchCorner;
 using enum ComputerConfig::Fix;
@@ -33,6 +52,48 @@ void Computer::loadSettings(QSettingsProxy &settings)
   setModifier(Meta, modifierValueFromString(Settings::value(Settings::Computer::ModifierMeta.arg(name)).toString()));
   setModifier(Shift, modifierValueFromString(Settings::value(Settings::Computer::ModifierShift.arg(name)).toString()));
   setModifier(Super, modifierValueFromString(Settings::value(Settings::Computer::ModifierSuper.arg(name)).toString()));
+
+  const auto f18Action = Settings::value(Settings::Computer::F18Action.arg(name)).toString().trimmed();
+  m_F18Action = f18Action.compare(QStringLiteral("hangul"), Qt::CaseInsensitive) == 0 ? F18Action::Hangul
+                                                                                      : F18Action::PassThrough;
+  m_CrossOSInvertX = Settings::value(Settings::Computer::CrossOSInvertX.arg(name)).toBool();
+  m_CrossOSInvertY = Settings::value(Settings::Computer::CrossOSInvertY.arg(name)).toBool();
+  const auto invertScope = Settings::value(Settings::Computer::CrossOSInvertScope.arg(name)).toString().trimmed();
+  m_CrossOSInvertScope = invertScope.compare(QStringLiteral("mouseWheelOnly"), Qt::CaseInsensitive) == 0
+                             ? ScrollInvertScope::MouseWheelOnly
+                             : ScrollInvertScope::All;
+  m_CrossOSSemanticMedia = Settings::value(Settings::Computer::CrossOSSemanticMedia.arg(name)).toBool();
+  m_ShareClipboard = Settings::value(Settings::Computer::ShareClipboard.arg(name)).toBool();
+  m_MonitorLayout = Settings::textValue(Settings::Computer::MonitorLayout.arg(name)).trimmed();
+
+  const auto arrangementX = Settings::value(Settings::Computer::ArrangementX.arg(name));
+  const auto arrangementY = Settings::value(Settings::Computer::ArrangementY.arg(name));
+  bool xIsNumber = false;
+  bool yIsNumber = false;
+  const auto x = arrangementX.toDouble(&xIsNumber);
+  const auto y = arrangementY.toDouble(&yIsNumber);
+  m_ArrangementPlaced = arrangementX.isValid() && arrangementY.isValid() && xIsNumber && yIsNumber;
+  m_ArrangementX = m_ArrangementPlaced ? x : 0;
+  m_ArrangementY = m_ArrangementPlaced ? y : 0;
+  const auto zoom = Settings::value(Settings::Computer::ArrangementZoom.arg(name)).toDouble();
+  m_ArrangementZoom = zoom > 0 ? zoom : 1.0;
+  m_ArrangementWidth = std::max(0, Settings::value(Settings::Computer::ArrangementWidth.arg(name)).toInt());
+  m_ArrangementHeight = std::max(0, Settings::value(Settings::Computer::ArrangementHeight.arg(name)).toInt());
+  // an entry that is not a scale keeps its place (as NaN), so that the scales that follow stay with their monitors
+  m_MonitorScales.clear();
+  bool anyScale = false;
+  for (const auto &part : Settings::textValue(Settings::Computer::MonitorScales.arg(name)).split(QLatin1Char(','))) {
+    bool ok = false;
+    const auto scale = part.trimmed().toDouble(&ok);
+    if (ok && std::isfinite(scale) && scale >= 25.0 && scale <= 500.0) {
+      m_MonitorScales.append(scale);
+      anyScale = true;
+    } else {
+      m_MonitorScales.append(std::nan(""));
+    }
+  }
+  if (!anyScale)
+    m_MonitorScales.clear();
 
   setSwitchCornerSize(Settings::value(Settings::Computer::SwitchCornerSize.arg(name)).toInt());
 
@@ -67,6 +128,53 @@ void Computer::saveSettings(QSettingsProxy &settings) const
   Settings::setValue(Settings::Computer::HalfDuplexNumLock.arg(computerName), m_Fixes[static_cast<int>(NumLock)]);
   Settings::setValue(Settings::Computer::HalfDuplexScrollLock.arg(computerName), m_Fixes[static_cast<int>(ScrollLock)]);
   Settings::setValue(Settings::Computer::XtestIsXineramaUnaware.arg(computerName), m_Fixes[static_cast<int>(XTest)]);
+  Settings::setValue(
+      Settings::Computer::F18Action.arg(computerName),
+      m_F18Action == F18Action::Hangul ? QStringLiteral("hangul") : QStringLiteral("passthrough")
+  );
+  Settings::setValue(Settings::Computer::CrossOSInvertX.arg(computerName), m_CrossOSInvertX);
+  Settings::setValue(Settings::Computer::CrossOSInvertY.arg(computerName), m_CrossOSInvertY);
+  Settings::setValue(
+      Settings::Computer::CrossOSInvertScope.arg(computerName),
+      m_CrossOSInvertScope == ScrollInvertScope::MouseWheelOnly ? QStringLiteral("mouseWheelOnly")
+                                                                : QStringLiteral("all")
+  );
+  Settings::setValue(Settings::Computer::CrossOSSemanticMedia.arg(computerName), m_CrossOSSemanticMedia);
+  Settings::setValue(Settings::Computer::ShareClipboard.arg(computerName), m_ShareClipboard);
+  // a computer that has no layout has no key
+  Settings::setValue(
+      Settings::Computer::MonitorLayout.arg(computerName),
+      m_MonitorLayout.isEmpty() ? QVariant() : QVariant(m_MonitorLayout)
+  );
+  // a computer that is not placed has no position, and what is the default has no key
+  Settings::setValue(
+      Settings::Computer::ArrangementX.arg(computerName), m_ArrangementPlaced ? QVariant(m_ArrangementX) : QVariant()
+  );
+  Settings::setValue(
+      Settings::Computer::ArrangementY.arg(computerName), m_ArrangementPlaced ? QVariant(m_ArrangementY) : QVariant()
+  );
+  Settings::setValue(
+      Settings::Computer::ArrangementZoom.arg(computerName),
+      m_ArrangementZoom == 1.0 ? QVariant() : QVariant(m_ArrangementZoom)
+  );
+  Settings::setValue(
+      Settings::Computer::ArrangementWidth.arg(computerName),
+      m_ArrangementWidth == 0 ? QVariant() : QVariant(m_ArrangementWidth)
+  );
+  Settings::setValue(
+      Settings::Computer::ArrangementHeight.arg(computerName),
+      m_ArrangementHeight == 0 ? QVariant() : QVariant(m_ArrangementHeight)
+  );
+  // a computer that has no scales of its monitors has no key
+  QStringList scales;
+  bool anyScale = false;
+  for (const auto scale : m_MonitorScales) {
+    anyScale = anyScale || std::isfinite(scale);
+    scales << (std::isfinite(scale) ? QString::number(scale, 'g', 10) : QString());
+  }
+  Settings::setValue(
+      Settings::Computer::MonitorScales.arg(computerName), anyScale ? QVariant(scales.join(',')) : QVariant()
+  );
   Settings::setValue(Settings::Computer::SwitchCornerSize.arg(computerName), switchCornerSize());
   Settings::setValue(
       Settings::Computer::SwitchCornerTopLeft.arg(computerName), m_SwitchCorners[static_cast<int>(TopLeft)]
@@ -116,5 +224,13 @@ bool Computer::operator==(const Computer &computer) const
 {
   return m_Name == computer.m_Name && m_Aliases == computer.m_Aliases && m_Modifiers == computer.m_Modifiers &&
          m_SwitchCorners == computer.m_SwitchCorners && m_SwitchCornerSize == computer.m_SwitchCornerSize &&
-         m_Fixes == computer.m_Fixes && m_Swapped == computer.m_Swapped && m_isServer == computer.m_isServer;
+         m_Fixes == computer.m_Fixes && m_F18Action == computer.m_F18Action &&
+         m_CrossOSInvertX == computer.m_CrossOSInvertX && m_CrossOSInvertY == computer.m_CrossOSInvertY &&
+         m_CrossOSInvertScope == computer.m_CrossOSInvertScope &&
+         m_CrossOSSemanticMedia == computer.m_CrossOSSemanticMedia && m_ShareClipboard == computer.m_ShareClipboard &&
+         m_MonitorLayout == computer.m_MonitorLayout && m_ArrangementPlaced == computer.m_ArrangementPlaced &&
+         m_ArrangementX == computer.m_ArrangementX && m_ArrangementY == computer.m_ArrangementY &&
+         m_ArrangementZoom == computer.m_ArrangementZoom && m_ArrangementWidth == computer.m_ArrangementWidth &&
+         m_ArrangementHeight == computer.m_ArrangementHeight && sameScales(m_MonitorScales, computer.m_MonitorScales) &&
+         m_Swapped == computer.m_Swapped && m_isServer == computer.m_isServer;
 }

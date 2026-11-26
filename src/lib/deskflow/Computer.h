@@ -10,10 +10,14 @@
 #include "deskflow/ClipboardTypes.h"
 #include "deskflow/IComputer.h"
 #include "deskflow/KeyTypes.h"
+#include "deskflow/MonitorReport.h"
 #include "deskflow/MouseTypes.h"
 #include "deskflow/OptionTypes.h"
 
+#include "server/MonitorGeometry.h"
+
 #include <string>
+#include <vector>
 
 class IClipboard;
 class IPlatformComputer;
@@ -122,12 +126,17 @@ public:
   */
   void keyRepeat(KeyID id, KeyModifierMask, int32_t count, KeyButton, const std::string &lang);
 
+  bool semanticMediaKey(KeyID id);
+
   //! Notify of key release
   /*!
   Synthesize key events to generate a release of key \c id.  If possible
   match the given modifier mask.
   */
   void keyUp(KeyID id, KeyModifierMask, KeyButton);
+
+  void prepareInputCapabilities();
+  bool canSynthesizeKey(KeyID id) const;
 
   //! Notify of mouse press
   /*!
@@ -218,6 +227,9 @@ public:
   */
   std::string getSecureInputApp() const;
 
+  //! Name the computer that has the pointer while it is not on this one (see IPlatformComputer)
+  void setRemoteComputerName(const std::string &name);
+
   //@}
   //! @name accessors
   //@{
@@ -251,6 +263,11 @@ public:
   the edges of the computer, typically the center.
   */
   void getCursorCenter(int32_t &x, int32_t &y) const;
+
+  //! Get the monitors of the computer, empty when the platform does not tell
+  std::vector<deskflow::server::MonitorRect> getMonitors() const;
+  //! The same monitors with their display scale and the primary one, for a client to report
+  std::vector<deskflow::monitors::MonitorInfo> getMonitorInfo() const;
 
   //! Get the active modifiers
   /*!

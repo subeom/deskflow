@@ -31,6 +31,7 @@ private Q_SLOTS:
   void updateKeyState_pollInsertsSingleKey_keyIsDown();
   void fakeKeyDown_langSyncEnabled_switchesToServerGroup();
   void fakeKeyDown_langSyncDisabled_keepsLocalGroup();
+  void canSynthesizeKey_findsAnyKeyboardGroup();
 
 private:
   Arch m_arch;

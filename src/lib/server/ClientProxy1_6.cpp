@@ -9,9 +9,15 @@
 #include "base/Log.h"
 #include "deskflow/ClipboardChunk.h"
 #include "deskflow/ProtocolUtil.h"
-#include "deskflow/StreamChunker.h"
 #include "io/IStream.h"
 #include "server/Server.h"
+
+using deskflow::clipboard::ClipboardTransferLog;
+using deskflow::clipboard::describeFormats;
+using deskflow::clipboard::formatSkipLine;
+using deskflow::clipboard::SkipReason;
+using deskflow::clipboard::TransferDirection;
+using Clock = ClipboardTransferLog::Clock;
 
 //
 // ClientProxy1_6
@@ -19,20 +25,43 @@
 
 ClientProxy1_6::ClientProxy1_6(const std::string &name, deskflow::IStream *stream, Server *server, IEventQueue *events)
     : ClientProxy1_5(name, stream, server, events),
-      m_events(events)
+      m_events(events),
+      m_sender(stream, events, this, name)
 {
-  m_events->addHandler(EventTypes::ClipboardSending, this, [this](const auto &e) {
-    ClipboardChunk::send(getStream(), e.getDataObject());
-  });
 }
 
-ClientProxy1_6::~ClientProxy1_6()
+ClientProxy1_6::~ClientProxy1_6() = default;
+
+bool ClientProxy1_6::shouldPaceClipboard() const
 {
-  m_events->removeHandler(EventTypes::ClipboardSending, this);
+  return false;
+}
+
+bool ClientProxy1_6::sendsClipboardId(ClipboardID) const
+{
+  return true;
+}
+
+bool ClientProxy1_6::mirrorsSelection() const
+{
+  return false;
+}
+
+bool ClientProxy1_6::keepsClipboardWhenGrabbed() const
+{
+  return false;
 }
 
 void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
 {
+  if (!sendsClipboardId(id)) {
+    if (!m_loggedSkippedId) {
+      m_loggedSkippedId = true;
+      LOG_INFO("%s", formatSkipLine(id, getName(), SkipReason::SelectionNotShared).c_str());
+    }
+    return;
+  }
+
   // ignore if this clipboard is already clean
   if (m_clipboard[id].m_dirty) {
     // this clipboard is now clean
@@ -41,11 +70,59 @@ void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard *clipboard)
 
     std::string data = m_clipboard[id].m_clipboard.marshall();
 
-    size_t size = data.size();
+    const std::pair<size_t, size_t> content{data.size(), std::hash<std::string>{}(data)};
+    if (keepsClipboardWhenGrabbed() && m_sent[id] == content) {
+      LOG_INFO("%s", formatSkipLine(id, getName(), SkipReason::IdenticalContent, "it still has it").c_str());
+      return;
+    }
+    m_sent[id] = content;
+
     LOG_DEBUG("sending clipboard %d to \"%s\"", id, getName().c_str());
 
-    StreamChunker::sendClipboard(data, size, id, 0, m_events, this);
+    m_sender.send(id, 0, data, shouldPaceClipboard());
   }
+}
+
+void ClientProxy1_6::setClipboardDirty(ClipboardID id, bool dirty)
+{
+  // the Server changes the state when this computer took the clipboard or copied something new, or when another one
+  // did: what is on its way to this computer is stale either way, and would overwrite a newer copy
+  if (m_sender.cancel(id)) {
+    m_sent[id].reset();
+  }
+  if (!dirty) {
+    // the computer has its own clipboard now: it copied something, or it is the one that has the current one
+    m_sent[id].reset();
+  }
+  ClientProxy1_5::setClipboardDirty(id, dirty);
+}
+
+void ClientProxy1_6::notifyClipboardGrabbed(ClipboardID id, uint32_t sequence)
+{
+  ClientProxy1_5::notifyClipboardGrabbed(id, sequence);
+
+  // a client that sends one clipboard for a Windows or macOS computer says it took the clipboard once: for the
+  // computers that need the selection it took that too, and it is told before the data follows
+  if (id == kClipboardClipboard && mirrorsSelection()) {
+    ClientProxy1_5::notifyClipboardGrabbed(kClipboardSelection, sequence);
+  }
+}
+
+void ClientProxy1_6::grabClipboard(ClipboardID id)
+{
+  // A peer that ignores the id would have its one clipboard emptied (Windows does that to be told to give it up) by a
+  // grab of the selection that no data follows, so it is not told: it keeps what it has.
+  if (!sendsClipboardId(id)) {
+    m_clipboard[id].m_dirty = true;
+    return;
+  }
+
+  // the grab says the data of a running transfer is stale, so it must not follow the grab, and the client does not have
+  // it
+  if (m_sender.cancel(id)) {
+    m_sent[id].reset();
+  }
+  ClientProxy1_5::grabClipboard(id);
 }
 
 bool ClientProxy1_6::recvClipboard()
@@ -61,25 +138,44 @@ bool ClientProxy1_6::recvClipboard()
   if (r == TransferState::Started) {
     size_t size = ClipboardChunk::getExpectedSize(m_clipboardChunkState);
     LOG_DEBUG("receiving clipboard %d size=%zu", id, size);
+    m_transferLog.begin(TransferDirection::Received, id, getName(), {}, size, 0, false, Clock::now());
+  } else if (r == TransferState::InProgress) {
+    m_transferLog.addChunk(TransferDirection::Received, id);
   } else if (r == TransferState::Finished) {
+    if (const auto line = m_transferLog.finish(
+            TransferDirection::Received, id, Clock::now(), describeFormats(m_clipboardDataCached)
+        )) {
+      LOG_INFO("%s", line->c_str());
+    }
     LOG(
         (CLOG_DEBUG "received client \"%s\" clipboard %d seqnum=%d, size=%zu", getName().c_str(), id, seq,
          m_clipboardDataCached.size())
     );
-    // save clipboard
-    m_clipboard[id].m_clipboard.unmarshall(m_clipboardDataCached, 0);
-    m_clipboard[id].m_sequenceNumber = seq;
+    // save clipboard, and notify. A Windows or macOS client that sends one clipboard sends it for both ids to the
+    // computers that need the selection
+    const auto publish = [&](ClipboardID target) {
+      m_clipboard[target].m_clipboard.unmarshall(m_clipboardDataCached, 0);
+      m_clipboard[target].m_sequenceNumber = seq;
+      auto *info = new ClipboardInfo;
+      info->m_id = target;
+      info->m_sequenceNumber = seq;
+      m_events->addEvent(Event(EventTypes::ClipboardChanged, getEventTarget(), info));
+    };
+    publish(id);
+    if (id == kClipboardClipboard && mirrorsSelection()) {
+      publish(kClipboardSelection);
+    }
     m_clipboardDataCached.clear();
     m_clipboardDataCached.shrink_to_fit();
-
-    // notify
-    auto *info = new ClipboardInfo;
-    info->m_id = id;
-    info->m_sequenceNumber = seq;
-    m_events->addEvent(Event(EventTypes::ClipboardChanged, getEventTarget(), info));
   } else if (r == TransferState::Error) {
+    m_transferLog.cancel(TransferDirection::Received, id);
     return false;
   }
 
   return true;
+}
+
+std::string ClientProxy1_6::describeClipboardActivity() const
+{
+  return deskflow::clipboard::joinActivity(m_transferLog.describeActive(Clock::now()), m_sender.describeActive());
 }
