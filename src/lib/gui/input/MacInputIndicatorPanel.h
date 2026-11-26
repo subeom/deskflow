@@ -7,6 +7,7 @@
 #pragma once
 
 #include "InputIndicatorGeometry.h"
+#include "MacInputIndicatorCompanionArtwork.h"
 #include "deskflow/ipc/InputIndicatorIpc.h"
 
 #include <QString>
@@ -26,13 +27,6 @@
 #endif
 
 namespace deskflow::gui::input {
-
-enum class InputIndicatorCompanion
-{
-  Cat,
-  Dog,
-  Turtle
-};
 
 enum class InputIndicatorRenderPrimitive
 {
@@ -426,15 +420,14 @@ constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
     InputIndicatorCompanion companion = InputIndicatorCompanion::Cat
 )
 {
-  const bool cat =
-      companion == InputIndicatorCompanion::Cat;
+  (void)companion;
   return {
       .width = 33,
       .height = 31,
-      .canvasWidth = cat ? 49.0 : 33.0,
-      .canvasHeight = cat ? 49.0 : 31.0,
-      .canvasOffsetX = cat ? 8.0 : 0.0,
-      .canvasOffsetY = cat ? 9.0 : 0.0,
+      .canvasWidth = 49,
+      .canvasHeight = 49,
+      .canvasOffsetX = 8,
+      .canvasOffsetY = 9,
       .logicalWidth = 30,
       .logicalHeight = 28,
       .visualScale = 1.1,
@@ -571,25 +564,67 @@ constexpr MacInputIndicatorRenderModel macInputIndicatorRenderModel(
         },
     };
   case InputIndicatorCompanion::Dog:
-    return {
+    {
+      const auto artwork =
+          macInputIndicatorDogArtwork();
+      return {
         .companion = InputIndicatorCompanion::Dog,
-        .silhouetteBounds = {
-            .x = 1, .y = 3, .width = 25, .height = 21
+        .usesSideProfile = true,
+        .mirrorsWithMotion = true,
+        .sourceFacesRight = true,
+        .silhouetteBounds =
+            artwork.silhouetteBounds,
+        .headBounds = {
+            .x = 18, .y = 9,
+            .width = 10, .height = 11
         },
-        .languageBounds = {
-            .x = 9, .y = 7, .width = 10, .height = 8
+        .torsoBounds = {
+            .x = 8, .y = 5,
+            .width = 14, .height = 12
         },
-    };
+        .pawBounds = {
+            .x = 9, .y = 3,
+            .width = 13, .height = 5
+        },
+        .tailBounds = {
+            .x = 2, .y = 8,
+            .width = 7, .height = 7
+        },
+        .languageBounds =
+            artwork.innerLanguageBounds,
+      };
+    }
   case InputIndicatorCompanion::Turtle:
-    return {
+    {
+      const auto artwork =
+          macInputIndicatorTurtleArtwork();
+      return {
         .companion = InputIndicatorCompanion::Turtle,
-        .silhouetteBounds = {
-            .x = 1, .y = 5, .width = 28, .height = 17
+        .usesSideProfile = true,
+        .mirrorsWithMotion = true,
+        .sourceFacesRight = true,
+        .silhouetteBounds =
+            artwork.silhouetteBounds,
+        .headBounds = {
+            .x = 22, .y = 10.5,
+            .width = 7, .height = 6.5
         },
-        .languageBounds = {
-            .x = 9, .y = 8, .width = 10, .height = 8
+        .torsoBounds = {
+            .x = 5, .y = 4,
+            .width = 19, .height = 15
         },
-    };
+        .pawBounds = {
+            .x = 7, .y = 3,
+            .width = 15, .height = 4
+        },
+        .tailBounds = {
+            .x = 1, .y = 8,
+            .width = 6, .height = 4
+        },
+        .languageBounds =
+            artwork.innerLanguageBounds,
+      };
+    }
   }
 }
 

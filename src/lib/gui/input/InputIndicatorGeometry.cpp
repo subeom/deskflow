@@ -438,6 +438,92 @@ InputIndicatorMotionPose inputIndicatorMotionPose(
   }
 }
 
+InputIndicatorCompanionMotionPose
+inputIndicatorCompanionMotionPose(
+    InputIndicatorCompanion companion,
+    InputIndicatorMotionState state,
+    double motionPhase,
+    bool reducedMotion
+)
+{
+  if (reducedMotion ||
+      !std::isfinite(motionPhase)) {
+    return {};
+  }
+  const double phase =
+      std::clamp(motionPhase, 0.0, 1.0);
+  const double angle = phase * 2.0 * M_PI;
+  const double wave = std::sin(angle);
+  const double stride = std::sin(angle);
+  if (companion == InputIndicatorCompanion::Cat) {
+    switch (state) {
+    case InputIndicatorMotionState::Idle:
+      return {
+          .tailPhase = wave,
+      };
+    case InputIndicatorMotionState::Walk:
+      return {
+          .bodyBob = wave * 0.45,
+          .bodyStretch =
+              std::abs(wave) * 0.025,
+          .limbStride = stride * 0.9,
+      };
+    case InputIndicatorMotionState::Run:
+      return {
+          .bodyBob = wave * 0.9,
+          .bodyStretch =
+              std::abs(wave) * 0.07,
+          .limbStride = stride * 1.5,
+          .bodyLead = 0.6,
+      };
+    }
+  }
+  if (companion == InputIndicatorCompanion::Dog) {
+    switch (state) {
+    case InputIndicatorMotionState::Idle:
+      return {};
+    case InputIndicatorMotionState::Walk:
+      return {
+          .bodyBob = wave * 0.28,
+          .bodyStretch =
+              std::abs(wave) * 0.015,
+          .tailPhase = wave,
+          .limbStride = stride * 0.9,
+      };
+    case InputIndicatorMotionState::Run:
+      return {
+          .bodyBob = wave * 0.42,
+          .bodyStretch =
+              std::abs(wave) * 0.035,
+          .tailPhase = wave * 1.4,
+          .limbStride = stride * 1.5,
+          .bodyLead = 0.8,
+      };
+    }
+  }
+  switch (state) {
+  case InputIndicatorMotionState::Idle:
+    return {};
+  case InputIndicatorMotionState::Walk:
+    return {
+        .bodyBob = wave * 0.16,
+        .bodyStretch =
+            std::abs(wave) * 0.008,
+        .tailPhase = wave,
+        .limbStride = stride * 0.55,
+    };
+  case InputIndicatorMotionState::Run:
+    return {
+        .bodyBob = wave * 0.30,
+        .bodyStretch =
+            std::abs(wave) * 0.020,
+        .tailPhase = wave,
+        .limbStride = stride * 0.95,
+        .bodyLead = 0.55,
+    };
+  }
+}
+
 InputIndicatorCatPose inputIndicatorCatPose(
     InputIndicatorMotionState state,
     double phase,
@@ -717,6 +803,41 @@ inputIndicatorCatIdleTailMotionAdvance(
       .active = true,
   };
   return result;
+}
+
+InputIndicatorCompanionIdleMotionState
+inputIndicatorCompanionIdleMotionInitialState(
+    std::uint32_t seed
+)
+{
+  return inputIndicatorCatIdleTailMotionInitialState(
+      seed
+  );
+}
+
+double inputIndicatorCompanionIdleMotionDuration(
+    InputIndicatorCompanionIdleMotion motion
+)
+{
+  return inputIndicatorCatIdleTailMotionDuration(
+      motion
+  );
+}
+
+InputIndicatorCompanionIdleMotionStep
+inputIndicatorCompanionIdleMotionAdvance(
+    const InputIndicatorCompanionIdleMotionState &state,
+    InputIndicatorMotionState motionState,
+    double nowMilliseconds,
+    bool reducedMotion
+)
+{
+  return inputIndicatorCatIdleTailMotionAdvance(
+      state,
+      motionState,
+      nowMilliseconds,
+      reducedMotion
+  );
 }
 
 InputIndicatorPoint inputIndicatorCatIdleTailOffset(
@@ -1019,6 +1140,236 @@ InputIndicatorPoint inputIndicatorCatStartlePoint(
   return point;
 }
 
+InputIndicatorCompanionSourceStartleState
+inputIndicatorCompanionSourceStartleTrigger(
+    const InputIndicatorCompanionSourceStartleState &state,
+    deskflow::input::InputIndicatorSource previousSource,
+    deskflow::input::InputIndicatorSource source,
+    double nowMilliseconds,
+    bool reducedMotion
+)
+{
+  return inputIndicatorCatSourceStartleTrigger(
+      state,
+      previousSource,
+      source,
+      nowMilliseconds,
+      reducedMotion
+  );
+}
+
+InputIndicatorCompanionSourceStartleStep
+inputIndicatorCompanionSourceStartleAdvance(
+    const InputIndicatorCompanionSourceStartleState &state,
+    double nowMilliseconds,
+    bool reducedMotion
+)
+{
+  return inputIndicatorCatSourceStartleAdvance(
+      state,
+      nowMilliseconds,
+      reducedMotion
+  );
+}
+
+InputIndicatorPoint inputIndicatorCompanionArtworkPoint(
+    InputIndicatorCompanion companion,
+    InputIndicatorPoint point,
+    InputIndicatorMotionState motionState,
+    double motionPhase,
+    const InputIndicatorCompanionIdleFrame &idleFrame,
+    const InputIndicatorCompanionStartleFrame &startleFrame
+)
+{
+  if (!finitePoint(point)) {
+    return point;
+  }
+  if (companion == InputIndicatorCompanion::Cat) {
+    const auto tailPoint =
+        inputIndicatorCatIdleTailPoint(
+            point, idleFrame
+        );
+    return inputIndicatorCatStartlePoint(
+        tailPoint, startleFrame, true
+    );
+  }
+
+  const auto original = point;
+  const auto pose =
+      inputIndicatorCompanionMotionPose(
+          companion, motionState, motionPhase, false
+      );
+  point.x =
+      15.0 +
+      (point.x - 15.0) *
+          (1.0 + pose.bodyStretch);
+  point.y += pose.bodyBob;
+
+  const bool dog =
+      companion == InputIndicatorCompanion::Dog;
+  const double idleProgress =
+      idleFrame.active
+          ? std::clamp(
+                idleFrame.progress, 0.0, 1.0
+            )
+          : 0;
+  if (idleFrame.active) {
+    const double window =
+        smoothWindow(idleProgress);
+    const double pulse =
+        std::sin(idleProgress * kPi);
+    const double wave =
+        std::sin(idleProgress * 2.0 * kPi);
+    if (dog) {
+      const bool tail = original.x <= 7.0;
+      const bool ear =
+          original.x >= 18.0 &&
+          original.y >= 15.0;
+      const bool nose = original.x >= 24.0;
+      switch (idleFrame.motion) {
+      case InputIndicatorCompanionIdleMotion::RelaxedSway:
+        if (ear) {
+          point.y += 0.95 * pulse * window;
+        }
+        break;
+      case InputIndicatorCompanionIdleMotion::TipFlick:
+        if (tail) {
+          point.y += 0.8 * wave * window;
+        }
+        break;
+      case InputIndicatorCompanionIdleMotion::CurlUnfurl:
+        if (ear) {
+          point.y -= 0.65 * pulse * pulse;
+        }
+        break;
+      case InputIndicatorCompanionIdleMotion::LazySweep:
+        if (tail) {
+          point.x += 0.45 * wave * window;
+          point.y += 0.65 * wave * window;
+        }
+        break;
+      case InputIndicatorCompanionIdleMotion::QuestionLift:
+        if (nose) {
+          point.y -=
+              0.35 *
+              pulseWindow(
+                  idleProgress, 0.18, 0.55
+              );
+        }
+        if (tail) {
+          point.x +=
+              0.55 *
+              pulseWindow(
+                  idleProgress, 0.45, 0.86
+              );
+          point.y +=
+              0.45 *
+              pulseWindow(
+                  idleProgress, 0.45, 0.86
+              );
+        }
+        break;
+      }
+    } else {
+      const bool head = original.x >= 22.0;
+      const bool shell =
+          original.x >= 6.0 &&
+          original.x <= 23.0;
+      const bool foot = original.y <= 7.0;
+      const bool tail = original.x <= 6.0;
+      switch (idleFrame.motion) {
+      case InputIndicatorCompanionIdleMotion::RelaxedSway:
+        if (head) {
+          point.x += 1.10 * pulse;
+        }
+        break;
+      case InputIndicatorCompanionIdleMotion::TipFlick:
+        if (shell) {
+          point.y -= 0.25 * pulse;
+        }
+        break;
+      case InputIndicatorCompanionIdleMotion::CurlUnfurl:
+        if (foot) {
+          point.y += 0.8 * pulse * pulse;
+        }
+        break;
+      case InputIndicatorCompanionIdleMotion::LazySweep:
+        if (head || tail) {
+          point.y += 0.30 * wave * window;
+        }
+        break;
+      case InputIndicatorCompanionIdleMotion::QuestionLift:
+        if (head) {
+          const double peek =
+              pulseWindow(
+                  idleProgress, 0.15, 0.50
+              ) *
+              (1.0 -
+               0.65 *
+                   pulseWindow(
+                       idleProgress, 0.72, 0.98
+                   ));
+          point.x += 0.75 * peek;
+        }
+        break;
+      }
+    }
+  }
+
+  if (original.y <= 7.0) {
+    const double side =
+        original.x < (dog ? 15.0 : 14.0)
+            ? -1.0
+            : 1.0;
+    point.x +=
+        pose.limbStride * side;
+    point.y +=
+        std::abs(pose.limbStride) *
+        (dog ? 0.28 : 0.38);
+  }
+  if (pose.bodyLead > 0 &&
+      original.x >= 17.0) {
+    point.x += pose.bodyLead;
+  }
+  if (dog && original.x <= 7.0) {
+    point.y += pose.tailPhase * 0.35;
+  } else if (!dog && original.x <= 6.0) {
+    point.y += pose.tailPhase * 0.18;
+  }
+
+  if (!startleFrame.active) {
+    return point;
+  }
+  point.x =
+      15.0 +
+      (point.x - 15.0) *
+          startleFrame.horizontalScale +
+      startleFrame.recoilOffsetX;
+  if (dog) {
+    if (original.x >= 18.0 &&
+        original.y >= 15.0) {
+      point.y +=
+          startleFrame.dorsalLift * 0.45;
+    }
+    if (original.x <= 7.0) {
+      point.x +=
+          startleFrame.dorsalLift * 0.10;
+      point.y +=
+          startleFrame.dorsalLift * 0.30;
+    }
+  } else {
+    if (original.x >= 22.0) {
+      point.x +=
+          startleFrame.dorsalLift * 0.55;
+    }
+    if (original.y >= 15.0) {
+      point.y +=
+          startleFrame.dorsalLift * 0.08;
+    }
+  }
+  return point;
+}
+
 double inputIndicatorNormalizedAngle(double radians)
 {
   if (!std::isfinite(radians)) {
@@ -1270,6 +1621,21 @@ InputIndicatorPoint inputIndicatorCatBodyPoint(
       .x = 15.0 + x * cosine - y * sine,
       .y = 14.0 + x * sine + y * cosine,
   };
+}
+
+InputIndicatorPoint inputIndicatorCompanionBodyPoint(
+    InputIndicatorPoint point,
+    bool facesRight,
+    double facingHorizontalScale,
+    double headingRadians
+)
+{
+  return inputIndicatorCatBodyPoint(
+      point,
+      facesRight,
+      facingHorizontalScale,
+      headingRadians
+  );
 }
 
 InputIndicatorTailPose inputIndicatorCatTailPose(

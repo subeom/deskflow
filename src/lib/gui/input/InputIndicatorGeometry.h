@@ -49,7 +49,14 @@ enum class InputIndicatorMotionState
   Run
 };
 
-enum class InputIndicatorCatIdleTailMotion : unsigned char
+enum class InputIndicatorCompanion
+{
+  Cat,
+  Dog,
+  Turtle
+};
+
+enum class InputIndicatorCompanionIdleMotion : unsigned char
 {
   RelaxedSway,
   TipFlick,
@@ -58,32 +65,41 @@ enum class InputIndicatorCatIdleTailMotion : unsigned char
   QuestionLift
 };
 
-struct InputIndicatorCatIdleTailMotionState
+struct InputIndicatorCompanionIdleMotionState
 {
   std::uint32_t seed = 0;
   std::uint32_t remainingMask = 0x1f;
-  InputIndicatorCatIdleTailMotion lastMotion =
-      InputIndicatorCatIdleTailMotion::RelaxedSway;
+  InputIndicatorCompanionIdleMotion lastMotion =
+      InputIndicatorCompanionIdleMotion::RelaxedSway;
   bool hasLastMotion = false;
   bool running = false;
   double startedMilliseconds = 0;
 };
 
-struct InputIndicatorCatIdleTailFrame
+struct InputIndicatorCompanionIdleFrame
 {
-  InputIndicatorCatIdleTailMotion motion =
-      InputIndicatorCatIdleTailMotion::RelaxedSway;
+  InputIndicatorCompanionIdleMotion motion =
+      InputIndicatorCompanionIdleMotion::RelaxedSway;
   double progress = 0;
   bool active = false;
 };
 
-struct InputIndicatorCatIdleTailMotionStep
+struct InputIndicatorCompanionIdleMotionStep
 {
-  InputIndicatorCatIdleTailMotionState state;
-  InputIndicatorCatIdleTailFrame frame;
+  InputIndicatorCompanionIdleMotionState state;
+  InputIndicatorCompanionIdleFrame frame;
 };
 
-struct InputIndicatorCatSourceStartleState
+using InputIndicatorCatIdleTailMotion =
+    InputIndicatorCompanionIdleMotion;
+using InputIndicatorCatIdleTailMotionState =
+    InputIndicatorCompanionIdleMotionState;
+using InputIndicatorCatIdleTailFrame =
+    InputIndicatorCompanionIdleFrame;
+using InputIndicatorCatIdleTailMotionStep =
+    InputIndicatorCompanionIdleMotionStep;
+
+struct InputIndicatorCompanionSourceStartleState
 {
   deskflow::input::InputIndicatorSource latestSource =
       deskflow::input::InputIndicatorSource::Unknown;
@@ -94,7 +110,7 @@ struct InputIndicatorCatSourceStartleState
   double lastStartedMilliseconds = 0;
 };
 
-struct InputIndicatorCatStartleFrame
+struct InputIndicatorCompanionStartleFrame
 {
   bool active = false;
   double progress = 0;
@@ -105,11 +121,18 @@ struct InputIndicatorCatStartleFrame
   double haloAlpha = 0;
 };
 
-struct InputIndicatorCatSourceStartleStep
+struct InputIndicatorCompanionSourceStartleStep
 {
-  InputIndicatorCatSourceStartleState state;
-  InputIndicatorCatStartleFrame frame;
+  InputIndicatorCompanionSourceStartleState state;
+  InputIndicatorCompanionStartleFrame frame;
 };
+
+using InputIndicatorCatSourceStartleState =
+    InputIndicatorCompanionSourceStartleState;
+using InputIndicatorCatStartleFrame =
+    InputIndicatorCompanionStartleFrame;
+using InputIndicatorCatSourceStartleStep =
+    InputIndicatorCompanionSourceStartleStep;
 
 enum class InputIndicatorTargetKind : unsigned char
 {
@@ -169,6 +192,15 @@ struct InputIndicatorMotionPose
   double bodyBob = 0;
   double bodyStretch = 0;
   double tailSway = 0;
+};
+
+struct InputIndicatorCompanionMotionPose
+{
+  double bodyBob = 0;
+  double bodyStretch = 0;
+  double tailPhase = 0;
+  double limbStride = 0;
+  double bodyLead = 0;
 };
 
 struct InputIndicatorCatPose
@@ -269,9 +301,26 @@ double inputIndicatorCatIdleTailMotionDuration(
     InputIndicatorCatIdleTailMotion motion
 );
 
+InputIndicatorCompanionIdleMotionState
+inputIndicatorCompanionIdleMotionInitialState(
+    std::uint32_t seed
+);
+
+double inputIndicatorCompanionIdleMotionDuration(
+    InputIndicatorCompanionIdleMotion motion
+);
+
 InputIndicatorCatIdleTailMotionStep
 inputIndicatorCatIdleTailMotionAdvance(
     const InputIndicatorCatIdleTailMotionState &state,
+    InputIndicatorMotionState motionState,
+    double nowMilliseconds,
+    bool reducedMotion
+);
+
+InputIndicatorCompanionIdleMotionStep
+inputIndicatorCompanionIdleMotionAdvance(
+    const InputIndicatorCompanionIdleMotionState &state,
     InputIndicatorMotionState motionState,
     double nowMilliseconds,
     bool reducedMotion
@@ -303,10 +352,43 @@ inputIndicatorCatSourceStartleAdvance(
     bool reducedMotion
 );
 
+InputIndicatorCompanionSourceStartleState
+inputIndicatorCompanionSourceStartleTrigger(
+    const InputIndicatorCompanionSourceStartleState &state,
+    deskflow::input::InputIndicatorSource previousSource,
+    deskflow::input::InputIndicatorSource source,
+    double nowMilliseconds,
+    bool reducedMotion
+);
+
+InputIndicatorCompanionSourceStartleStep
+inputIndicatorCompanionSourceStartleAdvance(
+    const InputIndicatorCompanionSourceStartleState &state,
+    double nowMilliseconds,
+    bool reducedMotion
+);
+
 InputIndicatorPoint inputIndicatorCatStartlePoint(
     InputIndicatorPoint point,
     const InputIndicatorCatStartleFrame &frame,
     bool dorsalContour
+);
+
+InputIndicatorPoint inputIndicatorCompanionArtworkPoint(
+    InputIndicatorCompanion companion,
+    InputIndicatorPoint point,
+    InputIndicatorMotionState motionState,
+    double motionPhase,
+    const InputIndicatorCompanionIdleFrame &idleFrame,
+    const InputIndicatorCompanionStartleFrame &startleFrame
+);
+
+InputIndicatorCompanionMotionPose
+inputIndicatorCompanionMotionPose(
+    InputIndicatorCompanion companion,
+    InputIndicatorMotionState motionState,
+    double motionPhase,
+    bool reducedMotion
 );
 
 std::optional<InputIndicatorCatPursuitStep>
@@ -333,6 +415,13 @@ inputIndicatorCompanionPursuitAdvance(
 double inputIndicatorNormalizedAngle(double radians);
 
 InputIndicatorPoint inputIndicatorCatBodyPoint(
+    InputIndicatorPoint point,
+    bool facesRight,
+    double facingHorizontalScale,
+    double headingRadians
+);
+
+InputIndicatorPoint inputIndicatorCompanionBodyPoint(
     InputIndicatorPoint point,
     bool facesRight,
     double facingHorizontalScale,

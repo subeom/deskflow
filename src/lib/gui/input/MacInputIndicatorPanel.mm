@@ -6,6 +6,7 @@
 
 #include "MacInputIndicatorPanel.h"
 #include "MacInputIndicatorCatArtwork.h"
+#include "MacInputIndicatorCompanionArtwork.h"
 
 #include "OSXHelpers.h"
 
@@ -173,24 +174,121 @@ void fillSilhouette(
   [path fill];
 }
 
-double bodyScale(
-    double transitionProgress,
-    double motionX,
-    double locomotionStretch
-)
-{
-  const double transition =
-      std::sin(M_PI * transitionProgress) * 0.04;
-  const double movement =
-      std::min(std::abs(motionX) / 8.0, 1.0) * 0.05;
-  return 1.0 + std::min(
-      transition + movement + locomotionStretch, 0.09
-  );
-}
-
 void appendPath(NSBezierPath *silhouette, NSBezierPath *part)
 {
   [silhouette appendBezierPath:part];
+}
+
+NSBezierPath *companionArtworkPath(
+    InputIndicatorCompanion companion,
+    std::span<const MacInputIndicatorCatPathCommand> commands,
+    InputIndicatorMotionState motionState,
+    double motionPhase,
+    const InputIndicatorCompanionIdleFrame &idleFrame,
+    const InputIndicatorCompanionStartleFrame &startleFrame,
+    bool facesRight,
+    double facingScaleX,
+    double bodyHeadingRadians
+)
+{
+  NSBezierPath *path = [NSBezierPath bezierPath];
+  const auto deformed =
+      [companion, motionState, motionPhase,
+       &idleFrame, &startleFrame, facesRight,
+       facingScaleX, bodyHeadingRadians](
+          double x, double y
+      ) {
+        const auto animated =
+            inputIndicatorCompanionArtworkPoint(
+                companion,
+                {.x = x, .y = y},
+                motionState,
+                motionPhase,
+                idleFrame,
+                startleFrame
+            );
+        return inputIndicatorCompanionBodyPoint(
+            animated,
+            facesRight,
+            facingScaleX,
+            bodyHeadingRadians
+        );
+      };
+  for (const auto &command : commands) {
+    switch (command.type) {
+    case MacInputIndicatorCatPathCommandType::Move: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path moveToPoint:NSMakePoint(point.x, point.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Line: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path lineToPoint:NSMakePoint(point.x, point.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Cubic: {
+      const auto control1 =
+          deformed(command.x1, command.y1);
+      const auto control2 =
+          deformed(command.x2, command.y2);
+      const auto point =
+          deformed(command.x3, command.y3);
+      [path curveToPoint:NSMakePoint(point.x, point.y)
+          controlPoint1:NSMakePoint(control1.x, control1.y)
+          controlPoint2:NSMakePoint(control2.x, control2.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Close:
+      [path closePath];
+      break;
+    }
+  }
+  return path;
+}
+
+void drawCompanionHalo(
+    NSBezierPath *silhouette,
+    bool reducedMotion,
+    const InputIndicatorCompanionStartleFrame &startleFrame,
+    deskflow::input::InputIndicatorSource reactionSource,
+    InputIndicatorTone tone,
+    MacInputIndicatorRenderAlpha alpha
+)
+{
+  if (reducedMotion ||
+      !startleFrame.active ||
+      startleFrame.haloAlpha <= 0) {
+    return;
+  }
+  NSBezierPath *halo = [silhouette copy];
+  NSAffineTransform *haloTransform =
+      [NSAffineTransform transform];
+  [haloTransform translateXBy:15 yBy:14];
+  [haloTransform scaleXBy:startleFrame.haloScale
+                    yBy:startleFrame.haloScale];
+  [haloTransform translateXBy:-15 yBy:-14];
+  [halo transformUsingAffineTransform:haloTransform];
+  NSColor *haloColor =
+      indicatorGlyphColor(
+          reactionSource,
+          tone,
+          alpha.detail *
+              startleFrame.haloAlpha
+      );
+  NSShadow *haloShadow =
+      [[NSShadow alloc] init];
+  haloShadow.shadowOffset = NSMakeSize(0, 0);
+  haloShadow.shadowBlurRadius = 2.2;
+  haloShadow.shadowColor = haloColor;
+  [NSGraphicsContext saveGraphicsState];
+  [haloShadow set];
+  [haloColor setFill];
+  [halo fill];
+  [NSGraphicsContext restoreGraphicsState];
+  [haloShadow release];
+  [halo release];
 }
 
 NSBezierPath *catArtworkPath(
@@ -364,42 +462,18 @@ void drawCat(
       facingScaleX,
       bodyHeadingRadians
   );
-
-  if (!reducedMotion &&
-      startleFrame.active &&
-      startleFrame.haloAlpha > 0) {
-    NSBezierPath *halo =
-        [NSBezierPath bezierPath];
-    appendPath(halo, far);
-    appendPath(halo, near);
-    NSAffineTransform *haloTransform =
-        [NSAffineTransform transform];
-    [haloTransform translateXBy:15 yBy:14];
-    [haloTransform scaleXBy:startleFrame.haloScale
-                        yBy:startleFrame.haloScale];
-    [haloTransform translateXBy:-15 yBy:-14];
-    [halo transformUsingAffineTransform:haloTransform];
-
-    NSColor *haloColor =
-        indicatorGlyphColor(
-            reactionSource,
-            tone,
-            alpha.detail *
-                startleFrame.haloAlpha
-        );
-    NSShadow *haloShadow =
-        [[NSShadow alloc] init];
-    haloShadow.shadowOffset =
-        NSMakeSize(0, 0);
-    haloShadow.shadowBlurRadius = 2.2;
-    haloShadow.shadowColor = haloColor;
-    [NSGraphicsContext saveGraphicsState];
-    [haloShadow set];
-    [haloColor setFill];
-    [halo fill];
-    [NSGraphicsContext restoreGraphicsState];
-    [haloShadow release];
-  }
+  NSBezierPath *silhouette =
+      [NSBezierPath bezierPath];
+  appendPath(silhouette, far);
+  appendPath(silhouette, near);
+  drawCompanionHalo(
+      silhouette,
+      reducedMotion,
+      startleFrame,
+      reactionSource,
+      tone,
+      alpha
+  );
 
   NSColor *farFill =
       [fill blendedColorWithFraction:0.18 ofColor:edge];
@@ -409,178 +483,83 @@ void drawCat(
 
 void drawDog(
     NSRect bounds, NSColor *fill, NSColor *edge,
-    double motionX, double motionY,
-    double transitionProgress,
     InputIndicatorMotionState motionState,
     double motionPhase,
-    bool reducedMotion
+    bool reducedMotion,
+    bool facesRight,
+    double facingScaleX,
+    double bodyHeadingRadians,
+    const InputIndicatorCompanionIdleFrame &idleFrame,
+    const InputIndicatorCompanionStartleFrame &startleFrame,
+    deskflow::input::InputIndicatorSource reactionSource,
+    InputIndicatorTone tone,
+    MacInputIndicatorRenderAlpha alpha
 )
 {
   (void)bounds;
-  const auto pose = inputIndicatorMotionPose(
-      motionState, motionPhase, reducedMotion
-  );
-  const double scale = bodyScale(
-      transitionProgress, motionX, pose.bodyStretch
-  );
-  const double bodyWidth = 17.0 * scale;
-  const double bodyX = 12.0 - bodyWidth / 2.0;
-  const double lift =
-      pose.bodyBob +
-      std::clamp(motionY * 0.12, -1.0, 1.0);
-  const double tailSwayAmount =
-      pose.tailSway +
-      motionX * 0.5;
-  const double earSway = motionX * 0.12;
-
-  NSBezierPath *silhouette = [NSBezierPath bezierPath];
-  NSBezierPath *tail = [NSBezierPath bezierPath];
-  [tail moveToPoint:NSMakePoint(bodyX + bodyWidth - 1, 8 + lift)];
-  [tail curveToPoint:NSMakePoint(
-                         25, 18 + tailSwayAmount
-                     )
-       controlPoint1:NSMakePoint(
-                          29 + tailSwayAmount, 7
-                      )
-       controlPoint2:NSMakePoint(
-                          29 + tailSwayAmount, 16
-                      )];
-  [tail curveToPoint:NSMakePoint(bodyX + bodyWidth - 1, 12 + lift)
-       controlPoint1:NSMakePoint(27 + tailSwayAmount, 15)
-       controlPoint2:NSMakePoint(bodyX + bodyWidth + 2, 13 + lift)];
-  [tail closePath];
-  appendPath(silhouette, tail);
-  appendPath(
+  const auto artwork =
+      macInputIndicatorDogArtwork();
+  NSBezierPath *silhouette =
+      companionArtworkPath(
+          InputIndicatorCompanion::Dog,
+          artwork.silhouette,
+          motionState,
+          motionPhase,
+          idleFrame,
+          startleFrame,
+          facesRight,
+          facingScaleX,
+          bodyHeadingRadians
+      );
+  drawCompanionHalo(
       silhouette,
-      [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
-                                                  bodyX,
-                                                  5 + lift,
-                                                  bodyWidth,
-                                                  15
-                                              )
-                                      xRadius:7
-                                      yRadius:7]
+      reducedMotion,
+      startleFrame,
+      reactionSource,
+      tone,
+      alpha
   );
-  appendPath(
-      silhouette,
-      [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
-                                                   bodyX,
-                                                   10 + lift,
-                                                   bodyWidth,
-                                                   12
-                                               )]
-  );
-  appendPath(
-      silhouette,
-      [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
-                                                  bodyX - 1 + earSway,
-                                                  11 + lift,
-                                                  5,
-                                                  10
-                                              )
-                                      xRadius:2.5
-                                      yRadius:2.5]
-  );
-  appendPath(
-      silhouette,
-      [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(
-                                                  bodyX + bodyWidth - 4 +
-                                                      earSway,
-                                                  11 + lift,
-                                                  5,
-                                                  10
-                                              )
-                                      xRadius:2.5
-                                      yRadius:2.5]
-  );
-
-  if (motionState != InputIndicatorMotionState::Idle) {
-    const double paw =
-        std::sin(motionPhase * 2 * M_PI) * 0.8;
-    appendPath(
-        silhouette,
-        [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
-                                                     bodyX + 3,
-                                                     4 + lift + paw,
-                                                     4,
-                                                     2.5
-                                                 )]
-    );
-    appendPath(
-        silhouette,
-        [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
-                                                     bodyX + 10,
-                                                     4 + lift - paw,
-                                                     4,
-                                                     2.5
-                                                 )]
-    );
-  }
   fillSilhouette(silhouette, fill, edge);
 }
 
 void drawTurtle(
     NSRect bounds, NSColor *fill, NSColor *edge,
-    double motionX, double motionY,
-    double transitionProgress,
     InputIndicatorMotionState motionState,
     double motionPhase,
-    bool reducedMotion
+    bool reducedMotion,
+    bool facesRight,
+    double facingScaleX,
+    double bodyHeadingRadians,
+    const InputIndicatorCompanionIdleFrame &idleFrame,
+    const InputIndicatorCompanionStartleFrame &startleFrame,
+    deskflow::input::InputIndicatorSource reactionSource,
+    InputIndicatorTone tone,
+    MacInputIndicatorRenderAlpha alpha
 )
 {
   (void)bounds;
-  (void)motionY;
-  const auto pose = inputIndicatorMotionPose(
-      motionState, motionPhase, reducedMotion
-  );
-  const double scale = bodyScale(
-      transitionProgress, motionX, pose.bodyStretch
-  );
-  const double bob = pose.bodyBob;
-  const double shellWidth = 21.0 * scale;
-  const double shellX = 3.0 + (21.0 - shellWidth) / 2.0;
-
-  NSBezierPath *tail = [NSBezierPath bezierPath];
-  const double tailSwayAmount =
-      pose.tailSway +
-      motionX * 0.2;
-  NSBezierPath *silhouette = [NSBezierPath bezierPath];
-  [tail moveToPoint:NSMakePoint(shellX, 10 + bob)];
-  [tail lineToPoint:NSMakePoint(
-                          1 + tailSwayAmount, 11 + bob
-                      )];
-  [tail lineToPoint:NSMakePoint(shellX + 2, 8 + bob)];
-  [tail closePath];
-  appendPath(silhouette, tail);
-  appendPath(
+  const auto artwork =
+      macInputIndicatorTurtleArtwork();
+  NSBezierPath *silhouette =
+      companionArtworkPath(
+          InputIndicatorCompanion::Turtle,
+          artwork.silhouette,
+          motionState,
+          motionPhase,
+          idleFrame,
+          startleFrame,
+          facesRight,
+          facingScaleX,
+          bodyHeadingRadians
+      );
+  drawCompanionHalo(
       silhouette,
-      [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
-                                                   shellX,
-                                                   5 + bob,
-                                                   shellWidth,
-                                                   13
-                                               )]
+      reducedMotion,
+      startleFrame,
+      reactionSource,
+      tone,
+      alpha
   );
-  appendPath(
-      silhouette,
-      [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
-                                                   shellX + shellWidth - 2,
-                                                   10 + bob,
-                                                   6,
-                                                   6
-                                               )]
-  );
-  for (const auto x : {shellX + 4, shellX + shellWidth - 7}) {
-    appendPath(
-        silhouette,
-        [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(
-                                                     x,
-                                                     3 + bob,
-                                                     4,
-                                                     5
-                                                 )]
-    );
-  }
   fillSilhouette(silhouette, fill, edge);
 }
 
@@ -604,7 +583,7 @@ void drawLanguageGlyph(
   const auto model =
       macInputIndicatorRenderModel(companion);
   auto bounds = model.languageBounds;
-  NSBezierPath *catSilhouette = nil;
+  NSBezierPath *silhouette = nil;
   if (companion == InputIndicatorCompanion::Cat) {
     const auto pose = inputIndicatorCatPose(
         motionState,
@@ -613,29 +592,10 @@ void drawLanguageGlyph(
             : motionPhase,
         reducedMotion
     );
-    const InputIndicatorPoint labelCenter{
-        .x = pose.innerLanguageBounds.x +
-            pose.innerLanguageBounds.width / 2.0,
-        .y = pose.innerLanguageBounds.y +
-            pose.innerLanguageBounds.height / 2.0,
-    };
-    const auto transformedLabelCenter =
-        inputIndicatorCatBodyPoint(
-            labelCenter,
-            facesRight,
-            facingScaleX,
-            bodyHeadingRadians
-        );
     bounds = pose.innerLanguageBounds;
-    bounds.x =
-        transformedLabelCenter.x -
-        bounds.width / 2.0;
-    bounds.y =
-        transformedLabelCenter.y -
-        bounds.height / 2.0;
     const auto artwork =
         macInputIndicatorCatArtwork(pose.artworkFrame);
-    catSilhouette = catArtworkPath(
+    silhouette = catArtworkPath(
         pose,
         artwork.near,
         idleTailFrame,
@@ -644,7 +604,56 @@ void drawLanguageGlyph(
         facingScaleX,
         bodyHeadingRadians
     );
+  } else if (
+      companion ==
+      InputIndicatorCompanion::Dog) {
+    const auto artwork =
+        macInputIndicatorDogArtwork();
+    bounds = artwork.innerLanguageBounds;
+    silhouette = companionArtworkPath(
+        companion,
+        artwork.silhouette,
+        motionState,
+        motionPhase,
+        idleTailFrame,
+        startleFrame,
+        facesRight,
+        facingScaleX,
+        bodyHeadingRadians
+    );
+  } else {
+    const auto artwork =
+        macInputIndicatorTurtleArtwork();
+    bounds = artwork.innerLanguageBounds;
+    silhouette = companionArtworkPath(
+        companion,
+        artwork.silhouette,
+        motionState,
+        motionPhase,
+        idleTailFrame,
+        startleFrame,
+        facesRight,
+        facingScaleX,
+        bodyHeadingRadians
+    );
   }
+  const InputIndicatorPoint labelCenter{
+      .x = bounds.x + bounds.width / 2.0,
+      .y = bounds.y + bounds.height / 2.0,
+  };
+  const auto transformedLabelCenter =
+      inputIndicatorCompanionBodyPoint(
+          labelCenter,
+          facesRight,
+          facingScaleX,
+          bodyHeadingRadians
+      );
+  bounds.x =
+      transformedLabelCenter.x -
+      bounds.width / 2.0;
+  bounds.y =
+      transformedLabelCenter.y -
+      bounds.height / 2.0;
   const NSRect labelBounds = NSMakeRect(
       bounds.x,
       bounds.y,
@@ -652,39 +661,14 @@ void drawLanguageGlyph(
       bounds.height
   );
 
-  NSMutableParagraphStyle *paragraph =
-      [[NSMutableParagraphStyle alloc] init];
-  paragraph.alignment =
-      companion == InputIndicatorCompanion::Cat
-          ? NSTextAlignmentLeft
-          : NSTextAlignmentCenter;
   const auto drawLabel =
-      [paragraph, companion, motionState, tone, labelBounds, bounds, alpha, catSilhouette](
+      [motionState, tone, labelBounds, bounds,
+       alpha, silhouette](
           deskflow::input::InputIndicatorSource labelSource,
           double transitionAlpha
       ) {
         NSString *label = indicatorLabel(labelSource);
         if (!label || transitionAlpha <= 0) {
-          return;
-        }
-
-        const double fallbackPointSize =
-            macInputIndicatorPanelStyle(companion).labelSize;
-        if (companion != InputIndicatorCompanion::Cat) {
-          NSFont *font =
-              [NSFont systemFontOfSize:fallbackPointSize
-                                weight:NSFontWeightSemibold];
-          NSDictionary *attributes = @{
-            NSFontAttributeName : font,
-            NSForegroundColorAttributeName :
-                indicatorGlyphColor(
-                    labelSource,
-                    tone,
-                    alpha.detail * transitionAlpha
-                ),
-            NSParagraphStyleAttributeName : paragraph
-          };
-          [label drawInRect:labelBounds withAttributes:attributes];
           return;
         }
 
@@ -737,7 +721,7 @@ void drawLanguageGlyph(
                 alpha.detail * transitionAlpha
             );
         [NSGraphicsContext saveGraphicsState];
-        [catSilhouette addClip];
+        [silhouette addClip];
         [[NSBezierPath bezierPathWithRect:labelBounds] addClip];
         macInputIndicatorDrawCoreTextLabel(
             [[NSGraphicsContext currentContext] CGContext],
@@ -755,7 +739,6 @@ void drawLanguageGlyph(
       source,
       previousSource == source ? 1.0 : transitionProgress
   );
-  [paragraph release];
 }
 
 } // namespace
@@ -924,21 +907,37 @@ void drawLanguageGlyph(
   case deskflow::gui::input::InputIndicatorCompanion::Dog:
     deskflow::gui::input::drawDog(
         bounds, silhouetteFill, silhouetteEdge,
-        self.motionX, self.motionY,
-        self.transitionProgress,
         motionState,
         self.motionPhase,
-        self.reducedMotion
+        self.reducedMotion,
+        self.facesRight,
+        self.facingScaleX,
+        self.catBodyHeadingRadians,
+        idleTailFrame,
+        startleFrame,
+        static_cast<deskflow::input::InputIndicatorSource>(
+            self.catStartleLatestSource
+        ),
+        tone,
+        alpha
     );
     break;
   case deskflow::gui::input::InputIndicatorCompanion::Turtle:
     deskflow::gui::input::drawTurtle(
         bounds, silhouetteFill, silhouetteEdge,
-        self.motionX, self.motionY,
-        self.transitionProgress,
         motionState,
         self.motionPhase,
-        self.reducedMotion
+        self.reducedMotion,
+        self.facesRight,
+        self.facingScaleX,
+        self.catBodyHeadingRadians,
+        idleTailFrame,
+        startleFrame,
+        static_cast<deskflow::input::InputIndicatorSource>(
+            self.catStartleLatestSource
+        ),
+        tone,
+        alpha
     );
     break;
   }
@@ -1024,7 +1023,7 @@ struct MacInputIndicatorPanel::Impl
     lifetime = std::make_shared<Lifetime>();
     lifetime->owner = this;
     idleTailMotionState =
-        inputIndicatorCatIdleTailMotionInitialState(
+        inputIndicatorCompanionIdleMotionInitialState(
             static_cast<std::uint32_t>(
                 std::chrono::duration_cast<
                     std::chrono::milliseconds>(
@@ -1135,12 +1134,13 @@ struct MacInputIndicatorPanel::Impl
   bool facingTurning = false;
   std::chrono::steady_clock::time_point facingTurnStarted;
   std::chrono::steady_clock::time_point animationEpoch;
-  InputIndicatorCatSourceStartleState startleState;
+  InputIndicatorCompanionSourceStartleState startleState;
   bool idleTailPaused = false;
   double idleTailPauseStartedMilliseconds = 0;
   InputIndicatorMotionState motionState =
       InputIndicatorMotionState::Idle;
-  InputIndicatorCatIdleTailMotionState idleTailMotionState;
+  InputIndicatorCompanionIdleMotionState
+      idleTailMotionState;
 };
 
 MacInputIndicatorPanel::MacInputIndicatorPanel(
@@ -1176,17 +1176,15 @@ bool MacInputIndicatorPanel::show(
           now - m_impl->animationEpoch
       )
           .count();
-  if (options.companion == InputIndicatorCompanion::Cat) {
-    m_impl->startleState =
-        inputIndicatorCatSourceStartleTrigger(
-            m_impl->startleState,
-            previousInputSource,
-            options.source,
-            animationMilliseconds,
-            isOSXReduceMotion()
-        );
-  } else {
-    m_impl->startleState = {};
+  m_impl->startleState =
+      inputIndicatorCompanionSourceStartleTrigger(
+          m_impl->startleState,
+          previousInputSource,
+          options.source,
+          animationMilliseconds,
+          isOSXReduceMotion()
+      );
+  if (companionChanged) {
     m_impl->idleTailPaused = false;
   }
   if (companionChanged &&
@@ -1381,31 +1379,21 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
           now - m_impl->animationEpoch
       )
           .count();
-  InputIndicatorCatSourceStartleStep startleStep;
-  if (m_impl->companion == InputIndicatorCompanion::Cat) {
-    startleStep =
-        inputIndicatorCatSourceStartleAdvance(
-            m_impl->startleState,
-            animationMilliseconds,
-            reducedMotion
-        );
-    m_impl->startleState =
-        startleStep.state;
-  } else {
-    m_impl->startleState = {};
-  }
+  auto startleStep =
+      inputIndicatorCompanionSourceStartleAdvance(
+          m_impl->startleState,
+          animationMilliseconds,
+          reducedMotion
+      );
+  m_impl->startleState =
+      startleStep.state;
   const bool startleSuspendsIdle =
-      m_impl->companion ==
-          InputIndicatorCompanion::Cat &&
       m_impl->motionState ==
           InputIndicatorMotionState::Idle &&
       (startleStep.frame.active ||
        startleStep.state.pending);
   const double bodyHeadingRadians =
-      m_impl->companion ==
-              InputIndicatorCompanion::Cat
-          ? m_impl->pursuitState.headingRadians
-          : 0;
+      m_impl->pursuitState.headingRadians;
 
   InputIndicatorCatIdleTailFrame idleTailFrame;
   if (startleSuspendsIdle) {
@@ -1429,12 +1417,9 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       m_impl->idleTailPaused = false;
     }
     const auto idleTailStep =
-        inputIndicatorCatIdleTailMotionAdvance(
+        inputIndicatorCompanionIdleMotionAdvance(
             m_impl->idleTailMotionState,
-            m_impl->companion ==
-                    InputIndicatorCompanion::Cat
-                ? m_impl->motionState
-                : InputIndicatorMotionState::Walk,
+            m_impl->motionState,
             animationMilliseconds,
             reducedMotion
         );
@@ -1468,10 +1453,7 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       .horizontalScale = 1,
       .progress = 1,
   };
-  if (m_impl->companion != InputIndicatorCompanion::Cat) {
-    m_impl->facingTurning = false;
-    m_impl->facingTargetRight = m_impl->facesRight;
-  } else if (reducedMotion) {
+  if (reducedMotion) {
     const bool desired =
         m_impl->facingTurning
             ? m_impl->facingTargetRight

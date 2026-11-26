@@ -7,6 +7,7 @@
 
 #include "gui/input/InputIndicatorGeometry.h"
 #include "gui/input/MacInputIndicatorCatArtwork.h"
+#include "gui/input/MacInputIndicatorCompanionArtwork.h"
 #include "gui/input/MacInputIndicatorPanel.h"
 
 #import <AppKit/AppKit.h>
@@ -151,6 +152,76 @@ NSBezierPath *artworkPath(
             );
         return inputIndicatorCatBodyPoint(
             startlePoint,
+            facesRight,
+            facingScaleX,
+            bodyHeadingRadians
+        );
+      };
+  for (const auto &command : commands) {
+    switch (command.type) {
+    case MacInputIndicatorCatPathCommandType::Move: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path moveToPoint:NSMakePoint(point.x, point.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Line: {
+      const auto point =
+          deformed(command.x1, command.y1);
+      [path lineToPoint:NSMakePoint(point.x, point.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Cubic: {
+      const auto control1 =
+          deformed(command.x1, command.y1);
+      const auto control2 =
+          deformed(command.x2, command.y2);
+      const auto point =
+          deformed(command.x3, command.y3);
+      [path curveToPoint:NSMakePoint(point.x, point.y)
+          controlPoint1:NSMakePoint(control1.x, control1.y)
+          controlPoint2:NSMakePoint(control2.x, control2.y)];
+      break;
+    }
+    case MacInputIndicatorCatPathCommandType::Close:
+      [path closePath];
+      break;
+    }
+  }
+  return path;
+}
+
+NSBezierPath *companionArtworkPath(
+    InputIndicatorCompanion companion,
+    std::span<const MacInputIndicatorCatPathCommand> commands,
+    InputIndicatorMotionState motionState,
+    double motionPhase,
+    const InputIndicatorCompanionIdleFrame &idleFrame,
+    const InputIndicatorCompanionStartleFrame &startleFrame,
+    bool facesRight = true,
+    double facingScaleX = 1,
+    double bodyHeadingRadians = 0
+)
+{
+  NSBezierPath *path = [NSBezierPath bezierPath];
+  const auto deformed =
+      [companion, motionState, motionPhase,
+       &idleFrame, &startleFrame,
+       facesRight, facingScaleX,
+       bodyHeadingRadians](
+          double x, double y
+      ) {
+        const auto animated =
+            inputIndicatorCompanionArtworkPoint(
+                companion,
+                {.x = x, .y = y},
+                motionState,
+                motionPhase,
+                idleFrame,
+                startleFrame
+            );
+        return inputIndicatorCompanionBodyPoint(
+            animated,
             facesRight,
             facingScaleX,
             bodyHeadingRadians
@@ -508,6 +579,235 @@ NSBitmapImageRep *catGlyphBitmap(
   return bitmap;
 }
 
+NSBitmapImageRep *companionBodyBitmap(
+    InputIndicatorCompanion companion,
+    InputIndicatorMotionState motionState,
+    double motionPhase,
+    const InputIndicatorCompanionIdleFrame &idleFrame,
+    const InputIndicatorCompanionStartleFrame &startleFrame,
+    bool facesRight,
+    int scale,
+    int paddingPoints,
+    bool includeStroke,
+    double bodyHeadingRadians = 0,
+    double facingScaleX = 1,
+    bool includeGlow = false,
+    deskflow::input::InputIndicatorSource glowSource =
+        deskflow::input::InputIndicatorSource::LatinABC
+)
+{
+  NSBitmapImageRep *bitmap =
+      canvasPixelBitmap(scale, paddingPoints);
+  if (!bitmap) {
+    return nil;
+  }
+  NSGraphicsContext *graphics =
+      [NSGraphicsContext
+          graphicsContextWithBitmapImageRep:bitmap];
+  [NSGraphicsContext saveGraphicsState];
+  [NSGraphicsContext setCurrentContext:graphics];
+  CGContextRef context = [graphics CGContext];
+  CGContextSaveGState(context);
+  CGContextScaleCTM(context, scale, scale);
+  const auto style =
+      macInputIndicatorPanelStyle(companion);
+  CGContextTranslateCTM(
+      context,
+      paddingPoints + style.canvasOffsetX,
+      paddingPoints + style.canvasOffsetY
+  );
+  const auto displayOrigin =
+      macInputIndicatorDisplayPoint({});
+  CGContextTranslateCTM(
+      context, displayOrigin.x, displayOrigin.y
+  );
+  CGContextScaleCTM(
+      context,
+      style.visualScale,
+      style.visualScale
+  );
+  const auto artwork =
+      companion ==
+              InputIndicatorCompanion::Dog
+          ? macInputIndicatorDogArtwork()
+          : macInputIndicatorTurtleArtwork();
+  NSBezierPath *silhouette =
+      companionArtworkPath(
+          companion,
+          artwork.silhouette,
+          motionState,
+          motionPhase,
+          idleFrame,
+          startleFrame,
+          facesRight,
+          facingScaleX,
+          bodyHeadingRadians
+      );
+  if (includeGlow &&
+      startleFrame.active &&
+      startleFrame.haloAlpha > 0) {
+    NSBezierPath *halo =
+        [silhouette copy];
+    NSAffineTransform *haloTransform =
+        [NSAffineTransform transform];
+    [haloTransform translateXBy:15 yBy:14];
+    [haloTransform scaleXBy:startleFrame.haloScale
+                        yBy:startleFrame.haloScale];
+    [haloTransform translateXBy:-15 yBy:-14];
+    [halo transformUsingAffineTransform:haloTransform];
+    const auto color =
+        macInputIndicatorGlyphColor(
+            glowSource,
+            InputIndicatorTone::Automatic
+        );
+    NSColor *haloColor =
+        [NSColor colorWithSRGBRed:color.red
+                             green:color.green
+                              blue:color.blue
+                             alpha:startleFrame.haloAlpha];
+    NSShadow *haloShadow =
+        [[NSShadow alloc] init];
+    haloShadow.shadowOffset = NSMakeSize(0, 0);
+    haloShadow.shadowBlurRadius = 2.2;
+    haloShadow.shadowColor = haloColor;
+    [NSGraphicsContext saveGraphicsState];
+    [haloShadow set];
+    [haloColor setFill];
+    [halo fill];
+    [NSGraphicsContext restoreGraphicsState];
+    [haloShadow release];
+    [halo release];
+  }
+  [[NSColor blackColor] setFill];
+  if (includeStroke) {
+    [[NSColor blackColor] setStroke];
+    [silhouette setLineWidth:0.55];
+    [silhouette setLineJoinStyle:NSLineJoinStyleRound];
+    [silhouette stroke];
+  }
+  [silhouette fill];
+  CGContextRestoreGState(context);
+  [NSGraphicsContext restoreGraphicsState];
+  return bitmap;
+}
+
+NSBitmapImageRep *companionGlyphBitmap(
+    InputIndicatorCompanion companion,
+    InputIndicatorMotionState state,
+    deskflow::input::InputIndicatorSource source,
+    bool facesRight,
+    int scale,
+    int paddingPoints,
+    double bodyHeadingRadians = 0,
+    double facingScaleX = 1
+)
+{
+  NSString *label =
+      source ==
+              deskflow::input::InputIndicatorSource::Korean2Set
+          ? @"한"
+          : @"A";
+  const auto artwork =
+      companion ==
+              InputIndicatorCompanion::Dog
+          ? macInputIndicatorDogArtwork()
+          : macInputIndicatorTurtleArtwork();
+  const auto innerBounds =
+      artwork.innerLanguageBounds;
+  const auto center =
+      inputIndicatorCompanionBodyPoint(
+          {
+              .x = innerBounds.x +
+                  innerBounds.width / 2.0,
+              .y = innerBounds.y +
+                  innerBounds.height / 2.0,
+          },
+          facesRight,
+          facingScaleX,
+          bodyHeadingRadians
+      );
+  auto target =
+      macInputIndicatorDisplayRect(innerBounds);
+  const auto displayCenter =
+      macInputIndicatorDisplayPoint(center);
+  target.x =
+      displayCenter.x - target.width / 2.0;
+  target.y =
+      displayCenter.y - target.height / 2.0;
+  const auto style =
+      macInputIndicatorPanelStyle(companion);
+  target.x +=
+      style.canvasOffsetX + paddingPoints;
+  target.y +=
+      style.canvasOffsetY + paddingPoints;
+  const auto preference =
+      macInputIndicatorDisplayLabelPreference(
+          source, state
+      );
+  double pointSize = preference.pointSize;
+  std::optional<MacInputIndicatorLabelLayout> layout;
+  NSFont *font = nil;
+  for (int attempt = 0;
+       attempt < 5;
+       ++attempt) {
+    font =
+        [NSFont systemFontOfSize:pointSize
+                          weight:NSFontWeightSemibold];
+    const auto measured =
+        macInputIndicatorCoreTextLabelMeasurement(
+            label, font
+        );
+    if (!measured) {
+      return nil;
+    }
+    layout =
+        macInputIndicatorFitLabelInkLayout(
+            pointSize,
+            preference.minimumPointSize,
+            target,
+            measured->ink
+        );
+    if (!layout) {
+      return nil;
+    }
+    if (std::abs(
+            layout->fontSize - pointSize
+        ) < 0.01) {
+      font =
+          [NSFont systemFontOfSize:layout->fontSize
+                            weight:NSFontWeightSemibold];
+      break;
+    }
+    pointSize = layout->fontSize;
+  }
+  if (!layout || !font) {
+    return nil;
+  }
+  NSBitmapImageRep *bitmap =
+      canvasPixelBitmap(scale, paddingPoints);
+  if (!bitmap) {
+    return nil;
+  }
+  NSGraphicsContext *graphics =
+      [NSGraphicsContext
+          graphicsContextWithBitmapImageRep:bitmap];
+  [NSGraphicsContext saveGraphicsState];
+  [NSGraphicsContext setCurrentContext:graphics];
+  CGContextRef context = [graphics CGContext];
+  CGContextSaveGState(context);
+  CGContextScaleCTM(context, scale, scale);
+  macInputIndicatorDrawCoreTextLabel(
+      context,
+      label,
+      font,
+      [NSColor blackColor],
+      *layout
+  );
+  CGContextRestoreGState(context);
+  [NSGraphicsContext restoreGraphicsState];
+  return bitmap;
+}
+
 struct CatPixelDifference
 {
   int tail = 0;
@@ -771,14 +1071,16 @@ void InputIndicatorGeometryTests::compactPanelStyleUsesApprovedMetrics()
   QCOMPARE(cat.canvasOffsetY, 9.0);
   QCOMPARE(dog.width, 33.0);
   QCOMPARE(dog.height, 31.0);
-  QCOMPARE(dog.canvasWidth, 33.0);
-  QCOMPARE(dog.canvasHeight, 31.0);
-  QCOMPARE(dog.canvasOffsetX, 0.0);
-  QCOMPARE(dog.canvasOffsetY, 0.0);
+  QCOMPARE(dog.canvasWidth, 49.0);
+  QCOMPARE(dog.canvasHeight, 49.0);
+  QCOMPARE(dog.canvasOffsetX, 8.0);
+  QCOMPARE(dog.canvasOffsetY, 9.0);
   QCOMPARE(turtle.width, 33.0);
   QCOMPARE(turtle.height, 31.0);
-  QCOMPARE(turtle.canvasWidth, 33.0);
-  QCOMPARE(turtle.canvasHeight, 31.0);
+  QCOMPARE(turtle.canvasWidth, 49.0);
+  QCOMPARE(turtle.canvasHeight, 49.0);
+  QCOMPARE(turtle.canvasOffsetX, 8.0);
+  QCOMPARE(turtle.canvasOffsetY, 9.0);
   QCOMPARE(cat.visualScale, 1.1);
   QCOMPARE(cat.logicalWidth, 30.0);
   QCOMPARE(cat.logicalHeight, 28.0);
@@ -881,6 +1183,9 @@ void InputIndicatorGeometryTests::companionRenderModelUsesUnifiedSilhouetteAndIn
     const auto model = macInputIndicatorRenderModel(companion);
     QVERIFY(!model.usesEyePrimitives);
     QVERIFY(!model.languageMirrorsWithSilhouette);
+    QVERIFY(model.usesSideProfile);
+    QVERIFY(model.mirrorsWithMotion);
+    QVERIFY(model.sourceFacesRight);
     QCOMPARE(
         model.silhouettePrimitive,
         InputIndicatorRenderPrimitive::SilhouetteUnion
@@ -3393,7 +3698,7 @@ void InputIndicatorGeometryTests::catStartleReplacesHaloAndResumesIdleTail()
   ) < 0.08);
 }
 
-void InputIndicatorGeometryTests::otherCompanionsDoNotStartleOnSourceChange()
+void InputIndicatorGeometryTests::dogAndTurtleStartleOnSourceChange()
 {
   using Source =
       deskflow::input::InputIndicatorSource;
@@ -3427,8 +3732,13 @@ void InputIndicatorGeometryTests::otherCompanionsDoNotStartleOnSourceChange()
     QVERIFY(view);
     options.source = Source::Korean2Set;
     QVERIFY(panel.show(options));
-    QVERIFY(![[view valueForKey:@"catStartleActive"]
+    QVERIFY([[view valueForKey:@"catStartleActive"]
         boolValue]);
+    QCOMPARE(
+        [[view valueForKey:@"catStartleLatestSource"]
+            integerValue],
+        static_cast<NSInteger>(Source::Korean2Set)
+    );
     QVERIFY(
         [[view valueForKey:@"transitionProgress"]
             doubleValue] < 1.0
@@ -3437,6 +3747,309 @@ void InputIndicatorGeometryTests::otherCompanionsDoNotStartleOnSourceChange()
         panel.move(options.position);
     QVERIFY(result.animating);
     QCOMPARE(result.frameIntervalMilliseconds, 8);
+    panel.hide();
+  }
+}
+
+void InputIndicatorGeometryTests::dogAndTurtleIdlePatternsRepaint()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  for (const auto companion : companions) {
+    MacInputIndicatorPanel panel(
+        {},
+        [fixedCursor] {
+          return InputIndicatorTarget{
+              .point = {
+                  .x = fixedCursor.x,
+                  .y = fixedCursor.y,
+              },
+              .kind =
+                  InputIndicatorTargetKind::Pointer,
+          };
+        }
+    );
+    const MacInputIndicatorPanelOptions options{
+        .source = Source::LatinABC,
+        .companion = companion,
+    };
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    [view displayIfNeeded];
+    NSBitmapImageRep *before =
+        [view bitmapImageRepForCachingDisplayInRect:
+                  view.bounds];
+    QVERIFY(before);
+    [view cacheDisplayInRect:view.bounds
+           toBitmapImageRep:before];
+    const double beforeProgress =
+        [[view valueForKey:@"catIdleTailProgress"]
+            doubleValue];
+    QVERIFY([[view valueForKey:@"catIdleTailActive"]
+        boolValue]);
+
+    QTest::qWait(650);
+    const auto result =
+        panel.move(options.position);
+    QVERIFY(result.visible);
+    QVERIFY(result.animating);
+    QCOMPARE(result.frameIntervalMilliseconds, 75);
+    [view displayIfNeeded];
+    NSBitmapImageRep *after =
+        [view bitmapImageRepForCachingDisplayInRect:
+                  view.bounds];
+    QVERIFY(after);
+    [view cacheDisplayInRect:view.bounds
+           toBitmapImageRep:after];
+    const int changed =
+        bitmapChangedPixels(before, after);
+    qInfo() << "dog-turtle-panel-idle"
+            << static_cast<int>(companion)
+            << beforeProgress
+            << [[view valueForKey:
+                  @"catIdleTailProgress"]
+                   doubleValue]
+            << changed;
+    QVERIFY(changed > 0);
+    QVERIFY(
+        [[view valueForKey:@"catIdleTailProgress"]
+            doubleValue] > beforeProgress
+    );
+    panel.hide();
+  }
+}
+
+void InputIndicatorGeometryTests::dogAndTurtleReactionCoalescesAndEnds()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  for (const auto companion : companions) {
+    MacInputIndicatorPanel panel(
+        {},
+        [fixedCursor] {
+          return InputIndicatorTarget{
+              .point = {
+                  .x = fixedCursor.x,
+                  .y = fixedCursor.y,
+              },
+              .kind =
+                  InputIndicatorTargetKind::Pointer,
+          };
+        }
+    );
+    MacInputIndicatorPanelOptions options{
+        .source = Source::LatinABC,
+        .companion = companion,
+    };
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    options.source = Source::Korean2Set;
+    QVERIFY(panel.show(options));
+    QTest::qWait(20);
+    options.source = Source::LatinABC;
+    QVERIFY(panel.show(options));
+    QTest::qWait(140);
+    const auto peak =
+        panel.move(options.position);
+    QVERIFY(peak.visible);
+    QCOMPARE(peak.frameIntervalMilliseconds, 8);
+    QVERIFY([[view valueForKey:@"catStartleActive"]
+        boolValue]);
+    QCOMPARE(
+        [[view valueForKey:@"catStartleLatestSource"]
+            integerValue],
+        static_cast<NSInteger>(Source::LatinABC)
+    );
+    QVERIFY(
+        [[view valueForKey:@"catStartleHaloAlpha"]
+            doubleValue] > 0
+    );
+    QVERIFY(
+        [[view valueForKey:@"catStartlePending"]
+            boolValue] == NO
+    );
+    const double peakScale =
+        [[view valueForKey:@"catStartleHaloScale"]
+            doubleValue];
+    QVERIFY(peakScale <= 1.12);
+    QVERIFY(peakScale > 1.0);
+
+    QTest::qWait(210);
+    const auto ended =
+        panel.move(options.position);
+    QVERIFY(ended.visible);
+    QVERIFY(![[view valueForKey:@"catStartleActive"]
+        boolValue]);
+    QVERIFY(![[view valueForKey:@"catStartlePending"]
+        boolValue]);
+    QCOMPARE(
+        [[view valueForKey:@"catStartleHaloAlpha"]
+            doubleValue],
+        0.0
+    );
+    QVERIFY([[view valueForKey:@"catIdleTailActive"]
+        boolValue]);
+    QCOMPARE(ended.frameIntervalMilliseconds, 75);
+    panel.hide();
+  }
+}
+
+void InputIndicatorGeometryTests::allCompanionPanelsHonorHeadingAndGlyphCoverage()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto idle =
+      InputIndicatorCompanionIdleFrame{};
+  const auto reaction =
+      InputIndicatorCompanionStartleFrame{};
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  constexpr int paddingPoints = 4;
+  constexpr double heading =
+      M_PI / 4;
+  for (const auto companion : companions) {
+    for (const int scale : {1, 2}) {
+      NSBitmapImageRep *straightBody =
+          companionBodyBitmap(
+              companion,
+              InputIndicatorMotionState::Idle,
+              0,
+              idle,
+              reaction,
+              true,
+              scale,
+              paddingPoints,
+              true,
+              0
+          );
+      NSBitmapImageRep *diagonalBody =
+          companionBodyBitmap(
+              companion,
+              InputIndicatorMotionState::Idle,
+              0,
+              idle,
+              reaction,
+              true,
+              scale,
+              paddingPoints,
+              true,
+              heading
+          );
+      NSBitmapImageRep *straightGlyph =
+          companionGlyphBitmap(
+              companion,
+              InputIndicatorMotionState::Idle,
+              Source::LatinABC,
+              true,
+              scale,
+              paddingPoints,
+              0
+          );
+      NSBitmapImageRep *diagonalGlyph =
+          companionGlyphBitmap(
+              companion,
+              InputIndicatorMotionState::Idle,
+              Source::LatinABC,
+              true,
+              scale,
+              paddingPoints,
+              heading
+          );
+      QVERIFY(straightBody);
+      QVERIFY(diagonalBody);
+      QVERIFY(straightGlyph);
+      QVERIFY(diagonalGlyph);
+      QVERIFY(
+          bitmapChangedPixels(
+              straightBody, diagonalBody
+          ) > 0
+      );
+      const auto straightBounds =
+          bitmapAlphaBounds(straightGlyph);
+      const auto diagonalBounds =
+          bitmapAlphaBounds(diagonalGlyph);
+      QCOMPARE(
+          straightBounds.width,
+          diagonalBounds.width
+      );
+      QCOMPARE(
+          straightBounds.height,
+          diagonalBounds.height
+      );
+      for (NSInteger y = 0;
+           y < diagonalGlyph.pixelsHigh;
+           ++y) {
+        for (NSInteger x = 0;
+             x < diagonalGlyph.pixelsWide;
+             ++x) {
+          const double glyphAlpha =
+              [diagonalGlyph colorAtX:x y:y]
+                  .alphaComponent;
+          const double bodyAlpha =
+              [diagonalBody colorAtX:x y:y]
+                  .alphaComponent;
+          if (glyphAlpha > 0.02) {
+            QVERIFY(bodyAlpha > 0.02);
+          }
+        }
+      }
+      [straightBody release];
+      [diagonalBody release];
+      [straightGlyph release];
+      [diagonalGlyph release];
+    }
+
+    const auto fixedCursor =
+        fixedPanelTestPointer();
+    InputIndicatorTarget target{
+        .point = {
+            .x = fixedCursor.x,
+            .y = fixedCursor.y,
+        },
+        .kind =
+            InputIndicatorTargetKind::Pointer,
+    };
+    MacInputIndicatorPanel panel(
+        {},
+        [&target] {
+          return target;
+        }
+    );
+    const MacInputIndicatorPanelOptions options{
+        .source = Source::LatinABC,
+        .companion = companion,
+    };
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    target.point.x += 300;
+    target.point.y += 200;
+    QTest::qWait(100);
+    const auto step =
+        panel.move(options.position);
+    QVERIFY(step.visible);
+    const double renderedHeading =
+        [[view valueForKey:
+              @"catBodyHeadingRadians"]
+            doubleValue];
+    QVERIFY(std::isfinite(renderedHeading));
+    QVERIFY(std::abs(renderedHeading) > 0.01);
     panel.hide();
   }
 }
@@ -3739,6 +4352,904 @@ void InputIndicatorGeometryTests::companionPursuitScalesCapsWithoutChangingGates
         factor
     ));
   }
+}
+
+void InputIndicatorGeometryTests::companionModelUsesFiveSharedIdlePatterns()
+{
+  auto state =
+      inputIndicatorCompanionIdleMotionInitialState(
+          0x12345678
+      );
+  std::set<int> patterns;
+  std::optional<int> previous;
+  double now = 0;
+  for (int advancement = 0;
+       advancement < 40;
+       ++advancement) {
+    const auto step =
+        inputIndicatorCompanionIdleMotionAdvance(
+            state,
+            InputIndicatorMotionState::Idle,
+            now,
+            false
+        );
+    QVERIFY(step.frame.active);
+    QVERIFY(step.frame.progress >= 0);
+    QVERIFY(step.frame.progress < 1);
+    const int pattern =
+        static_cast<int>(step.frame.motion);
+    patterns.insert(pattern);
+    if (previous) {
+      QVERIFY(pattern != *previous);
+    }
+    previous = pattern;
+    state = step.state;
+    now +=
+        inputIndicatorCompanionIdleMotionDuration(
+            step.frame.motion
+        );
+  }
+  QCOMPARE(patterns.size(), size_t{5});
+
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  for (const auto companion : companions) {
+    (void)companion;
+    const auto walking =
+        inputIndicatorCompanionIdleMotionAdvance(
+            state,
+            InputIndicatorMotionState::Walk,
+            now,
+            false
+        );
+    QVERIFY(!walking.frame.active);
+    QVERIFY(!walking.state.running);
+    const auto running =
+        inputIndicatorCompanionIdleMotionAdvance(
+            state,
+            InputIndicatorMotionState::Run,
+            now,
+            false
+        );
+    QVERIFY(!running.frame.active);
+    QVERIFY(!running.state.running);
+    const auto reduced =
+        inputIndicatorCompanionIdleMotionAdvance(
+            state,
+            InputIndicatorMotionState::Idle,
+            now,
+            true
+        );
+    QVERIFY(!reduced.frame.active);
+    QVERIFY(!reduced.state.running);
+  }
+}
+
+void InputIndicatorGeometryTests::companionMotionPoseDistinguishesDogAndTurtleGaits()
+{
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  for (const auto companion : companions) {
+    const auto idle =
+        inputIndicatorCompanionMotionPose(
+            companion,
+            InputIndicatorMotionState::Idle,
+            0.25,
+            false
+        );
+    const auto walkQuarter =
+        inputIndicatorCompanionMotionPose(
+            companion,
+            InputIndicatorMotionState::Walk,
+            0.25,
+            false
+        );
+    const auto walkThreeQuarters =
+        inputIndicatorCompanionMotionPose(
+            companion,
+            InputIndicatorMotionState::Walk,
+            0.75,
+            false
+        );
+    const auto run =
+        inputIndicatorCompanionMotionPose(
+            companion,
+            InputIndicatorMotionState::Run,
+            0.25,
+            false
+        );
+    for (const double value :
+         {
+             idle.bodyBob,
+             idle.bodyStretch,
+             idle.tailPhase,
+             idle.limbStride,
+             idle.bodyLead,
+             walkQuarter.bodyBob,
+             walkQuarter.bodyStretch,
+             walkQuarter.tailPhase,
+             walkQuarter.limbStride,
+             walkQuarter.bodyLead,
+             run.bodyBob,
+             run.bodyStretch,
+             run.tailPhase,
+             run.limbStride,
+             run.bodyLead,
+         }) {
+      QVERIFY(std::isfinite(value));
+    }
+    QVERIFY(
+        walkQuarter.limbStride *
+            walkThreeQuarters.limbStride <
+        0
+    );
+    QVERIFY(
+        std::abs(run.limbStride) >
+        std::abs(walkQuarter.limbStride)
+    );
+    if (companion ==
+        InputIndicatorCompanion::Dog) {
+      QVERIFY(std::abs(walkQuarter.bodyBob) > 0.2);
+      QVERIFY(run.bodyLead > walkQuarter.bodyLead);
+    }
+    if (companion ==
+        InputIndicatorCompanion::Turtle) {
+      QVERIFY(std::abs(walkQuarter.bodyBob) > 0.1);
+      QVERIFY(run.bodyLead > walkQuarter.bodyLead);
+    }
+    const auto reduced =
+        inputIndicatorCompanionMotionPose(
+            companion,
+            InputIndicatorMotionState::Run,
+            0.25,
+            true
+        );
+    QCOMPARE(reduced.bodyBob, 0.0);
+    QCOMPARE(reduced.bodyStretch, 0.0);
+    QCOMPARE(reduced.tailPhase, 0.0);
+    QCOMPARE(reduced.limbStride, 0.0);
+    QCOMPARE(reduced.bodyLead, 0.0);
+  }
+}
+
+void InputIndicatorGeometryTests::dogAndTurtleReactionPointsReturnToNeutral()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  auto reactionState =
+      inputIndicatorCompanionSourceStartleTrigger(
+          {},
+          Source::LatinABC,
+          Source::Korean2Set,
+          0,
+          false
+      );
+  const auto peak =
+      inputIndicatorCompanionSourceStartleAdvance(
+          reactionState, 160, false
+      );
+  const auto ended =
+      inputIndicatorCompanionSourceStartleAdvance(
+          reactionState, 300, false
+      );
+  reactionState = peak.state;
+  QVERIFY(peak.frame.active);
+  QVERIFY(!ended.frame.active);
+
+  const InputIndicatorCompanionIdleFrame idle;
+  const auto dogEar =
+      InputIndicatorPoint{.x = 20, .y = 19};
+  const auto dogTail =
+      InputIndicatorPoint{.x = 3, .y = 12};
+  const auto turtleHead =
+      InputIndicatorPoint{.x = 27, .y = 13};
+  const auto turtleShell =
+      InputIndicatorPoint{.x = 12, .y = 17};
+  const struct
+  {
+    InputIndicatorCompanion companion;
+    InputIndicatorPoint point;
+  } cases[] = {
+      {InputIndicatorCompanion::Dog, dogEar},
+      {InputIndicatorCompanion::Dog, dogTail},
+      {InputIndicatorCompanion::Turtle, turtleHead},
+      {InputIndicatorCompanion::Turtle, turtleShell},
+  };
+  for (const auto &testCase : cases) {
+    const auto atPeak =
+        inputIndicatorCompanionArtworkPoint(
+            testCase.companion,
+            testCase.point,
+            InputIndicatorMotionState::Idle,
+            0,
+            idle,
+            peak.frame
+        );
+    QVERIFY(
+        std::abs(atPeak.x - testCase.point.x) >
+            1e-9 ||
+        std::abs(atPeak.y - testCase.point.y) >
+            1e-9
+    );
+    const auto atEnd =
+        inputIndicatorCompanionArtworkPoint(
+            testCase.companion,
+            testCase.point,
+            InputIndicatorMotionState::Idle,
+            0,
+            idle,
+            ended.frame
+        );
+    QCOMPARE(atEnd.x, testCase.point.x);
+    QCOMPARE(atEnd.y, testCase.point.y);
+  }
+  QVERIFY(
+      peak.frame.horizontalScale >= 0.92
+  );
+  QVERIFY(peak.frame.haloAlpha > 0);
+}
+
+void InputIndicatorGeometryTests::companionHeadingTransformsBodyButNotGlyphBounds()
+{
+  constexpr double heading =
+      3.14159265358979323846 / 4.0;
+  const InputIndicatorPoint bodyPoint{
+      .x = 17,
+      .y = 11,
+  };
+  InputIndicatorPoint expected{};
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  for (const auto companion : companions) {
+    (void)companion;
+    const auto transformed =
+        inputIndicatorCompanionBodyPoint(
+            bodyPoint,
+            true,
+            1,
+            heading
+        );
+    if (companion ==
+        InputIndicatorCompanion::Cat) {
+      expected = transformed;
+    } else {
+      QCOMPARE(transformed.x, expected.x);
+      QCOMPARE(transformed.y, expected.y);
+    }
+    const InputIndicatorRect glyph{
+        .x = transformed.x - 4,
+        .y = transformed.y - 3.5,
+        .width = 8,
+        .height = 7,
+    };
+    QCOMPARE(glyph.width, 8.0);
+    QCOMPARE(glyph.height, 7.0);
+  }
+}
+
+void InputIndicatorGeometryTests::companionArtworkUsesContinuousSpeciesSilhouettes()
+{
+  const auto dog =
+      macInputIndicatorDogArtwork();
+  const auto turtle =
+      macInputIndicatorTurtleArtwork();
+  QVERIFY(dog.silhouette.size() >= 40);
+  QVERIFY(turtle.silhouette.size() >= 32);
+  const InputIndicatorRect logicalBounds{
+      .x = 1,
+      .y = 3,
+      .width = 28,
+      .height = 20,
+  };
+  const MacInputIndicatorCompanionArtwork artworks[] = {
+      dog, turtle
+  };
+  for (const auto &artwork : artworks) {
+    QVERIFY(
+        artwork.silhouetteBounds.x >=
+        logicalBounds.x
+    );
+    QVERIFY(
+        artwork.silhouetteBounds.y >=
+        logicalBounds.y
+    );
+    QVERIFY(
+        artwork.silhouetteBounds.x +
+            artwork.silhouetteBounds.width <=
+        logicalBounds.x + logicalBounds.width
+    );
+    QVERIFY(
+        artwork.silhouetteBounds.y +
+            artwork.silhouetteBounds.height <=
+        logicalBounds.y + logicalBounds.height
+    );
+    QVERIFY(
+        artwork.innerLanguageBounds.x >=
+        artwork.silhouetteBounds.x
+    );
+    QVERIFY(
+        artwork.innerLanguageBounds.y >=
+        artwork.silhouetteBounds.y
+    );
+    QVERIFY(
+        artwork.innerLanguageBounds.x +
+            artwork.innerLanguageBounds.width <=
+        artwork.silhouetteBounds.x +
+            artwork.silhouetteBounds.width
+    );
+    QVERIFY(
+        artwork.innerLanguageBounds.y +
+            artwork.innerLanguageBounds.height <=
+        artwork.silhouetteBounds.y +
+            artwork.silhouetteBounds.height
+    );
+    QVERIFY(!artwork.silhouette.empty());
+    QCOMPARE(
+        static_cast<int>(
+            artwork.silhouette.front().type
+        ),
+        static_cast<int>(
+            MacInputIndicatorCatPathCommandType::Move
+        )
+    );
+    QCOMPARE(
+        static_cast<int>(
+            artwork.silhouette.back().type
+        ),
+        static_cast<int>(
+            MacInputIndicatorCatPathCommandType::Close
+        )
+    );
+  }
+}
+
+void InputIndicatorGeometryTests::dogAndTurtleIdleAndGaitPixelsChangeAtOneAndTwoX()
+{
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  constexpr int paddingPoints = 4;
+  const InputIndicatorCompanionIdleFrame restIdle;
+  const InputIndicatorCompanionStartleFrame restStartle;
+  const InputIndicatorCompanionIdleMotion motions[] = {
+      InputIndicatorCompanionIdleMotion::RelaxedSway,
+      InputIndicatorCompanionIdleMotion::TipFlick,
+      InputIndicatorCompanionIdleMotion::CurlUnfurl,
+      InputIndicatorCompanionIdleMotion::LazySweep,
+      InputIndicatorCompanionIdleMotion::QuestionLift,
+  };
+  for (const auto companion : companions) {
+    for (const int scale : {1, 2}) {
+      NSBitmapImageRep *rest =
+          companionBodyBitmap(
+              companion,
+              InputIndicatorMotionState::Idle,
+              0,
+              restIdle,
+              restStartle,
+              true,
+              scale,
+              paddingPoints,
+              true
+          );
+      QVERIFY(rest);
+      int minimumIdlePixels =
+          std::numeric_limits<int>::max();
+      for (const auto motion : motions) {
+        const InputIndicatorCompanionIdleFrame frame{
+            .motion = motion,
+            .progress = 0.38,
+            .active = true,
+        };
+        NSBitmapImageRep *animated =
+            companionBodyBitmap(
+                companion,
+                InputIndicatorMotionState::Idle,
+                0,
+                frame,
+                restStartle,
+                true,
+                scale,
+                paddingPoints,
+                true
+            );
+        QVERIFY(animated);
+        const int changed =
+            bitmapChangedPixels(rest, animated);
+        minimumIdlePixels =
+            std::min(
+                minimumIdlePixels, changed
+            );
+        qInfo() << "companion-idle-pixels"
+                << static_cast<int>(companion)
+                << static_cast<int>(motion)
+                << scale
+                << changed;
+        QVERIFY(changed > 0);
+        [animated release];
+      }
+
+      const struct
+      {
+        InputIndicatorMotionState state;
+        double firstPhase;
+        double secondPhase;
+      } gaits[] = {
+          {
+              .state =
+                  InputIndicatorMotionState::Walk,
+              .firstPhase = 0.1,
+              .secondPhase = 0.6,
+          },
+          {
+              .state =
+                  InputIndicatorMotionState::Run,
+              .firstPhase = 0.1,
+              .secondPhase = 0.6,
+          },
+      };
+      for (const auto gait : gaits) {
+        NSBitmapImageRep *first =
+            companionBodyBitmap(
+                companion,
+                gait.state,
+                gait.firstPhase,
+                restIdle,
+                restStartle,
+                true,
+                scale,
+                paddingPoints,
+                true
+            );
+        NSBitmapImageRep *second =
+            companionBodyBitmap(
+                companion,
+                gait.state,
+                gait.secondPhase,
+                restIdle,
+                restStartle,
+                true,
+                scale,
+                paddingPoints,
+                true
+            );
+        QVERIFY(first);
+        QVERIFY(second);
+        const int changed =
+            bitmapChangedPixels(first, second);
+        qInfo() << "companion-gait-pixels"
+                << static_cast<int>(companion)
+                << static_cast<int>(gait.state)
+                << scale
+                << changed;
+        QVERIFY(changed > 0);
+        [first release];
+        [second release];
+      }
+      QVERIFY(minimumIdlePixels > 0);
+      [rest release];
+    }
+  }
+}
+
+void InputIndicatorGeometryTests::dogAndTurtleReactionAndHaloPixelsUseOneLayer()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  const Source sources[] = {
+      Source::LatinABC,
+      Source::Korean2Set,
+  };
+  constexpr int paddingPoints = 4;
+  const InputIndicatorCompanionIdleFrame idle;
+  const InputIndicatorCompanionStartleFrame rest;
+  const auto trigger =
+      inputIndicatorCompanionSourceStartleTrigger(
+          {},
+          Source::LatinABC,
+          Source::Korean2Set,
+          0,
+          false
+      );
+  const auto peak =
+      inputIndicatorCompanionSourceStartleAdvance(
+          trigger, 160, false
+      );
+  const auto ended =
+      inputIndicatorCompanionSourceStartleAdvance(
+          trigger, 300, false
+      );
+  int totalHaloPixels = 0;
+  int totalColorPixels = 0;
+  int outsidePixels = 0;
+
+  for (const auto companion : companions) {
+    for (const auto source : sources) {
+      const auto expectedColor =
+          macInputIndicatorGlyphColor(
+              source,
+              InputIndicatorTone::Automatic
+          );
+      const double expectedSum =
+          expectedColor.red +
+          expectedColor.green +
+          expectedColor.blue;
+      for (const int scale : {1, 2}) {
+        const auto style =
+            macInputIndicatorPanelStyle(
+                companion
+            );
+        const NSInteger canvasLeft =
+            paddingPoints * scale;
+        const NSInteger canvasBottom =
+            paddingPoints * scale;
+        const NSInteger canvasRight =
+            canvasLeft +
+            static_cast<NSInteger>(
+                style.canvasWidth
+            ) *
+                scale;
+        const NSInteger canvasTop =
+            canvasBottom +
+            static_cast<NSInteger>(
+                style.canvasHeight
+            ) *
+                scale;
+        NSBitmapImageRep *baseline =
+            companionBodyBitmap(
+                companion,
+                InputIndicatorMotionState::Idle,
+                0,
+                idle,
+                rest,
+                true,
+                scale,
+                paddingPoints,
+                true
+            );
+        NSBitmapImageRep *body =
+            companionBodyBitmap(
+                companion,
+                InputIndicatorMotionState::Idle,
+                0,
+                idle,
+                peak.frame,
+                true,
+                scale,
+                paddingPoints,
+                true
+            );
+        NSBitmapImageRep *paint =
+            companionBodyBitmap(
+                companion,
+                InputIndicatorMotionState::Idle,
+                0,
+                idle,
+                peak.frame,
+                true,
+                scale,
+                paddingPoints,
+                true,
+                0,
+                1,
+                true,
+                source
+            );
+        NSBitmapImageRep *endBody =
+            companionBodyBitmap(
+                companion,
+                InputIndicatorMotionState::Idle,
+                0,
+                idle,
+                ended.frame,
+                true,
+                scale,
+                paddingPoints,
+                true
+            );
+        NSBitmapImageRep *endPaint =
+            companionBodyBitmap(
+                companion,
+                InputIndicatorMotionState::Idle,
+                0,
+                idle,
+                ended.frame,
+                true,
+                scale,
+                paddingPoints,
+                true,
+                0,
+                1,
+                true,
+                source
+            );
+        QVERIFY(baseline);
+        QVERIFY(body);
+        QVERIFY(paint);
+        QVERIFY(endBody);
+        QVERIFY(endPaint);
+        QVERIFY(
+            bitmapChangedPixels(baseline, body) > 0
+        );
+        QCOMPARE(
+            bitmapChangedPixels(
+                baseline, endBody
+            ),
+            0
+        );
+        QCOMPARE(
+            bitmapChangedPixels(
+                endBody, endPaint
+            ),
+            0
+        );
+        int haloPixels = 0;
+        int colorPixels = 0;
+        for (NSInteger y = 0;
+             y < paint.pixelsHigh;
+             ++y) {
+          for (NSInteger x = 0;
+               x < paint.pixelsWide;
+               ++x) {
+            const NSColor *color =
+                [paint colorAtX:x y:y];
+            const double alpha =
+                color.alphaComponent;
+            const double bodyAlpha =
+                [body colorAtX:x y:y]
+                    .alphaComponent;
+            if (alpha > 0.02 &&
+                (x < canvasLeft ||
+                 x >= canvasRight ||
+                 y < canvasBottom ||
+                 y >= canvasTop)) {
+              ++outsidePixels;
+            }
+            if (alpha <= 0.12 ||
+                bodyAlpha > 0) {
+              continue;
+            }
+            ++haloPixels;
+            const double sum =
+                color.redComponent +
+                color.greenComponent +
+                color.blueComponent;
+            if (sum > 0 &&
+                std::abs(
+                    color.redComponent /
+                        sum -
+                    expectedColor.red /
+                        expectedSum
+                ) <= 0.03 &&
+                std::abs(
+                    color.greenComponent /
+                        sum -
+                    expectedColor.green /
+                        expectedSum
+                ) <= 0.03 &&
+                std::abs(
+                    color.blueComponent /
+                        sum -
+                    expectedColor.blue /
+                        expectedSum
+                ) <= 0.03) {
+              ++colorPixels;
+            }
+          }
+        }
+        qInfo() << "companion-reaction-pixels"
+                << static_cast<int>(companion)
+                << static_cast<int>(source)
+                << scale
+                << "body"
+                << bitmapChangedPixels(
+                       baseline, body
+                   )
+                << "halo" << haloPixels
+                << "color" << colorPixels;
+        QVERIFY(haloPixels > 0);
+        QCOMPARE(colorPixels, haloPixels);
+        totalHaloPixels += haloPixels;
+        totalColorPixels += colorPixels;
+        [baseline release];
+        [body release];
+        [paint release];
+        [endBody release];
+        [endPaint release];
+      }
+    }
+  }
+  QCOMPARE(outsidePixels, 0);
+  QVERIFY(totalHaloPixels > 0);
+  QCOMPARE(totalColorPixels, totalHaloPixels);
+}
+
+void InputIndicatorGeometryTests::allCompanionCanvasContainsEightHeadings()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  const Source sources[] = {
+      Source::LatinABC,
+      Source::Korean2Set,
+  };
+  const bool facings[] = {true, false};
+  const double headings[] = {
+      0,
+      M_PI / 4,
+      M_PI / 2,
+      3 * M_PI / 4,
+      M_PI,
+      5 * M_PI / 4,
+      3 * M_PI / 2,
+      7 * M_PI / 4,
+  };
+  constexpr int paddingPoints = 4;
+  const InputIndicatorCompanionIdleFrame idle{
+      .motion =
+          InputIndicatorCompanionIdleMotion::LazySweep,
+      .progress = 0.42,
+      .active = true,
+  };
+  const auto reactionState =
+      inputIndicatorCompanionSourceStartleTrigger(
+          {},
+          Source::LatinABC,
+          Source::Korean2Set,
+          0,
+          false
+      );
+  const auto peak =
+      inputIndicatorCompanionSourceStartleAdvance(
+          reactionState, 160, false
+      );
+  int cases = 0;
+  int outsidePixels = 0;
+  int paintOutsidePixels = 0;
+  int glyphOutsidePixels = 0;
+  int haloPixels = 0;
+  for (const int scale : {1, 2}) {
+    for (const auto companion : companions) {
+      const auto style =
+          macInputIndicatorPanelStyle(companion);
+      const NSInteger canvasLeft =
+          paddingPoints * scale;
+      const NSInteger canvasBottom =
+          paddingPoints * scale;
+      const NSInteger canvasRight =
+          canvasLeft +
+          static_cast<NSInteger>(
+              style.canvasWidth
+          ) *
+              scale;
+      const NSInteger canvasTop =
+          canvasBottom +
+          static_cast<NSInteger>(
+              style.canvasHeight
+          ) *
+              scale;
+      for (const auto source : sources) {
+        for (const bool facesRight : facings) {
+          for (const double heading : headings) {
+            NSBitmapImageRep *body =
+                companionBodyBitmap(
+                    companion,
+                    InputIndicatorMotionState::Idle,
+                    0,
+                    idle,
+                    peak.frame,
+                    facesRight,
+                    scale,
+                    paddingPoints,
+                    true,
+                    heading
+                );
+            NSBitmapImageRep *paint =
+                companionBodyBitmap(
+                    companion,
+                    InputIndicatorMotionState::Idle,
+                    0,
+                    idle,
+                    peak.frame,
+                    facesRight,
+                    scale,
+                    paddingPoints,
+                    true,
+                    heading,
+                    1,
+                    true,
+                    source
+                );
+            NSBitmapImageRep *glyph =
+                companionGlyphBitmap(
+                    companion,
+                    InputIndicatorMotionState::Idle,
+                    source,
+                    facesRight,
+                    scale,
+                    paddingPoints,
+                    heading
+                );
+            QVERIFY(body);
+            QVERIFY(paint);
+            QVERIFY(glyph);
+            int caseOutsidePixels = 0;
+            int caseHaloPixels = 0;
+            for (NSInteger y = 0;
+                 y < paint.pixelsHigh;
+                 ++y) {
+              for (NSInteger x = 0;
+                   x < paint.pixelsWide;
+                   ++x) {
+                const double paintAlpha =
+                    [paint colorAtX:x y:y]
+                        .alphaComponent;
+                const double bodyAlpha =
+                    [body colorAtX:x y:y]
+                        .alphaComponent;
+                const double glyphAlpha =
+                    [glyph colorAtX:x y:y]
+                        .alphaComponent;
+                if (paintAlpha > 0.02 &&
+                    (x < canvasLeft ||
+                     x >= canvasRight ||
+                     y < canvasBottom ||
+                     y >= canvasTop)) {
+                  ++caseOutsidePixels;
+                  ++paintOutsidePixels;
+                }
+                if (glyphAlpha > 0.02 &&
+                    bodyAlpha <= 0.02) {
+                  ++caseOutsidePixels;
+                  ++glyphOutsidePixels;
+                }
+                if (paintAlpha > 0.02 &&
+                    bodyAlpha == 0) {
+                  ++caseHaloPixels;
+                  ++haloPixels;
+                }
+              }
+            }
+            QCOMPARE(caseOutsidePixels, 0);
+            QVERIFY(caseHaloPixels > 0);
+            outsidePixels += caseOutsidePixels;
+            [body release];
+            [paint release];
+            [glyph release];
+            ++cases;
+          }
+        }
+      }
+    }
+  }
+  qInfo() << "dog-turtle-rotating-canvas"
+          << "outsidePixels" << outsidePixels
+          << "paintOutside" << paintOutsidePixels
+          << "glyphOutside" << glyphOutsidePixels
+          << "haloPixels" << haloPixels
+          << "cases" << cases;
+  QCOMPARE(cases, 128);
+  QCOMPARE(paintOutsidePixels, 0);
+  QCOMPARE(glyphOutsidePixels, 0);
+  QCOMPARE(outsidePixels, 0);
+  QVERIFY(haloPixels > 0);
 }
 
 void InputIndicatorGeometryTests::catPursuitWalksNearAndSettlesWithoutOvershoot()
