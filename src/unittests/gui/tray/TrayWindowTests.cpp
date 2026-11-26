@@ -196,9 +196,9 @@ QString row(
       .arg(role);
 }
 
-const QAction *actionNamed(const QMenu *menu, const QString &text)
+QAction *actionNamed(const QMenu *menu, const QString &text)
 {
-  for (const auto *action : menu->actions())
+  for (auto *action : menu->actions())
     if (action->text() == text)
       return action;
   return nullptr;
@@ -348,13 +348,17 @@ void TrayWindowTests::closeToTray_withATray_hidesTheWindow()
   Access::setTrayAvailable(*window, true);
   Access::showAndActivate(*window);
   QVERIFY(QTest::qWaitForWindowExposed(window.get()));
-  const auto *open = actionNamed(Access::trayIcon(*window)->contextMenu(), QStringLiteral("&Open Deskflow"));
+  auto *open = actionNamed(Access::trayIcon(*window)->contextMenu(), QStringLiteral("&Open Deskflow"));
   QVERIFY(open && !open->isVisible());
 
   QVERIFY(Access::closeAsTheOsDoes(*window));
-  // the window is hidden (on macOS the program is: the tray then offers the window again)
+  QCoreApplication::processEvents();
+  QVERIFY(!window->isVisible());
   QVERIFY(open->isVisible());
   QVERIFY(!window->isMinimized());
+
+  open->trigger();
+  QTRY_VERIFY(window->isVisible());
 }
 
 void TrayWindowTests::closeToTray_withoutATray_keepsTheWindowWhereItCanBeFoundAgain()

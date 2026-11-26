@@ -2016,10 +2016,9 @@ void MainWindow::updateFingerprintButton()
 
 void MainWindow::hide()
 {
+  QMainWindow::hide();
 #ifdef Q_OS_MACOS
   macOSNativeHide();
-#else
-  QMainWindow::hide();
 #endif
   m_actionRestore->setVisible(true);
   m_actionMinimize->setVisible(false);
