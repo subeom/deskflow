@@ -45,7 +45,8 @@ private Q_SLOTS:
   void catIdleTailMotionChangesOnlyTailPixels();
   void catPanelIdleTailFrameRepaints();
   void catPoseUsesDistinctSeatedWalkRunGeometry();
-  void companionPaletteUsesNeutralBodyAndReadableGlyph();
+  void companionPaletteUsesSourceBodiesAndReadableGlyph();
+  void companionSourceBodiesRasterDistinctAtOneAndTwoX();
   void companionRenderAlphaFollowsSettingAndBoundsDetail();
   void catTailUsesContinuousPhaseLaggedCurve();
   void catIdleTailMotionsCoverFiveFinitePatterns();

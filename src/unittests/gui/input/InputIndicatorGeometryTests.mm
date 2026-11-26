@@ -25,6 +25,8 @@ using namespace deskflow::gui::input;
 
 namespace {
 
+constexpr double kHaloHueRatioTolerance = 0.06;
+
 std::vector<InputIndicatorRect> oneScreen(double width = 1920, double height = 1080)
 {
   return {{.x = 0, .y = 0, .width = width, .height = height}};
@@ -345,7 +347,10 @@ NSBitmapImageRep *catBodyBitmap(
     double facingScaleX = 1,
     bool includeGlow = false,
     deskflow::input::InputIndicatorSource glowSource =
-        deskflow::input::InputIndicatorSource::LatinABC
+        deskflow::input::InputIndicatorSource::LatinABC,
+    std::optional<MacInputIndicatorRgb> bodyColor =
+        std::nullopt,
+    double bodyAlpha = 1.0
 )
 {
   const double effectiveHeading =
@@ -442,7 +447,15 @@ NSBitmapImageRep *catBodyBitmap(
     [NSGraphicsContext restoreGraphicsState];
     [haloShadow release];
   }
-  [[NSColor blackColor] setFill];
+  NSColor *bodyFill =
+      bodyColor
+          ? [NSColor
+                colorWithSRGBRed:bodyColor->red
+                           green:bodyColor->green
+                            blue:bodyColor->blue
+                           alpha:bodyAlpha]
+          : [NSColor blackColor];
+  [bodyFill setFill];
   if (includeStroke) {
     [[NSColor blackColor] setStroke];
     [near setLineWidth:0.55];
@@ -594,7 +607,10 @@ NSBitmapImageRep *companionBodyBitmap(
     double facingScaleX = 1,
     bool includeGlow = false,
     deskflow::input::InputIndicatorSource glowSource =
-        deskflow::input::InputIndicatorSource::LatinABC
+        deskflow::input::InputIndicatorSource::LatinABC,
+    std::optional<MacInputIndicatorRgb> bodyColor =
+        std::nullopt,
+    double bodyAlpha = 1.0
 )
 {
   NSBitmapImageRep *bitmap =
@@ -679,7 +695,15 @@ NSBitmapImageRep *companionBodyBitmap(
     [haloShadow release];
     [halo release];
   }
-  [[NSColor blackColor] setFill];
+  NSColor *bodyFill =
+      bodyColor
+          ? [NSColor
+                colorWithSRGBRed:bodyColor->red
+                           green:bodyColor->green
+                            blue:bodyColor->blue
+                           alpha:bodyAlpha]
+          : [NSColor blackColor];
+  [bodyFill setFill];
   if (includeStroke) {
     [[NSColor blackColor] setStroke];
     [silhouette setLineWidth:0.55];
@@ -898,6 +922,80 @@ int bitmapChangedPixels(
     }
   }
   return changed;
+}
+
+int bitmapPremultipliedColorDifferencePixels(
+    NSBitmapImageRep *from,
+    NSBitmapImageRep *to
+)
+{
+  if (!from || !to ||
+      from.pixelsWide != to.pixelsWide ||
+      from.pixelsHigh != to.pixelsHigh) {
+    qFatal("raster color comparison requires equal bitmaps");
+  }
+  int changed = 0;
+  for (NSInteger y = 0;
+       y < from.pixelsHigh;
+       ++y) {
+    for (NSInteger x = 0;
+         x < from.pixelsWide;
+         ++x) {
+      const NSColor *left =
+          [from colorAtX:x y:y];
+      const NSColor *right =
+          [to colorAtX:x y:y];
+      const double difference =
+          std::abs(
+              left.redComponent *
+                  left.alphaComponent -
+              right.redComponent *
+                  right.alphaComponent
+          ) +
+          std::abs(
+              left.greenComponent *
+                  left.alphaComponent -
+              right.greenComponent *
+                  right.alphaComponent
+          ) +
+          std::abs(
+              left.blueComponent *
+                  left.alphaComponent -
+              right.blueComponent *
+                  right.alphaComponent
+          );
+      if (difference > 0.01) {
+        ++changed;
+      }
+    }
+  }
+  return changed;
+}
+
+bool pixelMatchesBodyColor(
+    const NSColor *pixel,
+    MacInputIndicatorRgb expected,
+    double alpha
+)
+{
+  if (!pixel) {
+    return false;
+  }
+  constexpr double channelTolerance =
+      2.0 / 255.0;
+  return
+      std::abs(
+          pixel.redComponent - expected.red
+      ) <= channelTolerance &&
+      std::abs(
+          pixel.greenComponent - expected.green
+      ) <= channelTolerance &&
+      std::abs(
+          pixel.blueComponent - expected.blue
+      ) <= channelTolerance &&
+      std::abs(
+          pixel.alphaComponent - alpha
+      ) <= 0.01;
 }
 
 InputIndicatorRect bitmapAlphaBounds(
@@ -1998,6 +2096,7 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
   };
   int rasterCases = 0;
   int outsidePixels = 0;
+  int exactBodyPixels = 0;
   for (const auto companion : companions) {
     for (const auto speed : speeds) {
       InputIndicatorTarget target{
@@ -2060,11 +2159,23 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
                     style.canvasOffsetY,
             };
           };
+      struct RasterResult
+      {
+        int outside = 0;
+        int exactBodyPixels = 0;
+      };
       const auto rasterOutside =
           [companion, view](
               int scale
-          ) -> int {
+          ) -> RasterResult {
             constexpr int paddingPoints = 4;
+            const auto expectedBodyColor =
+                macInputIndicatorBodyColor(
+                    Source::LatinABC,
+                    InputIndicatorTone::Automatic
+                );
+            const auto expectedBodyAlpha =
+                macInputIndicatorRenderAlpha(65).body;
             const auto motionState =
                 static_cast<InputIndicatorMotionState>(
                     [[view valueForKey:
@@ -2158,7 +2269,11 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
                   startle,
                   heading,
                   true,
-                  facingScale
+                  facingScale,
+                  false,
+                  Source::LatinABC,
+                  expectedBodyColor,
+                  expectedBodyAlpha
               );
               glyph = catGlyphBitmap(
                   pose,
@@ -2183,7 +2298,11 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
                   paddingPoints,
                   true,
                   heading,
-                  facingScale
+                  facingScale,
+                  false,
+                  Source::LatinABC,
+                  expectedBodyColor,
+                  expectedBodyAlpha
               );
               glyph = companionGlyphBitmap(
                   companion,
@@ -2203,7 +2322,10 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
               if (glyph) {
                 [glyph release];
               }
-              return -1;
+              return {
+                  .outside = -1,
+                  .exactBodyPixels = 0,
+              };
             }
             NSBitmapImageRep *paintedGlyph =
                 clippedGlyphBitmap(
@@ -2212,7 +2334,10 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
             if (!paintedGlyph) {
               [body release];
               [glyph release];
-              return -1;
+              return {
+                  .outside = -1,
+                  .exactBodyPixels = 0,
+              };
             }
             const auto rasterStyle =
                 macInputIndicatorPanelStyle(
@@ -2237,19 +2362,28 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
             int outside = 0;
             int bodyOutside = 0;
             int glyphOutside = 0;
+            int matchedBodyPixels = 0;
             for (NSInteger y = 0;
                  y < body.pixelsHigh;
                  ++y) {
               for (NSInteger x = 0;
                    x < body.pixelsWide;
                    ++x) {
+                const NSColor *bodyPixel =
+                    [body colorAtX:x y:y];
                 const double bodyAlpha =
-                    [body colorAtX:x y:y]
-                        .alphaComponent;
+                    bodyPixel.alphaComponent;
                 const double glyphAlpha =
                     [paintedGlyph
                         colorAtX:x y:y]
                         .alphaComponent;
+                if (pixelMatchesBodyColor(
+                        bodyPixel,
+                        expectedBodyColor,
+                        expectedBodyAlpha
+                    )) {
+                  ++matchedBodyPixels;
+                }
                 if (bodyAlpha > 0.02 &&
                     (x < left ||
                      x >= right ||
@@ -2278,7 +2412,10 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
             [body release];
             [glyph release];
             [paintedGlyph release];
-            return outside;
+            return {
+                .outside = outside,
+                .exactBodyPixels = matchedBodyPixels,
+            };
           };
 
       target.point.x +=
@@ -2313,10 +2450,13 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
         positions.push_back(current);
         if (tick == 1 || tick == 10) {
           for (const int scale : {1, 2}) {
-            const int outside =
+            const auto raster =
                 rasterOutside(scale);
-            QVERIFY(outside >= 0);
-            if (outside > 0) {
+            QVERIFY(raster.outside >= 0);
+            QVERIFY(
+                raster.exactBodyPixels >= 10
+            );
+            if (raster.outside > 0) {
               qInfo() << "follow-approach-spill"
                       << static_cast<int>(
                              companion
@@ -2328,7 +2468,9 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
                             @"catBodyHeadingRadians"]
                               doubleValue];
             }
-            outsidePixels += outside;
+            outsidePixels += raster.outside;
+            exactBodyPixels +=
+                raster.exactBodyPixels;
             ++rasterCases;
           }
         }
@@ -2356,10 +2498,13 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
                      expected->y) < 1.0) {
           reached = true;
           for (const int scale : {1, 2}) {
-            const int outside =
+            const auto raster =
                 rasterOutside(scale);
-            QVERIFY(outside >= 0);
-            if (outside > 0) {
+            QVERIFY(raster.outside >= 0);
+            QVERIFY(
+                raster.exactBodyPixels >= 10
+            );
+            if (raster.outside > 0) {
               qInfo() << "follow-approach-spill-final"
                       << static_cast<int>(
                              companion
@@ -2368,7 +2513,9 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
                       << scale
                       << heading;
             }
-            outsidePixels += outside;
+            outsidePixels += raster.outside;
+            exactBodyPixels +=
+                raster.exactBodyPixels;
             ++rasterCases;
           }
           break;
@@ -2381,9 +2528,12 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
   }
   qInfo() << "follow-approach-raster"
           << "cases" << rasterCases
+          << "exactBodyPixels"
+          << exactBodyPixels
           << "outsidePixels" << outsidePixels;
   QCOMPARE(rasterCases, 54);
   QCOMPARE(outsidePixels, 0);
+  QVERIFY(exactBodyPixels >= 10 * rasterCases);
 }
 
 void InputIndicatorGeometryTests::unknownOrInvalidGeometryHides_data()
@@ -4341,8 +4491,10 @@ void InputIndicatorGeometryTests::catPoseUsesDistinctSeatedWalkRunGeometry()
   QCOMPARE(reduced.tailStraightness, idle.tailStraightness);
 }
 
-void InputIndicatorGeometryTests::companionPaletteUsesNeutralBodyAndReadableGlyph()
+void InputIndicatorGeometryTests::companionPaletteUsesSourceBodiesAndReadableGlyph()
 {
+  using Source =
+      deskflow::input::InputIndicatorSource;
   const auto automatic =
       macInputIndicatorColorModel(InputIndicatorTone::Automatic);
   const auto light =
@@ -4354,60 +4506,465 @@ void InputIndicatorGeometryTests::companionPaletteUsesNeutralBodyAndReadableGlyp
       automatic, light, dark
   };
   for (const auto &color : colors) {
-    QCOMPARE(color.body.red, 242.0 / 255.0);
-    QCOMPARE(color.body.green, 243.0 / 255.0);
-    QCOMPARE(color.body.blue, 245.0 / 255.0);
+    QCOMPARE(color.koreanBody.red, 242.0 / 255.0);
+    QCOMPARE(color.koreanBody.green, 243.0 / 255.0);
+    QCOMPARE(color.koreanBody.blue, 245.0 / 255.0);
+    QCOMPARE(color.latinBody.red, 168.0 / 255.0);
+    QCOMPARE(color.latinBody.green, 186.0 / 255.0);
+    QCOMPARE(color.latinBody.blue, 199.0 / 255.0);
+    QVERIFY(
+        color.latinBody.blue > color.latinBody.green
+    );
+    QVERIFY(
+        color.latinBody.blue > color.latinBody.red
+    );
+    QVERIFY(
+        color.latinBody.blue -
+            color.latinBody.red >=
+        31.0 / 255.0 - 1e-12
+    );
+    QVERIFY(
+        color.latinBody.blue -
+            color.latinBody.green >=
+        13.0 / 255.0 - 1e-12
+    );
     QVERIFY(color.latinGlyph.blue > color.latinGlyph.red);
     QVERIFY(color.koreanGlyph.red > color.koreanGlyph.blue);
-    QVERIFY(contrastRatio(color.latinGlyph, color.body) >= 4.5);
-    QVERIFY(contrastRatio(color.koreanGlyph, color.body) >= 4.5);
+    QVERIFY(contrastRatio(
+        color.latinGlyph, color.latinBody
+    ) >= 4.5);
+    QVERIFY(contrastRatio(
+        color.koreanGlyph, color.koreanBody
+    ) >= 4.5);
+    QVERIFY(contrastRatio(
+        color.edge, color.latinBody
+    ) >= 4.0);
     QVERIFY(color.latinGlyph.red < 0.75);
     QVERIFY(color.koreanGlyph.red < 0.75);
   }
-  QCOMPARE(light.body.red, automatic.body.red);
-  QCOMPARE(dark.body.red, automatic.body.red);
+  QCOMPARE(
+      light.koreanBody.red,
+      automatic.koreanBody.red
+  );
+  QCOMPARE(
+      dark.koreanBody.red,
+      automatic.koreanBody.red
+  );
+  QCOMPARE(
+      light.latinBody.blue,
+      automatic.latinBody.blue
+  );
+  QCOMPARE(
+      dark.latinBody.blue,
+      automatic.latinBody.blue
+  );
   QCOMPARE(light.edge.green, automatic.edge.green);
   QCOMPARE(dark.edge.green, automatic.edge.green);
 
-  const InputIndicatorTone tones[] = {
-      InputIndicatorTone::Automatic,
-      InputIndicatorTone::Light,
-      InputIndicatorTone::Dark,
+  const struct
+  {
+    InputIndicatorTone tone;
+    MacInputIndicatorRgb latinGlyph;
+    MacInputIndicatorRgb koreanGlyph;
+  } expectations[] = {
+      {
+          .tone = InputIndicatorTone::Automatic,
+          .latinGlyph = {
+              .red = 48.0 / 255.0,
+              .green = 66.0 / 255.0,
+              .blue = 90.0 / 255.0,
+          },
+          .koreanGlyph = {
+              .red = 136.0 / 255.0,
+              .green = 78.0 / 255.0,
+              .blue = 98.0 / 255.0,
+          },
+      },
+      {
+          .tone = InputIndicatorTone::Light,
+          .latinGlyph = {
+              .red = 51.0 / 255.0,
+              .green = 74.0 / 255.0,
+              .blue = 100.0 / 255.0,
+          },
+          .koreanGlyph = {
+              .red = 122.0 / 255.0,
+              .green = 62.0 / 255.0,
+              .blue = 82.0 / 255.0,
+          },
+      },
+      {
+          .tone = InputIndicatorTone::Dark,
+          .latinGlyph = {
+              .red = 40.0 / 255.0,
+              .green = 59.0 / 255.0,
+              .blue = 82.0 / 255.0,
+          },
+          .koreanGlyph = {
+              .red = 102.0 / 255.0,
+              .green = 49.0 / 255.0,
+              .blue = 68.0 / 255.0,
+          },
+      },
   };
-  for (const auto tone : tones) {
-    const auto palette = macInputIndicatorColorModel(tone);
-    const auto tintedLatinBody = macInputIndicatorBodyColor(
-        deskflow::input::InputIndicatorSource::LatinABC, tone
+  for (const auto &expectation : expectations) {
+    const auto palette =
+        macInputIndicatorColorModel(
+            expectation.tone
+        );
+    QCOMPARE(
+        palette.latinGlyph.red,
+        expectation.latinGlyph.red
     );
-    const auto tintedKoreanBody = macInputIndicatorBodyColor(
-        deskflow::input::InputIndicatorSource::Korean2Set, tone
+    QCOMPARE(
+        palette.latinGlyph.green,
+        expectation.latinGlyph.green
+    );
+    QCOMPARE(
+        palette.latinGlyph.blue,
+        expectation.latinGlyph.blue
+    );
+    QCOMPARE(
+        palette.koreanGlyph.red,
+        expectation.koreanGlyph.red
+    );
+    QCOMPARE(
+        palette.koreanGlyph.green,
+        expectation.koreanGlyph.green
+    );
+    QCOMPARE(
+        palette.koreanGlyph.blue,
+        expectation.koreanGlyph.blue
+    );
+    const auto latinBody =
+        macInputIndicatorBodyColor(
+            Source::LatinABC, expectation.tone
+        );
+    const auto koreanBody =
+        macInputIndicatorBodyColor(
+            Source::Korean2Set, expectation.tone
+        );
+    QCOMPARE(latinBody.red, palette.latinBody.red);
+    QCOMPARE(
+        latinBody.green, palette.latinBody.green
+    );
+    QCOMPARE(latinBody.blue, palette.latinBody.blue);
+    QCOMPARE(
+        koreanBody.red, palette.koreanBody.red
+    );
+    QCOMPARE(
+        koreanBody.green, palette.koreanBody.green
+    );
+    QCOMPARE(
+        koreanBody.blue, palette.koreanBody.blue
     );
     QVERIFY(contrastRatio(
-        palette.latinGlyph, tintedLatinBody
+        palette.latinGlyph, latinBody
     ) >= 4.5);
     QVERIFY(contrastRatio(
-        palette.koreanGlyph, tintedKoreanBody
+        palette.koreanGlyph, koreanBody
     ) >= 4.5);
+    const auto unknownBody =
+        macInputIndicatorBodyColor(
+            Source::Unknown, expectation.tone
+        );
+    QCOMPARE(unknownBody.red, latinBody.red);
+    QCOMPARE(unknownBody.green, latinBody.green);
+    QCOMPARE(unknownBody.blue, latinBody.blue);
   }
 
   const auto latinBody = macInputIndicatorBodyColor(
-      deskflow::input::InputIndicatorSource::LatinABC,
+      Source::LatinABC,
       InputIndicatorTone::Automatic
   );
   const auto koreanBody = macInputIndicatorBodyColor(
-      deskflow::input::InputIndicatorSource::Korean2Set,
+      Source::Korean2Set,
       InputIndicatorTone::Automatic
   );
-  QVERIFY(std::abs(
-      latinBody.red - automatic.body.red
-  ) <= std::abs(
-      automatic.latinGlyph.red - automatic.body.red
-  ) * 0.08 + 1e-12);
-  QVERIFY(std::abs(
-      koreanBody.blue - automatic.body.blue
-  ) <= std::abs(
-      automatic.koreanGlyph.blue - automatic.body.blue
-  ) * 0.08 + 1e-12);
+  const double bodyDistance =
+      std::hypot(
+          std::hypot(
+              latinBody.red - koreanBody.red,
+              latinBody.green - koreanBody.green
+          ),
+          latinBody.blue - koreanBody.blue
+      );
+  QVERIFY(bodyDistance >= 0.35);
+
+  for (const double progress :
+       {0.0, 0.25, 0.5, 0.75, 1.0}) {
+    const auto blended =
+        macInputIndicatorBlendColor(
+            koreanBody, latinBody, progress
+        );
+    QVERIFY(std::isfinite(blended.red));
+    QVERIFY(std::isfinite(blended.green));
+    QVERIFY(std::isfinite(blended.blue));
+    QVERIFY(blended.red >= 0 && blended.red <= 1);
+    QVERIFY(blended.green >= 0 && blended.green <= 1);
+    QVERIFY(blended.blue >= 0 && blended.blue <= 1);
+    if (progress == 0.0) {
+      QCOMPARE(blended.red, koreanBody.red);
+      QCOMPARE(blended.green, koreanBody.green);
+      QCOMPARE(blended.blue, koreanBody.blue);
+    }
+    if (progress == 1.0) {
+      QCOMPARE(blended.red, latinBody.red);
+      QCOMPARE(blended.green, latinBody.green);
+      QCOMPARE(blended.blue, latinBody.blue);
+    }
+  }
+  QCOMPARE(macInputIndicatorRenderAlpha(60).body, 0.6);
+  QCOMPARE(macInputIndicatorRenderAlpha(65).body, 0.65);
+  QCOMPARE(
+      macInputIndicatorRenderAlpha(100).body,
+      1.0
+  );
+}
+
+void InputIndicatorGeometryTests::companionSourceBodiesRasterDistinctAtOneAndTwoX()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  const Source sources[] = {
+      Source::LatinABC,
+      Source::Korean2Set,
+  };
+  const bool facings[] = {true, false};
+  const double headings[] = {
+      0,
+      M_PI / 4,
+      M_PI / 2,
+      3 * M_PI / 4,
+      M_PI,
+      5 * M_PI / 4,
+      3 * M_PI / 2,
+      7 * M_PI / 4,
+  };
+  constexpr int paddingPoints = 4;
+  const auto bodyAlpha =
+      macInputIndicatorRenderAlpha(65).body;
+  const InputIndicatorCompanionIdleFrame idle;
+  const InputIndicatorCompanionStartleFrame reaction;
+  int cases = 0;
+  int matchedBodyPixels = 0;
+  int alphaWeightedDifferencePixels = 0;
+  int outsidePixels = 0;
+  int glyphOutsidePixels = 0;
+
+  for (const auto companion : companions) {
+    for (const int scale : {1, 2}) {
+      for (const bool facesRight : facings) {
+        InputIndicatorRect glyphBounds[2];
+        for (int headingIndex = 0;
+             headingIndex < 8;
+             ++headingIndex) {
+          const double heading =
+              headings[headingIndex];
+          NSBitmapImageRep *bodies[2] = {nil, nil};
+          NSBitmapImageRep *glyphs[2] = {nil, nil};
+          for (int sourceIndex = 0;
+               sourceIndex < 2;
+               ++sourceIndex) {
+            const auto source =
+                sources[sourceIndex];
+            const auto bodyColor =
+                macInputIndicatorBodyColor(
+                    source,
+                    InputIndicatorTone::Automatic
+                );
+            if (companion ==
+                InputIndicatorCompanion::Cat) {
+              const auto pose =
+                  inputIndicatorCatPose(
+                      InputIndicatorMotionState::Idle,
+                      0,
+                      false
+                  );
+              const auto artwork =
+                  macInputIndicatorCatArtwork(
+                      pose.artworkFrame
+                  );
+              bodies[sourceIndex] =
+                  catBodyBitmap(
+                      pose,
+                      artwork,
+                      idle,
+                      facesRight,
+                      scale,
+                      paddingPoints,
+                      false,
+                      reaction,
+                      heading,
+                      true,
+                      1,
+                      false,
+                      Source::LatinABC,
+                      bodyColor,
+                      bodyAlpha
+                  );
+              glyphs[sourceIndex] =
+                  catGlyphBitmap(
+                      pose,
+                      InputIndicatorMotionState::Idle,
+                      facesRight,
+                      scale,
+                      paddingPoints,
+                      source,
+                      heading,
+                      true,
+                      1
+                  );
+            } else {
+              bodies[sourceIndex] =
+                  companionBodyBitmap(
+                      companion,
+                      InputIndicatorMotionState::Idle,
+                      0,
+                      idle,
+                      reaction,
+                      facesRight,
+                      scale,
+                      paddingPoints,
+                      false,
+                      heading,
+                      1,
+                      false,
+                      Source::LatinABC,
+                      bodyColor,
+                      bodyAlpha
+                  );
+              glyphs[sourceIndex] =
+                  companionGlyphBitmap(
+                      companion,
+                      InputIndicatorMotionState::Idle,
+                      source,
+                      facesRight,
+                      scale,
+                      paddingPoints,
+                      heading,
+                      1
+                  );
+            }
+            QVERIFY(bodies[sourceIndex]);
+            QVERIFY(glyphs[sourceIndex]);
+            const auto currentGlyphBounds =
+                bitmapAlphaBounds(
+                    glyphs[sourceIndex]
+                );
+            if (headingIndex == 0) {
+              glyphBounds[sourceIndex] =
+                  currentGlyphBounds;
+            } else {
+              QVERIFY(std::abs(
+                  currentGlyphBounds.width -
+                  glyphBounds[sourceIndex].width
+              ) <= 1);
+              QVERIFY(std::abs(
+                  currentGlyphBounds.height -
+                  glyphBounds[sourceIndex].height
+              ) <= 1);
+            }
+
+            int caseBodyPixels = 0;
+            int caseOutsidePixels = 0;
+            int caseGlyphOutsidePixels = 0;
+            const auto style =
+                macInputIndicatorPanelStyle(
+                    companion
+                );
+            const NSInteger left =
+                paddingPoints * scale;
+            const NSInteger bottom =
+                paddingPoints * scale;
+            const NSInteger right =
+                left +
+                static_cast<NSInteger>(
+                    std::lround(style.canvasWidth)
+                ) * scale;
+            const NSInteger top =
+                bottom +
+                static_cast<NSInteger>(
+                    std::lround(style.canvasHeight)
+                ) * scale;
+            for (NSInteger y = 0;
+                 y < bodies[sourceIndex].pixelsHigh;
+                 ++y) {
+              for (NSInteger x = 0;
+                   x < bodies[sourceIndex].pixelsWide;
+                   ++x) {
+                const NSColor *bodyPixel =
+                    [bodies[sourceIndex]
+                        colorAtX:x
+                              y:y];
+                const double glyphAlpha =
+                    [glyphs[sourceIndex]
+                        colorAtX:x
+                              y:y]
+                        .alphaComponent;
+                if (pixelMatchesBodyColor(
+                        bodyPixel,
+                        bodyColor,
+                        bodyAlpha
+                    )) {
+                  ++caseBodyPixels;
+                }
+                if (bodyPixel.alphaComponent > 0.02 &&
+                    (x < left ||
+                     x >= right ||
+                     y < bottom ||
+                     y >= top)) {
+                  ++caseOutsidePixels;
+                }
+                if (glyphAlpha > 0.02 &&
+                    bodyPixel.alphaComponent <= 0.02) {
+                  ++caseGlyphOutsidePixels;
+                }
+              }
+            }
+            QVERIFY(caseBodyPixels >= 10);
+            QCOMPARE(caseOutsidePixels, 0);
+            QCOMPARE(caseGlyphOutsidePixels, 0);
+            matchedBodyPixels += caseBodyPixels;
+            outsidePixels += caseOutsidePixels;
+            glyphOutsidePixels +=
+                caseGlyphOutsidePixels;
+            ++cases;
+          }
+          const int differencePixels =
+              bitmapPremultipliedColorDifferencePixels(
+                  bodies[0], bodies[1]
+              );
+          QVERIFY(differencePixels >= 25);
+          alphaWeightedDifferencePixels +=
+              differencePixels;
+          [bodies[0] release];
+          [bodies[1] release];
+          [glyphs[0] release];
+          [glyphs[1] release];
+        }
+      }
+    }
+  }
+  qInfo() << "companion-source-body-raster"
+          << "cases" << cases
+          << "matchedBodyPixels"
+          << matchedBodyPixels
+          << "alphaWeightedDifferencePixels"
+          << alphaWeightedDifferencePixels
+          << "outsidePixels" << outsidePixels
+          << "glyphOutsidePixels"
+          << glyphOutsidePixels;
+  QCOMPARE(cases, 192);
+  QCOMPARE(outsidePixels, 0);
+  QCOMPARE(glyphOutsidePixels, 0);
+  QVERIFY(matchedBodyPixels > 0);
+  QVERIFY(alphaWeightedDifferencePixels > 0);
 }
 
 void InputIndicatorGeometryTests::companionRenderAlphaFollowsSettingAndBoundsDetail()
@@ -6755,19 +7312,19 @@ void InputIndicatorGeometryTests::dogAndTurtleReactionAndHaloPixelsUseOneLayer()
                         sum -
                     expectedColor.red /
                         expectedSum
-                ) <= 0.03 &&
+                ) <= kHaloHueRatioTolerance &&
                 std::abs(
                     color.greenComponent /
                         sum -
                     expectedColor.green /
                         expectedSum
-                ) <= 0.03 &&
+                ) <= kHaloHueRatioTolerance &&
                 std::abs(
                     color.blueComponent /
                         sum -
                     expectedColor.blue /
                         expectedSum
-                ) <= 0.03) {
+                ) <= kHaloHueRatioTolerance) {
               ++colorPixels;
             }
           }
@@ -9292,19 +9849,19 @@ void InputIndicatorGeometryTests::catStartleFurAndGlowStayInsideRotatingCanvas()
                           paintColorSum -
                       sourceColor.red /
                           sourceColorSum
-                  ) <= 0.03 &&
+                  ) <= kHaloHueRatioTolerance &&
                   std::abs(
                       color.greenComponent /
                           paintColorSum -
                       sourceColor.green /
                           sourceColorSum
-                  ) <= 0.03 &&
+                  ) <= kHaloHueRatioTolerance &&
                   std::abs(
                       color.blueComponent /
                           paintColorSum -
                       sourceColor.blue /
                           sourceColorSum
-                  ) <= 0.03) {
+                  ) <= kHaloHueRatioTolerance) {
                 ++haloColorPixels;
               }
             }

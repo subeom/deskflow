@@ -203,7 +203,8 @@ struct MacInputIndicatorRgb
 
 struct MacInputIndicatorColorModel
 {
-  MacInputIndicatorRgb body;
+  MacInputIndicatorRgb koreanBody;
+  MacInputIndicatorRgb latinBody;
   MacInputIndicatorRgb edge;
   MacInputIndicatorRgb latinGlyph;
   MacInputIndicatorRgb koreanGlyph;
@@ -227,10 +228,15 @@ constexpr MacInputIndicatorColorModel macInputIndicatorColorModel(
     InputIndicatorTone tone
 )
 {
-  constexpr MacInputIndicatorRgb body{
+  constexpr MacInputIndicatorRgb koreanBody{
       .red = 242.0 / 255.0,
       .green = 243.0 / 255.0,
       .blue = 245.0 / 255.0,
+  };
+  constexpr MacInputIndicatorRgb latinBody{
+      .red = 168.0 / 255.0,
+      .green = 186.0 / 255.0,
+      .blue = 199.0 / 255.0,
   };
   constexpr MacInputIndicatorRgb edge{
       .red = 68.0 / 255.0,
@@ -240,12 +246,13 @@ constexpr MacInputIndicatorColorModel macInputIndicatorColorModel(
   switch (tone) {
   case InputIndicatorTone::Light:
     return {
-        .body = body,
+        .koreanBody = koreanBody,
+        .latinBody = latinBody,
         .edge = edge,
         .latinGlyph = {
-            .red = 55.0 / 255.0,
-            .green = 78.0 / 255.0,
-            .blue = 105.0 / 255.0,
+            .red = 51.0 / 255.0,
+            .green = 74.0 / 255.0,
+            .blue = 100.0 / 255.0,
         },
         .koreanGlyph = {
             .red = 122.0 / 255.0,
@@ -255,12 +262,13 @@ constexpr MacInputIndicatorColorModel macInputIndicatorColorModel(
     };
   case InputIndicatorTone::Dark:
     return {
-        .body = body,
+        .koreanBody = koreanBody,
+        .latinBody = latinBody,
         .edge = edge,
         .latinGlyph = {
-            .red = 48.0 / 255.0,
-            .green = 66.0 / 255.0,
-            .blue = 90.0 / 255.0,
+            .red = 40.0 / 255.0,
+            .green = 59.0 / 255.0,
+            .blue = 82.0 / 255.0,
         },
         .koreanGlyph = {
             .red = 102.0 / 255.0,
@@ -270,12 +278,13 @@ constexpr MacInputIndicatorColorModel macInputIndicatorColorModel(
     };
   case InputIndicatorTone::Automatic:
     return {
-        .body = body,
+        .koreanBody = koreanBody,
+        .latinBody = latinBody,
         .edge = edge,
         .latinGlyph = {
-            .red = 74.0 / 255.0,
-            .green = 96.0 / 255.0,
-            .blue = 125.0 / 255.0,
+            .red = 48.0 / 255.0,
+            .green = 66.0 / 255.0,
+            .blue = 90.0 / 255.0,
         },
         .koreanGlyph = {
             .red = 136.0 / 255.0,
@@ -305,11 +314,10 @@ constexpr MacInputIndicatorRgb macInputIndicatorBodyColor(
 {
   const auto model =
       macInputIndicatorColorModel(tone);
-  return macInputIndicatorBlendColor(
-      model.body,
-      macInputIndicatorGlyphColor(source, tone),
-      0.08
-  );
+  return source ==
+              deskflow::input::InputIndicatorSource::Korean2Set
+      ? model.koreanBody
+      : model.latinBody;
 }
 
 struct MacInputIndicatorPanelStyle
