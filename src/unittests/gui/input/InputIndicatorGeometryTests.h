@@ -23,6 +23,8 @@ private Q_SLOTS:
   void followApproachUsesLastHeadingWhileIdle();
   void followApproachHeadingChangeTraversesIntermediatePositions();
   void followApproachFirstShowUsesBottomRight();
+  void followApproachSettlesOppositeCommandedTravel();
+  void followApproachPreservesStateAcrossLiveChanges();
   void followApproachCompanionSpeedRasterMatrix();
   void unknownOrInvalidGeometryHides_data();
   void unknownOrInvalidGeometryHides();

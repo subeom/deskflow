@@ -808,6 +808,44 @@ NSBitmapImageRep *companionGlyphBitmap(
   return bitmap;
 }
 
+NSBitmapImageRep *clippedGlyphBitmap(
+    NSBitmapImageRep *glyph,
+    NSBitmapImageRep *body
+)
+{
+  if (!glyph || !body ||
+      glyph.pixelsWide != body.pixelsWide ||
+      glyph.pixelsHigh != body.pixelsHigh) {
+    return nil;
+  }
+  NSBitmapImageRep *clipped =
+      [glyph copy];
+  if (!clipped) {
+    return nil;
+  }
+  for (NSInteger y = 0;
+       y < glyph.pixelsHigh;
+       ++y) {
+    for (NSInteger x = 0;
+         x < glyph.pixelsWide;
+         ++x) {
+      const NSColor *glyphColor =
+          [glyph colorAtX:x y:y];
+      const double clipAlpha =
+          [body colorAtX:x y:y]
+              .alphaComponent;
+      [clipped
+          setColor:[glyphColor
+              colorWithAlphaComponent:
+                  glyphColor.alphaComponent *
+                  clipAlpha]
+              atX:x
+                y:y];
+    }
+  }
+  return clipped;
+}
+
 struct CatPixelDifference
 {
   int tail = 0;
@@ -1368,12 +1406,22 @@ void InputIndicatorGeometryTests::followApproachUsesLastHeadingWhileIdle()
     }
     QVERIFY(idle);
     const auto beforeIdle = visibleOrigin();
+    const double beforeIdleHeading =
+        [[view valueForKey:
+              @"catBodyHeadingRadians"]
+            doubleValue];
     for (int tick = 0; tick < 5; ++tick) {
       QTest::qWait(75);
       QVERIFY(panel.move(options.position).visible);
       const auto idle = visibleOrigin();
       QCOMPARE(idle.x, beforeIdle.x);
       QCOMPARE(idle.y, beforeIdle.y);
+      QCOMPARE(
+          [[view valueForKey:
+                @"catBodyHeadingRadians"]
+              doubleValue],
+          beforeIdleHeading
+      );
     }
     panel.hide();
   }
@@ -1585,6 +1633,288 @@ void InputIndicatorGeometryTests::followApproachFirstShowUsesBottomRight()
         origin.y + style.canvasOffsetY -
         expected->y
     ) < 1.0);
+    panel.hide();
+  }
+}
+
+void InputIndicatorGeometryTests::followApproachSettlesOppositeCommandedTravel()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  const InputIndicatorPoint initial{
+      .x = fixedCursor.x,
+      .y = fixedCursor.y,
+  };
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  const struct
+  {
+    InputIndicatorPoint direction;
+    double heading;
+  } directions[] = {
+      {{.x = 1, .y = 0}, 0},
+      {{.x = -1, .y = 0}, M_PI},
+      {{.x = 0, .y = 1}, M_PI / 2},
+      {{.x = 0, .y = -1}, -M_PI / 2},
+      {
+          {.x = 1.0 / std::sqrt(2.0),
+           .y = 1.0 / std::sqrt(2.0)},
+          M_PI / 4,
+      },
+  };
+  for (const auto companion : companions) {
+    for (const auto travel : directions) {
+      InputIndicatorTarget target{
+          .point = initial,
+          .kind =
+              InputIndicatorTargetKind::Pointer,
+      };
+      MacInputIndicatorPanel panel(
+          {},
+          [&target] {
+            return target;
+          }
+      );
+      const MacInputIndicatorPanelOptions options{
+          .source = Source::LatinABC,
+          .companion = companion,
+          .position =
+              InputIndicatorPosition::
+                  CursorFollowApproach,
+          .followSpeedPercent = 200,
+      };
+      QVERIFY(panel.show(options));
+      NSView *view = catPanelView();
+      QVERIFY(view);
+      const auto style =
+          macInputIndicatorPanelStyle(companion);
+      const auto visibleCenter =
+          [view, style] {
+            const auto origin =
+                view.window.frame.origin;
+            return InputIndicatorPoint{
+                .x =
+                    origin.x +
+                    style.canvasOffsetX +
+                    style.width / 2.0,
+                .y =
+                    origin.y +
+                    style.canvasOffsetY +
+                    style.height / 2.0,
+            };
+          };
+      target.point = {
+          .x = initial.x +
+              travel.direction.x * 300,
+          .y = initial.y +
+              travel.direction.y * 300,
+      };
+      bool idle = false;
+      for (int tick = 0;
+           tick < 700;
+           ++tick) {
+        QTest::qWait(8);
+        const auto step =
+            panel.move(options.position);
+        QVERIFY(step.visible);
+        if (step.frameIntervalMilliseconds ==
+            75) {
+          idle = true;
+          break;
+        }
+      }
+      QVERIFY(idle);
+      const auto center =
+          visibleCenter();
+      const double crossAxis =
+          (center.x - target.point.x) *
+              -travel.direction.y +
+          (center.y - target.point.y) *
+              travel.direction.x;
+      const double behindDistance =
+          -((center.x - target.point.x) *
+                travel.direction.x +
+            (center.y - target.point.y) *
+                travel.direction.y);
+      const double support =
+          std::abs(travel.direction.x) *
+              style.width / 2.0 +
+          std::abs(travel.direction.y) *
+              style.height / 2.0;
+      const double heading =
+          [[view valueForKey:
+                @"catBodyHeadingRadians"]
+              doubleValue];
+      qInfo() << "follow-approach-command"
+              << static_cast<int>(companion)
+              << travel.direction.x
+              << travel.direction.y
+              << heading
+              << "centerOffset"
+              << center.x - target.point.x
+              << center.y - target.point.y
+              << "cross" << crossAxis
+              << "behind" << behindDistance;
+      QVERIFY(behindDistance > 0);
+      QVERIFY(std::abs(crossAxis) <= 3.0);
+      QVERIFY(std::abs(
+          behindDistance -
+          (support + style.cursorGap)
+      ) <= 3.0);
+      QVERIFY(std::abs(
+          inputIndicatorNormalizedAngle(
+              heading - travel.heading
+          )
+      ) <= 5.0 * M_PI / 180.0);
+      panel.hide();
+    }
+  }
+}
+
+void InputIndicatorGeometryTests::followApproachPreservesStateAcrossLiveChanges()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  for (const auto companion : companions) {
+    InputIndicatorTarget target{
+        .point = {
+            .x = fixedCursor.x,
+            .y = fixedCursor.y,
+        },
+        .kind =
+            InputIndicatorTargetKind::Pointer,
+    };
+    MacInputIndicatorPanel panel(
+        {},
+        [&target] {
+          return target;
+        }
+    );
+    MacInputIndicatorPanelOptions options{
+        .source = Source::LatinABC,
+        .companion = companion,
+        .position =
+            InputIndicatorPosition::
+                CursorFollowApproach,
+        .followSpeedPercent = 200,
+    };
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    const auto style =
+        macInputIndicatorPanelStyle(companion);
+    const auto visibleOrigin =
+        [view, style] {
+          const auto origin =
+              view.window.frame.origin;
+          return InputIndicatorPoint{
+              .x =
+                  origin.x +
+                  style.canvasOffsetX,
+              .y =
+                  origin.y +
+                  style.canvasOffsetY,
+          };
+        };
+    target.point.x += 300;
+    bool idle = false;
+    for (int tick = 0; tick < 400; ++tick) {
+      QTest::qWait(8);
+      const auto step =
+          panel.move(options.position);
+      QVERIFY(step.visible);
+      if (step.frameIntervalMilliseconds ==
+          75) {
+        idle = true;
+        break;
+      }
+    }
+    QVERIFY(idle);
+    const auto before = visibleOrigin();
+    const double heading =
+        [[view valueForKey:
+              @"catBodyHeadingRadians"]
+            doubleValue];
+
+    panel.setFollowSpeedPercent(50);
+    const auto afterSpeed =
+        visibleOrigin();
+    QCOMPARE(afterSpeed.x, before.x);
+    QCOMPARE(afterSpeed.y, before.y);
+    QCOMPARE(
+        [[view valueForKey:
+              @"catBodyHeadingRadians"]
+            doubleValue],
+        heading
+    );
+
+    options.source = Source::Korean2Set;
+    QVERIFY(panel.show(options));
+    const auto afterSource =
+        visibleOrigin();
+    QCOMPARE(afterSource.x, before.x);
+    QCOMPARE(afterSource.y, before.y);
+    QCOMPARE(
+        [[view valueForKey:
+              @"catBodyHeadingRadians"]
+            doubleValue],
+        heading
+    );
+
+    [[NSWorkspace sharedWorkspace].notificationCenter
+        postNotificationName:
+            NSWorkspaceActiveSpaceDidChangeNotification
+                  object:nil];
+    QCoreApplication::processEvents();
+    QVERIFY(panel.move(options.position).visible);
+    const auto afterSpace =
+        visibleOrigin();
+    QCOMPARE(afterSpace.x, before.x);
+    QCOMPARE(afterSpace.y, before.y);
+
+    const auto fixedStep =
+        panel.move(
+            InputIndicatorPosition::
+                CursorBottomRight
+        );
+    QVERIFY(fixedStep.visible);
+    const auto afterFixed =
+        visibleOrigin();
+    const double fixedMovement =
+        std::hypot(
+            afterFixed.x - before.x,
+            afterFixed.y - before.y
+        );
+    QVERIFY(
+        fixedMovement <=
+        2.88 + std::sqrt(2.0)
+    );
+    const auto followStep =
+        panel.move(options.position);
+    QVERIFY(followStep.visible);
+    const auto afterFollow =
+        visibleOrigin();
+    const double followMovement =
+        std::hypot(
+            afterFollow.x - afterFixed.x,
+            afterFollow.y - afterFixed.y
+        );
+    QVERIFY(
+        followMovement <=
+        2.88 + std::sqrt(2.0)
+    );
     panel.hide();
   }
 }
@@ -1818,6 +2148,15 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
               }
               return -1;
             }
+            NSBitmapImageRep *paintedGlyph =
+                clippedGlyphBitmap(
+                    glyph, body
+                );
+            if (!paintedGlyph) {
+              [body release];
+              [glyph release];
+              return -1;
+            }
             const auto rasterStyle =
                 macInputIndicatorPanelStyle(
                     companion
@@ -1851,7 +2190,8 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
                     [body colorAtX:x y:y]
                         .alphaComponent;
                 const double glyphAlpha =
-                    [glyph colorAtX:x y:y]
+                    [paintedGlyph
+                        colorAtX:x y:y]
                         .alphaComponent;
                 if (bodyAlpha > 0.02 &&
                     (x < left ||
@@ -1880,6 +2220,7 @@ void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
             }
             [body release];
             [glyph release];
+            [paintedGlyph release];
             return outside;
           };
 

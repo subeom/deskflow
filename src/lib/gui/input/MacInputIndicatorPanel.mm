@@ -1126,6 +1126,8 @@ struct MacInputIndicatorPanel::Impl
   bool previousTargetInitialized = false;
   InputIndicatorPoint follower;
   InputIndicatorPoint previousTarget;
+  InputIndicatorPoint previousCursor;
+  bool previousCursorInitialized = false;
   InputIndicatorPoint motion;
   InputIndicatorCompanionPursuitState pursuitState;
   double followSpeedMultiplier = 1;
@@ -1283,6 +1285,18 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       macInputIndicatorPanelStyle(m_impl->companion);
   const auto targetLocation =
       m_impl->targetLocation();
+  const InputIndicatorPoint cursorDelta{
+      .x =
+          targetLocation.point.x -
+          m_impl->previousCursor.x,
+      .y =
+          targetLocation.point.y -
+          m_impl->previousCursor.y,
+  };
+  const bool cursorMoved =
+      m_impl->previousCursorInitialized &&
+      distance(cursorDelta) >
+          kSettledDistance;
   std::optional<double> approachHeading;
   if (position ==
           InputIndicatorPosition::
@@ -1378,38 +1392,61 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   auto nextPursuitState = pursuit->state;
   if (!initializePursuit &&
       !reducedMotion &&
+      !pursuit->reached &&
       pursuit->distanceMoved >
           kSettledDistance &&
       hadPursuitPosition) {
+    const InputIndicatorPoint
+        previousPursuitCenter{
+            .x = previousPursuitPosition.x +
+                style.width / 2.0,
+            .y = previousPursuitPosition.y +
+                style.height / 2.0,
+        };
     const InputIndicatorPoint approach{
         .x =
             targetLocation.point.x -
-            previousPursuitPosition.x,
+            previousPursuitCenter.x,
         .y =
             targetLocation.point.y -
-            previousPursuitPosition.y,
+            previousPursuitCenter.y,
     };
     const double approachDistance =
         distance(approach);
     if (approachDistance >
             kSettledDistance &&
         std::isfinite(approachDistance)) {
-      const double heading =
-          std::atan2(
-              approach.y, approach.x
-          );
-      if (!m_impl->approachHeadingValid ||
-          std::abs(inputIndicatorNormalizedAngle(
-              heading -
-              m_impl->approachHeadingRadians
-          )) > 0.01) {
+      std::optional<double> heading;
+      if (cursorMoved) {
+        heading = std::atan2(
+            cursorDelta.y,
+            cursorDelta.x
+        );
+      } else if (
+          !m_impl->approachHeadingValid) {
+        heading = std::atan2(
+            approach.y,
+            approach.x
+        );
+      }
+      if (heading &&
+          (!m_impl->approachHeadingValid ||
+           std::abs(
+               inputIndicatorNormalizedAngle(
+                   *heading -
+                   m_impl->approachHeadingRadians
+               )
+           ) > 0.01)) {
         m_impl->approachHeadingRadians =
-            heading;
+            *heading;
         m_impl->approachHeadingValid = true;
       }
-      nextPursuitState.headingRadians =
-          m_impl->approachHeadingRadians;
     }
+  }
+  if (!initializePursuit &&
+      m_impl->approachHeadingValid) {
+    nextPursuitState.headingRadians =
+        m_impl->approachHeadingRadians;
   }
   m_impl->pursuitState =
       nextPursuitState;
@@ -1488,6 +1525,9 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   m_impl->previousTarget = *target;
   m_impl->previousTargetTime = now;
   m_impl->previousTargetInitialized = true;
+  m_impl->previousCursor =
+      targetLocation.point;
+  m_impl->previousCursorInitialized = true;
 
   if (reducedMotion ||
       distance(m_impl->motion) <= kSettledDistance) {
