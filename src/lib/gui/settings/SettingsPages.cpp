@@ -1051,6 +1051,7 @@ SettingsPage *SettingsPages::buildKeyboard()
           {tx(QT_TRANSLATE_NOOP("SettingsPages", "Top right")), QStringLiteral("cursorTopRight")},
           {tx(QT_TRANSLATE_NOOP("SettingsPages", "Bottom left")), QStringLiteral("cursorBottomLeft")},
           {tx(QT_TRANSLATE_NOOP("SettingsPages", "Top left")), QStringLiteral("cursorTopLeft")},
+          {tx(QT_TRANSLATE_NOOP("SettingsPages", "Follow approach")), QStringLiteral("cursorFollowApproach")},
       }
   );
   indicatorPosition->setObjectName(QStringLiteral("comboInputIndicatorPosition"));

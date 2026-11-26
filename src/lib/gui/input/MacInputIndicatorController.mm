@@ -31,6 +31,11 @@ InputIndicatorPosition positionFromSetting(const QString &value)
   if (value == QStringLiteral("cursorTopLeft")) {
     return InputIndicatorPosition::CursorTopLeft;
   }
+  if (value ==
+      QStringLiteral("cursorFollowApproach")) {
+    return InputIndicatorPosition::
+        CursorFollowApproach;
+  }
   return InputIndicatorPosition::CursorBottomRight;
 }
 
@@ -156,6 +161,16 @@ MacInputIndicatorController::~MacInputIndicatorController()
 void MacInputIndicatorController::settingsChanged(const QString &key)
 {
   if (key ==
+      Settings::Gui::InputIndicatorPosition) {
+    m_position = positionFromSetting(
+        Settings::value(key).toString()
+    );
+    if (m_panelConfigured) {
+      movePointerBadge();
+    }
+    return;
+  }
+  if (key ==
       Settings::Gui::InputIndicatorSpeedPercent) {
     m_followSpeedPercent =
         inputIndicatorFollowSpeedPercent(
@@ -170,7 +185,6 @@ void MacInputIndicatorController::settingsChanged(const QString &key)
   }
   if (key == Settings::Gui::InputIndicatorEnabled ||
       key == Settings::Gui::InputIndicatorCompanion ||
-      key == Settings::Gui::InputIndicatorPosition ||
       key == Settings::Gui::InputIndicatorOpacityPercent ||
       key == Settings::Gui::InputIndicatorTone) {
     m_panelConfigured = false;

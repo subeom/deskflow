@@ -19,7 +19,8 @@ enum class InputIndicatorPosition
   CursorBottomRight,
   CursorTopRight,
   CursorBottomLeft,
-  CursorTopLeft
+  CursorTopLeft,
+  CursorFollowApproach
 };
 
 struct InputIndicatorPoint
@@ -233,7 +234,9 @@ struct InputIndicatorTailPose
 
 std::optional<InputIndicatorPoint> positionInputIndicator(
     InputIndicatorPoint cursor, InputIndicatorSize badge, const std::vector<InputIndicatorRect> &screens,
-    InputIndicatorPosition position, double gap, double margin
+    InputIndicatorPosition position, double gap, double margin,
+    std::optional<double> approachHeadingRadians =
+        std::nullopt
 );
 
 std::optional<InputIndicatorPoint> followInputIndicator(

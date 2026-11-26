@@ -185,7 +185,8 @@ bool validPursuitState(
 
 std::optional<InputIndicatorPoint> positionInputIndicator(
     InputIndicatorPoint cursor, InputIndicatorSize badge, const std::vector<InputIndicatorRect> &screens,
-    InputIndicatorPosition position, double gap, double margin
+    InputIndicatorPosition position, double gap, double margin,
+    std::optional<double> approachHeadingRadians
 )
 {
   if (!std::isfinite(cursor.x) || !std::isfinite(cursor.y) || !validSize(badge) || !std::isfinite(gap) ||
@@ -213,12 +214,58 @@ std::optional<InputIndicatorPoint> positionInputIndicator(
   }
 
   InputIndicatorPoint result;
-  const bool onLeft = position == InputIndicatorPosition::CursorBottomLeft ||
-                      position == InputIndicatorPosition::CursorTopLeft;
-  const bool above = position == InputIndicatorPosition::CursorTopLeft ||
-                     position == InputIndicatorPosition::CursorTopRight;
-  result.x = cursor.x + (onLeft ? -badge.width - gap : gap);
-  result.y = cursor.y + (above ? gap : -badge.height - gap);
+  if (position ==
+          InputIndicatorPosition::
+              CursorFollowApproach &&
+      approachHeadingRadians &&
+      std::isfinite(
+          *approachHeadingRadians
+      )) {
+    const InputIndicatorPoint direction{
+        .x = std::cos(
+            *approachHeadingRadians
+        ),
+        .y = std::sin(
+            *approachHeadingRadians
+        ),
+    };
+    const double support =
+        std::abs(direction.x) *
+            badge.width / 2.0 +
+        std::abs(direction.y) *
+            badge.height / 2.0;
+    const InputIndicatorPoint center{
+        .x = cursor.x -
+            direction.x * (support + gap),
+        .y = cursor.y -
+            direction.y * (support + gap),
+    };
+    result = {
+        .x = center.x - badge.width / 2.0,
+        .y = center.y - badge.height / 2.0,
+    };
+  } else {
+    const bool onLeft =
+        position ==
+            InputIndicatorPosition::
+                CursorBottomLeft ||
+        position ==
+            InputIndicatorPosition::
+                CursorTopLeft;
+    const bool above =
+        position ==
+            InputIndicatorPosition::
+                CursorTopLeft ||
+        position ==
+            InputIndicatorPosition::
+                CursorTopRight;
+    result.x =
+        cursor.x +
+        (onLeft ? -badge.width - gap : gap);
+    result.y =
+        cursor.y +
+        (above ? gap : -badge.height - gap);
+  }
   result.x = std::clamp(result.x, minimumX, maximumX);
   result.y = std::clamp(result.y, minimumY, maximumY);
   return result;

@@ -1129,6 +1129,8 @@ struct MacInputIndicatorPanel::Impl
   InputIndicatorPoint motion;
   InputIndicatorCompanionPursuitState pursuitState;
   double followSpeedMultiplier = 1;
+  bool approachHeadingValid = false;
+  double approachHeadingRadians = 0;
   bool facesRight = true;
   bool facingTargetRight = true;
   bool facingTurning = false;
@@ -1281,13 +1283,25 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       macInputIndicatorPanelStyle(m_impl->companion);
   const auto targetLocation =
       m_impl->targetLocation();
+  std::optional<double> approachHeading;
+  if (position ==
+          InputIndicatorPosition::
+              CursorFollowApproach &&
+      m_impl->approachHeadingValid &&
+      std::isfinite(
+          m_impl->approachHeadingRadians
+      )) {
+    approachHeading =
+        m_impl->approachHeadingRadians;
+  }
   const auto target = positionInputIndicator(
       targetLocation.point,
       {.width = style.width, .height = style.height},
       screenRects(),
       position,
       style.cursorGap,
-      style.screenMargin
+      style.screenMargin,
+      approachHeading
   );
   if (!target) {
     hide();
@@ -1338,6 +1352,12 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
         m_impl->follower;
     m_impl->pursuitState.initialized = true;
   }
+  const bool hadPursuitPosition =
+        m_impl->pursuitState.initialized;
+  const auto previousPursuitPosition =
+        m_impl->pursuitState.position;
+  const bool initializePursuit =
+      !m_impl->pursuitState.initialized;
   const auto pursuit =
       inputIndicatorCompanionPursuitAdvance(
           m_impl->pursuitState,
@@ -1347,7 +1367,7 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
           },
           pointerSpeed,
           elapsedMilliseconds,
-          !m_impl->pursuitState.initialized,
+          initializePursuit,
           reducedMotion,
           m_impl->followSpeedMultiplier
       );
@@ -1355,7 +1375,44 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
     hide();
     return {};
   }
-  m_impl->pursuitState = pursuit->state;
+  auto nextPursuitState = pursuit->state;
+  if (!initializePursuit &&
+      !reducedMotion &&
+      pursuit->distanceMoved >
+          kSettledDistance &&
+      hadPursuitPosition) {
+    const InputIndicatorPoint approach{
+        .x =
+            targetLocation.point.x -
+            previousPursuitPosition.x,
+        .y =
+            targetLocation.point.y -
+            previousPursuitPosition.y,
+    };
+    const double approachDistance =
+        distance(approach);
+    if (approachDistance >
+            kSettledDistance &&
+        std::isfinite(approachDistance)) {
+      const double heading =
+          std::atan2(
+              approach.y, approach.x
+          );
+      if (!m_impl->approachHeadingValid ||
+          std::abs(inputIndicatorNormalizedAngle(
+              heading -
+              m_impl->approachHeadingRadians
+          )) > 0.01) {
+        m_impl->approachHeadingRadians =
+            heading;
+        m_impl->approachHeadingValid = true;
+      }
+      nextPursuitState.headingRadians =
+          m_impl->approachHeadingRadians;
+    }
+  }
+  m_impl->pursuitState =
+      nextPursuitState;
   m_impl->follower =
       m_impl->pursuitState.position;
   m_impl->followerInitialized = true;

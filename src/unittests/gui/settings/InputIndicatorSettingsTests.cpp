@@ -88,6 +88,17 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
       QStringLiteral("cat")
   );
   QCOMPARE(position->currentData().toString(), QStringLiteral("cursorBottomRight"));
+  const auto followApproach =
+      position->findData(
+          QStringLiteral("cursorFollowApproach")
+      );
+  QVERIFY(followApproach >= 0);
+  QCOMPARE(
+      position->itemText(followApproach),
+      QCoreApplication::translate(
+          "SettingsPages", "Follow approach"
+      )
+  );
   QCOMPARE(opacity->value(), 65);
   QCOMPARE(speed->minimum(), 50);
   QCOMPARE(speed->maximum(), 200);
@@ -148,6 +159,20 @@ void InputIndicatorSettingsTests::dependencyControlsFollowTheToggle()
   QVERIFY(opacity->isEnabled());
   QVERIFY(speed->isEnabled());
   QVERIFY(tone->isEnabled());
+
+  const auto followApproach =
+      position->findData(
+          QStringLiteral("cursorFollowApproach")
+      );
+  QVERIFY(followApproach >= 0);
+  position->setCurrentIndex(followApproach);
+  Q_EMIT position->activated(followApproach);
+  QCOMPARE(
+      Settings::value(
+          Settings::Gui::InputIndicatorPosition
+      ).toString(),
+      QStringLiteral("cursorFollowApproach")
+  );
 
   const auto dog = companion->findData(QStringLiteral("dog"));
   QVERIFY(dog >= 0);

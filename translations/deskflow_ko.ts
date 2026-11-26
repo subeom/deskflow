@@ -2904,6 +2904,10 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>왼쪽 위</translation>
     </message>
     <message>
+        <source>Follow approach</source>
+        <translation>접근 방향 따라가기</translation>
+    </message>
+    <message>
         <source>Display time</source>
         <translation type="vanished">표시 시간</translation>
     </message>

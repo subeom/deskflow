@@ -326,6 +326,17 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
       QStringLiteral("cat")
   );
   QCOMPARE(position->currentData().toString(), QStringLiteral("cursorBottomRight"));
+  const auto followApproach =
+      position->findData(
+          QStringLiteral("cursorFollowApproach")
+      );
+  QVERIFY(followApproach >= 0);
+  QCOMPARE(
+      position->itemText(followApproach),
+      QCoreApplication::translate(
+          "SettingsPages", "Follow approach"
+      )
+  );
   QCOMPARE(opacity->value(), 65);
   QCOMPARE(speed->minimum(), 50);
   QCOMPARE(speed->maximum(), 200);
@@ -368,6 +379,13 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
   QVERIFY(speed->isEnabled());
   choose(companion, QStringLiteral("cat"));
   QVERIFY(speed->isEnabled());
+  choose(position, QStringLiteral("cursorFollowApproach"));
+  QCOMPARE(
+      Settings::value(
+          Settings::Gui::InputIndicatorPosition
+      ).toString(),
+      QStringLiteral("cursorFollowApproach")
+  );
   choose(position, QStringLiteral("cursorTopLeft"));
   opacity->setValue(90);
   speed->setValue(150);

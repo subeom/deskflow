@@ -155,6 +155,7 @@ struct PersistentControllerHarness
   int pointerMonitorStarts = 0;
   int pointerMonitorStops = 0;
   std::vector<int> speedUpdates;
+  std::vector<InputIndicatorPosition> movePositions;
   std::function<void()> pointerMoved;
 
   MacInputIndicatorController::Dependencies dependencies()
@@ -170,7 +171,9 @@ struct PersistentControllerHarness
           presentations.push_back(options);
           return showResult;
         };
-    result.panelMove = [this](InputIndicatorPosition) {
+    result.panelMove =
+        [this](InputIndicatorPosition position) {
+      movePositions.push_back(position);
       ++moves;
       return MacInputIndicatorPanelMoveResult{
           .visible = moveResult,
@@ -763,6 +766,67 @@ void InputIndicatorPolicyTests::persistentFollowSpeedUpdatesWithoutReconfigure()
         invalid.second
     );
   }
+}
+
+void InputIndicatorPolicyTests::persistentPositionModeUpdatesWithoutPanelReconfigure()
+{
+  const auto original =
+      Settings::value(
+          Settings::Gui::InputIndicatorPosition
+      );
+  const auto restore = qScopeGuard([&original] {
+    Settings::setValue(
+        Settings::Gui::InputIndicatorPosition,
+        original
+    );
+  });
+  Settings::setValue(
+      Settings::Gui::InputIndicatorPosition,
+      QStringLiteral("cursorFollowApproach")
+  );
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(
+      nullptr, harness.dependencies()
+  );
+  MacInputIndicatorControllerTestAccess::arm(controller);
+  QCOMPARE(
+      harness.presentations.back().position,
+      InputIndicatorPosition::
+          CursorFollowApproach
+  );
+
+  const auto presentations =
+      harness.presentations.size();
+  const auto hides = harness.hides;
+  const auto moves = harness.moves;
+  Settings::setValue(
+      Settings::Gui::InputIndicatorPosition,
+      QStringLiteral("cursorTopLeft")
+  );
+  QCOMPARE(
+      harness.presentations.size(), presentations
+  );
+  QCOMPARE(harness.hides, hides);
+  QCOMPARE(harness.moves, moves + 1);
+  QCOMPARE(
+      harness.movePositions.back(),
+      InputIndicatorPosition::CursorTopLeft
+  );
+
+  Settings::setValue(
+      Settings::Gui::InputIndicatorPosition,
+      QStringLiteral("cursorFollowApproach")
+  );
+  QCOMPARE(
+      harness.presentations.size(), presentations
+  );
+  QCOMPARE(harness.hides, hides);
+  QCOMPARE(harness.moves, moves + 2);
+  QCOMPARE(
+      harness.movePositions.back(),
+      InputIndicatorPosition::
+          CursorFollowApproach
+  );
 }
 
 void InputIndicatorPolicyTests::persistentCompanionChoiceUpdatesPanel()

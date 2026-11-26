@@ -17,6 +17,13 @@ private Q_SLOTS:
   void choosesScreenContainingCursor();
   void everyPositionIsPointerRelative_data();
   void everyPositionIsPointerRelative();
+  void followApproachUsesExactRectangleSupportAtEightHeadings();
+  void followApproachFallbackAndFixedModesStayCompatible();
+  void followApproachClampsEveryScreenEdgeAndCorner();
+  void followApproachUsesLastHeadingWhileIdle();
+  void followApproachHeadingChangeTraversesIntermediatePositions();
+  void followApproachFirstShowUsesBottomRight();
+  void followApproachCompanionSpeedRasterMatrix();
   void unknownOrInvalidGeometryHides_data();
   void unknownOrInvalidGeometryHides();
   void compactPanelStyleUsesApprovedMetrics();

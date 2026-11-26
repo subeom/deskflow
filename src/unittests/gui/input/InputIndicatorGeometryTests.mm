@@ -1011,6 +1011,983 @@ void InputIndicatorGeometryTests::everyPositionIsPointerRelative()
   QCOMPARE(result->y, y);
 }
 
+void InputIndicatorGeometryTests::followApproachUsesExactRectangleSupportAtEightHeadings()
+{
+  const InputIndicatorPoint cursor{
+      .x = 500,
+      .y = 500,
+  };
+  const InputIndicatorSize badge{
+      .width = 33,
+      .height = 31,
+  };
+  const double headings[] = {
+      0,
+      M_PI / 4,
+      M_PI / 2,
+      3 * M_PI / 4,
+      M_PI,
+      5 * M_PI / 4,
+      3 * M_PI / 2,
+      7 * M_PI / 4,
+  };
+  for (const double heading : headings) {
+    const auto result =
+        positionInputIndicator(
+            cursor,
+            badge,
+            oneScreen(),
+            InputIndicatorPosition::
+                CursorFollowApproach,
+            7,
+            7,
+            heading
+        );
+    QVERIFY(result);
+    const InputIndicatorPoint direction{
+        .x = std::cos(heading),
+        .y = std::sin(heading),
+    };
+    const InputIndicatorPoint center{
+        .x = result->x + badge.width / 2.0,
+        .y = result->y + badge.height / 2.0,
+    };
+    const double support =
+        std::abs(direction.x) *
+            badge.width / 2.0 +
+        std::abs(direction.y) *
+            badge.height / 2.0;
+    const InputIndicatorPoint supportPoint{
+        .x = center.x +
+            direction.x * support,
+        .y = center.y +
+            direction.y * support,
+    };
+    const double gap =
+        std::hypot(
+            cursor.x - supportPoint.x,
+            cursor.y - supportPoint.y
+        );
+    QVERIFY(std::abs(gap - 7.0) < 1e-9);
+    QVERIFY(
+        (center.x - cursor.x) *
+                direction.x +
+            (center.y - cursor.y) *
+                direction.y <
+        0
+    );
+  }
+}
+
+void InputIndicatorGeometryTests::followApproachFallbackAndFixedModesStayCompatible()
+{
+  const InputIndicatorPoint cursor{
+      .x = 400,
+      .y = 500,
+  };
+  const InputIndicatorSize badge{
+      .width = 33,
+      .height = 31,
+  };
+  const InputIndicatorPosition fixedModes[] = {
+      InputIndicatorPosition::CursorBottomRight,
+      InputIndicatorPosition::CursorTopRight,
+      InputIndicatorPosition::CursorBottomLeft,
+      InputIndicatorPosition::CursorTopLeft,
+  };
+  for (const auto mode : fixedModes) {
+    const auto original =
+        positionInputIndicator(
+            cursor, badge, oneScreen(),
+            mode, 7, 7
+        );
+    const auto withHeading =
+        positionInputIndicator(
+            cursor, badge, oneScreen(),
+            mode, 7, 7, 0.37
+        );
+    QVERIFY(original);
+    QVERIFY(withHeading);
+    QCOMPARE(original->x, withHeading->x);
+    QCOMPARE(original->y, withHeading->y);
+  }
+
+  const auto bottomRight =
+      positionInputIndicator(
+          cursor,
+          badge,
+          oneScreen(),
+          InputIndicatorPosition::
+              CursorBottomRight,
+          7,
+          7
+      );
+  QVERIFY(bottomRight);
+  const std::optional<double> invalidHeadings[] = {
+      std::nullopt,
+      std::numeric_limits<double>::quiet_NaN(),
+      std::numeric_limits<double>::infinity(),
+  };
+  for (const auto heading : invalidHeadings) {
+    const auto fallback =
+        positionInputIndicator(
+            cursor,
+            badge,
+            oneScreen(),
+            InputIndicatorPosition::
+                CursorFollowApproach,
+            7,
+            7,
+            heading
+        );
+    QVERIFY(fallback);
+    QCOMPARE(fallback->x, bottomRight->x);
+    QCOMPARE(fallback->y, bottomRight->y);
+  }
+}
+
+void InputIndicatorGeometryTests::followApproachClampsEveryScreenEdgeAndCorner()
+{
+  const InputIndicatorSize badge{
+      .width = 33,
+      .height = 31,
+  };
+  const std::vector<InputIndicatorRect> screens{{
+      .x = 0,
+      .y = 0,
+      .width = 100,
+      .height = 100,
+  }};
+  const struct
+  {
+    InputIndicatorPoint cursor;
+    double heading;
+    double x;
+    double y;
+  } cases[] = {
+      {{.x = 7, .y = 50}, 0, 7, 34.5},
+      {{.x = 93, .y = 50},
+       M_PI, 60, 34.5},
+      {{.x = 50, .y = 7},
+       M_PI / 2, 33.5, 7},
+      {{.x = 50, .y = 93},
+       3 * M_PI / 2, 33.5, 62},
+      {{.x = 7, .y = 7},
+       M_PI / 4, 7, 7},
+      {{.x = 93, .y = 7},
+       3 * M_PI / 4, 60, 7},
+      {{.x = 93, .y = 93},
+       5 * M_PI / 4, 60, 62},
+      {{.x = 7, .y = 93},
+       7 * M_PI / 4, 7, 62},
+  };
+  for (const auto &testCase : cases) {
+    const auto result =
+        positionInputIndicator(
+            testCase.cursor,
+            badge,
+            screens,
+            InputIndicatorPosition::
+                CursorFollowApproach,
+            7,
+            7,
+            testCase.heading
+        );
+    QVERIFY(result);
+    QCOMPARE(
+        result->x,
+        testCase.x
+    );
+    QCOMPARE(
+        result->y,
+        testCase.y
+    );
+  }
+
+  const std::vector<InputIndicatorRect> splitScreens{
+      {.x = -1280,
+       .y = 0,
+       .width = 1280,
+       .height = 800},
+      {.x = 0,
+       .y = 0,
+       .width = 1920,
+       .height = 1080},
+  };
+  const auto leftScreen =
+      positionInputIndicator(
+          {.x = -5, .y = 400},
+          badge,
+          splitScreens,
+          InputIndicatorPosition::
+              CursorFollowApproach,
+          7,
+          7,
+          0
+      );
+  QVERIFY(leftScreen);
+  QVERIFY(leftScreen->x < 0);
+  const auto oppositeSide =
+      positionInputIndicator(
+          {.x = -5, .y = 400},
+          badge,
+          splitScreens,
+          InputIndicatorPosition::
+              CursorFollowApproach,
+          7,
+          7,
+          M_PI
+      );
+  QVERIFY(oppositeSide);
+  QVERIFY(oppositeSide->x + badge.width <= 0);
+  QVERIFY(!positionInputIndicator(
+      {.x = -1281, .y = 400},
+      badge,
+      splitScreens,
+      InputIndicatorPosition::
+          CursorFollowApproach,
+      7,
+      7,
+      0
+  ));
+}
+
+void InputIndicatorGeometryTests::followApproachUsesLastHeadingWhileIdle()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  NSRect containingScreen;
+  bool foundScreen = false;
+  for (NSScreen *screen in NSScreen.screens) {
+    if (NSPointInRect(fixedCursor, screen.frame)) {
+      containingScreen = screen.frame;
+      foundScreen = true;
+      break;
+    }
+  }
+  QVERIFY(foundScreen);
+  const std::vector<InputIndicatorRect> screens{{
+      .x = containingScreen.origin.x,
+      .y = containingScreen.origin.y,
+      .width = containingScreen.size.width,
+      .height = containingScreen.size.height,
+  }};
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  for (const auto companion : companions) {
+    InputIndicatorTarget target{
+        .point = {
+            .x = fixedCursor.x,
+            .y = fixedCursor.y,
+        },
+        .kind =
+            InputIndicatorTargetKind::Pointer,
+    };
+    MacInputIndicatorPanel panel(
+        {},
+        [&target] {
+          return target;
+        }
+    );
+    MacInputIndicatorPanelOptions options{
+        .source = Source::LatinABC,
+        .companion = companion,
+        .position =
+            InputIndicatorPosition::
+                CursorFollowApproach,
+    };
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    const auto style =
+        macInputIndicatorPanelStyle(companion);
+    const auto visibleOrigin =
+        [view, style] {
+          const auto origin =
+              view.window.frame.origin;
+          return InputIndicatorPoint{
+              .x =
+                  origin.x +
+                  style.canvasOffsetX,
+              .y =
+                  origin.y +
+                  style.canvasOffsetY,
+          };
+        };
+    target.point.x +=
+        target.point.x < 1000 ? 300 : -300;
+    bool reached = false;
+    for (int tick = 0; tick < 400; ++tick) {
+      QTest::qWait(8);
+      const auto step =
+          panel.move(options.position);
+      QVERIFY(step.visible);
+      const auto current = visibleOrigin();
+      const double heading =
+          [[view valueForKey:
+                @"catBodyHeadingRadians"]
+              doubleValue];
+      const auto expected =
+          positionInputIndicator(
+              target.point,
+              {
+                  .width = style.width,
+                  .height = style.height,
+              },
+              screens,
+              options.position,
+              style.cursorGap,
+              style.screenMargin,
+              heading
+          );
+      QVERIFY(expected);
+      if (std::abs(current.x - expected->x) <
+              1.0 &&
+          std::abs(current.y - expected->y) <
+              1.0) {
+        reached = true;
+        break;
+      }
+    }
+    QVERIFY(reached);
+    bool idle = false;
+    for (int tick = 0; tick < 10; ++tick) {
+      QTest::qWait(100);
+      const auto step =
+          panel.move(options.position);
+      QVERIFY(step.visible);
+      if (step.frameIntervalMilliseconds == 75) {
+        idle = true;
+        break;
+      }
+    }
+    QVERIFY(idle);
+    const auto beforeIdle = visibleOrigin();
+    for (int tick = 0; tick < 5; ++tick) {
+      QTest::qWait(75);
+      QVERIFY(panel.move(options.position).visible);
+      const auto idle = visibleOrigin();
+      QCOMPARE(idle.x, beforeIdle.x);
+      QCOMPARE(idle.y, beforeIdle.y);
+    }
+    panel.hide();
+  }
+}
+
+void InputIndicatorGeometryTests::followApproachHeadingChangeTraversesIntermediatePositions()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  NSRect containingScreen;
+  bool foundScreen = false;
+  for (NSScreen *screen in NSScreen.screens) {
+    if (NSPointInRect(fixedCursor, screen.frame)) {
+      containingScreen = screen.frame;
+      foundScreen = true;
+      break;
+    }
+  }
+  QVERIFY(foundScreen);
+  const std::vector<InputIndicatorRect> screens{{
+      .x = containingScreen.origin.x,
+      .y = containingScreen.origin.y,
+      .width = containingScreen.size.width,
+      .height = containingScreen.size.height,
+  }};
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  for (const auto companion : companions) {
+    const InputIndicatorPoint initial{
+        .x = fixedCursor.x,
+        .y = fixedCursor.y,
+    };
+    InputIndicatorTarget target{
+        .point = initial,
+        .kind =
+            InputIndicatorTargetKind::Pointer,
+    };
+    MacInputIndicatorPanel panel(
+        {},
+        [&target] {
+          return target;
+        }
+    );
+    const MacInputIndicatorPanelOptions options{
+        .source = Source::LatinABC,
+        .companion = companion,
+        .position =
+            InputIndicatorPosition::
+                CursorFollowApproach,
+        .followSpeedPercent = 50,
+    };
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    const auto style =
+        macInputIndicatorPanelStyle(companion);
+    const auto visibleOrigin =
+        [view, style] {
+          const auto origin =
+              view.window.frame.origin;
+          return InputIndicatorPoint{
+              .x =
+                  origin.x +
+                  style.canvasOffsetX,
+              .y =
+                  origin.y +
+                  style.canvasOffsetY,
+          };
+        };
+    target.point.x =
+        initial.x < 1000
+            ? initial.x + 300
+            : initial.x - 300;
+    for (int tick = 0; tick < 12; ++tick) {
+      QTest::qWait(8);
+      QVERIFY(panel.move(options.position).visible);
+    }
+    target.point.x =
+        initial.x < 1000
+            ? initial.x - 300
+            : initial.x + 300;
+    std::vector<InputIndicatorPoint> positions{
+        visibleOrigin()
+    };
+    bool reached = false;
+    for (int tick = 0; tick < 700; ++tick) {
+      QTest::qWait(8);
+      const auto step =
+          panel.move(options.position);
+      QVERIFY(step.visible);
+      const auto current = visibleOrigin();
+      const auto previous = positions.back();
+      const double movement =
+          std::hypot(
+              current.x - previous.x,
+              current.y - previous.y
+          );
+      QVERIFY(
+          movement <=
+          2.88 + std::sqrt(2.0)
+      );
+      positions.push_back(current);
+      const double heading =
+          [[view valueForKey:
+                @"catBodyHeadingRadians"]
+              doubleValue];
+      const auto expected =
+          positionInputIndicator(
+              target.point,
+              {
+                  .width = style.width,
+                  .height = style.height,
+              },
+              screens,
+              options.position,
+              style.cursorGap,
+              style.screenMargin,
+              heading
+          );
+      QVERIFY(expected);
+      if (std::abs(current.x - expected->x) <
+              1.0 &&
+          std::abs(current.y - expected->y) <
+              1.0) {
+        reached = true;
+        break;
+      }
+    }
+    QVERIFY(reached);
+    QVERIFY(positions.size() > 20);
+    panel.hide();
+  }
+}
+
+void InputIndicatorGeometryTests::followApproachFirstShowUsesBottomRight()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  NSRect screenFrame =
+      NSScreen.screens.firstObject.frame;
+  const std::vector<InputIndicatorRect> screens{{
+      .x = screenFrame.origin.x,
+      .y = screenFrame.origin.y,
+      .width = screenFrame.size.width,
+      .height = screenFrame.size.height,
+  }};
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  for (const auto companion : companions) {
+    MacInputIndicatorPanel panel(
+        {},
+        [fixedCursor] {
+          return InputIndicatorTarget{
+              .point = {
+                  .x = fixedCursor.x,
+                  .y = fixedCursor.y,
+              },
+              .kind =
+                  InputIndicatorTargetKind::Pointer,
+          };
+        }
+    );
+    MacInputIndicatorPanelOptions options{
+        .source = Source::LatinABC,
+        .companion = companion,
+        .position =
+            InputIndicatorPosition::
+                CursorFollowApproach,
+    };
+    const auto style =
+        macInputIndicatorPanelStyle(companion);
+    const auto expected =
+        positionInputIndicator(
+            {
+                .x = fixedCursor.x,
+                .y = fixedCursor.y,
+            },
+            {
+                .width = style.width,
+                .height = style.height,
+            },
+            screens,
+            InputIndicatorPosition::
+                CursorBottomRight,
+            style.cursorGap,
+            style.screenMargin
+        );
+    QVERIFY(expected);
+    QVERIFY(panel.show(options));
+    NSView *view = catPanelView();
+    QVERIFY(view);
+    const auto origin =
+        view.window.frame.origin;
+    QVERIFY(std::abs(
+        origin.x + style.canvasOffsetX -
+        expected->x
+    ) < 1.0);
+    QVERIFY(std::abs(
+        origin.y + style.canvasOffsetY -
+        expected->y
+    ) < 1.0);
+    panel.hide();
+  }
+}
+
+void InputIndicatorGeometryTests::followApproachCompanionSpeedRasterMatrix()
+{
+  using Source =
+      deskflow::input::InputIndicatorSource;
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  const struct
+  {
+    int percent;
+    double movementCap;
+  } speeds[] = {
+      {.percent = 50, .movementCap = 2.88},
+      {.percent = 100, .movementCap = 5.76},
+      {.percent = 200, .movementCap = 11.52},
+  };
+  int rasterCases = 0;
+  int outsidePixels = 0;
+  for (const auto companion : companions) {
+    for (const auto speed : speeds) {
+      InputIndicatorTarget target{
+          .point = {
+              .x = fixedCursor.x,
+              .y = fixedCursor.y,
+          },
+          .kind =
+              InputIndicatorTargetKind::Pointer,
+      };
+      MacInputIndicatorPanel panel(
+          {},
+          [&target] {
+            return target;
+          }
+      );
+      MacInputIndicatorPanelOptions options{
+          .source = Source::LatinABC,
+          .companion = companion,
+          .position =
+              InputIndicatorPosition::
+                  CursorFollowApproach,
+          .followSpeedPercent = speed.percent,
+      };
+      QVERIFY(panel.show(options));
+      NSView *view = catPanelView();
+      QVERIFY(view);
+      const auto style =
+          macInputIndicatorPanelStyle(companion);
+      NSRect containingScreen;
+      bool foundScreen = false;
+      for (NSScreen *screen in
+           NSScreen.screens) {
+        if (NSPointInRect(
+                fixedCursor,
+                screen.frame
+            )) {
+          containingScreen = screen.frame;
+          foundScreen = true;
+          break;
+        }
+      }
+      QVERIFY(foundScreen);
+      const std::vector<InputIndicatorRect> screens{{
+          .x = containingScreen.origin.x,
+          .y = containingScreen.origin.y,
+          .width = containingScreen.size.width,
+          .height = containingScreen.size.height,
+      }};
+      const auto visibleOrigin =
+          [view, style] {
+            const auto origin =
+                view.window.frame.origin;
+            return InputIndicatorPoint{
+                .x =
+                    origin.x +
+                    style.canvasOffsetX,
+                .y =
+                    origin.y +
+                    style.canvasOffsetY,
+            };
+          };
+      const auto rasterOutside =
+          [companion, view](
+              int scale
+          ) -> int {
+            constexpr int paddingPoints = 4;
+            const auto motionState =
+                static_cast<InputIndicatorMotionState>(
+                    [[view valueForKey:
+                          @"motionState"]
+                        integerValue]
+                );
+            const double motionPhase =
+                [[view valueForKey:
+                      @"motionPhase"]
+                    doubleValue];
+            const bool facesRight =
+                [[view valueForKey:@"facesRight"]
+                    boolValue];
+            const double facingScale =
+                [[view valueForKey:
+                      @"facingScaleX"]
+                    doubleValue];
+            const double heading =
+                [[view valueForKey:
+                      @"catBodyHeadingRadians"]
+                    doubleValue];
+            const InputIndicatorCompanionIdleFrame idle{
+                .motion =
+                    static_cast<InputIndicatorCompanionIdleMotion>(
+                        [[view valueForKey:
+                              @"catIdleTailMotion"]
+                            integerValue]
+                    ),
+                .progress =
+                    [[view valueForKey:
+                          @"catIdleTailProgress"]
+                        doubleValue],
+                .active =
+                    [[view valueForKey:
+                          @"catIdleTailActive"]
+                        boolValue],
+            };
+            const InputIndicatorCompanionStartleFrame
+                startle{
+                    .active =
+                        [[view valueForKey:
+                              @"catStartleActive"]
+                            boolValue],
+                    .progress =
+                        [[view valueForKey:
+                              @"catStartleProgress"]
+                            doubleValue],
+                    .recoilOffsetX =
+                        [[view valueForKey:
+                              @"catStartleRecoilOffsetX"]
+                            doubleValue],
+                    .horizontalScale =
+                        [[view valueForKey:
+                              @"catStartleHorizontalScale"]
+                            doubleValue],
+                    .dorsalLift =
+                        [[view valueForKey:
+                              @"catStartleDorsalLift"]
+                            doubleValue],
+                    .haloScale =
+                        [[view valueForKey:
+                              @"catStartleHaloScale"]
+                            doubleValue],
+                    .haloAlpha =
+                        [[view valueForKey:
+                              @"catStartleHaloAlpha"]
+                            doubleValue],
+                };
+            NSBitmapImageRep *body = nil;
+            NSBitmapImageRep *glyph = nil;
+            if (companion ==
+                InputIndicatorCompanion::Cat) {
+              const auto pose =
+                  inputIndicatorCatPose(
+                      motionState,
+                      motionPhase,
+                      false
+                  );
+              const auto artwork =
+                  macInputIndicatorCatArtwork(
+                      pose.artworkFrame
+                  );
+              body = catBodyBitmap(
+                  pose,
+                  artwork,
+                  idle,
+                  facesRight,
+                  scale,
+                  paddingPoints,
+                  true,
+                  startle,
+                  heading,
+                  true,
+                  facingScale
+              );
+              glyph = catGlyphBitmap(
+                  pose,
+                  motionState,
+                  facesRight,
+                  scale,
+                  paddingPoints,
+                  Source::LatinABC,
+                  heading,
+                  true,
+                  facingScale
+              );
+            } else {
+              body = companionBodyBitmap(
+                  companion,
+                  motionState,
+                  motionPhase,
+                  idle,
+                  startle,
+                  facesRight,
+                  scale,
+                  paddingPoints,
+                  true,
+                  heading,
+                  facingScale
+              );
+              glyph = companionGlyphBitmap(
+                  companion,
+                  motionState,
+                  Source::LatinABC,
+                  facesRight,
+                  scale,
+                  paddingPoints,
+                  heading,
+                  facingScale
+              );
+            }
+            if (!body || !glyph) {
+              if (body) {
+                [body release];
+              }
+              if (glyph) {
+                [glyph release];
+              }
+              return -1;
+            }
+            const auto rasterStyle =
+                macInputIndicatorPanelStyle(
+                    companion
+                );
+            const NSInteger left =
+                paddingPoints * scale;
+            const NSInteger bottom =
+                paddingPoints * scale;
+            const NSInteger right =
+                left +
+                static_cast<NSInteger>(
+                    rasterStyle.canvasWidth
+                ) *
+                    scale;
+            const NSInteger top =
+                bottom +
+                static_cast<NSInteger>(
+                    rasterStyle.canvasHeight
+                ) *
+                    scale;
+            int outside = 0;
+            int bodyOutside = 0;
+            int glyphOutside = 0;
+            for (NSInteger y = 0;
+                 y < body.pixelsHigh;
+                 ++y) {
+              for (NSInteger x = 0;
+                   x < body.pixelsWide;
+                   ++x) {
+                const double bodyAlpha =
+                    [body colorAtX:x y:y]
+                        .alphaComponent;
+                const double glyphAlpha =
+                    [glyph colorAtX:x y:y]
+                        .alphaComponent;
+                if (bodyAlpha > 0.02 &&
+                    (x < left ||
+                     x >= right ||
+                     y < bottom ||
+                     y >= top)) {
+                  ++outside;
+                  ++bodyOutside;
+                }
+                if (glyphAlpha > 0.02 &&
+                    bodyAlpha <= 0.02) {
+                  ++outside;
+                  ++glyphOutside;
+                }
+              }
+            }
+            if (outside > 0) {
+              qInfo() << "follow-approach-raster-spill"
+                      << "companion"
+                      << static_cast<int>(companion)
+                      << "scale" << scale
+                      << "heading" << heading
+                      << "bodyOutside" << bodyOutside
+                      << "glyphOutside"
+                      << glyphOutside;
+            }
+            [body release];
+            [glyph release];
+            return outside;
+          };
+
+      target.point.x +=
+          target.point.x < 1000
+              ? 500
+              : -500;
+      bool reached = false;
+      std::vector<InputIndicatorPoint> positions{
+          visibleOrigin()
+      };
+      for (int tick = 0;
+           tick < 700;
+           ++tick) {
+        QTest::qWait(8);
+        const auto step =
+            panel.move(options.position);
+        QVERIFY(step.visible);
+        QVERIFY(!step.reducedMotion);
+        const auto current = visibleOrigin();
+        const double movement =
+            std::hypot(
+                current.x -
+                    positions.back().x,
+                current.y -
+                    positions.back().y
+            );
+        QVERIFY(
+            movement <=
+            speed.movementCap +
+                std::sqrt(2.0)
+        );
+        positions.push_back(current);
+        if (tick == 1 || tick == 10) {
+          for (const int scale : {1, 2}) {
+            const int outside =
+                rasterOutside(scale);
+            QVERIFY(outside >= 0);
+            if (outside > 0) {
+              qInfo() << "follow-approach-spill"
+                      << static_cast<int>(
+                             companion
+                         )
+                      << speed.percent
+                      << tick
+                      << scale
+                      << [[view valueForKey:
+                            @"catBodyHeadingRadians"]
+                              doubleValue];
+            }
+            outsidePixels += outside;
+            ++rasterCases;
+          }
+        }
+        const double heading =
+            [[view valueForKey:
+                  @"catBodyHeadingRadians"]
+                doubleValue];
+        const auto expected =
+            positionInputIndicator(
+                target.point,
+                {
+                    .width = style.width,
+                    .height = style.height,
+                },
+                screens,
+                options.position,
+                style.cursorGap,
+                style.screenMargin,
+                heading
+            );
+        QVERIFY(expected);
+        if (std::abs(current.x -
+                     expected->x) < 1.0 &&
+            std::abs(current.y -
+                     expected->y) < 1.0) {
+          reached = true;
+          for (const int scale : {1, 2}) {
+            const int outside =
+                rasterOutside(scale);
+            QVERIFY(outside >= 0);
+            if (outside > 0) {
+              qInfo() << "follow-approach-spill-final"
+                      << static_cast<int>(
+                             companion
+                         )
+                      << speed.percent
+                      << scale
+                      << heading;
+            }
+            outsidePixels += outside;
+            ++rasterCases;
+          }
+          break;
+        }
+      }
+      QVERIFY(reached);
+      QVERIFY(positions.size() > 10);
+      panel.hide();
+    }
+  }
+  qInfo() << "follow-approach-raster"
+          << "cases" << rasterCases
+          << "outsidePixels" << outsidePixels;
+  QCOMPARE(rasterCases, 54);
+  QCOMPARE(outsidePixels, 0);
+}
+
 void InputIndicatorGeometryTests::unknownOrInvalidGeometryHides_data()
 {
   QTest::addColumn<int>("condition");
@@ -2444,23 +3421,16 @@ void InputIndicatorGeometryTests::catPanelIdleTailFrameRepaints()
   };
   QVERIFY(panel.show(options));
 
-  Class panelClass =
-      NSClassFromString(@"DeskflowInputIndicatorPanel");
-  QVERIFY(panelClass);
-  NSWindow *window = nil;
-  for (NSWindow *candidate in NSApp.windows) {
-    if ([candidate isKindOfClass:panelClass]) {
-      window = candidate;
-      break;
-    }
-  }
-  QVERIFY(window);
-  NSView *view = window.contentView;
+  NSView *view = catPanelView();
   QVERIFY(view);
+  QVERIFY(panel.move(options.position).visible);
   [view displayIfNeeded];
   const double beforeProgress =
       [[view valueForKey:@"catIdleTailProgress"]
           doubleValue];
+  const NSInteger beforeMotion =
+      [[view valueForKey:@"catIdleTailMotion"]
+          integerValue];
   const bool beforeActive =
       [[view valueForKey:@"catIdleTailActive"]
           boolValue];
@@ -2506,8 +3476,15 @@ void InputIndicatorGeometryTests::catPanelIdleTailFrameRepaints()
   const bool afterActive =
       [[view valueForKey:@"catIdleTailActive"]
           boolValue];
+  const NSInteger afterMotion =
+      [[view valueForKey:@"catIdleTailMotion"]
+          integerValue];
   QVERIFY(afterActive);
-  QVERIFY(afterProgress > beforeProgress);
+  QVERIFY(
+      afterMotion != beforeMotion ||
+      std::abs(afterProgress - beforeProgress) >
+          1e-9
+  );
   NSBitmapImageRep *after =
       [view bitmapImageRepForCachingDisplayInRect:view.bounds];
   QVERIFY(after);
