@@ -2004,6 +2004,8 @@ void InputIndicatorGeometryTests::followApproachPreservesStateAcrossLiveChanges(
             doubleValue];
 
     panel.setFollowSpeedPercent(50);
+    // show() reapplies the follow speed from options.
+    options.followSpeedPercent = 50;
     const auto afterSpeed =
         visibleOrigin();
     QCOMPARE(afterSpeed.x, before.x);
