@@ -75,6 +75,7 @@ private Q_SLOTS:
   void catPursuitTreatsPointerAndCaretTargetsIdentically();
   void catPursuitPreservesInitializedStateAcrossRepresentationChanges();
   void catPursuitPanelTraversesLargeTargetJump();
+  void catDefaultFixedModeHonorsPursuitHeadingTurnLimit();
   void companionPursuitPanelHonorsFollowSpeed();
   void companionPursuitPanelSpeedChangePreservesPosition();
   void companionPursuitPanelPreservesPositionOnSourceAndSpaceChange();

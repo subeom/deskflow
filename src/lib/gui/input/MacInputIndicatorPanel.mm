@@ -1392,6 +1392,9 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   auto nextPursuitState = pursuit->state;
   if (!initializePursuit &&
       !reducedMotion &&
+      position ==
+          InputIndicatorPosition::
+              CursorFollowApproach &&
       !pursuit->reached &&
       pursuit->distanceMoved >
           kSettledDistance &&
@@ -1442,11 +1445,6 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
         m_impl->approachHeadingValid = true;
       }
     }
-  }
-  if (!initializePursuit &&
-      m_impl->approachHeadingValid) {
-    nextPursuitState.headingRadians =
-        m_impl->approachHeadingRadians;
   }
   m_impl->pursuitState =
       nextPursuitState;

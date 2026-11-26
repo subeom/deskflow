@@ -1359,6 +1359,10 @@ void InputIndicatorGeometryTests::followApproachUsesLastHeadingWhileIdle()
         };
     target.point.x +=
         target.point.x < 1000 ? 300 : -300;
+    const double commandedHeading =
+        target.point.x > fixedCursor.x
+            ? 0.0
+            : M_PI;
     bool reached = false;
     for (int tick = 0; tick < 400; ++tick) {
       QTest::qWait(8);
@@ -1366,10 +1370,6 @@ void InputIndicatorGeometryTests::followApproachUsesLastHeadingWhileIdle()
           panel.move(options.position);
       QVERIFY(step.visible);
       const auto current = visibleOrigin();
-      const double heading =
-          [[view valueForKey:
-                @"catBodyHeadingRadians"]
-              doubleValue];
       const auto expected =
           positionInputIndicator(
               target.point,
@@ -1381,7 +1381,7 @@ void InputIndicatorGeometryTests::followApproachUsesLastHeadingWhileIdle()
               options.position,
               style.cursorGap,
               style.screenMargin,
-              heading
+              commandedHeading
           );
       QVERIFY(expected);
       if (std::abs(current.x - expected->x) <
@@ -1508,6 +1508,10 @@ void InputIndicatorGeometryTests::followApproachHeadingChangeTraversesIntermedia
         initial.x < 1000
             ? initial.x - 300
             : initial.x + 300;
+    const double commandedHeading =
+        initial.x < 1000
+            ? M_PI
+            : 0.0;
     std::vector<InputIndicatorPoint> positions{
         visibleOrigin()
     };
@@ -1529,10 +1533,6 @@ void InputIndicatorGeometryTests::followApproachHeadingChangeTraversesIntermedia
           2.88 + std::sqrt(2.0)
       );
       positions.push_back(current);
-      const double heading =
-          [[view valueForKey:
-                @"catBodyHeadingRadians"]
-              doubleValue];
       const auto expected =
           positionInputIndicator(
               target.point,
@@ -1544,7 +1544,7 @@ void InputIndicatorGeometryTests::followApproachHeadingChangeTraversesIntermedia
               options.position,
               style.cursorGap,
               style.screenMargin,
-              heading
+              commandedHeading
           );
       QVERIFY(expected);
       if (std::abs(current.x - expected->x) <
@@ -1718,10 +1718,26 @@ void InputIndicatorGeometryTests::followApproachSettlesOppositeCommandedTravel()
       for (int tick = 0;
            tick < 700;
            ++tick) {
+        const double previousHeading =
+            [[view valueForKey:
+                  @"catBodyHeadingRadians"]
+                doubleValue];
         QTest::qWait(8);
         const auto step =
             panel.move(options.position);
         QVERIFY(step.visible);
+        if (tick == 0) {
+          const double currentHeading =
+              [[view valueForKey:
+                    @"catBodyHeadingRadians"]
+                  doubleValue];
+          QVERIFY(std::abs(
+              inputIndicatorNormalizedAngle(
+                  currentHeading -
+                  previousHeading
+              )
+          ) <= 10.0 * 8.0 / 1000.0 + 1e-6);
+        }
         if (step.frameIntervalMilliseconds ==
             75) {
           idle = true;
@@ -1766,11 +1782,6 @@ void InputIndicatorGeometryTests::followApproachSettlesOppositeCommandedTravel()
           behindDistance -
           (support + style.cursorGap)
       ) <= 3.0);
-      QVERIFY(std::abs(
-          inputIndicatorNormalizedAngle(
-              heading - travel.heading
-          )
-      ) <= 5.0 * M_PI / 180.0);
       panel.hide();
     }
   }
@@ -7130,6 +7141,160 @@ void InputIndicatorGeometryTests::catPursuitPanelTraversesLargeTargetJump()
   const auto final = positions.back();
   QVERIFY(std::abs(final.x - expected->x) <= 0.5);
   QVERIFY(std::abs(final.y - expected->y) <= 0.5);
+}
+
+void InputIndicatorGeometryTests::catDefaultFixedModeHonorsPursuitHeadingTurnLimit()
+{
+  const auto fixedCursor =
+      fixedPanelTestPointer();
+  InputIndicatorTarget target{
+      .point = {
+          .x = fixedCursor.x,
+          .y = fixedCursor.y,
+      },
+      .kind =
+          InputIndicatorTargetKind::Pointer,
+  };
+  MacInputIndicatorPanel panel(
+      {},
+      [&target] {
+        return target;
+      }
+  );
+  MacInputIndicatorPanelOptions options{
+      .source =
+          deskflow::input::InputIndicatorSource::LatinABC,
+      .companion = InputIndicatorCompanion::Cat,
+  };
+  QCOMPARE(
+      options.position,
+      InputIndicatorPosition::CursorBottomRight
+  );
+  QCOMPARE(options.followSpeedPercent, 100);
+  QVERIFY(panel.show(options));
+  NSView *view = catPanelView();
+  QVERIFY(view);
+
+  target.point.x += 300;
+  target.point.y += 300;
+  QTest::qWait(8);
+  const auto step =
+      panel.move(options.position);
+  QVERIFY(step.visible);
+  const double actualHeading =
+      [[view valueForKey:
+            @"catBodyHeadingRadians"]
+          doubleValue];
+  constexpr double expectedMaximumTurn =
+      10.0 * 8.0 / 1000.0;
+
+  const auto motionState =
+      static_cast<InputIndicatorMotionState>(
+          [[view valueForKey:@"motionState"]
+              integerValue]
+      );
+  const double motionPhase =
+      [[view valueForKey:@"motionPhase"]
+          doubleValue];
+  const auto pose =
+      inputIndicatorCatPose(
+          motionState,
+          motionPhase,
+          false
+      );
+  const auto artwork =
+      macInputIndicatorCatArtwork(
+          pose.artworkFrame
+      );
+  const InputIndicatorCatIdleTailFrame tail{
+      .motion =
+          static_cast<InputIndicatorCatIdleTailMotion>(
+              [[view valueForKey:
+                    @"catIdleTailMotion"]
+                  integerValue]
+          ),
+      .progress =
+          [[view valueForKey:
+                @"catIdleTailProgress"]
+              doubleValue],
+      .active =
+          [[view valueForKey:
+                @"catIdleTailActive"]
+              boolValue],
+  };
+  const InputIndicatorCatStartleFrame startle{
+      .active =
+          [[view valueForKey:@"catStartleActive"]
+              boolValue],
+      .progress =
+          [[view valueForKey:@"catStartleProgress"]
+              doubleValue],
+      .recoilOffsetX =
+          [[view valueForKey:
+                @"catStartleRecoilOffsetX"]
+              doubleValue],
+      .horizontalScale =
+          [[view valueForKey:
+                @"catStartleHorizontalScale"]
+              doubleValue],
+      .dorsalLift =
+          [[view valueForKey:
+                @"catStartleDorsalLift"]
+              doubleValue],
+      .haloScale =
+          [[view valueForKey:
+                @"catStartleHaloScale"]
+              doubleValue],
+      .haloAlpha =
+          [[view valueForKey:
+                @"catStartleHaloAlpha"]
+              doubleValue],
+  };
+  NSBitmapImageRep *expectedBody =
+      catBodyBitmap(
+          pose,
+          artwork,
+          tail,
+          true,
+          2,
+          4,
+          true,
+          startle,
+          expectedMaximumTurn,
+          true
+      );
+  NSBitmapImageRep *actualBody =
+      catBodyBitmap(
+          pose,
+          artwork,
+          tail,
+          true,
+          2,
+          4,
+          true,
+          startle,
+          actualHeading,
+          true
+      );
+  QVERIFY(expectedBody);
+  QVERIFY(actualBody);
+  const int bodyChanged =
+      bitmapChangedPixels(
+          expectedBody, actualBody
+      );
+  qInfo() << "default-cat-heading-regression"
+          << "actual" << actualHeading
+          << "allowed" << expectedMaximumTurn
+          << "bodyChangedPixels"
+          << bodyChanged;
+  [expectedBody release];
+  [actualBody release];
+  QVERIFY(std::abs(
+      inputIndicatorNormalizedAngle(
+          actualHeading
+      )
+  ) <= expectedMaximumTurn + 1e-6);
+  panel.hide();
 }
 
 void InputIndicatorGeometryTests::companionPursuitPanelHonorsFollowSpeed()
