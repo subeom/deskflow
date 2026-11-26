@@ -1639,6 +1639,23 @@ InputIndicatorPoint inputIndicatorCatBodyPoint(
     double headingRadians
 )
 {
+  return inputIndicatorCompanionBodyPoint(
+      InputIndicatorCompanion::Cat,
+      point,
+      facesRight,
+      facingHorizontalScale,
+      headingRadians
+  );
+}
+
+InputIndicatorPoint inputIndicatorCompanionBodyPoint(
+    InputIndicatorCompanion companion,
+    InputIndicatorPoint point,
+    bool facesRight,
+    double facingHorizontalScale,
+    double headingRadians
+)
+{
   if (!finitePoint(point) ||
       !std::isfinite(facingHorizontalScale) ||
       facingHorizontalScale < 0 ||
@@ -1653,10 +1670,10 @@ InputIndicatorPoint inputIndicatorCatBodyPoint(
       (point.x - 15.0) *
           facingHorizontalScale;
   const double relativeHeading =
-      inputIndicatorNormalizedAngle(
+      inputIndicatorCompanionVisualLeanRadians(
+          companion,
+          headingRadians,
           facesRight
-              ? headingRadians
-              : headingRadians - kPi
       );
   const double cosine =
       std::cos(relativeHeading);
@@ -1677,11 +1694,43 @@ InputIndicatorPoint inputIndicatorCompanionBodyPoint(
     double headingRadians
 )
 {
-  return inputIndicatorCatBodyPoint(
+  return inputIndicatorCompanionBodyPoint(
+      InputIndicatorCompanion::Cat,
       point,
       facesRight,
       facingHorizontalScale,
       headingRadians
+  );
+}
+
+double inputIndicatorCompanionVisualLeanRadians(
+    InputIndicatorCompanion companion,
+    double headingRadians,
+    bool facesRight
+)
+{
+  if (!std::isfinite(headingRadians)) {
+    return 0;
+  }
+  const double relativeHeading =
+      inputIndicatorNormalizedAngle(
+          facesRight
+              ? headingRadians
+              : headingRadians - kPi
+      );
+  constexpr double kCatDogMaximumLean =
+      12.0 * kPi / 180.0;
+  constexpr double kTurtleMaximumLean =
+      8.0 * kPi / 180.0;
+  const double maximum =
+      companion ==
+              InputIndicatorCompanion::Turtle
+          ? kTurtleMaximumLean
+          : kCatDogMaximumLean;
+  return std::clamp(
+      relativeHeading,
+      -maximum,
+      maximum
   );
 }
 

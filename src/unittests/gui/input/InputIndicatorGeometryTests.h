@@ -31,6 +31,8 @@ private Q_SLOTS:
   void compactPanelStyleUsesApprovedMetrics();
   void companionDisplayModelScalesAllLogicalGeometry();
   void companionFacingTurnCompressesAndSwitchesOnce();
+  void companionVisualLeanStaysUprightAtEightHeadings();
+  void companionRasterStaysUprightAtEightHeadings();
   void companionRenderModelUsesUnifiedSilhouetteAndInternalLabel();
   void catRenderModelUsesSideProfileAndPersistentFacing();
   void catTorsoContourExpandsWithoutPadPrimitive();

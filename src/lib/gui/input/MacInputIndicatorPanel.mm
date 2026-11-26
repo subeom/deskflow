@@ -208,6 +208,7 @@ NSBezierPath *companionArtworkPath(
                 startleFrame
             );
         return inputIndicatorCompanionBodyPoint(
+            companion,
             animated,
             facesRight,
             facingScaleX,
@@ -643,6 +644,7 @@ void drawLanguageGlyph(
   };
   const auto transformedLabelCenter =
       inputIndicatorCompanionBodyPoint(
+          companion,
           labelCenter,
           facesRight,
           facingScaleX,

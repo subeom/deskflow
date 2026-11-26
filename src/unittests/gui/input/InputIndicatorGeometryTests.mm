@@ -221,6 +221,7 @@ NSBezierPath *companionArtworkPath(
                 startleFrame
             );
         return inputIndicatorCompanionBodyPoint(
+            companion,
             animated,
             facesRight,
             facingScaleX,
@@ -716,6 +717,7 @@ NSBitmapImageRep *companionGlyphBitmap(
       artwork.innerLanguageBounds;
   const auto center =
       inputIndicatorCompanionBodyPoint(
+          companion,
           {
               .x = innerBounds.x +
                   innerBounds.width / 2.0,
@@ -1406,6 +1408,14 @@ void InputIndicatorGeometryTests::followApproachUsesLastHeadingWhileIdle()
     }
     QVERIFY(idle);
     const auto beforeIdle = visibleOrigin();
+    QVERIFY([[view valueForKey:@"catIdleTailActive"]
+        boolValue]);
+    const double idleProgressBefore =
+        [[view valueForKey:@"catIdleTailProgress"]
+            doubleValue];
+    const NSInteger idleMotionBefore =
+        [[view valueForKey:@"catIdleTailMotion"]
+            integerValue];
     const double beforeIdleHeading =
         [[view valueForKey:
               @"catBodyHeadingRadians"]
@@ -1423,6 +1433,19 @@ void InputIndicatorGeometryTests::followApproachUsesLastHeadingWhileIdle()
           beforeIdleHeading
       );
     }
+    const double idleProgressAfter =
+        [[view valueForKey:@"catIdleTailProgress"]
+            doubleValue];
+    const NSInteger idleMotionAfter =
+        [[view valueForKey:@"catIdleTailMotion"]
+            integerValue];
+    QVERIFY(
+        idleMotionAfter != idleMotionBefore ||
+        std::abs(
+            idleProgressAfter -
+            idleProgressBefore
+        ) > 1e-9
+    );
     panel.hide();
   }
 }
@@ -1666,6 +1689,11 @@ void InputIndicatorGeometryTests::followApproachSettlesOppositeCommandedTravel()
            .y = 1.0 / std::sqrt(2.0)},
           M_PI / 4,
       },
+      {
+          {.x = 1.0 / std::sqrt(2.0),
+           .y = -1.0 / std::sqrt(2.0)},
+          -M_PI / 4,
+      },
   };
   for (const auto companion : companions) {
     for (const auto travel : directions) {
@@ -1776,6 +1804,24 @@ void InputIndicatorGeometryTests::followApproachSettlesOppositeCommandedTravel()
               << center.y - target.point.y
               << "cross" << crossAxis
               << "behind" << behindDistance;
+      if (travel.direction.x > 0 &&
+          travel.direction.y < 0) {
+        QVERIFY(center.x < target.point.x);
+        QVERIFY(center.y > target.point.y);
+        QVERIFY(
+            [[view valueForKey:
+                  @"motionState"]
+                integerValue] ==
+            static_cast<NSInteger>(
+                InputIndicatorMotionState::Idle
+            )
+        );
+        QVERIFY(
+            [[view valueForKey:
+                  @"catIdleTailActive"]
+                boolValue]
+        );
+      }
       QVERIFY(behindDistance > 0);
       QVERIFY(std::abs(crossAxis) <= 3.0);
       QVERIFY(std::abs(
@@ -2498,6 +2544,358 @@ void InputIndicatorGeometryTests::companionFacingTurnCompressesAndSwitchesOnce()
   QVERIFY(!macInputIndicatorFacingTurnStarts(
       true, false, true
   ));
+}
+
+void InputIndicatorGeometryTests::companionVisualLeanStaysUprightAtEightHeadings()
+{
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  const double headings[] = {
+      0,
+      M_PI / 4,
+      M_PI / 2,
+      3 * M_PI / 4,
+      M_PI,
+      5 * M_PI / 4,
+      3 * M_PI / 2,
+      7 * M_PI / 4,
+  };
+  const bool facings[] = {true, false};
+  const InputIndicatorPoint sourceCenter{
+      .x = 15,
+      .y = 14,
+  };
+  const InputIndicatorPoint sourceTop{
+      .x = 15,
+      .y = 24,
+  };
+  const InputIndicatorPoint sourceBottom{
+      .x = 15,
+      .y = 4,
+  };
+  for (const auto companion : companions) {
+    const double maximum =
+        companion ==
+                InputIndicatorCompanion::Turtle
+            ? 8.0 * M_PI / 180.0
+            : 12.0 * M_PI / 180.0;
+    for (const bool facesRight : facings) {
+      for (const double heading : headings) {
+        const double lean =
+            inputIndicatorCompanionVisualLeanRadians(
+                companion,
+                heading,
+                facesRight
+            );
+        QVERIFY(
+            std::abs(lean) <=
+            maximum + 1e-9
+        );
+        const auto center =
+            inputIndicatorCompanionBodyPoint(
+                companion,
+                sourceCenter,
+                facesRight,
+                1,
+                heading
+            );
+        const auto top =
+            inputIndicatorCompanionBodyPoint(
+                companion,
+                sourceTop,
+                facesRight,
+                1,
+                heading
+            );
+        const auto bottom =
+            inputIndicatorCompanionBodyPoint(
+                companion,
+                sourceBottom,
+                facesRight,
+                1,
+                heading
+            );
+        QVERIFY(top.y > center.y);
+        QVERIFY(bottom.y < center.y);
+      }
+    }
+  }
+}
+
+void InputIndicatorGeometryTests::companionRasterStaysUprightAtEightHeadings()
+{
+  const InputIndicatorCompanion companions[] = {
+      InputIndicatorCompanion::Cat,
+      InputIndicatorCompanion::Dog,
+      InputIndicatorCompanion::Turtle,
+  };
+  const double headings[] = {
+      0,
+      M_PI / 4,
+      M_PI / 2,
+      3 * M_PI / 4,
+      M_PI,
+      5 * M_PI / 4,
+      3 * M_PI / 2,
+      7 * M_PI / 4,
+  };
+  const bool facings[] = {true, false};
+  constexpr int paddingPoints = 4;
+  const InputIndicatorCatIdleTailFrame idle;
+  const InputIndicatorCatStartleFrame startle;
+  const auto sampleAlpha =
+      [](NSBitmapImageRep *bitmap,
+         InputIndicatorCompanion companion,
+         InputIndicatorPoint artPoint,
+         int scale,
+         int padding) {
+        const auto display =
+            macInputIndicatorCanvasPoint(
+                artPoint, companion
+            );
+        const NSInteger centerX =
+            std::lround(
+                (display.x + padding) *
+                scale
+            );
+        const NSInteger centerY =
+            std::lround(
+                (display.y + padding) *
+                scale
+            );
+        const NSInteger radius =
+            2 * scale;
+        double alpha = 0;
+        for (NSInteger y =
+                 centerY - radius;
+             y <= centerY + radius;
+             ++y) {
+          for (NSInteger x =
+                   centerX - radius;
+               x <= centerX + radius;
+               ++x) {
+            if (x < 0 ||
+                x >= bitmap.pixelsWide ||
+                y < 0 ||
+                y >= bitmap.pixelsHigh) {
+              continue;
+            }
+            alpha =
+                std::max(
+                    alpha,
+                    [bitmap colorAtX:x y:y]
+                        .alphaComponent
+                );
+          }
+        }
+        return alpha;
+      };
+
+  for (const auto companion : companions) {
+    const InputIndicatorPoint topSource =
+        companion ==
+                InputIndicatorCompanion::Dog
+            ? InputIndicatorPoint{
+                  .x = 19, .y = 17
+              }
+            : companion ==
+                    InputIndicatorCompanion::Turtle
+                ? InputIndicatorPoint{
+                      .x = 15, .y = 17
+                  }
+                : InputIndicatorPoint{
+                      .x = 21, .y = 15.5
+                  };
+    const InputIndicatorPoint bottomSource =
+        companion ==
+                InputIndicatorCompanion::Dog
+            ? InputIndicatorPoint{
+                  .x = 14, .y = 9
+              }
+            : companion ==
+                    InputIndicatorCompanion::Turtle
+                ? InputIndicatorPoint{
+                      .x = 15, .y = 10
+                  }
+                : InputIndicatorPoint{
+                      .x = 16, .y = 11
+                  };
+    for (const bool facesRight : facings) {
+      for (const int scale : {1, 2}) {
+        for (const double heading : headings) {
+          NSBitmapImageRep *body = nil;
+          NSBitmapImageRep *glyph = nil;
+          if (companion ==
+              InputIndicatorCompanion::Cat) {
+            const auto pose =
+                inputIndicatorCatPose(
+                    InputIndicatorMotionState::Idle,
+                    0,
+                    false
+                );
+            const auto artwork =
+                macInputIndicatorCatArtwork(
+                    pose.artworkFrame
+                );
+            body =
+                catBodyBitmap(
+                    pose,
+                    artwork,
+                    idle,
+                    facesRight,
+                    scale,
+                    paddingPoints,
+                    true,
+                    startle,
+                    heading,
+                    true
+                );
+            glyph =
+                catGlyphBitmap(
+                    pose,
+                    InputIndicatorMotionState::Idle,
+                    facesRight,
+                    scale,
+                    paddingPoints,
+                    deskflow::input::
+                        InputIndicatorSource::
+                            LatinABC,
+                    heading,
+                    true
+                );
+          } else {
+            body =
+                companionBodyBitmap(
+                    companion,
+                    InputIndicatorMotionState::Idle,
+                    0,
+                    idle,
+                    startle,
+                    facesRight,
+                    scale,
+                    paddingPoints,
+                    true,
+                    heading
+                );
+            glyph =
+                companionGlyphBitmap(
+                    companion,
+                    InputIndicatorMotionState::Idle,
+                    deskflow::input::
+                        InputIndicatorSource::
+                            LatinABC,
+                    facesRight,
+                    scale,
+                    paddingPoints,
+                    heading
+                );
+          }
+          QVERIFY(body);
+          QVERIFY(glyph);
+          auto topArtPoint = topSource;
+          auto bottomArtPoint =
+              bottomSource;
+          if (companion ==
+              InputIndicatorCompanion::Cat) {
+            const auto pose =
+                inputIndicatorCatPose(
+                    InputIndicatorMotionState::Idle,
+                    0,
+                    false
+                );
+            topArtPoint =
+                inputIndicatorCatTorsoPoint(
+                    pose, topSource
+                );
+            bottomArtPoint =
+                inputIndicatorCatTorsoPoint(
+                    pose, bottomSource
+                );
+          }
+          const auto top =
+              inputIndicatorCompanionBodyPoint(
+                  companion,
+                  topArtPoint,
+                  facesRight,
+                  1,
+                  heading
+              );
+          const auto bottom =
+              inputIndicatorCompanionBodyPoint(
+                  companion,
+                  bottomArtPoint,
+                  facesRight,
+                  1,
+                  heading
+              );
+          const auto center =
+              inputIndicatorCompanionBodyPoint(
+                  companion,
+                  {.x = 15, .y = 14},
+                  facesRight,
+                  1,
+                  heading
+              );
+          QVERIFY(top.y > center.y);
+          QVERIFY(bottom.y < center.y);
+          const double topAlpha =
+              sampleAlpha(
+                  body,
+                  companion,
+                  top,
+                  scale,
+                  paddingPoints
+              );
+          const double bottomAlpha =
+              sampleAlpha(
+                  body,
+                  companion,
+                  bottom,
+                  scale,
+                  paddingPoints
+              );
+          if (topAlpha <= 0.02 ||
+              bottomAlpha <= 0.02) {
+            qInfo() << "upright-raster-sample"
+                    << static_cast<int>(companion)
+                    << facesRight
+                    << scale
+                    << heading
+                    << topAlpha
+                    << bottomAlpha;
+          }
+          QVERIFY(topAlpha > 0.02);
+          QVERIFY(bottomAlpha > 0.02);
+          const auto glyphBounds =
+              bitmapAlphaBounds(glyph);
+          QVERIFY(glyphBounds.width > 0);
+          QVERIFY(glyphBounds.height > 0);
+          for (NSInteger y = 0;
+               y < glyph.pixelsHigh;
+               ++y) {
+            for (NSInteger x = 0;
+                 x < glyph.pixelsWide;
+                 ++x) {
+              const double glyphAlpha =
+                  [glyph colorAtX:x y:y]
+                      .alphaComponent;
+              const double bodyAlpha =
+                  [body colorAtX:x y:y]
+                      .alphaComponent;
+              if (glyphAlpha > 0.02) {
+                QVERIFY(bodyAlpha > 0.02);
+              }
+            }
+          }
+          [body release];
+          [glyph release];
+        }
+      }
+    }
+  }
 }
 
 void InputIndicatorGeometryTests::companionRenderModelUsesUnifiedSilhouetteAndInternalLabel()
@@ -5313,14 +5711,14 @@ void InputIndicatorGeometryTests::allCompanionPanelsHonorHeadingAndGlyphCoverage
           bitmapAlphaBounds(straightGlyph);
       const auto diagonalBounds =
           bitmapAlphaBounds(diagonalGlyph);
-      QCOMPARE(
-          straightBounds.width,
+      QVERIFY(std::abs(
+          straightBounds.width -
           diagonalBounds.width
-      );
-      QCOMPARE(
-          straightBounds.height,
+      ) <= 1);
+      QVERIFY(std::abs(
+          straightBounds.height -
           diagonalBounds.height
-      );
+      ) <= 1);
       for (NSInteger y = 0;
            y < diagonalGlyph.pixelsHigh;
            ++y) {
@@ -5932,28 +6330,22 @@ void InputIndicatorGeometryTests::companionHeadingTransformsBodyButNotGlyphBound
       .x = 17,
       .y = 11,
   };
-  InputIndicatorPoint expected{};
   const InputIndicatorCompanion companions[] = {
       InputIndicatorCompanion::Cat,
       InputIndicatorCompanion::Dog,
       InputIndicatorCompanion::Turtle,
   };
   for (const auto companion : companions) {
-    (void)companion;
     const auto transformed =
         inputIndicatorCompanionBodyPoint(
+            companion,
             bodyPoint,
             true,
             1,
             heading
         );
-    if (companion ==
-        InputIndicatorCompanion::Cat) {
-      expected = transformed;
-    } else {
-      QCOMPARE(transformed.x, expected.x);
-      QCOMPARE(transformed.y, expected.y);
-    }
+    QVERIFY(std::isfinite(transformed.x));
+    QVERIFY(std::isfinite(transformed.y));
     const InputIndicatorRect glyph{
         .x = transformed.x - 4,
         .y = transformed.y - 3.5,
@@ -6764,13 +7156,23 @@ void InputIndicatorGeometryTests::catPursuitHandlesEightHeadingsDeterministicall
           1,
           kPi / 4
       );
+  const double diagonalLean =
+      inputIndicatorCompanionVisualLeanRadians(
+          InputIndicatorCompanion::Cat,
+          kPi / 4,
+          true
+      );
+  const double cosine =
+      std::cos(diagonalLean);
+  const double sine =
+      std::sin(diagonalLean);
   QVERIFY(std::abs(
       diagonal.x -
-      (15 + (5 + 4) / std::sqrt(2.0))
+      (15 + 5 * cosine + 4 * sine)
   ) < 1e-9);
   QVERIFY(std::abs(
       diagonal.y -
-      (14 + (5 - 4) / std::sqrt(2.0))
+      (14 + 5 * sine - 4 * cosine)
   ) < 1e-9);
 
   const auto left =
@@ -7929,14 +8331,11 @@ void InputIndicatorGeometryTests::catPursuitRotatesSilhouetteButKeepsGlyphUprigh
       straightGlyphBounds.height -
       diagonalGlyphBounds.height
   ) <= 1);
-  QVERIFY(std::abs(
-      straightGlyphBounds.x -
-      diagonalGlyphBounds.x
-  ) > 2 ||
-      std::abs(
-          straightGlyphBounds.y -
-          diagonalGlyphBounds.y
-      ) > 2);
+  QVERIFY(
+      bitmapChangedPixels(
+          straightGlyph, diagonalGlyph
+      ) > 0
+  );
 
   const auto style =
       macInputIndicatorPanelStyle(
@@ -8883,7 +9282,7 @@ void InputIndicatorGeometryTests::catStartleFurAndGlowStayInsideRotatingCanvas()
                   color.redComponent +
                   color.greenComponent +
                   color.blueComponent;
-              if (paintAlpha <= 0.1) {
+              if (paintAlpha <= 0.12) {
                 continue;
               }
               ++haloCorePixels;

@@ -425,10 +425,24 @@ InputIndicatorPoint inputIndicatorCatBodyPoint(
 );
 
 InputIndicatorPoint inputIndicatorCompanionBodyPoint(
+    InputIndicatorCompanion companion,
     InputIndicatorPoint point,
     bool facesRight,
     double facingHorizontalScale,
     double headingRadians
+);
+
+InputIndicatorPoint inputIndicatorCompanionBodyPoint(
+    InputIndicatorPoint point,
+    bool facesRight,
+    double facingHorizontalScale,
+    double headingRadians
+);
+
+double inputIndicatorCompanionVisualLeanRadians(
+    InputIndicatorCompanion companion,
+    double headingRadians,
+    bool facesRight
 );
 
 constexpr InputIndicatorPoint inputIndicatorCatFacingPoint(
