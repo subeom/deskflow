@@ -13,6 +13,7 @@
 #include <QString>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -424,21 +425,24 @@ constexpr MacInputIndicatorRenderAlpha macInputIndicatorRenderAlpha(
   };
 }
 
-constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
-    InputIndicatorCompanion companion = InputIndicatorCompanion::Cat
-)
+constexpr MacInputIndicatorPanelStyle
+macInputIndicatorPanelStyle(InputIndicatorCompanion companion = InputIndicatorCompanion::Cat, double idleScale = 1)
 {
   (void)companion;
+  const double boundedScale =
+      idleScale >= 1.0
+          ? idleScale <= kInputIndicatorIdleGrowthMaximumScale ? idleScale : kInputIndicatorIdleGrowthMaximumScale
+          : 1.0;
   return {
-      .width = 33,
-      .height = 31,
-      .canvasWidth = 49,
-      .canvasHeight = 49,
-      .canvasOffsetX = 8,
-      .canvasOffsetY = 9,
+      .width = 33 * boundedScale,
+      .height = 31 * boundedScale,
+      .canvasWidth = 49 * boundedScale,
+      .canvasHeight = 49 * boundedScale,
+      .canvasOffsetX = 8 * boundedScale,
+      .canvasOffsetY = 9 * boundedScale,
       .logicalWidth = 30,
       .logicalHeight = 28,
-      .visualScale = 1.1,
+      .visualScale = 1.1 * boundedScale,
       .cursorGap = 7,
       .screenMargin = 7,
       .labelSize = 8,
@@ -449,12 +453,9 @@ constexpr MacInputIndicatorPanelStyle macInputIndicatorPanelStyle(
   };
 }
 
-constexpr InputIndicatorPoint macInputIndicatorDisplayPoint(
-    InputIndicatorPoint point
-)
+constexpr InputIndicatorPoint macInputIndicatorDisplayPoint(InputIndicatorPoint point, double idleScale = 1)
 {
-  const auto style =
-      macInputIndicatorPanelStyle();
+  const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, idleScale);
   return {
       .x = point.x * style.visualScale +
           (style.width -
@@ -468,32 +469,27 @@ constexpr InputIndicatorPoint macInputIndicatorDisplayPoint(
 }
 
 constexpr InputIndicatorPoint macInputIndicatorCanvasPoint(
-    InputIndicatorPoint point,
-    InputIndicatorCompanion companion =
-        InputIndicatorCompanion::Cat
+    InputIndicatorPoint point, InputIndicatorCompanion companion = InputIndicatorCompanion::Cat, double idleScale = 1
 )
 {
-  const auto display =
-      macInputIndicatorDisplayPoint(point);
-  const auto style =
-      macInputIndicatorPanelStyle(companion);
+  const auto display = macInputIndicatorDisplayPoint(point, idleScale);
+  const auto style = macInputIndicatorPanelStyle(companion, idleScale);
   return {
       .x = display.x + style.canvasOffsetX,
       .y = display.y + style.canvasOffsetY,
   };
 }
 
-constexpr InputIndicatorRect macInputIndicatorDisplayRect(
-    const InputIndicatorRect &rect
-)
+constexpr InputIndicatorRect macInputIndicatorDisplayRect(const InputIndicatorRect &rect, double idleScale = 1)
 {
-  const auto origin =
-      macInputIndicatorDisplayPoint({
+  const auto origin = macInputIndicatorDisplayPoint(
+      {
           .x = rect.x,
           .y = rect.y,
-      });
-  const auto style =
-      macInputIndicatorPanelStyle();
+      },
+      idleScale
+  );
+  const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, idleScale);
   return {
       .x = origin.x,
       .y = origin.y,
@@ -503,18 +499,12 @@ constexpr InputIndicatorRect macInputIndicatorDisplayRect(
 }
 
 constexpr InputIndicatorRect macInputIndicatorCanvasRect(
-    const InputIndicatorRect &rect,
-    InputIndicatorCompanion companion =
-        InputIndicatorCompanion::Cat
+    const InputIndicatorRect &rect, InputIndicatorCompanion companion = InputIndicatorCompanion::Cat,
+    double idleScale = 1
 )
 {
-  const auto origin =
-      macInputIndicatorCanvasPoint(
-          {.x = rect.x, .y = rect.y},
-          companion
-      );
-  const auto style =
-      macInputIndicatorPanelStyle(companion);
+  const auto origin = macInputIndicatorCanvasPoint({.x = rect.x, .y = rect.y}, companion, idleScale);
+  const auto style = macInputIndicatorPanelStyle(companion, idleScale);
   return {
       .x = origin.x,
       .y = origin.y,
@@ -523,16 +513,13 @@ constexpr InputIndicatorRect macInputIndicatorCanvasRect(
   };
 }
 
-constexpr MacInputIndicatorLabelPreference
-macInputIndicatorDisplayLabelPreference(
-    deskflow::input::InputIndicatorSource source,
-    InputIndicatorMotionState state
+constexpr MacInputIndicatorLabelPreference macInputIndicatorDisplayLabelPreference(
+    deskflow::input::InputIndicatorSource source, InputIndicatorMotionState state, double idleScale = 1
 )
 {
   const auto logical =
       macInputIndicatorLabelPreference(source, state);
-  const auto style =
-      macInputIndicatorPanelStyle();
+  const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, idleScale);
   return {
       .pointSize =
           logical.pointSize * style.visualScale,
@@ -721,10 +708,10 @@ class MacInputIndicatorPanel
 public:
   using TargetLocation =
       std::function<InputIndicatorTarget()>;
+  using Clock = std::function<std::chrono::steady_clock::time_point()>;
 
   explicit MacInputIndicatorPanel(
-      std::function<void()> presentationInvalidated = {},
-      TargetLocation targetLocation = {}
+      std::function<void()> presentationInvalidated = {}, TargetLocation targetLocation = {}, Clock clock = {}
   );
   ~MacInputIndicatorPanel();
 

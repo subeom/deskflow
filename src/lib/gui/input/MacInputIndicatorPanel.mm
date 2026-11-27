@@ -773,6 +773,7 @@ void drawLanguageGlyph(
 @property(nonatomic) double transitionProgress;
 @property(nonatomic) double motionX;
 @property(nonatomic) double motionY;
+@property(nonatomic) double idleGrowthScale;
 @property(nonatomic) NSInteger motionState;
 @property(nonatomic) double motionPhase;
 @property(nonatomic) BOOL reducedMotion;
@@ -871,14 +872,15 @@ void drawLanguageGlyph(
   [NSGraphicsContext saveGraphicsState];
   CGContextRef context =
       [[NSGraphicsContext currentContext] CGContext];
-  const auto style =
-      deskflow::gui::input::macInputIndicatorPanelStyle(
-          companion
-      );
-  const auto displayOrigin =
-      deskflow::gui::input::macInputIndicatorDisplayPoint(
-          {}
-      );
+  CGContextSaveGState(context);
+  CGContextClearRect(context, CGRectMake(bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height));
+  CGContextRestoreGState(context);
+  const double idleScale =
+      self.idleGrowthScale >= 1.0
+          ? std::min(self.idleGrowthScale, deskflow::gui::input::kInputIndicatorIdleGrowthMaximumScale)
+          : 1.0;
+  const auto style = deskflow::gui::input::macInputIndicatorPanelStyle(companion, idleScale);
+  const auto displayOrigin = deskflow::gui::input::macInputIndicatorDisplayPoint({}, idleScale);
   CGContextTranslateCTM(
       context,
       displayOrigin.x + style.canvasOffsetX,
@@ -1002,7 +1004,8 @@ struct MacInputIndicatorPanel::Impl
 
   explicit Impl(
       std::function<void()> invalidated,
-      MacInputIndicatorPanel::TargetLocation targetLocation
+      MacInputIndicatorPanel::TargetLocation targetLocation,
+      MacInputIndicatorPanel::Clock panelClock
   )
       : presentationInvalidated(std::move(invalidated)),
         targetLocation(
@@ -1020,22 +1023,24 @@ struct MacInputIndicatorPanel::Impl
                             InputIndicatorTargetKind::Pointer,
                     };
                   }
+        ),
+        clock(
+            panelClock
+                ? std::move(panelClock)
+                : [] {
+                    return std::chrono::steady_clock::now();
+                  }
         )
   {
     lifetime = std::make_shared<Lifetime>();
     lifetime->owner = this;
-    idleTailMotionState =
-        inputIndicatorCompanionIdleMotionInitialState(
-            static_cast<std::uint32_t>(
-                std::chrono::duration_cast<
-                    std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now()
-                        .time_since_epoch()
-                )
-                    .count()
-            )
-        );
-    animationEpoch = std::chrono::steady_clock::now();
+    const auto initialTime = clock();
+    idleTailMotionState = inputIndicatorCompanionIdleMotionInitialState(
+        static_cast<std::uint32_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(initialTime.time_since_epoch()).count()
+        )
+    );
+    animationEpoch = initialTime;
     const auto style =
         macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat);
     panel = [[DeskflowInputIndicatorPanel alloc]
@@ -1083,10 +1088,8 @@ struct MacInputIndicatorPanel::Impl
                       }
                       state->owner->activeSpaceChanged = true;
                       state->owner->idleTailPaused = false;
-                      const auto now =
-                          std::chrono::steady_clock::now();
+                      const auto now = state->owner->clock();
                       state->owner->motionStateStarted = now;
-                      state->owner->lastPointerMovement = now;
                       if (state->owner->presentationInvalidated) {
                         state->owner->presentationInvalidated();
                       }
@@ -1102,9 +1105,13 @@ struct MacInputIndicatorPanel::Impl
           removeObserver:activeSpaceToken];
       activeSpaceToken = nil;
     }
-    [panel close];
-    [panel release];
+    [panel orderOut:nil];
+    panel.contentView = nil;
     [view release];
+    view = nil;
+    [panel setReleasedWhenClosed:YES];
+    [panel close];
+    panel = nil;
   }
 
   DeskflowInputIndicatorPanel *panel = nil;
@@ -1113,6 +1120,7 @@ struct MacInputIndicatorPanel::Impl
   std::shared_ptr<Lifetime> lifetime;
   std::function<void()> presentationInvalidated;
   MacInputIndicatorPanel::TargetLocation targetLocation;
+  MacInputIndicatorPanel::Clock clock;
   InputIndicatorCompanion companion =
       InputIndicatorCompanion::Cat;
   deskflow::input::InputIndicatorSource source =
@@ -1123,6 +1131,7 @@ struct MacInputIndicatorPanel::Impl
   std::chrono::steady_clock::time_point motionStateStarted;
   std::chrono::steady_clock::time_point previousTargetTime;
   std::chrono::steady_clock::time_point lastPointerMovement;
+  InputIndicatorIdleGrowthState idleGrowthState;
   bool activeSpaceChanged = true;
   bool followerInitialized = false;
   bool previousTargetInitialized = false;
@@ -1145,18 +1154,15 @@ struct MacInputIndicatorPanel::Impl
   double idleTailPauseStartedMilliseconds = 0;
   InputIndicatorMotionState motionState =
       InputIndicatorMotionState::Idle;
+  bool previousReducedMotion = false;
   InputIndicatorCompanionIdleMotionState
       idleTailMotionState;
 };
 
 MacInputIndicatorPanel::MacInputIndicatorPanel(
-    std::function<void()> presentationInvalidated,
-    TargetLocation targetLocation
+    std::function<void()> presentationInvalidated, TargetLocation targetLocation, Clock clock
 )
-    : m_impl(std::make_unique<Impl>(
-          std::move(presentationInvalidated),
-          std::move(targetLocation)
-      ))
+    : m_impl(std::make_unique<Impl>(std::move(presentationInvalidated), std::move(targetLocation), std::move(clock)))
 {
 }
 
@@ -1173,25 +1179,25 @@ bool MacInputIndicatorPanel::show(
 
   const auto previousInputSource =
       m_impl->source;
-  const auto now =
-      std::chrono::steady_clock::now();
+  const auto now = m_impl->clock();
   const bool companionChanged =
       m_impl->companion != options.companion;
+  const bool reducedMotion = isOSXReduceMotion();
+  const bool reducedMotionChanged = reducedMotion != m_impl->previousReducedMotion;
+  m_impl->previousReducedMotion = reducedMotion;
   const double animationMilliseconds =
       std::chrono::duration<double, std::milli>(
           now - m_impl->animationEpoch
       )
           .count();
-  m_impl->startleState =
-      inputIndicatorCompanionSourceStartleTrigger(
-          m_impl->startleState,
-          previousInputSource,
-          options.source,
-          animationMilliseconds,
-          isOSXReduceMotion()
-      );
+  m_impl->startleState = inputIndicatorCompanionSourceStartleTrigger(
+      m_impl->startleState, previousInputSource, options.source, animationMilliseconds, reducedMotion
+  );
   if (companionChanged) {
     m_impl->idleTailPaused = false;
+    m_impl->idleGrowthState = {};
+  } else if (reducedMotion) {
+    m_impl->idleGrowthState = {};
   }
   if (companionChanged &&
       m_impl->followerInitialized &&
@@ -1213,7 +1219,7 @@ bool MacInputIndicatorPanel::show(
           : options.source;
   m_impl->source = options.source;
   m_impl->transitionStarted = now;
-  if (!m_impl->followerInitialized) {
+  if (!m_impl->followerInitialized || companionChanged || reducedMotionChanged) {
     m_impl->motionStateStarted = now;
     m_impl->previousTargetTime = now;
     m_impl->lastPointerMovement = now;
@@ -1235,7 +1241,7 @@ bool MacInputIndicatorPanel::show(
       ) /
       100.0;
 
-  const auto style = macInputIndicatorPanelStyle(options.companion);
+  const auto style = macInputIndicatorPanelStyle(options.companion, m_impl->idleGrowthState.scale);
   [m_impl->panel setContentSize:NSMakeSize(
                       style.canvasWidth, style.canvasHeight
                   )];
@@ -1250,6 +1256,7 @@ bool MacInputIndicatorPanel::show(
   m_impl->view.transitionProgress = 0;
   m_impl->view.motionX = 0;
   m_impl->view.motionY = 0;
+  m_impl->view.idleGrowthScale = m_impl->idleGrowthState.scale;
   m_impl->view.facesRight = m_impl->facesRight;
   m_impl->view.facingScaleX = 1;
   m_impl->view.catIdleTailMotion = 0;
@@ -1283,8 +1290,16 @@ void MacInputIndicatorPanel::setFollowSpeedPercent(
 MacInputIndicatorPanelMoveResult
 MacInputIndicatorPanel::move(InputIndicatorPosition position)
 {
-  const auto style =
-      macInputIndicatorPanelStyle(m_impl->companion);
+  const auto now = m_impl->clock();
+  const bool reducedMotion = isOSXReduceMotion();
+  if (reducedMotion != m_impl->previousReducedMotion) {
+    m_impl->previousReducedMotion = reducedMotion;
+    m_impl->lastPointerMovement = now;
+    if (reducedMotion) {
+      m_impl->idleGrowthState = {};
+    }
+  }
+  const auto style = macInputIndicatorPanelStyle(m_impl->companion, m_impl->idleGrowthState.scale);
   const auto targetLocation =
       m_impl->targetLocation();
   const InputIndicatorPoint cursorDelta{
@@ -1324,8 +1339,6 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
     return {};
   }
 
-  const bool reducedMotion = isOSXReduceMotion();
-  const auto now = std::chrono::steady_clock::now();
   const auto transitionElapsed =
       std::chrono::duration<double, std::milli>(
           now - m_impl->transitionStarted
@@ -1358,10 +1371,23 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       pointerSpeed =
           pointerDistance * 1000.0 / elapsedMilliseconds;
     }
-    if (pointerDistance > kSettledDistance) {
-      m_impl->lastPointerMovement = now;
-    }
   }
+  if (cursorMoved) {
+    m_impl->lastPointerMovement = now;
+  } else {
+    pointerSpeed = 0;
+  }
+  const double idleMilliseconds = std::chrono::duration<double, std::milli>(now - m_impl->lastPointerMovement).count();
+  const double animationMillisecondsAtStart =
+      std::chrono::duration<double, std::milli>(now - m_impl->animationEpoch).count();
+  const auto idleGrowthStep = inputIndicatorIdleGrowthAdvance(
+      m_impl->idleGrowthState, m_impl->companion, idleMilliseconds, animationMillisecondsAtStart, cursorMoved,
+      reducedMotion
+  );
+  const double idleScale = idleGrowthStep.scale;
+  const bool idleScaleChanged = std::abs(idleScale - m_impl->idleGrowthState.scale) > 0.0001;
+  m_impl->idleGrowthState = idleGrowthStep.state;
+  const auto renderedStyle = macInputIndicatorPanelStyle(m_impl->companion, idleScale);
   if (!m_impl->pursuitState.initialized &&
       m_impl->followerInitialized) {
     m_impl->pursuitState.position =
@@ -1392,6 +1418,13 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
     return {};
   }
   auto nextPursuitState = pursuit->state;
+  const bool scaleOnlyPursuit = !cursorMoved && idleScaleChanged && !initializePursuit;
+  if (scaleOnlyPursuit) {
+    nextPursuitState.velocity = {};
+    nextPursuitState.headingRadians = m_impl->pursuitState.headingRadians;
+    nextPursuitState.motionState = InputIndicatorMotionState::Idle;
+    nextPursuitState.stoppedMilliseconds = 180;
+  }
   if (!initializePursuit &&
       !reducedMotion &&
       position ==
@@ -1453,8 +1486,7 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   m_impl->follower =
       m_impl->pursuitState.position;
   m_impl->followerInitialized = true;
-  m_impl->motion =
-      reducedMotion ? InputIndicatorPoint{} : pursuit->movement;
+  m_impl->motion = reducedMotion || scaleOnlyPursuit ? InputIndicatorPoint{} : pursuit->movement;
   const auto nextMotionState =
       m_impl->pursuitState.motionState;
   if (nextMotionState != m_impl->motionState) {
@@ -1605,13 +1637,9 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       );
     }
   }
-  const bool animating =
-      transitionProgress < 1.0 ||
-      followerDistance > kSettledDistance ||
-      distance(m_impl->motion) > kSettledDistance ||
-      startleStep.frame.active ||
-      startleStep.state.pending ||
-      facingPose.turning;
+  const bool animating = transitionProgress < 1.0 || idleGrowthStep.animating || followerDistance > kSettledDistance ||
+                         distance(m_impl->motion) > kSettledDistance || startleStep.frame.active ||
+                         startleStep.state.pending || facingPose.turning;
   const bool startleAnimating =
       startleStep.frame.active ||
       startleStep.state.pending;
@@ -1621,80 +1649,33 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
        m_impl->motionState == InputIndicatorMotionState::Walk ||
        m_impl->motionState == InputIndicatorMotionState::Run);
   const auto frameInterval =
-      transitionProgress < 1.0 ||
-              startleAnimating ||
-              facingPose.turning
+      transitionProgress < 1.0 || startleAnimating || facingPose.turning || idleGrowthStep.shrinking
           ? 8
-          : inputIndicatorMotionFrameInterval(
-                m_impl->motionState, reducedMotion
-            );
+          : inputIndicatorMotionFrameInterval(m_impl->motionState, reducedMotion);
 
   constexpr double kRedrawTolerance = 0.0001;
   const bool viewNeedsDisplay =
-      m_impl->activeSpaceChanged ||
-      std::abs(
-          m_impl->view.transitionProgress - transitionProgress
-      ) > kRedrawTolerance ||
-      std::abs(m_impl->view.motionX - m_impl->motion.x) >
-          kRedrawTolerance ||
-      std::abs(m_impl->view.motionY - m_impl->motion.y) >
-          kRedrawTolerance ||
-      m_impl->view.motionState !=
-          static_cast<NSInteger>(m_impl->motionState) ||
-      std::abs(m_impl->view.motionPhase - motionPhase) >
-          kRedrawTolerance ||
-      m_impl->view.catIdleTailMotion !=
-          static_cast<NSInteger>(idleTailFrame.motion) ||
-      std::abs(
-          m_impl->view.catIdleTailProgress -
-          idleTailFrame.progress
-      ) > kRedrawTolerance ||
-      static_cast<bool>(
-          m_impl->view.catIdleTailActive
-      ) != idleTailFrame.active ||
+      m_impl->activeSpaceChanged || std::abs(m_impl->view.idleGrowthScale - idleScale) > kRedrawTolerance ||
+      std::abs(m_impl->view.transitionProgress - transitionProgress) > kRedrawTolerance ||
+      std::abs(m_impl->view.motionX - m_impl->motion.x) > kRedrawTolerance ||
+      std::abs(m_impl->view.motionY - m_impl->motion.y) > kRedrawTolerance ||
+      m_impl->view.motionState != static_cast<NSInteger>(m_impl->motionState) ||
+      std::abs(m_impl->view.motionPhase - motionPhase) > kRedrawTolerance ||
+      m_impl->view.catIdleTailMotion != static_cast<NSInteger>(idleTailFrame.motion) ||
+      std::abs(m_impl->view.catIdleTailProgress - idleTailFrame.progress) > kRedrawTolerance ||
+      static_cast<bool>(m_impl->view.catIdleTailActive) != idleTailFrame.active ||
       m_impl->view.facesRight != facingPose.facesRight ||
-      std::abs(
-          m_impl->view.facingScaleX -
-          facingPose.horizontalScale
-      ) > kRedrawTolerance ||
-      static_cast<bool>(
-          m_impl->view.catStartleActive
-      ) != startleStep.frame.active ||
-      static_cast<bool>(
-          m_impl->view.catStartlePending
-      ) != startleStep.state.pending ||
-      m_impl->view.catStartleLatestSource !=
-          static_cast<NSInteger>(
-              startleStep.state.latestSource
-          ) ||
-      std::abs(
-          m_impl->view.catStartleProgress -
-          startleStep.frame.progress
-      ) > kRedrawTolerance ||
-      std::abs(
-          m_impl->view.catStartleRecoilOffsetX -
-          startleStep.frame.recoilOffsetX
-      ) > kRedrawTolerance ||
-      std::abs(
-          m_impl->view.catStartleHorizontalScale -
-          startleStep.frame.horizontalScale
-      ) > kRedrawTolerance ||
-      std::abs(
-          m_impl->view.catStartleDorsalLift -
-          startleStep.frame.dorsalLift
-      ) > kRedrawTolerance ||
-      std::abs(
-          m_impl->view.catStartleHaloScale -
-          startleStep.frame.haloScale
-      ) > kRedrawTolerance ||
-      std::abs(
-          m_impl->view.catStartleHaloAlpha -
-          startleStep.frame.haloAlpha
-      ) > kRedrawTolerance ||
-      std::abs(
-          m_impl->view.catBodyHeadingRadians -
-          bodyHeadingRadians
-      ) > kRedrawTolerance;
+      std::abs(m_impl->view.facingScaleX - facingPose.horizontalScale) > kRedrawTolerance ||
+      static_cast<bool>(m_impl->view.catStartleActive) != startleStep.frame.active ||
+      static_cast<bool>(m_impl->view.catStartlePending) != startleStep.state.pending ||
+      m_impl->view.catStartleLatestSource != static_cast<NSInteger>(startleStep.state.latestSource) ||
+      std::abs(m_impl->view.catStartleProgress - startleStep.frame.progress) > kRedrawTolerance ||
+      std::abs(m_impl->view.catStartleRecoilOffsetX - startleStep.frame.recoilOffsetX) > kRedrawTolerance ||
+      std::abs(m_impl->view.catStartleHorizontalScale - startleStep.frame.horizontalScale) > kRedrawTolerance ||
+      std::abs(m_impl->view.catStartleDorsalLift - startleStep.frame.dorsalLift) > kRedrawTolerance ||
+      std::abs(m_impl->view.catStartleHaloScale - startleStep.frame.haloScale) > kRedrawTolerance ||
+      std::abs(m_impl->view.catStartleHaloAlpha - startleStep.frame.haloAlpha) > kRedrawTolerance ||
+      std::abs(m_impl->view.catBodyHeadingRadians - bodyHeadingRadians) > kRedrawTolerance;
   m_impl->view.previousSource =
       static_cast<NSInteger>(m_impl->previousSource);
   m_impl->view.source =
@@ -1702,6 +1683,7 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   m_impl->view.transitionProgress = transitionProgress;
   m_impl->view.motionX = m_impl->motion.x;
   m_impl->view.motionY = m_impl->motion.y;
+  m_impl->view.idleGrowthScale = idleScale;
   m_impl->view.motionState =
       static_cast<NSInteger>(m_impl->motionState);
   m_impl->view.motionPhase = reducedMotion ? 0 : motionPhase;
@@ -1740,11 +1722,18 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   if (viewNeedsDisplay) {
     [m_impl->view setNeedsDisplay:YES];
   }
-  const auto panelOrigin = NSMakePoint(
-      m_impl->follower.x - style.canvasOffsetX,
-      m_impl->follower.y - style.canvasOffsetY
-  );
+  const NSSize renderedPanelSize = NSMakeSize(renderedStyle.canvasWidth, renderedStyle.canvasHeight);
+  if (!NSEqualSizes(m_impl->panel.contentView.bounds.size, renderedPanelSize)) {
+    [m_impl->panel setContentSize:renderedPanelSize];
+    [m_impl->view setNeedsDisplay:YES];
+  }
+  const auto panelOrigin =
+      NSMakePoint(m_impl->follower.x - renderedStyle.canvasOffsetX, m_impl->follower.y - renderedStyle.canvasOffsetY);
   [m_impl->panel setFrameOrigin:panelOrigin];
+  if (!NSEqualSizes(m_impl->view.bounds.size, renderedPanelSize)) {
+    [m_impl->view setFrameSize:renderedPanelSize];
+    [m_impl->view setNeedsDisplay:YES];
+  }
 
   const bool visible =
       static_cast<bool>([m_impl->panel isVisible]);
@@ -1781,9 +1770,13 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
 
 void MacInputIndicatorPanel::hide()
 {
+  [m_impl->panel orderOut:nil];
   m_impl->idleTailMotionState.running = false;
   m_impl->idleTailPaused = false;
+  m_impl->idleGrowthState = {};
+  m_impl->lastPointerMovement = m_impl->clock();
   m_impl->startleState = {};
+  m_impl->view.idleGrowthScale = 1;
   m_impl->view.catStartleActive = NO;
   m_impl->view.catStartlePending = NO;
   m_impl->view.catStartleLatestSource =
@@ -1796,7 +1789,9 @@ void MacInputIndicatorPanel::hide()
   m_impl->view.catStartleDorsalLift = 0;
   m_impl->view.catStartleHaloScale = 1;
   m_impl->view.catStartleHaloAlpha = 0;
-  [m_impl->panel orderOut:nil];
+  const auto normalStyle = macInputIndicatorPanelStyle(m_impl->companion);
+  [m_impl->panel setContentSize:NSMakeSize(normalStyle.canvasWidth, normalStyle.canvasHeight)];
+  [m_impl->view setNeedsDisplay:YES];
 }
 
 } // namespace deskflow::gui::input

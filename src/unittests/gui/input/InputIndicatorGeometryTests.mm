@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <set>
@@ -1045,6 +1046,21 @@ NSView *catPanelView()
     }
   }
   return nil;
+}
+
+NSInteger catPanelCount()
+{
+  Class panelClass = NSClassFromString(@"DeskflowInputIndicatorPanel");
+  if (!panelClass) {
+    return 0;
+  }
+  NSInteger count = 0;
+  for (NSWindow *candidate in NSApp.windows) {
+    if ([candidate isKindOfClass:panelClass]) {
+      ++count;
+    }
+  }
+  return count;
 }
 
 // The panel tests never read the live pointer. Deskflow parks the local pointer on the very edge of a screen while another computer is in
@@ -2622,6 +2638,128 @@ void InputIndicatorGeometryTests::compactPanelStyleUsesApprovedMetrics()
   const MacInputIndicatorPanelOptions options;
   QCOMPARE(options.opacityPercent, 65);
   QCOMPARE(options.companion, InputIndicatorCompanion::Cat);
+}
+
+void InputIndicatorGeometryTests::catIdleGrowthWaitsThenEasesAndCapsAtFive()
+{
+  InputIndicatorIdleGrowthState state;
+  double previousScale = 1.0;
+  for (int timeMilliseconds = 0; timeMilliseconds <= 60000; timeMilliseconds += 1000) {
+    const auto step = inputIndicatorIdleGrowthAdvance(
+        state, InputIndicatorCompanion::Cat, timeMilliseconds, timeMilliseconds, false, false
+    );
+    QVERIFY(step.scale >= 1.0 && step.scale <= 5.0);
+    QVERIFY(step.scale + 1e-9 >= previousScale);
+    if (timeMilliseconds < 5000) {
+      QCOMPARE(step.scale, 1.0);
+    } else if (timeMilliseconds == 20000) {
+      QCOMPARE(step.scale, 3.0);
+    } else if (timeMilliseconds >= 35000) {
+      QCOMPARE(step.scale, 5.0);
+    }
+    previousScale = step.scale;
+    state = step.state;
+  }
+  const auto capped =
+      inputIndicatorIdleGrowthAdvance(state, InputIndicatorCompanion::Cat, 1000000000.0, 1000000000.0, false, false);
+  QCOMPARE(capped.scale, 5.0);
+  QVERIFY(capped.scale <= 5.0);
+}
+
+void InputIndicatorGeometryTests::catIdleGrowthReturnsSmoothlyAfterPointerMovement()
+{
+  const auto grown = inputIndicatorIdleGrowthAdvance({}, InputIndicatorCompanion::Cat, 35000.0, 35000.0, false, false);
+  QCOMPARE(grown.scale, 5.0);
+
+  const auto started =
+      inputIndicatorIdleGrowthAdvance(grown.state, InputIndicatorCompanion::Cat, 0.0, 35000.0, true, false);
+  QCOMPARE(started.scale, 5.0);
+  QVERIFY(started.animating);
+
+  const auto middle =
+      inputIndicatorIdleGrowthAdvance(started.state, InputIndicatorCompanion::Cat, 150.0, 35150.0, true, false);
+  QVERIFY(middle.scale > 1.0);
+  QVERIFY(middle.scale < started.scale);
+  QVERIFY(middle.animating);
+
+  const auto late =
+      inputIndicatorIdleGrowthAdvance(middle.state, InputIndicatorCompanion::Cat, 250.0, 35250.0, true, false);
+  QVERIFY(late.scale > 1.0);
+  QVERIFY(late.scale < middle.scale);
+
+  const auto finished =
+      inputIndicatorIdleGrowthAdvance(late.state, InputIndicatorCompanion::Cat, 300.0, 35300.0, true, false);
+  QCOMPARE(finished.scale, 1.0);
+  QVERIFY(!finished.animating);
+}
+
+void InputIndicatorGeometryTests::catIdleGrowthIsCatOnlyAndRespectsReducedMotion()
+{
+  const auto grown = inputIndicatorIdleGrowthAdvance({}, InputIndicatorCompanion::Cat, 35000.0, 35000.0, false, false);
+  QCOMPARE(grown.scale, 5.0);
+  for (const auto companion : {InputIndicatorCompanion::Dog, InputIndicatorCompanion::Turtle}) {
+    const auto step = inputIndicatorIdleGrowthAdvance(grown.state, companion, 35000.0, 35000.0, false, false);
+    QCOMPARE(step.scale, 1.0);
+    QVERIFY(!step.animating);
+  }
+  const auto reduced =
+      inputIndicatorIdleGrowthAdvance(grown.state, InputIndicatorCompanion::Cat, 35000.0, 35000.0, false, true);
+  QCOMPARE(reduced.scale, 1.0);
+  QVERIFY(!reduced.animating);
+}
+
+void InputIndicatorGeometryTests::companionPanelScalePreservesGapAndBounds()
+{
+  const InputIndicatorPoint cursor{
+      .x = 500,
+      .y = 500,
+  };
+  const std::vector<InputIndicatorRect> screens{{
+      .x = 0,
+      .y = 0,
+      .width = 1000,
+      .height = 1000,
+  }};
+  for (const double scale : {1.0, 1.75, 5.0}) {
+    const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, scale);
+    const auto normal = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat);
+    QCOMPARE(style.cursorGap, 7.0);
+    QCOMPARE(style.screenMargin, 7.0);
+    QCOMPARE(style.canvasWidth, normal.canvasWidth * scale);
+    QCOMPARE(style.canvasHeight, normal.canvasHeight * scale);
+    QCOMPARE(style.visualScale, normal.visualScale * scale);
+    const auto positioned = positionInputIndicator(
+        cursor,
+        {
+            .width = style.width,
+            .height = style.height,
+        },
+        screens, InputIndicatorPosition::CursorBottomRight, style.cursorGap, style.screenMargin
+    );
+    QVERIFY(positioned);
+    QCOMPARE(positioned->x - cursor.x, 7.0);
+    QCOMPARE(cursor.y - (positioned->y + style.height), 7.0);
+    for (const auto &edgeCursor : {
+             InputIndicatorPoint{.x = 0, .y = 0},
+             InputIndicatorPoint{.x = 1000, .y = 0},
+             InputIndicatorPoint{.x = 0, .y = 1000},
+             InputIndicatorPoint{.x = 1000, .y = 1000},
+         }) {
+      const auto clamped = positionInputIndicator(
+          edgeCursor,
+          {
+              .width = style.width,
+              .height = style.height,
+          },
+          screens, InputIndicatorPosition::CursorFollowApproach, style.cursorGap, style.screenMargin, M_PI / 4.0
+      );
+      QVERIFY(clamped);
+      QVERIFY(clamped->x >= style.screenMargin);
+      QVERIFY(clamped->y >= style.screenMargin);
+      QVERIFY(clamped->x + style.width <= 1000.0 - style.screenMargin);
+      QVERIFY(clamped->y + style.height <= 1000.0 - style.screenMargin);
+    }
+  }
 }
 
 void InputIndicatorGeometryTests::companionDisplayModelScalesAllLogicalGeometry()
@@ -9029,7 +9167,7 @@ void InputIndicatorGeometryTests::catPursuitCanvasContainsEightHeadings()
   constexpr int paddingPoints = 4;
   int cases = 0;
   int outsidePixels = 0;
-  for (const int scale : {1, 2}) {
+  for (const int scale : {1, 2, 5}) {
     const auto style =
         macInputIndicatorPanelStyle(
             InputIndicatorCompanion::Cat
@@ -9129,7 +9267,7 @@ void InputIndicatorGeometryTests::catPursuitCanvasContainsEightHeadings()
   qInfo() << "pursuit-canvas-outsidePixels"
           << outsidePixels
           << "cases" << cases;
-  QCOMPARE(cases, 64);
+  QCOMPARE(cases, 96);
   QCOMPARE(outsidePixels, 0);
 }
 
@@ -9383,7 +9521,7 @@ void InputIndicatorGeometryTests::catStartleFurIsVisiblyStrongerThanOldPeak()
   oldPeak.dorsalLift = 1.8;
   const InputIndicatorCatIdleTailFrame restTail;
 
-  for (const int scale : {1, 2}) {
+  for (const int scale : {1, 2, 5}) {
     NSBitmapImageRep *baseline =
         catBodyBitmap(
             pose,
@@ -9713,7 +9851,7 @@ void InputIndicatorGeometryTests::catStartleFurAndGlowStayInsideRotatingCanvas()
   QVERIFY(peak.frame.haloAlpha > 0.0);
   QVERIFY(peak.frame.haloAlpha <= 0.16);
 
-  for (const int scale : {1, 2}) {
+  for (const int scale : {1, 2, 5}) {
     const NSInteger canvasLeft =
         paddingPoints * scale;
     const NSInteger canvasBottom =
@@ -9893,7 +10031,7 @@ void InputIndicatorGeometryTests::catStartleFurAndGlowStayInsideRotatingCanvas()
           << haloMinimumAlpha
           << haloMaximumAlpha
           << "cases" << cases;
-  QCOMPARE(cases, 64);
+  QCOMPARE(cases, 96);
   QCOMPARE(paintOutsidePixels, 0);
   QCOMPARE(glyphOutsidePixels, 0);
   QCOMPARE(outsidePixels, 0);
@@ -9908,6 +10046,224 @@ void InputIndicatorGeometryTests::catStartleFurAndGlowStayInsideRotatingCanvas()
       haloMaximumAlpha <=
       maximumCompositedAlpha + 0.002
   );
+}
+
+void InputIndicatorGeometryTests::catPanelLifecycleKeepsSingleTransparentBacking()
+{
+  using Source = deskflow::input::InputIndicatorSource;
+  const auto fixedCursor = fixedPanelTestPointer();
+  InputIndicatorTarget target{
+      .point =
+          {
+              .x = fixedCursor.x,
+              .y = fixedCursor.y,
+          },
+      .kind = InputIndicatorTargetKind::Pointer,
+  };
+  int invalidations = 0;
+  auto panelOwner =
+      std::make_unique<MacInputIndicatorPanel>([&invalidations] { ++invalidations; }, [&target] { return target; });
+  auto &panel = *panelOwner;
+  QCOMPARE(catPanelCount(), 1);
+  const MacInputIndicatorPanelOptions latin{
+      .source = Source::LatinABC,
+      .companion = InputIndicatorCompanion::Cat,
+  };
+  MacInputIndicatorPanelOptions korean = latin;
+  korean.source = Source::Korean2Set;
+
+  QVERIFY(panel.show(latin));
+  NSView *const view = catPanelView();
+  QVERIFY(view);
+  NSWindow *const window = view.window;
+  QVERIFY(window);
+  QCOMPARE(catPanelCount(), 1);
+
+  panel.hide();
+  QVERIFY(!window.visible);
+  QCOMPARE(catPanelCount(), 1);
+  QVERIFY(panel.show(latin));
+  QCOMPARE(catPanelCount(), 1);
+  QCOMPARE(catPanelView(), view);
+  QCOMPARE(view.window, window);
+
+  QVERIFY(panel.show(korean));
+  QCOMPARE(catPanelCount(), 1);
+  QCOMPARE(catPanelView(), view);
+  QCOMPARE(view.window, window);
+  QTest::qWait(340);
+  QVERIFY(panel.move(korean.position).visible);
+
+  const int invalidationsBeforeSpaceChange = invalidations;
+  [[[NSWorkspace sharedWorkspace] notificationCenter] postNotificationName:NSWorkspaceActiveSpaceDidChangeNotification
+                                                                    object:nil];
+  QTest::qWait(25);
+  QVERIFY(invalidations > invalidationsBeforeSpaceChange);
+  QVERIFY(panel.move(korean.position).visible);
+  QCOMPARE(catPanelCount(), 1);
+  QCOMPARE(catPanelView(), view);
+  QCOMPARE(view.window, window);
+
+  [view displayIfNeeded];
+  NSBitmapImageRep *bitmap = [view bitmapImageRepForCachingDisplayInRect:view.bounds];
+  QVERIFY(bitmap);
+  [view cacheDisplayInRect:view.bounds toBitmapImageRep:bitmap];
+  const double backingScale = static_cast<double>(bitmap.pixelsWide) / view.bounds.size.width;
+  const auto alphaBounds = bitmapAlphaBounds(bitmap);
+  const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat);
+  QVERIFY(alphaBounds.width > 0);
+  QVERIFY(alphaBounds.x / backingScale >= style.canvasOffsetX - 1.0);
+  QVERIFY(alphaBounds.y / backingScale >= style.canvasOffsetY - 1.0);
+  QVERIFY((alphaBounds.x + alphaBounds.width) / backingScale <= style.canvasOffsetX + style.width + 1.0);
+  QVERIFY((alphaBounds.y + alphaBounds.height) / backingScale <= style.canvasOffsetY + style.height + 1.0);
+  [bitmap release];
+  panelOwner.reset();
+  QCOMPARE(catPanelCount(), 0);
+}
+
+void InputIndicatorGeometryTests::catPanelIdleGrowthResizesAndClearsSameBacking()
+{
+  using Source = deskflow::input::InputIndicatorSource;
+  using Clock = std::chrono::steady_clock;
+  const auto fixedCursor = fixedPanelTestPointer();
+  InputIndicatorTarget target{
+      .point =
+          {
+              .x = fixedCursor.x,
+              .y = fixedCursor.y,
+          },
+      .kind = InputIndicatorTargetKind::Pointer,
+  };
+  Clock::time_point now{};
+  MacInputIndicatorPanel panel({}, [&target] { return target; }, [&now] { return now; });
+  const MacInputIndicatorPanelOptions options{
+      .source = Source::LatinABC,
+      .companion = InputIndicatorCompanion::Cat,
+  };
+  QVERIFY(panel.show(options));
+  NSView *const view = catPanelView();
+  QVERIFY(view);
+  NSWindow *const window = view.window;
+  QVERIFY(window);
+  QCOMPARE(catPanelCount(), 1);
+  QCOMPARE(std::lround(view.bounds.size.width), 49L);
+
+  now += std::chrono::seconds(20);
+  const auto middleStep = panel.move(options.position);
+  QVERIFY(middleStep.visible);
+  QCOMPARE(middleStep.frameIntervalMilliseconds, 75);
+  const double middleScale = [[view valueForKey:@"idleGrowthScale"] doubleValue];
+  QCOMPARE(middleScale, 3.0);
+  QVERIFY(view.bounds.size.width > 49.0);
+  QVERIFY(view.bounds.size.width < 245.0);
+
+  now += std::chrono::seconds(15);
+  const auto maximumStep = panel.move(options.position);
+  QVERIFY(maximumStep.visible);
+  QCOMPARE(maximumStep.frameIntervalMilliseconds, 75);
+  QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 5.0);
+  QCOMPARE(std::lround(view.bounds.size.width), 245L);
+  QCOMPARE(std::lround(view.bounds.size.height), 245L);
+  QCOMPARE(catPanelCount(), 1);
+  QCOMPARE(view.window, window);
+
+  MacInputIndicatorPanelOptions korean = options;
+  korean.source = Source::Korean2Set;
+  QVERIFY(panel.show(korean));
+  QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 5.0);
+  QCOMPARE(std::lround(view.bounds.size.width), 245L);
+  [[[NSWorkspace sharedWorkspace] notificationCenter] postNotificationName:NSWorkspaceActiveSpaceDidChangeNotification
+                                                                    object:nil];
+  QTest::qWait(25);
+  QVERIFY(panel.move(korean.position).visible);
+  QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 5.0);
+  QCOMPARE(catPanelCount(), 1);
+  QCOMPARE(view.window, window);
+
+  const auto visibleOrigin = [view](double scale) {
+    const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, scale);
+    const auto origin = view.window.frame.origin;
+    return InputIndicatorPoint{
+        .x = origin.x + style.canvasOffsetX,
+        .y = origin.y + style.canvasOffsetY,
+    };
+  };
+  for (int tick = 0; tick < 400; ++tick) {
+    now += std::chrono::milliseconds(8);
+    QVERIFY(panel.move(options.position).visible);
+  }
+  const auto styleAtFive = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, 5.0);
+  NSRect containingScreen;
+  bool foundScreen = false;
+  for (NSScreen *screen in NSScreen.screens) {
+    if (NSPointInRect(fixedCursor, screen.frame)) {
+      containingScreen = screen.frame;
+      foundScreen = true;
+      break;
+    }
+  }
+  QVERIFY(foundScreen);
+  const auto maximumTarget = positionInputIndicator(
+      target.point,
+      {
+          .width = styleAtFive.width,
+          .height = styleAtFive.height,
+      },
+      {{.x = containingScreen.origin.x,
+        .y = containingScreen.origin.y,
+        .width = containingScreen.size.width,
+        .height = containingScreen.size.height}},
+      options.position, styleAtFive.cursorGap, styleAtFive.screenMargin
+  );
+  QVERIFY(maximumTarget);
+  const auto grownOrigin = visibleOrigin(5.0);
+  QVERIFY(std::abs(grownOrigin.x - maximumTarget->x) < 1.0);
+  QVERIFY(std::abs(grownOrigin.y - maximumTarget->y) < 1.0);
+  QCOMPARE(styleAtFive.cursorGap, 7.0);
+
+  target.point.x += 120;
+  const auto beforeMovement = visibleOrigin(5.0);
+  const auto movementStep = panel.move(options.position);
+  QVERIFY(movementStep.visible);
+  QCOMPARE(movementStep.frameIntervalMilliseconds, 8);
+  QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 5.0);
+  const auto firstMovement = visibleOrigin(5.0);
+  QVERIFY(std::hypot(firstMovement.x - beforeMovement.x, firstMovement.y - beforeMovement.y) < 3.0);
+  now += std::chrono::milliseconds(150);
+  const auto shrinkStep = panel.move(options.position);
+  QVERIFY(shrinkStep.visible);
+  QCOMPARE(shrinkStep.frameIntervalMilliseconds, 8);
+  const double shrinkingScale = [[view valueForKey:@"idleGrowthScale"] doubleValue];
+  QCOMPARE(shrinkingScale, 3.0);
+  const auto midShrink = visibleOrigin(shrinkingScale);
+  const double midShrinkMovement = std::hypot(midShrink.x - firstMovement.x, midShrink.y - firstMovement.y);
+  qInfo() << "cat-panel-shrink-movement" << midShrinkMovement;
+  QVERIFY(midShrinkMovement <= 5.760001 + std::sqrt(2.0));
+  now += std::chrono::milliseconds(150);
+  QVERIFY(panel.move(options.position).visible);
+  QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 1.0);
+  QCOMPARE(std::lround(view.bounds.size.width), 49L);
+  QCOMPARE(catPanelCount(), 1);
+  QCOMPARE(view.window, window);
+
+  for (int tick = 0; tick < 400; ++tick) {
+    now += std::chrono::milliseconds(8);
+    QVERIFY(panel.move(options.position).visible);
+  }
+  QCOMPARE(panel.move(options.position).frameIntervalMilliseconds, 75);
+  [view displayIfNeeded];
+  NSBitmapImageRep *bitmap = [view bitmapImageRepForCachingDisplayInRect:view.bounds];
+  QVERIFY(bitmap);
+  [view cacheDisplayInRect:view.bounds toBitmapImageRep:bitmap];
+  const double backingScale = static_cast<double>(bitmap.pixelsWide) / view.bounds.size.width;
+  const auto alphaBounds = bitmapAlphaBounds(bitmap);
+  const auto normalStyle = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat);
+  QVERIFY(alphaBounds.width > 0);
+  QVERIFY(alphaBounds.x / backingScale >= normalStyle.canvasOffsetX - 1.0);
+  QVERIFY(alphaBounds.y / backingScale >= normalStyle.canvasOffsetY - 1.0);
+  QVERIFY((alphaBounds.x + alphaBounds.width) / backingScale <= normalStyle.canvasOffsetX + normalStyle.width + 1.0);
+  QVERIFY((alphaBounds.y + alphaBounds.height) / backingScale <= normalStyle.canvasOffsetY + normalStyle.height + 1.0);
+  [bitmap release];
 }
 
 void InputIndicatorGeometryTests::companionSettingDefaultsToCat()

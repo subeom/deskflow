@@ -57,6 +57,27 @@ enum class InputIndicatorCompanion
   Turtle
 };
 
+inline constexpr double kInputIndicatorIdleGrowthDelayMilliseconds = 5000;
+inline constexpr double kInputIndicatorIdleGrowthDurationMilliseconds = 30000;
+inline constexpr double kInputIndicatorIdleGrowthResetMilliseconds = 300;
+inline constexpr double kInputIndicatorIdleGrowthMaximumScale = 5;
+
+struct InputIndicatorIdleGrowthState
+{
+  double scale = 1;
+  double resetOriginScale = 1;
+  double resetStartedMilliseconds = 0;
+  bool resetting = false;
+};
+
+struct InputIndicatorIdleGrowthStep
+{
+  InputIndicatorIdleGrowthState state;
+  double scale = 1;
+  bool animating = false;
+  bool shrinking = false;
+};
+
 enum class InputIndicatorCompanionIdleMotion : unsigned char
 {
   RelaxedSway,
@@ -257,6 +278,11 @@ bool inputIndicatorCompanionFacesRight(
 double inputIndicatorTransitionProgress(
     double elapsedMilliseconds, double durationMilliseconds,
     bool reducedMotion
+);
+
+InputIndicatorIdleGrowthStep inputIndicatorIdleGrowthAdvance(
+    const InputIndicatorIdleGrowthState &state, InputIndicatorCompanion companion, double idleMilliseconds,
+    double nowMilliseconds, bool pointerMoved, bool reducedMotion
 );
 
 InputIndicatorMotionState inputIndicatorMotionState(

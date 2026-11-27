@@ -29,6 +29,10 @@ private Q_SLOTS:
   void unknownOrInvalidGeometryHides_data();
   void unknownOrInvalidGeometryHides();
   void compactPanelStyleUsesApprovedMetrics();
+  void catIdleGrowthWaitsThenEasesAndCapsAtFive();
+  void catIdleGrowthReturnsSmoothlyAfterPointerMovement();
+  void catIdleGrowthIsCatOnlyAndRespectsReducedMotion();
+  void companionPanelScalePreservesGapAndBounds();
   void companionDisplayModelScalesAllLogicalGeometry();
   void companionFacingTurnCompressesAndSwitchesOnce();
   void companionVisualLeanStaysUprightAtEightHeadings();
@@ -94,6 +98,8 @@ private Q_SLOTS:
   void catStartleFurIsVisiblyStrongerThanOldPeak();
   void catStartleGlowIsSingleColoredAndBehindBody();
   void catStartleFurAndGlowStayInsideRotatingCanvas();
+  void catPanelLifecycleKeepsSingleTransparentBacking();
+  void catPanelIdleGrowthResizesAndClearsSameBacking();
   void companionSettingDefaultsToCat();
   void motionOffsetClampsAndRespectsReducedMotion();
   void transitionProgressEasesAndRespectsReducedMotion();
