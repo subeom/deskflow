@@ -159,8 +159,13 @@ VersionChecker::VersionChecker(
       m_runningVersion(std::move(runningVersion)),
       m_cache(std::make_unique<deskflow::gui::UpdateCache>(std::move(cacheRoot))),
       m_verifier(std::move(verifier)),
-      m_retryDelayMs(retryDelayMs)
+      m_retryDelayMs(retryDelayMs),
+      m_rateLimitTimer(new QTimer(this))
 {
+  m_rateLimitTimer->setSingleShot(true);
+  connect(m_rateLimitTimer, &QTimer::timeout, this, [this] {
+    checkLatest(m_deferredCheckReason);
+  });
 }
 
 VersionChecker::VersionChecker(
@@ -197,11 +202,12 @@ VersionChecker::~VersionChecker()
   cancel();
 }
 
-void VersionChecker::checkLatest(UpdateCheckReason)
+void VersionChecker::checkLatest(UpdateCheckReason reason)
 {
   if (m_checking) {
     return;
   }
+  m_deferredCheckReason = reason;
   m_staged.reset();
   m_plan.reset();
   m_sums.reset();
@@ -225,14 +231,11 @@ void VersionChecker::checkLatest(UpdateCheckReason)
   }
   m_cachedState = m_cache->loadState();
   if (m_cachedState && m_cachedState->retryAt > QDateTime::currentDateTimeUtc()) {
-    const auto remaining = QDateTime::currentDateTimeUtc().secsTo(m_cachedState->retryAt);
-    failCheck(
-        QStringLiteral("GitHub rate limit is still active; retry in %1 seconds")
-            .arg(qMax<qint64>(1, remaining))
-    );
+    deferRateLimitedCheck();
     return;
   }
 
+  m_rateLimitTimer->stop();
   m_checking = true;
   m_metadataAttempt = 0;
   m_checksumAttempt = 0;
@@ -243,6 +246,7 @@ void VersionChecker::checkLatest(UpdateCheckReason)
 void VersionChecker::cancel()
 {
   ++m_generation;
+  m_rateLimitTimer->stop();
   if (m_requestId != 0 && m_network) {
     m_network->cancel(m_requestId);
   }
@@ -387,10 +391,7 @@ void VersionChecker::handleLatestResponse(const deskflow::gui::UpdateNetworkResu
   }
   if (result.status == deskflow::gui::UpdateNetworkStatus::RateLimited) {
     saveRateLimitState(result.retryAfterSeconds);
-    failCheck(
-        QStringLiteral("GitHub rate limit reached; retry after %1 seconds")
-            .arg(qBound(1, result.retryAfterSeconds, kMaximumRateWaitSeconds))
-    );
+    deferRateLimitedCheck();
     return;
   }
   if (result.status != deskflow::gui::UpdateNetworkStatus::Success) {
@@ -482,7 +483,9 @@ void VersionChecker::handleInstallerResponse(
   publishStagedUpdate(staged.staged);
 }
 
-void VersionChecker::processReleaseJson(const QByteArray &json, const QString &etag)
+void VersionChecker::processReleaseJson(
+    const QByteArray &json, const QString &etag, bool persistCache
+)
 {
   const auto parsed = deskflow::gui::parseGitHubRelease(json);
   if (!parsed.release) {
@@ -490,19 +493,21 @@ void VersionChecker::processReleaseJson(const QByteArray &json, const QString &e
     return;
   }
 
-  const auto now = QDateTime::currentDateTimeUtc();
-  m_cachedState = deskflow::gui::UpdateCacheState{
-      1,
-      kUrlUpdateCheck,
-      etag,
-      sanitizedReleaseSnapshot(*parsed.release),
-      parsed.release->version,
-      epoch(),
-      now,
-  };
-  if (!m_cache->saveState(*m_cachedState)) {
-    failCheck(QStringLiteral("the update release state could not be saved safely"));
-    return;
+  if (persistCache) {
+    const auto now = QDateTime::currentDateTimeUtc();
+    m_cachedState = deskflow::gui::UpdateCacheState{
+        1,
+        kUrlUpdateCheck,
+        etag,
+        sanitizedReleaseSnapshot(*parsed.release),
+        parsed.release->version,
+        epoch(),
+        now,
+    };
+    if (!m_cache->saveState(*m_cachedState)) {
+      failCheck(QStringLiteral("the update release state could not be saved safely"));
+      return;
+    }
   }
 
   m_release = *parsed.release;
@@ -671,6 +676,33 @@ void VersionChecker::saveRateLimitState(int retryAfterSeconds)
   if (!m_cache->saveState(state)) {
     qWarning("failed to persist update rate-limit state");
   }
+}
+
+void VersionChecker::deferRateLimitedCheck()
+{
+  if (!m_cachedState) {
+    setStatus({UpdateStatusSnapshot::Phase::Idle, {}, {}, {}, false});
+    finishCheck();
+    return;
+  }
+
+  const auto remainingMs = qBound<qint64>(
+      1,
+      QDateTime::currentDateTimeUtc().msecsTo(m_cachedState->retryAt),
+      static_cast<qint64>(kMaximumRateWaitSeconds) * 1000
+  );
+  if (!m_rateLimitTimer->isActive()) {
+    m_rateLimitTimer->start(static_cast<int>(remainingMs));
+  }
+
+  if (m_cachedState->sanitizedSnapshot.isEmpty()) {
+    setStatus({UpdateStatusSnapshot::Phase::Idle, {}, {}, {}, false});
+    finishCheck();
+    return;
+  }
+
+  m_checking = true;
+  processReleaseJson(m_cachedState->sanitizedSnapshot, m_cachedState->etag, false);
 }
 
 void VersionChecker::setStatus(const UpdateStatusSnapshot &status)
