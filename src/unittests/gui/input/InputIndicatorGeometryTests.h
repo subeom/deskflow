@@ -42,6 +42,7 @@ private Q_SLOTS:
   void catRenderModelUsesSideProfileAndPersistentFacing();
   void catTorsoContourExpandsWithoutPadPrimitive();
   void catArtworkFramesFollowApprovedPoseSheet();
+  void catFaceRoundingSoftensAllNinePoses();
   void catArtworkMetricsMatchApprovedSource();
   void catLabelLayoutFitsEveryArtworkPoseAndSource();
   void coreTextInkBoundsExposeGlyphOrigin();
@@ -103,6 +104,7 @@ private Q_SLOTS:
   void catPanelLifecycleKeepsSingleTransparentBacking();
   void catPanelIdleGrowthResizesAndClearsSameBacking();
   void catPanelIdleGrowthResetKeepsAnchorEveryFrame();
+  void catPanelOverlapCompositesOnceWithoutDarkJoints();
   void companionSettingDefaultsToCat();
   void motionOffsetClampsAndRespectsReducedMotion();
   void transitionProgressEasesAndRespectsReducedMotion();

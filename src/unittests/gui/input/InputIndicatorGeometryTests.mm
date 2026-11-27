@@ -135,31 +135,15 @@ NSBezierPath *artworkPath(
 )
 {
   NSBezierPath *path = [NSBezierPath bezierPath];
-  const auto deformed =
-      [&pose, &tailFrame, &startleFrame,
-       facesRight, facingScaleX,
-       bodyHeadingRadians](
-          double x, double y
-      ) {
-        const auto torsoPoint =
-            inputIndicatorCatTorsoPoint(
-                pose, {.x = x, .y = y}
-            );
-        const auto tailPoint =
-            inputIndicatorCatIdleTailPoint(
-                torsoPoint, tailFrame
-            );
-        const auto startlePoint =
-            inputIndicatorCatStartlePoint(
-                tailPoint, startleFrame, true
-            );
-        return inputIndicatorCatBodyPoint(
-            startlePoint,
-            facesRight,
-            facingScaleX,
-            bodyHeadingRadians
-        );
-      };
+  const auto deformed = [&pose, &tailFrame, &startleFrame, facesRight, facingScaleX,
+                         bodyHeadingRadians](double x, double y) {
+    const auto facePoint =
+        inputIndicatorCatRoundedFacePoint({.x = x, .y = y}, pose.headBounds, pose.innerLanguageBounds);
+    const auto torsoPoint = inputIndicatorCatTorsoPoint(pose, facePoint);
+    const auto tailPoint = inputIndicatorCatIdleTailPoint(torsoPoint, tailFrame);
+    const auto startlePoint = inputIndicatorCatStartlePoint(tailPoint, startleFrame, true);
+    return inputIndicatorCatBodyPoint(startlePoint, facesRight, facingScaleX, bodyHeadingRadians);
+  };
   for (const auto &command : commands) {
     switch (command.type) {
     case MacInputIndicatorCatPathCommandType::Move: {
@@ -1061,6 +1045,75 @@ NSInteger catPanelCount()
     }
   }
   return count;
+}
+
+NSBitmapImageRep *catPartMask(
+    const InputIndicatorCatPose &pose, const InputIndicatorCatIdleTailFrame &tailFrame, int pixelScale,
+    double idleScale, bool nearPart
+)
+{
+  const auto artwork = macInputIndicatorCatArtwork(pose.artworkFrame);
+  const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, idleScale);
+  NSBitmapImageRep *bitmap = [[NSBitmapImageRep alloc]
+      initWithBitmapDataPlanes:nil
+                    pixelsWide:static_cast<NSInteger>(std::lround(style.canvasWidth)) * pixelScale
+                    pixelsHigh:static_cast<NSInteger>(std::lround(style.canvasHeight)) * pixelScale
+                 bitsPerSample:8
+               samplesPerPixel:4
+                      hasAlpha:YES
+                      isPlanar:NO
+                colorSpaceName:NSDeviceRGBColorSpace
+                   bytesPerRow:0
+                  bitsPerPixel:0];
+  if (!bitmap) {
+    return nil;
+  }
+  NSGraphicsContext *graphics = [NSGraphicsContext graphicsContextWithBitmapImageRep:bitmap];
+  [NSGraphicsContext saveGraphicsState];
+  [NSGraphicsContext setCurrentContext:graphics];
+  CGContextRef context = [graphics CGContext];
+  CGContextSaveGState(context);
+  CGContextScaleCTM(context, pixelScale, pixelScale);
+  const auto displayOrigin = macInputIndicatorDisplayPoint({}, idleScale);
+  CGContextTranslateCTM(context, displayOrigin.x + style.canvasOffsetX, displayOrigin.y + style.canvasOffsetY);
+  CGContextScaleCTM(context, style.visualScale, style.visualScale);
+  NSBezierPath *part =
+      nearPart ? artworkPath(pose, artwork.near, tailFrame, {}, true) : artworkPath(artwork.far, {}, true);
+  [[NSColor blackColor] setFill];
+  [part fill];
+  CGContextRestoreGState(context);
+  [NSGraphicsContext restoreGraphicsState];
+  return bitmap;
+}
+
+std::optional<InputIndicatorPoint> catFarNearOverlapPixel(
+    const InputIndicatorCatPose &pose, const InputIndicatorCatIdleTailFrame &tailFrame, int pixelScale, double idleScale
+)
+{
+  NSBitmapImageRep *far = catPartMask(pose, tailFrame, pixelScale, idleScale, false);
+  NSBitmapImageRep *near = catPartMask(pose, tailFrame, pixelScale, idleScale, true);
+  if (!far || !near) {
+    [far release];
+    [near release];
+    return std::nullopt;
+  }
+  std::optional<InputIndicatorPoint> result;
+  double bestOverlapAlpha = 0;
+  for (NSInteger y = 0; y < far.pixelsHigh; ++y) {
+    for (NSInteger x = 0; x < far.pixelsWide; ++x) {
+      const double overlapAlpha = std::min([far colorAtX:x y:y].alphaComponent, [near colorAtX:x y:y].alphaComponent);
+      if (overlapAlpha > bestOverlapAlpha) {
+        bestOverlapAlpha = overlapAlpha;
+        result = InputIndicatorPoint{
+            .x = static_cast<double>(x),
+            .y = static_cast<double>(y),
+        };
+      }
+    }
+  }
+  [far release];
+  [near release];
+  return bestOverlapAlpha > 0.5 ? result : std::nullopt;
 }
 
 // The panel tests never read the live pointer. Deskflow parks the local pointer on the very edge of a screen while another computer is in
@@ -3434,6 +3487,119 @@ void InputIndicatorGeometryTests::catArtworkFramesFollowApprovedPoseSheet()
       ).artworkFrame,
       InputIndicatorCatArtworkFrame::IdleNeutral
   );
+}
+
+void InputIndicatorGeometryTests::catFaceRoundingSoftensAllNinePoses()
+{
+  const struct
+  {
+    InputIndicatorMotionState state;
+    double phase;
+    InputIndicatorCatArtworkFrame frame;
+  } poses[] = {
+      {InputIndicatorMotionState::Idle, 0.0, InputIndicatorCatArtworkFrame::IdleNeutral},
+      {InputIndicatorMotionState::Idle, 0.25, InputIndicatorCatArtworkFrame::IdleRise},
+      {InputIndicatorMotionState::Idle, 0.75, InputIndicatorCatArtworkFrame::IdleFall},
+      {InputIndicatorMotionState::Walk, 0.0, InputIndicatorCatArtworkFrame::WalkReach},
+      {InputIndicatorMotionState::Walk, 0.34, InputIndicatorCatArtworkFrame::WalkPass},
+      {InputIndicatorMotionState::Walk, 0.67, InputIndicatorCatArtworkFrame::WalkPush},
+      {InputIndicatorMotionState::Run, 0.0, InputIndicatorCatArtworkFrame::RunCoil},
+      {InputIndicatorMotionState::Run, 0.34, InputIndicatorCatArtworkFrame::RunAir},
+      {InputIndicatorMotionState::Run, 0.67, InputIndicatorCatArtworkFrame::RunLand},
+  };
+  using Source = deskflow::input::InputIndicatorSource;
+  const Source sources[] = {
+      Source::LatinABC,
+      Source::Korean2Set,
+  };
+  const bool facings[] = {true, false};
+  const double headings[] = {
+      0, M_PI / 4, M_PI / 2, 3 * M_PI / 4, M_PI, 5 * M_PI / 4, 3 * M_PI / 2, 7 * M_PI / 4,
+  };
+  int rasterCases = 0;
+  for (const auto &testPose : poses) {
+    const auto pose = inputIndicatorCatPose(testPose.state, testPose.phase, false);
+    QCOMPARE(pose.artworkFrame, testPose.frame);
+    const auto artwork = macInputIndicatorCatArtwork(pose.artworkFrame);
+    double rawMaximumX = -1;
+    double roundedMaximumX = -1;
+    const auto visit = [&](InputIndicatorPoint point) {
+      if (point.x < pose.headBounds.x || point.y < pose.headBounds.y ||
+          point.y > pose.headBounds.y + pose.headBounds.height) {
+        return;
+      }
+      rawMaximumX = std::max(rawMaximumX, point.x);
+      const auto rounded = inputIndicatorCatRoundedFacePoint(point, pose.headBounds, pose.innerLanguageBounds);
+      roundedMaximumX = std::max(roundedMaximumX, rounded.x);
+      QVERIFY(rounded.x <= point.x + 1e-9);
+    };
+    for (const auto &command : artwork.near) {
+      visit({.x = command.x1, .y = command.y1});
+      if (command.type == MacInputIndicatorCatPathCommandType::Cubic) {
+        visit({.x = command.x2, .y = command.y2});
+        visit({.x = command.x3, .y = command.y3});
+      }
+    }
+    QVERIFY(rawMaximumX > pose.headBounds.x);
+    qInfo() << "cat-rounded-face" << static_cast<int>(pose.artworkFrame) << rawMaximumX << roundedMaximumX;
+    QVERIFY(rawMaximumX - roundedMaximumX >= 0.25);
+
+    const InputIndicatorPoint body{
+        .x = pose.torsoBounds.x,
+        .y = pose.torsoBounds.y + pose.torsoBounds.height / 2.0,
+    };
+    const auto roundedBody = inputIndicatorCatRoundedFacePoint(body, pose.headBounds, pose.innerLanguageBounds);
+    QCOMPARE(roundedBody.x, body.x);
+    QCOMPARE(roundedBody.y, body.y);
+    const InputIndicatorPoint labelCenter{
+        .x = pose.innerLanguageBounds.x + pose.innerLanguageBounds.width / 2.0,
+        .y = pose.innerLanguageBounds.y + pose.innerLanguageBounds.height / 2.0,
+    };
+    const auto roundedLabel = inputIndicatorCatRoundedFacePoint(labelCenter, pose.headBounds, pose.innerLanguageBounds);
+    QCOMPARE(roundedLabel.x, labelCenter.x);
+    QCOMPARE(roundedLabel.y, labelCenter.y);
+
+    constexpr int kRasterScale = 5;
+    constexpr int kPaddingPoints = 4;
+    const InputIndicatorCatIdleTailFrame tail;
+    const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat);
+    const NSInteger canvasLeft = kPaddingPoints * kRasterScale;
+    const NSInteger canvasRight = (kPaddingPoints + style.canvasWidth) * kRasterScale;
+    const NSInteger canvasTop = (kPaddingPoints + style.canvasHeight) * kRasterScale;
+    for (const bool facesRight : facings) {
+      for (const auto source : sources) {
+        for (const double heading : headings) {
+          const auto bodyColor = macInputIndicatorBodyColor(source, InputIndicatorTone::Automatic);
+          NSBitmapImageRep *body = catBodyBitmap(
+              pose, artwork, tail, facesRight, kRasterScale, kPaddingPoints, true, {}, heading, true, 1, false, source,
+              bodyColor, 0.65
+          );
+          NSBitmapImageRep *glyph =
+              catGlyphBitmap(pose, testPose.state, facesRight, kRasterScale, kPaddingPoints, source, heading, true);
+          QVERIFY(body);
+          QVERIFY(glyph);
+          const auto bodyBounds = bitmapAlphaBounds(body);
+          QVERIFY(bodyBounds.width > 0);
+          QVERIFY(bodyBounds.x >= canvasLeft);
+          QVERIFY(bodyBounds.x + bodyBounds.width <= canvasRight);
+          QVERIFY(bodyBounds.y >= canvasLeft);
+          QVERIFY(bodyBounds.y + bodyBounds.height <= canvasTop);
+          for (NSInteger y = 0; y < glyph.pixelsHigh; ++y) {
+            for (NSInteger x = 0; x < glyph.pixelsWide; ++x) {
+              if ([glyph colorAtX:x y:y].alphaComponent <= 0.02) {
+                continue;
+              }
+              QVERIFY([body colorAtX:x y:y].alphaComponent > 0.02);
+            }
+          }
+          [body release];
+          [glyph release];
+          ++rasterCases;
+        }
+      }
+    }
+  }
+  QCOMPARE(rasterCases, 288);
 }
 
 void InputIndicatorGeometryTests::catArtworkMetricsMatchApprovedSource()
@@ -10496,6 +10662,76 @@ void InputIndicatorGeometryTests::catPanelIdleGrowthResetKeepsAnchorEveryFrame()
     previousVisible = visible;
   }
   QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 1.0);
+}
+
+void InputIndicatorGeometryTests::catPanelOverlapCompositesOnceWithoutDarkJoints()
+{
+  using Clock = std::chrono::steady_clock;
+  using Source = deskflow::input::InputIndicatorSource;
+  const auto fixedCursor = fixedPanelTestPointer();
+  for (const double idleScale : {1.0, 5.0}) {
+    for (const int opacityPercent : {60, 100}) {
+      InputIndicatorTarget target{
+          .point =
+              {
+                  .x = fixedCursor.x,
+                  .y = fixedCursor.y,
+              },
+          .kind = InputIndicatorTargetKind::Pointer,
+      };
+      Clock::time_point now{};
+      MacInputIndicatorPanel panel({}, [&target] { return target; }, [&now] { return now; });
+      const MacInputIndicatorPanelOptions options{
+          .source = Source::LatinABC,
+          .companion = InputIndicatorCompanion::Cat,
+          .opacityPercent = opacityPercent,
+      };
+      QVERIFY(panel.show(options));
+      if (idleScale > 1.0) {
+        now += std::chrono::seconds(35);
+        QVERIFY(panel.move(options.position).visible);
+      }
+      NSView *view = catPanelView();
+      QVERIFY(view);
+      QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], idleScale);
+      const auto pose = inputIndicatorCatPose(InputIndicatorMotionState::Idle, 0, false);
+      const InputIndicatorCatIdleTailFrame tail{
+          .motion =
+              static_cast<InputIndicatorCatIdleTailMotion>([[view valueForKey:@"catIdleTailMotion"] integerValue]),
+          .progress = [[view valueForKey:@"catIdleTailProgress"] doubleValue],
+          .active = [[view valueForKey:@"catIdleTailActive"] boolValue],
+      };
+      [view displayIfNeeded];
+      NSBitmapImageRep *bitmap = [view bitmapImageRepForCachingDisplayInRect:view.bounds];
+      QVERIFY(bitmap);
+      [view cacheDisplayInRect:view.bounds toBitmapImageRep:bitmap];
+      const double backingScale = static_cast<double>(bitmap.pixelsWide) / view.bounds.size.width;
+      const int pixelScale = static_cast<int>(std::lround(backingScale));
+      const auto overlap = catFarNearOverlapPixel(pose, tail, pixelScale, idleScale);
+      QVERIFY(overlap);
+      const NSInteger pixelX = static_cast<NSInteger>(std::lround(overlap->x));
+      const NSInteger pixelY = static_cast<NSInteger>(std::lround(overlap->y));
+      QVERIFY(pixelX >= 0);
+      QVERIFY(pixelY >= 0);
+      QVERIFY(pixelX < bitmap.pixelsWide);
+      QVERIFY(pixelY < bitmap.pixelsHigh);
+      const NSColor *pixel = [bitmap colorAtX:pixelX y:pixelY];
+      QVERIFY(pixel);
+      const double expectedAlpha = opacityPercent / 100.0;
+      const auto body = macInputIndicatorBodyColor(Source::LatinABC, InputIndicatorTone::Automatic);
+      const MacInputIndicatorRgb pixelRgb{
+          .red = pixel.redComponent,
+          .green = pixel.greenComponent,
+          .blue = pixel.blueComponent,
+      };
+      qInfo() << "cat-overlap-composite" << idleScale << opacityPercent << pixelX << pixelY << pixel.alphaComponent
+              << relativeLuminance(pixelRgb);
+      QVERIFY(pixel.alphaComponent <= expectedAlpha + 0.012);
+      QVERIFY(relativeLuminance(pixelRgb) >= relativeLuminance(body) - 0.01);
+      [bitmap release];
+      panel.hide();
+    }
+  }
 }
 
 void InputIndicatorGeometryTests::companionSettingDefaultsToCat()

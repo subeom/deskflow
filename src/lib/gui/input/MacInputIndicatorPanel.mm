@@ -362,30 +362,15 @@ NSBezierPath *catArtworkPath(
 )
 {
   NSBezierPath *path = [NSBezierPath bezierPath];
-  const auto deformed =
-      [&pose, &tailFrame, &startleFrame,
-       facesRight, facingScaleX, bodyHeadingRadians](
-          double x, double y
-      ) {
-        const auto torsoPoint =
-            inputIndicatorCatTorsoPoint(
-                pose, {.x = x, .y = y}
-            );
-        const auto tailPoint =
-            inputIndicatorCatIdleTailPoint(
-                torsoPoint, tailFrame
-            );
-        const auto startlePoint =
-            inputIndicatorCatStartlePoint(
-                tailPoint, startleFrame, true
-            );
-        return inputIndicatorCatBodyPoint(
-            startlePoint,
-            facesRight,
-            facingScaleX,
-            bodyHeadingRadians
-        );
-      };
+  const auto deformed = [&pose, &tailFrame, &startleFrame, facesRight, facingScaleX,
+                         bodyHeadingRadians](double x, double y) {
+    const auto facePoint =
+        inputIndicatorCatRoundedFacePoint({.x = x, .y = y}, pose.headBounds, pose.innerLanguageBounds);
+    const auto torsoPoint = inputIndicatorCatTorsoPoint(pose, facePoint);
+    const auto tailPoint = inputIndicatorCatIdleTailPoint(torsoPoint, tailFrame);
+    const auto startlePoint = inputIndicatorCatStartlePoint(tailPoint, startleFrame, true);
+    return inputIndicatorCatBodyPoint(startlePoint, facesRight, facingScaleX, bodyHeadingRadians);
+  };
   for (const auto &command : commands) {
     switch (command.type) {
     case MacInputIndicatorCatPathCommandType::Move: {
@@ -476,10 +461,18 @@ void drawCat(
       alpha
   );
 
-  NSColor *farFill =
-      [fill blendedColorWithFraction:0.18 ofColor:edge];
-  fillSilhouette(far, farFill, edge);
-  fillSilhouette(near, fill, edge);
+  NSColor *opaqueFill = [fill colorWithAlphaComponent:1.0];
+  NSColor *opaqueEdge = [edge colorWithAlphaComponent:1.0];
+  NSColor *farFill = [opaqueFill blendedColorWithFraction:0.18 ofColor:opaqueEdge];
+  CGContextRef context = [[NSGraphicsContext currentContext] CGContext];
+  CGContextSaveGState(context);
+  CGContextSetAlpha(context, alpha.body);
+  CGContextBeginTransparencyLayer(context, nil);
+  CGContextSetAlpha(context, 1.0);
+  fillSilhouette(far, farFill, opaqueEdge);
+  fillSilhouette(near, opaqueFill, opaqueEdge);
+  CGContextEndTransparencyLayer(context);
+  CGContextRestoreGState(context);
 }
 
 void drawDog(

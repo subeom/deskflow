@@ -321,6 +321,10 @@ InputIndicatorPoint inputIndicatorCatTorsoPoint(
     InputIndicatorPoint point
 );
 
+InputIndicatorPoint inputIndicatorCatRoundedFacePoint(
+    InputIndicatorPoint point, const InputIndicatorRect &headBounds, const InputIndicatorRect &languageBounds
+);
+
 InputIndicatorCatIdleTailMotionState
 inputIndicatorCatIdleTailMotionInitialState(
     std::uint32_t seed

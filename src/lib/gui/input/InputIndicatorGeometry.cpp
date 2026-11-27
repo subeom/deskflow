@@ -824,6 +824,34 @@ InputIndicatorPoint inputIndicatorCatTorsoPoint(
   return point;
 }
 
+InputIndicatorPoint inputIndicatorCatRoundedFacePoint(
+    InputIndicatorPoint point, const InputIndicatorRect &headBounds, const InputIndicatorRect &languageBounds
+)
+{
+  if (!finitePoint(point) || !std::isfinite(headBounds.x) || !std::isfinite(headBounds.y) ||
+      !std::isfinite(headBounds.width) || !std::isfinite(headBounds.height) || headBounds.width <= 0 ||
+      headBounds.height <= 0 || point.x < headBounds.x || point.x > headBounds.x + headBounds.width * 1.05 ||
+      point.y < headBounds.y || point.y > headBounds.y + headBounds.height) {
+    return point;
+  }
+  constexpr double labelPadding = 0.25;
+  if (point.x >= languageBounds.x - labelPadding && point.x <= languageBounds.x + languageBounds.width + labelPadding &&
+      point.y >= languageBounds.y - labelPadding &&
+      point.y <= languageBounds.y + languageBounds.height + labelPadding) {
+    return point;
+  }
+
+  const double normalizedX = (point.x - headBounds.x) / headBounds.width;
+  const double normalizedY = (point.y - headBounds.y) / headBounds.height;
+  const double muzzleWidth = smoothstep01((normalizedX - 0.20) / 0.80);
+  point.x -= 0.45 * muzzleWidth;
+
+  const double earTop = smoothstep01((normalizedY - 0.78) / 0.22);
+  const double earWidth = smoothstep01((normalizedX - 0.15) / 0.85);
+  point.y -= 0.35 * earTop * earWidth;
+  return point;
+}
+
 InputIndicatorCatIdleTailMotionState
 inputIndicatorCatIdleTailMotionInitialState(
     std::uint32_t seed
