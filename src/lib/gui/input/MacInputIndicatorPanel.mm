@@ -1388,6 +1388,17 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   const bool idleScaleChanged = std::abs(idleScale - m_impl->idleGrowthState.scale) > 0.0001;
   m_impl->idleGrowthState = idleGrowthStep.state;
   const auto renderedStyle = macInputIndicatorPanelStyle(m_impl->companion, idleScale);
+  const auto renderedTarget =
+      idleScaleChanged
+          ? positionInputIndicator(
+                targetLocation.point, {.width = renderedStyle.width, .height = renderedStyle.height}, screenRects(),
+                position, renderedStyle.cursorGap, renderedStyle.screenMargin, approachHeading
+            )
+          : target;
+  if (!renderedTarget) {
+    hide();
+    return {};
+  }
   if (!m_impl->pursuitState.initialized &&
       m_impl->followerInitialized) {
     m_impl->pursuitState.position =
@@ -1419,6 +1430,10 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   }
   auto nextPursuitState = pursuit->state;
   const bool scaleOnlyPursuit = !cursorMoved && idleScaleChanged && !initializePursuit;
+  if (idleScaleChanged) {
+    nextPursuitState.position.x += renderedTarget->x - target->x;
+    nextPursuitState.position.y += renderedTarget->y - target->y;
+  }
   if (scaleOnlyPursuit) {
     nextPursuitState.velocity = {};
     nextPursuitState.headingRadians = m_impl->pursuitState.headingRadians;
@@ -1554,7 +1569,7 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
     idleTailFrame = idleTailStep.frame;
   }
 
-  m_impl->previousTarget = *target;
+  m_impl->previousTarget = *renderedTarget;
   m_impl->previousTargetTime = now;
   m_impl->previousTargetInitialized = true;
   m_impl->previousCursor =
@@ -1567,11 +1582,11 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
   }
 
   const auto followerDistance = distance({
-      .x = target->x - m_impl->follower.x,
-      .y = target->y - m_impl->follower.y,
+      .x = renderedTarget->x - m_impl->follower.x,
+      .y = renderedTarget->y - m_impl->follower.y,
   });
   if (followerDistance <= kSettledDistance) {
-    m_impl->follower = *target;
+    m_impl->follower = *renderedTarget;
   }
   if (distance(m_impl->motion) <= kSettledDistance) {
     m_impl->motion = {};

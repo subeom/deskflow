@@ -10237,8 +10237,36 @@ void InputIndicatorGeometryTests::catPanelIdleGrowthResizesAndClearsSameBacking(
   QCOMPARE(shrinkingScale, 3.0);
   const auto midShrink = visibleOrigin(shrinkingScale);
   const double midShrinkMovement = std::hypot(midShrink.x - firstMovement.x, midShrink.y - firstMovement.y);
+  const auto styleAtThree = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, 3.0);
+  const auto targetAtFive = positionInputIndicator(
+      target.point,
+      {
+          .width = styleAtFive.width,
+          .height = styleAtFive.height,
+      },
+      {{.x = containingScreen.origin.x,
+        .y = containingScreen.origin.y,
+        .width = containingScreen.size.width,
+        .height = containingScreen.size.height}},
+      options.position, styleAtFive.cursorGap, styleAtFive.screenMargin
+  );
+  const auto targetAtThree = positionInputIndicator(
+      target.point,
+      {
+          .width = styleAtThree.width,
+          .height = styleAtThree.height,
+      },
+      {{.x = containingScreen.origin.x,
+        .y = containingScreen.origin.y,
+        .width = containingScreen.size.width,
+        .height = containingScreen.size.height}},
+      options.position, styleAtThree.cursorGap, styleAtThree.screenMargin
+  );
+  QVERIFY(targetAtFive);
+  QVERIFY(targetAtThree);
+  const double sizeTargetDelta = std::hypot(targetAtThree->x - targetAtFive->x, targetAtThree->y - targetAtFive->y);
   qInfo() << "cat-panel-shrink-movement" << midShrinkMovement;
-  QVERIFY(midShrinkMovement <= 5.760001 + std::sqrt(2.0));
+  QVERIFY(midShrinkMovement <= sizeTargetDelta + 5.760001 + std::sqrt(2.0));
   now += std::chrono::milliseconds(150);
   QVERIFY(panel.move(options.position).visible);
   QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 1.0);
@@ -10264,6 +10292,106 @@ void InputIndicatorGeometryTests::catPanelIdleGrowthResizesAndClearsSameBacking(
   QVERIFY((alphaBounds.x + alphaBounds.width) / backingScale <= normalStyle.canvasOffsetX + normalStyle.width + 1.0);
   QVERIFY((alphaBounds.y + alphaBounds.height) / backingScale <= normalStyle.canvasOffsetY + normalStyle.height + 1.0);
   [bitmap release];
+}
+
+void InputIndicatorGeometryTests::catPanelIdleGrowthResetKeepsAnchorEveryFrame()
+{
+  using Source = deskflow::input::InputIndicatorSource;
+  using Clock = std::chrono::steady_clock;
+  const auto fixedCursor = fixedPanelTestPointer();
+  InputIndicatorTarget target{
+      .point =
+          {
+              .x = fixedCursor.x,
+              .y = fixedCursor.y,
+          },
+      .kind = InputIndicatorTargetKind::Pointer,
+  };
+  Clock::time_point now{};
+  MacInputIndicatorPanel panel({}, [&target] { return target; }, [&now] { return now; });
+  const MacInputIndicatorPanelOptions options{
+      .source = Source::LatinABC,
+      .companion = InputIndicatorCompanion::Cat,
+  };
+  QVERIFY(panel.show(options));
+  NSView *const view = catPanelView();
+  QVERIFY(view);
+
+  NSRect containingScreen;
+  bool foundScreen = false;
+  for (NSScreen *screen in NSScreen.screens) {
+    if (NSPointInRect(fixedCursor, screen.frame)) {
+      containingScreen = screen.frame;
+      foundScreen = true;
+      break;
+    }
+  }
+  QVERIFY(foundScreen);
+  const std::vector<InputIndicatorRect> screens{{
+      .x = containingScreen.origin.x,
+      .y = containingScreen.origin.y,
+      .width = containingScreen.size.width,
+      .height = containingScreen.size.height,
+  }};
+
+  now += std::chrono::seconds(35);
+  QVERIFY(panel.move(options.position).visible);
+  for (int tick = 0; tick < 400; ++tick) {
+    now += std::chrono::milliseconds(8);
+    QVERIFY(panel.move(options.position).visible);
+  }
+  QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 5.0);
+
+  const auto expectedOrigin = [&](double scale) {
+    const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, scale);
+    return positionInputIndicator(
+        target.point,
+        {
+            .width = style.width,
+            .height = style.height,
+        },
+        screens, options.position, style.cursorGap, style.screenMargin
+    );
+  };
+  const auto visibleOrigin = [view](double scale) {
+    const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, scale);
+    const auto origin = view.window.frame.origin;
+    return InputIndicatorPoint{
+        .x = origin.x + style.canvasOffsetX,
+        .y = origin.y + style.canvasOffsetY,
+    };
+  };
+
+  target.point.x += 1.0;
+  const auto resetStarted = panel.move(options.position);
+  QVERIFY(resetStarted.visible);
+  QCOMPARE(resetStarted.frameIntervalMilliseconds, 8);
+  double previousScale = [[view valueForKey:@"idleGrowthScale"] doubleValue];
+  auto previousExpected = expectedOrigin(previousScale);
+  QVERIFY(previousExpected);
+  auto previousVisible = visibleOrigin(previousScale);
+
+  for (int tick = 0; tick < 38; ++tick) {
+    now += std::chrono::milliseconds(8);
+    const auto step = panel.move(options.position);
+    QVERIFY(step.visible);
+    const double scale = [[view valueForKey:@"idleGrowthScale"] doubleValue];
+    QVERIFY(scale <= previousScale);
+    const auto expected = expectedOrigin(scale);
+    QVERIFY(expected);
+    const auto visible = visibleOrigin(scale);
+    QVERIFY(std::abs(visible.x - expected->x) < 1.0);
+    QVERIFY(std::abs(visible.y - expected->y) < 1.0);
+    if (tick > 0) {
+      const double sizeTargetDelta = std::hypot(expected->x - previousExpected->x, expected->y - previousExpected->y);
+      const double cursorIndependentMovement = std::hypot(visible.x - previousVisible.x, visible.y - previousVisible.y);
+      QVERIFY(cursorIndependentMovement <= sizeTargetDelta + std::sqrt(2.0));
+    }
+    previousScale = scale;
+    previousExpected = expected;
+    previousVisible = visible;
+  }
+  QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 1.0);
 }
 
 void InputIndicatorGeometryTests::companionSettingDefaultsToCat()

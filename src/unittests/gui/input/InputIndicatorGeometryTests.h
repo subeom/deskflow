@@ -100,6 +100,7 @@ private Q_SLOTS:
   void catStartleFurAndGlowStayInsideRotatingCanvas();
   void catPanelLifecycleKeepsSingleTransparentBacking();
   void catPanelIdleGrowthResizesAndClearsSameBacking();
+  void catPanelIdleGrowthResetKeepsAnchorEveryFrame();
   void companionSettingDefaultsToCat();
   void motionOffsetClampsAndRespectsReducedMotion();
   void transitionProgressEasesAndRespectsReducedMotion();
