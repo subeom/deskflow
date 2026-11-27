@@ -14,7 +14,9 @@ class VersionCheckerTests : public QObject
 private Q_SLOTS:
   void checkLatest_deduplicatesInFlightAndUsesPinnedEndpoint();
   void checkLatest_upToDateUsesOnlyBoundedCachedSnapshotOn304();
-  void checkLatest_rateLimitPersistsRetryAndMakesNoImmediateRetry();
+  void checkLatest_futureRateLimitUsesValidSnapshotWithoutRequest();
+  void checkLatest_rateLimitUsesValidSnapshotWithoutError();
+  void checkLatest_rateLimitWithoutCacheDefersOneCheck();
   void checkLatest_timeoutMakesOnlyOneMetadataRetry();
   void checkLatest_manualPlatformsNeverDownload();
   void checkLatest_rejectsInvalidRunningVersionWithoutRequest();

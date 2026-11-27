@@ -17,6 +17,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTimeZone>
 
@@ -222,7 +223,87 @@ void VersionCheckerTests::checkLatest_upToDateUsesOnlyBoundedCachedSnapshotOn304
   QCOMPARE(fakeNetwork->calls.size(), 1);
 }
 
-void VersionCheckerTests::checkLatest_rateLimitPersistsRetryAndMakesNoImmediateRetry()
+void VersionCheckerTests::checkLatest_futureRateLimitUsesValidSnapshotWithoutRequest()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  const auto root = QDir(temporary.path()).filePath(QStringLiteral("updates"));
+  const auto retryAt = QDateTime::currentDateTimeUtc().addSecs(60);
+  UpdateCacheState state{
+      1,
+      QStringLiteral("https://api.github.com/repos/subeom/deskflow/releases/latest"),
+      QStringLiteral("\"stable-etag\""),
+      releaseJson(QString::fromLatin1(kRunningVersion)),
+      QString::fromLatin1(kRunningVersion),
+      retryAt,
+      QDateTime::currentDateTimeUtc()
+  };
+  QVERIFY(UpdateCache(root).saveState(state));
+
+  auto network = std::make_unique<FakeUpdateNetwork>();
+  auto *fakeNetwork = network.get();
+  VersionChecker checker(
+      std::move(network), directMac(), QString::fromLatin1(kRunningVersion), root,
+      std::make_unique<FakeUpdateVerifier>(true), 0
+  );
+  QSignalSpy updateErrors(&checker, &VersionChecker::updateError);
+
+  checker.checkLatest();
+
+  QVERIFY(fakeNetwork->calls.isEmpty());
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::UpToDate);
+  QVERIFY(checker.status().userError.isEmpty());
+  QVERIFY(!checker.isChecking());
+  QCOMPARE(updateErrors.size(), 0);
+  const auto persisted = UpdateCache(root).loadState();
+  QVERIFY(persisted);
+  QCOMPARE(persisted->retryAt, retryAt);
+}
+
+void VersionCheckerTests::checkLatest_rateLimitUsesValidSnapshotWithoutError()
+{
+  QTemporaryDir temporary;
+  QVERIFY(temporary.isValid());
+  const auto root = QDir(temporary.path()).filePath(QStringLiteral("updates"));
+  UpdateCacheState state{
+      1,
+      QStringLiteral("https://api.github.com/repos/subeom/deskflow/releases/latest"),
+      QStringLiteral("\"stable-etag\""),
+      releaseJson(QString::fromLatin1(kRunningVersion)),
+      QString::fromLatin1(kRunningVersion),
+      QDateTime::fromSecsSinceEpoch(1'000, QTimeZone::UTC),
+      QDateTime::currentDateTimeUtc()
+  };
+  QVERIFY(UpdateCache(root).saveState(state));
+
+  auto network = std::make_unique<FakeUpdateNetwork>();
+  auto *fakeNetwork = network.get();
+  VersionChecker checker(
+      std::move(network), directMac(), QString::fromLatin1(kRunningVersion), root,
+      std::make_unique<FakeUpdateVerifier>(true), 0
+  );
+  QSignalSpy updateErrors(&checker, &VersionChecker::updateError);
+  checker.checkLatest();
+  fakeNetwork->complete(
+      0,
+      {UpdateNetworkStatus::RateLimited, 429, {}, QUrl(), QStringLiteral("rate limited"), {}, 1}
+  );
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::UpToDate);
+  QVERIFY(checker.status().userError.isEmpty());
+  QVERIFY(!checker.isChecking());
+  QCOMPARE(updateErrors.size(), 0);
+  const auto persisted = UpdateCache(root).loadState();
+  QVERIFY(persisted);
+  QVERIFY(persisted->retryAt > QDateTime::currentDateTimeUtc());
+  QCOMPARE(persisted->sanitizedSnapshot, state.sanitizedSnapshot);
+  QCOMPARE(persisted->snapshotVersion, state.snapshotVersion);
+
+  checker.checkLatest(UpdateCheckReason::Manual);
+  QCOMPARE(fakeNetwork->calls.size(), 1);
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::UpToDate);
+}
+
+void VersionCheckerTests::checkLatest_rateLimitWithoutCacheDefersOneCheck()
 {
   QTemporaryDir temporary;
   QVERIFY(temporary.isValid());
@@ -233,18 +314,34 @@ void VersionCheckerTests::checkLatest_rateLimitPersistsRetryAndMakesNoImmediateR
       std::move(network), directMac(), QString::fromLatin1(kRunningVersion), root,
       std::make_unique<FakeUpdateVerifier>(true), 0
   );
+  QSignalSpy updateErrors(&checker, &VersionChecker::updateError);
+
   checker.checkLatest();
   fakeNetwork->complete(
       0,
-      {UpdateNetworkStatus::RateLimited, 429, {}, QUrl(), QStringLiteral("rate limited"), {}, 60}
+      {UpdateNetworkStatus::RateLimited, 429, {}, QUrl(), QStringLiteral("rate limited"), {}, 1}
   );
-  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::Failed);
-  const auto state = UpdateCache(root).loadState();
-  QVERIFY(state);
-  QVERIFY(state->retryAt > QDateTime::currentDateTimeUtc());
+
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::Idle);
+  QVERIFY(checker.status().userError.isEmpty());
+  QVERIFY(!checker.isChecking());
+  QCOMPARE(updateErrors.size(), 0);
+  const auto persisted = UpdateCache(root).loadState();
+  QVERIFY(persisted);
+  QVERIFY(persisted->retryAt > QDateTime::currentDateTimeUtc());
+  QVERIFY(persisted->sanitizedSnapshot.isEmpty());
 
   checker.checkLatest(UpdateCheckReason::Manual);
+  checker.checkLatest(UpdateCheckReason::Manual);
   QCOMPARE(fakeNetwork->calls.size(), 1);
+
+  QTRY_COMPARE_WITH_TIMEOUT(fakeNetwork->calls.size(), 2, 3'000);
+  QTest::qWait(100);
+  QCOMPARE(fakeNetwork->calls.size(), 2);
+  QVERIFY(checker.isChecking());
+  fakeNetwork->complete(1, success(releaseJson(QString::fromLatin1(kRunningVersion))));
+  QCOMPARE(checker.status().phase, UpdateStatusSnapshot::Phase::UpToDate);
+  QCOMPARE(updateErrors.size(), 0);
 }
 
 void VersionCheckerTests::checkLatest_timeoutMakesOnlyOneMetadataRetry()

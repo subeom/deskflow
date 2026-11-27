@@ -19,6 +19,8 @@
 #include <memory>
 #include <optional>
 
+class QTimer;
+
 enum class UpdateCheckReason
 {
   Startup,
@@ -111,7 +113,9 @@ private:
       const deskflow::gui::UpdateNetworkResult &result,
       const deskflow::gui::UpdatePlan &requestedPlan
   );
-  void processReleaseJson(const QByteArray &json, const QString &etag);
+  void processReleaseJson(
+      const QByteArray &json, const QString &etag, bool persistCache = true
+  );
   void publishStagedUpdate(const deskflow::gui::StagedUpdate &staged);
   bool refreshEnvironment();
   bool refreshAutomaticPlan();
@@ -123,6 +127,7 @@ private:
       deskflow::gui::UpdateRequestKind kind, int &attempt
   );
   void saveRateLimitState(int retryAfterSeconds);
+  void deferRateLimitedCheck();
   void setStatus(const UpdateStatusSnapshot &status);
   void finishCheck();
   void failCheck(const QString &error);
@@ -144,6 +149,8 @@ private:
   int m_metadataAttempt = 0;
   int m_checksumAttempt = 0;
   int m_retryDelayMs = 0;
+  UpdateCheckReason m_deferredCheckReason = UpdateCheckReason::Startup;
+  QTimer *m_rateLimitTimer = nullptr;
   bool m_checking = false;
 };
 
