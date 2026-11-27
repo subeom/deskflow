@@ -36,6 +36,7 @@ private Q_SLOTS:
   void companionDisplayModelScalesAllLogicalGeometry();
   void companionFacingTurnCompressesAndSwitchesOnce();
   void companionVisualLeanStaysUprightAtEightHeadings();
+  void catCursorLeanUsesActualVectorAtEightHeadings();
   void companionRasterStaysUprightAtEightHeadings();
   void companionRenderModelUsesUnifiedSilhouetteAndInternalLabel();
   void catRenderModelUsesSideProfileAndPersistentFacing();
@@ -82,6 +83,7 @@ private Q_SLOTS:
   void catPursuitTreatsPointerAndCaretTargetsIdentically();
   void catPursuitPreservesInitializedStateAcrossRepresentationChanges();
   void catPursuitPanelTraversesLargeTargetJump();
+  void catPanelUsesCursorVectorForMovingLean();
   void catDefaultFixedModeHonorsPursuitHeadingTurnLimit();
   void companionPursuitPanelHonorsFollowSpeed();
   void companionPursuitPanelSpeedChangePreservesPosition();

@@ -1155,6 +1155,7 @@ struct MacInputIndicatorPanel::Impl
   InputIndicatorMotionState motionState =
       InputIndicatorMotionState::Idle;
   bool previousReducedMotion = false;
+  double catLeanHeadingRadians = 0;
   InputIndicatorCompanionIdleMotionState
       idleTailMotionState;
 };
@@ -1196,6 +1197,7 @@ bool MacInputIndicatorPanel::show(
   if (companionChanged) {
     m_impl->idleTailPaused = false;
     m_impl->idleGrowthState = {};
+    m_impl->catLeanHeadingRadians = m_impl->facesRight ? 0.0 : M_PI;
   } else if (reducedMotion) {
     m_impl->idleGrowthState = {};
   }
@@ -1533,9 +1535,6 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
           InputIndicatorMotionState::Idle &&
       (startleStep.frame.active ||
        startleStep.state.pending);
-  const double bodyHeadingRadians =
-      m_impl->pursuitState.headingRadians;
-
   InputIndicatorCatIdleTailFrame idleTailFrame;
   if (startleSuspendsIdle) {
     if (!m_impl->idleTailPaused) {
@@ -1651,6 +1650,18 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
           false
       );
     }
+  }
+  double bodyHeadingRadians = m_impl->pursuitState.headingRadians;
+  if (m_impl->companion == InputIndicatorCompanion::Cat) {
+    const InputIndicatorPoint companionCenter{
+        .x = m_impl->follower.x + renderedStyle.width / 2.0,
+        .y = m_impl->follower.y + renderedStyle.height / 2.0,
+    };
+    bodyHeadingRadians = inputIndicatorCatCursorLeanHeading(
+        m_impl->catLeanHeadingRadians, companionCenter, targetLocation.point, elapsedMilliseconds,
+        m_impl->motionState != InputIndicatorMotionState::Idle, reducedMotion, facingPose.facesRight
+    );
+    m_impl->catLeanHeadingRadians = bodyHeadingRadians;
   }
   const bool animating = transitionProgress < 1.0 || idleGrowthStep.animating || followerDistance > kSettledDistance ||
                          distance(m_impl->motion) > kSettledDistance || startleStep.frame.active ||
@@ -1788,6 +1799,7 @@ void MacInputIndicatorPanel::hide()
   [m_impl->panel orderOut:nil];
   m_impl->idleTailMotionState.running = false;
   m_impl->idleTailPaused = false;
+  m_impl->catLeanHeadingRadians = m_impl->facesRight ? 0.0 : M_PI;
   m_impl->idleGrowthState = {};
   m_impl->lastPointerMovement = m_impl->clock();
   m_impl->startleState = {};

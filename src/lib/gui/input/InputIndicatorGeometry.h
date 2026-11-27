@@ -471,6 +471,11 @@ double inputIndicatorCompanionVisualLeanRadians(
     bool facesRight
 );
 
+double inputIndicatorCatCursorLeanHeading(
+    double previousHeadingRadians, InputIndicatorPoint companionCenter, InputIndicatorPoint cursor,
+    double elapsedMilliseconds, bool moving, bool reducedMotion, bool facesRight
+);
+
 constexpr InputIndicatorPoint inputIndicatorCatFacingPoint(
     InputIndicatorPoint point, bool facesRight
 )

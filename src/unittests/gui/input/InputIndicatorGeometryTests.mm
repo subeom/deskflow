@@ -2867,11 +2867,9 @@ void InputIndicatorGeometryTests::companionVisualLeanStaysUprightAtEightHeadings
       .y = 4,
   };
   for (const auto companion : companions) {
-    const double maximum =
-        companion ==
-                InputIndicatorCompanion::Turtle
-            ? 8.0 * M_PI / 180.0
-            : 12.0 * M_PI / 180.0;
+    const double maximum = companion == InputIndicatorCompanion::Cat      ? 20.0 * M_PI / 180.0
+                           : companion == InputIndicatorCompanion::Turtle ? 8.0 * M_PI / 180.0
+                                                                          : 12.0 * M_PI / 180.0;
     for (const bool facesRight : facings) {
       for (const double heading : headings) {
         const double lean =
@@ -2913,6 +2911,55 @@ void InputIndicatorGeometryTests::companionVisualLeanStaysUprightAtEightHeadings
       }
     }
   }
+}
+
+void InputIndicatorGeometryTests::catCursorLeanUsesActualVectorAtEightHeadings()
+{
+  const InputIndicatorPoint center{
+      .x = 100,
+      .y = 100,
+  };
+  const double headings[] = {
+      0, M_PI / 4, M_PI / 2, 3 * M_PI / 4, M_PI, 5 * M_PI / 4, 3 * M_PI / 2, 7 * M_PI / 4,
+  };
+  constexpr double kMaximumTurn = 10.0 * 8.0 / 1000.0;
+  const InputIndicatorPoint top{
+      .x = 15,
+      .y = 24,
+  };
+  const InputIndicatorPoint bottom{
+      .x = 15,
+      .y = 4,
+  };
+  for (const double requested : headings) {
+    const InputIndicatorPoint cursor{
+        .x = center.x + std::cos(requested) * 200,
+        .y = center.y + std::sin(requested) * 200,
+    };
+    const double heading =
+        inputIndicatorCatCursorLeanHeading(0, center, cursor, 8, true, false, std::cos(requested) >= 0);
+    const double expected = std::clamp(inputIndicatorNormalizedAngle(requested), -kMaximumTurn, kMaximumTurn);
+    QVERIFY(std::abs(heading - expected) < 1e-9);
+
+    const bool facesRight = std::cos(requested) >= 0;
+    const double lean = inputIndicatorCompanionVisualLeanRadians(InputIndicatorCompanion::Cat, requested, facesRight);
+    QVERIFY(std::abs(lean) <= 20.0 * M_PI / 180.0 + 1e-9);
+    const auto renderedTop = inputIndicatorCatBodyPoint(top, facesRight, 1, requested);
+    const auto renderedBottom = inputIndicatorCatBodyPoint(bottom, facesRight, 1, requested);
+    QVERIFY(renderedTop.y > 14.0);
+    QVERIFY(renderedBottom.y < 14.0);
+  }
+
+  const double maximumLean = inputIndicatorCompanionVisualLeanRadians(InputIndicatorCompanion::Cat, M_PI / 2, true);
+  QVERIFY(std::abs(maximumLean) > 12.0 * M_PI / 180.0);
+  QVERIFY(std::abs(maximumLean) <= 20.0 * M_PI / 180.0 + 1e-9);
+
+  const double idle =
+      inputIndicatorCatCursorLeanHeading(20.0 * M_PI / 180.0, center, {.x = 400, .y = 100}, 8, false, false, true);
+  QCOMPARE(idle, 20.0 * M_PI / 180.0 - kMaximumTurn);
+  const double reduced =
+      inputIndicatorCatCursorLeanHeading(20.0 * M_PI / 180.0, center, {.x = 400, .y = 100}, 8, true, true, true);
+  QCOMPARE(reduced, 0.0);
 }
 
 void InputIndicatorGeometryTests::companionRasterStaysUprightAtEightHeadings()
@@ -2986,33 +3033,13 @@ void InputIndicatorGeometryTests::companionRasterStaysUprightAtEightHeadings()
 
   for (const auto companion : companions) {
     const InputIndicatorPoint topSource =
-        companion ==
-                InputIndicatorCompanion::Dog
-            ? InputIndicatorPoint{
-                  .x = 19, .y = 17
-              }
-            : companion ==
-                    InputIndicatorCompanion::Turtle
-                ? InputIndicatorPoint{
-                      .x = 15, .y = 17
-                  }
-                : InputIndicatorPoint{
-                      .x = 21, .y = 15.5
-                  };
+        companion == InputIndicatorCompanion::Dog      ? InputIndicatorPoint{.x = 19, .y = 17}
+        : companion == InputIndicatorCompanion::Turtle ? InputIndicatorPoint{.x = 15, .y = 17}
+                                                       : InputIndicatorPoint{.x = 15, .y = 17};
     const InputIndicatorPoint bottomSource =
-        companion ==
-                InputIndicatorCompanion::Dog
-            ? InputIndicatorPoint{
-                  .x = 14, .y = 9
-              }
-            : companion ==
-                    InputIndicatorCompanion::Turtle
-                ? InputIndicatorPoint{
-                      .x = 15, .y = 10
-                  }
-                : InputIndicatorPoint{
-                      .x = 16, .y = 11
-                  };
+        companion == InputIndicatorCompanion::Dog      ? InputIndicatorPoint{.x = 14, .y = 9}
+        : companion == InputIndicatorCompanion::Turtle ? InputIndicatorPoint{.x = 15, .y = 10}
+                                                       : InputIndicatorPoint{.x = 15, .y = 11};
     for (const bool facesRight : facings) {
       for (const int scale : {1, 2}) {
         for (const double heading : headings) {
@@ -8240,6 +8267,83 @@ void InputIndicatorGeometryTests::catPursuitPanelTraversesLargeTargetJump()
   const auto final = positions.back();
   QVERIFY(std::abs(final.x - expected->x) <= 0.5);
   QVERIFY(std::abs(final.y - expected->y) <= 0.5);
+}
+
+void InputIndicatorGeometryTests::catPanelUsesCursorVectorForMovingLean()
+{
+  using Clock = std::chrono::steady_clock;
+  using Source = deskflow::input::InputIndicatorSource;
+  const auto fixedCursor = fixedPanelTestPointer();
+  InputIndicatorTarget target{
+      .point =
+          {
+              .x = fixedCursor.x,
+              .y = fixedCursor.y,
+          },
+      .kind = InputIndicatorTargetKind::Pointer,
+  };
+  Clock::time_point now{};
+  MacInputIndicatorPanel panel({}, [&target] { return target; }, [&now] { return now; });
+  const MacInputIndicatorPanelOptions options{
+      .source = Source::LatinABC,
+      .companion = InputIndicatorCompanion::Cat,
+      .position = InputIndicatorPosition::CursorBottomRight,
+  };
+  QVERIFY(panel.show(options));
+  NSView *view = catPanelView();
+  QVERIFY(view);
+  const auto style = macInputIndicatorPanelStyle(options.companion);
+  const auto visibleOrigin = [view, style] {
+    const auto origin = view.window.frame.origin;
+    return InputIndicatorPoint{
+        .x = origin.x + style.canvasOffsetX,
+        .y = origin.y + style.canvasOffsetY,
+    };
+  };
+  const auto previous = visibleOrigin();
+  target.point.x += 300;
+  now += std::chrono::milliseconds(8);
+  QVERIFY(panel.move(options.position).visible);
+
+  const auto current = visibleOrigin();
+  const InputIndicatorPoint currentCenter{
+      .x = current.x + style.width / 2.0,
+      .y = current.y + style.height / 2.0,
+  };
+  const double cursorHeading = std::atan2(target.point.y - currentCenter.y, target.point.x - currentCenter.x);
+  NSRect containingScreen;
+  bool foundScreen = false;
+  for (NSScreen *screen in NSScreen.screens) {
+    if (NSPointInRect(fixedCursor, screen.frame)) {
+      containingScreen = screen.frame;
+      foundScreen = true;
+      break;
+    }
+  }
+  QVERIFY(foundScreen);
+  const auto badgeTarget = positionInputIndicator(
+      target.point,
+      {
+          .width = style.width,
+          .height = style.height,
+      },
+      {{.x = containingScreen.origin.x,
+        .y = containingScreen.origin.y,
+        .width = containingScreen.size.width,
+        .height = containingScreen.size.height}},
+      options.position, style.cursorGap, style.screenMargin
+  );
+  QVERIFY(badgeTarget);
+  const double badgeHeading = std::atan2(badgeTarget->y - previous.y, badgeTarget->x - previous.x);
+  QVERIFY(std::abs(inputIndicatorNormalizedAngle(cursorHeading - badgeHeading)) > 0.05);
+  const double expectedHeading =
+      inputIndicatorCatCursorLeanHeading(0, currentCenter, target.point, 8, true, false, true);
+  const double renderedHeading = [[view valueForKey:@"catBodyHeadingRadians"] doubleValue];
+  QVERIFY(std::abs(inputIndicatorNormalizedAngle(renderedHeading - expectedHeading)) < 0.01);
+  QVERIFY(
+      std::abs(inputIndicatorCompanionVisualLeanRadians(InputIndicatorCompanion::Cat, renderedHeading, true)) <=
+      20.0 * M_PI / 180.0 + 1e-9
+  );
 }
 
 void InputIndicatorGeometryTests::catDefaultFixedModeHonorsPursuitHeadingTurnLimit()

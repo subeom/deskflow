@@ -1780,19 +1780,47 @@ double inputIndicatorCompanionVisualLeanRadians(
               ? headingRadians
               : headingRadians - kPi
       );
-  constexpr double kCatDogMaximumLean =
-      12.0 * kPi / 180.0;
+  constexpr double kCatMaximumLean = 20.0 * kPi / 180.0;
+  constexpr double kDogMaximumLean = 12.0 * kPi / 180.0;
   constexpr double kTurtleMaximumLean =
       8.0 * kPi / 180.0;
-  const double maximum =
-      companion ==
-              InputIndicatorCompanion::Turtle
-          ? kTurtleMaximumLean
-          : kCatDogMaximumLean;
+  const double maximum = companion == InputIndicatorCompanion::Cat      ? kCatMaximumLean
+                         : companion == InputIndicatorCompanion::Turtle ? kTurtleMaximumLean
+                                                                        : kDogMaximumLean;
   return std::clamp(
       relativeHeading,
       -maximum,
       maximum
+  );
+}
+
+double inputIndicatorCatCursorLeanHeading(
+    double previousHeadingRadians, InputIndicatorPoint companionCenter, InputIndicatorPoint cursor,
+    double elapsedMilliseconds, bool moving, bool reducedMotion, bool facesRight
+)
+{
+  const double neutralHeading = facesRight ? 0.0 : kPi;
+  if (reducedMotion) {
+    return neutralHeading;
+  }
+  const double previous = std::isfinite(previousHeadingRadians) ? inputIndicatorNormalizedAngle(previousHeadingRadians)
+                                                                : inputIndicatorNormalizedAngle(neutralHeading);
+  double requested = neutralHeading;
+  if (moving && finitePoint(companionCenter) && finitePoint(cursor)) {
+    const InputIndicatorPoint delta{
+        .x = cursor.x - companionCenter.x,
+        .y = cursor.y - companionCenter.y,
+    };
+    if (std::hypot(delta.x, delta.y) > kCatReachedDistance) {
+      requested = std::atan2(delta.y, delta.x);
+    }
+  }
+  const double simulatedMilliseconds = std::isfinite(elapsedMilliseconds) && elapsedMilliseconds > 0
+                                           ? std::min(elapsedMilliseconds, kCatPursuitFrameCapMilliseconds)
+                                           : 0.0;
+  const double maximumTurn = kCatPursuitHeadingRadiansPerSecond * simulatedMilliseconds / 1000.0;
+  return inputIndicatorNormalizedAngle(
+      previous + std::clamp(inputIndicatorNormalizedAngle(requested - previous), -maximumTurn, maximumTurn)
   );
 }
 
