@@ -11,6 +11,7 @@
 #include "platform/OSXInputSource.h"
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace deskflow::gui::input {
@@ -61,6 +62,13 @@ int inputIndicatorFollowSpeedPercent(
       : 100;
 }
 
+double inputIndicatorIdleGrowthMaxScale(const QVariant &value)
+{
+  bool valid = false;
+  const double parsed = value.toDouble(&valid);
+  return inputIndicatorIdleGrowthMaximumScale(valid ? parsed : std::numeric_limits<double>::quiet_NaN());
+}
+
 } // namespace
 
 MacInputIndicatorController::MacInputIndicatorController(QObject *parent)
@@ -107,6 +115,13 @@ MacInputIndicatorController::MacInputIndicatorController(
                 );
               }
             };
+  m_panelSetIdleGrowthMaxScale = dependencies.panelSetIdleGrowthMaxScale
+                                     ? std::move(dependencies.panelSetIdleGrowthMaxScale)
+                                     : [this](double maximumScale) {
+                                         if (m_panel) {
+                                           m_panel->setIdleGrowthMaxScale(maximumScale);
+                                         }
+                                       };
   m_panelHide =
       dependencies.panelHide
           ? std::move(dependencies.panelHide)
@@ -183,6 +198,16 @@ void MacInputIndicatorController::settingsChanged(const QString &key)
     }
     return;
   }
+  if (key == Settings::Gui::InputIndicatorIdleGrowthMaxScale) {
+    m_idleGrowthMaxScale = inputIndicatorIdleGrowthMaxScale(Settings::value(key));
+    if (m_panelSetIdleGrowthMaxScale) {
+      m_panelSetIdleGrowthMaxScale(m_idleGrowthMaxScale);
+    }
+    if (m_panelConfigured) {
+      movePointerBadge();
+    }
+    return;
+  }
   if (key == Settings::Gui::InputIndicatorEnabled ||
       key == Settings::Gui::InputIndicatorCompanion ||
       key == Settings::Gui::InputIndicatorOpacityPercent ||
@@ -217,6 +242,8 @@ void MacInputIndicatorController::applySettings()
   m_tone = toneFromSetting(
       Settings::value(Settings::Gui::InputIndicatorTone).toString()
   );
+  m_idleGrowthMaxScale =
+      inputIndicatorIdleGrowthMaxScale(Settings::value(Settings::Gui::InputIndicatorIdleGrowthMaxScale));
   setEffectiveEnabled(m_wantedEnabled);
   if (m_effectiveEnabled) {
     refreshVisibility(true);
@@ -326,8 +353,8 @@ void MacInputIndicatorController::refreshVisibility(bool reconfigure)
         .companion = m_companion,
         .position = m_position,
         .opacityPercent = m_opacityPercent,
-        .followSpeedPercent =
-            m_followSpeedPercent,
+        .followSpeedPercent = m_followSpeedPercent,
+        .idleGrowthMaxScale = m_idleGrowthMaxScale,
         .tone = m_tone,
     });
     m_panelConfigured = true;

@@ -135,6 +135,7 @@ public:
     inline static const auto InputIndicatorDwellMs = QStringLiteral("gui/inputIndicatorDwellMs");
     inline static const auto InputIndicatorOpacityPercent = QStringLiteral("gui/inputIndicatorOpacityPercent");
     inline static const auto InputIndicatorSpeedPercent = QStringLiteral("gui/inputIndicatorSpeedPercent");
+    inline static const auto InputIndicatorIdleGrowthMaxScale = QStringLiteral("gui/inputIndicatorIdleGrowthMaxScale");
     inline static const auto InputIndicatorTone = QStringLiteral("gui/inputIndicatorTone");
   };
   struct Log
@@ -425,6 +426,7 @@ private:
     , Gui::InputIndicatorDwellMs
     , Gui::InputIndicatorOpacityPercent
     , Gui::InputIndicatorSpeedPercent
+    , Gui::InputIndicatorIdleGrowthMaxScale
     , Gui::InputIndicatorTone
     , Network::MacAwdlOff
     , Security::Certificate

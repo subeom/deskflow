@@ -19,6 +19,7 @@
 #include "gui/awdl/AwdlPlatform.h"
 #include "gui/chrome/ChromePolicy.h"
 #include "gui/core/NetworkMonitor.h"
+#include "gui/input/InputIndicatorGeometry.h"
 #include "gui/style/Appearance.h"
 #include "gui/style/LookFollower.h"
 #include "gui/widgets/InlineHint.h"
@@ -44,6 +45,8 @@
 #include <QSpinBox>
 #include <QTextDocument>
 #include <QVBoxLayout>
+
+#include <limits>
 
 using namespace deskflow::gui::style;
 
@@ -1042,6 +1045,20 @@ SettingsPage *SettingsPages::buildKeyboard()
   indicatorSpeed->setObjectName(
       QStringLiteral("sbInputIndicatorSpeed")
   );
+  auto *indicatorIdleGrowthMax = addDecimal(
+      page, m_binder, inputIndicator, Settings::Gui::InputIndicatorIdleGrowthMaxScale,
+      tx(QT_TRANSLATE_NOOP("SettingsPages", "Maximum idle scale")), 1.0, 5.0, 0.1, 1, QStringLiteral("x"), {},
+      [](const QVariant &stored) {
+        bool valid = false;
+        const double value = stored.toDouble(&valid);
+        return QVariant(
+            deskflow::gui::input::inputIndicatorIdleGrowthMaximumScale(
+                valid ? value : std::numeric_limits<double>::quiet_NaN()
+            )
+        );
+      }
+  );
+  indicatorIdleGrowthMax->setObjectName(QStringLiteral("sbInputIndicatorIdleGrowthMaxScale"));
   auto *indicatorPosition = addChoice(
       page, m_binder, inputIndicator, Settings::Gui::InputIndicatorPosition,
       tx(QT_TRANSLATE_NOOP("SettingsPages", "Position from cursor")),
@@ -1086,11 +1103,12 @@ SettingsPage *SettingsPages::buildKeyboard()
     );
   });
   inputIndicator->addNote(indicatorNote);
-  m_binder->onRefresh([indicatorEnabled, indicatorCompanion, indicatorSpeed, indicatorPosition, indicatorOpacity,
-                       indicatorTone] {
+  m_binder->onRefresh([indicatorEnabled, indicatorCompanion, indicatorSpeed, indicatorIdleGrowthMax, indicatorPosition,
+                       indicatorOpacity, indicatorTone] {
     const bool enabled = Settings::isWritable() && indicatorEnabled->isChecked();
     indicatorCompanion->setEnabled(enabled);
     indicatorSpeed->setEnabled(enabled);
+    indicatorIdleGrowthMax->setEnabled(enabled);
     indicatorPosition->setEnabled(enabled);
     indicatorOpacity->setEnabled(enabled);
     indicatorTone->setEnabled(enabled);

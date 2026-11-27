@@ -19,6 +19,7 @@ private Q_SLOTS:
   void defaultsAreSafeAndVisible();
   void dependencyControlsFollowTheToggle();
   void invalidStoredSpeedUsesSafeBounds();
+  void invalidStoredIdleGrowthMaximumUsesDefault();
 
 private:
   QTemporaryDir m_dir;

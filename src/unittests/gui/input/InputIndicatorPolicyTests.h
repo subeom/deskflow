@@ -41,6 +41,7 @@ private Q_SLOTS:
   void persistentDuplicateSourceDoesNotReconfigure();
   void persistentSourceChangesUpdateLabel();
   void persistentFollowSpeedUpdatesWithoutReconfigure();
+  void persistentIdleGrowthMaximumUpdatesWithoutReconfigure();
   void persistentPositionModeUpdatesWithoutPanelReconfigure();
   void persistentCompanionChoiceUpdatesPanel();
   void persistentFeatureOffStopsAndHides();

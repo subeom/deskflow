@@ -2719,6 +2719,29 @@ void InputIndicatorGeometryTests::catIdleGrowthWaitsThenEasesAndCapsAtFive()
   QVERIFY(capped.scale <= 5.0);
 }
 
+void InputIndicatorGeometryTests::catIdleGrowthHonorsConfiguredMaximum()
+{
+  const auto one = inputIndicatorIdleGrowthAdvance({}, InputIndicatorCompanion::Cat, 35000, 35000, false, false, 1.0);
+  QCOMPARE(one.scale, 1.0);
+  QVERIFY(!one.animating);
+
+  const auto halfway =
+      inputIndicatorIdleGrowthAdvance({}, InputIndicatorCompanion::Cat, 20000, 20000, false, false, 1.5);
+  QCOMPARE(halfway.scale, 1.25);
+  const auto onePointFive =
+      inputIndicatorIdleGrowthAdvance(halfway.state, InputIndicatorCompanion::Cat, 35000, 35000, false, false, 1.5);
+  QCOMPARE(onePointFive.scale, 1.5);
+
+  const auto below = inputIndicatorIdleGrowthAdvance({}, InputIndicatorCompanion::Cat, 35000, 35000, false, false, 0.1);
+  QCOMPARE(below.scale, 1.0);
+  const auto above = inputIndicatorIdleGrowthAdvance({}, InputIndicatorCompanion::Cat, 35000, 35000, false, false, 9.9);
+  QCOMPARE(above.scale, 5.0);
+  const auto invalid = inputIndicatorIdleGrowthAdvance(
+      {}, InputIndicatorCompanion::Cat, 35000, 35000, false, false, std::numeric_limits<double>::quiet_NaN()
+  );
+  QCOMPARE(invalid.scale, 5.0);
+}
+
 void InputIndicatorGeometryTests::catIdleGrowthReturnsSmoothlyAfterPointerMovement()
 {
   const auto grown = inputIndicatorIdleGrowthAdvance({}, InputIndicatorCompanion::Cat, 35000.0, 35000.0, false, false);
@@ -10662,6 +10685,79 @@ void InputIndicatorGeometryTests::catPanelIdleGrowthResetKeepsAnchorEveryFrame()
     previousVisible = visible;
   }
   QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 1.0);
+}
+
+void InputIndicatorGeometryTests::catPanelIdleGrowthLiveMaximumRescalesWithoutTeleport()
+{
+  using Clock = std::chrono::steady_clock;
+  const auto fixedCursor = fixedPanelTestPointer();
+  InputIndicatorTarget target{
+      .point =
+          {
+              .x = fixedCursor.x,
+              .y = fixedCursor.y,
+          },
+      .kind = InputIndicatorTargetKind::Pointer,
+  };
+  Clock::time_point now{};
+  MacInputIndicatorPanel panel({}, [&target] { return target; }, [&now] { return now; });
+  const MacInputIndicatorPanelOptions options{
+      .source = deskflow::input::InputIndicatorSource::LatinABC,
+      .companion = InputIndicatorCompanion::Cat,
+      .idleGrowthMaxScale = 5.0,
+  };
+  QVERIFY(panel.show(options));
+  NSView *view = catPanelView();
+  QVERIFY(view);
+  now += std::chrono::seconds(35);
+  QVERIFY(panel.move(options.position).visible);
+  for (int tick = 0; tick < 80; ++tick) {
+    now += std::chrono::milliseconds(8);
+    QVERIFY(panel.move(options.position).visible);
+  }
+  QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 5.0);
+
+  const auto visibleOrigin = [view](double scale) {
+    const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, scale);
+    const auto origin = view.window.frame.origin;
+    return InputIndicatorPoint{
+        .x = origin.x + style.canvasOffsetX,
+        .y = origin.y + style.canvasOffsetY,
+    };
+  };
+  const auto before = visibleOrigin(5.0);
+  panel.setIdleGrowthMaxScale(1.5);
+  QVERIFY(panel.move(options.position).visible);
+  QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 5.0);
+  now += std::chrono::milliseconds(150);
+  QVERIFY(panel.move(options.position).visible);
+  const double middleScale = [[view valueForKey:@"idleGrowthScale"] doubleValue];
+  QCOMPARE(middleScale, 3.25);
+  const auto middle = visibleOrigin(middleScale);
+  QVERIFY(std::hypot(middle.x - before.x, middle.y - before.y) > 0.0);
+
+  now += std::chrono::milliseconds(150);
+  QVERIFY(panel.move(options.position).visible);
+  QCOMPARE([[view valueForKey:@"idleGrowthScale"] doubleValue], 1.5);
+  const auto final = visibleOrigin(1.5);
+  const auto style = macInputIndicatorPanelStyle(InputIndicatorCompanion::Cat, 1.5);
+  const auto screen = NSScreen.screens.firstObject.frame;
+  const auto expected = positionInputIndicator(
+      target.point, {.width = style.width, .height = style.height},
+      {{.x = screen.origin.x, .y = screen.origin.y, .width = screen.size.width, .height = screen.size.height}},
+      options.position, style.cursorGap, style.screenMargin
+  );
+  QVERIFY(expected);
+  QVERIFY(std::abs(final.x - expected->x) < 1.0);
+  QVERIFY(std::abs(final.y - expected->y) < 1.0);
+
+  panel.hide();
+  MacInputIndicatorPanelOptions disabledGrowth = options;
+  disabledGrowth.idleGrowthMaxScale = 1.0;
+  QVERIFY(panel.show(disabledGrowth));
+  now += std::chrono::seconds(35);
+  QVERIFY(panel.move(options.position).visible);
+  QCOMPARE([[catPanelView() valueForKey:@"idleGrowthScale"] doubleValue], 1.0);
 }
 
 void InputIndicatorGeometryTests::catPanelOverlapCompositesOnceWithoutDarkJoints()

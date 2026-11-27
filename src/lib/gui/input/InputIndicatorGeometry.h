@@ -66,8 +66,11 @@ struct InputIndicatorIdleGrowthState
 {
   double scale = 1;
   double resetOriginScale = 1;
+  double resetTargetScale = 1;
   double resetStartedMilliseconds = 0;
+  double maximumScale = 5;
   bool resetting = false;
+  bool maximumScaleInitialized = false;
 };
 
 struct InputIndicatorIdleGrowthStep
@@ -282,8 +285,10 @@ double inputIndicatorTransitionProgress(
 
 InputIndicatorIdleGrowthStep inputIndicatorIdleGrowthAdvance(
     const InputIndicatorIdleGrowthState &state, InputIndicatorCompanion companion, double idleMilliseconds,
-    double nowMilliseconds, bool pointerMoved, bool reducedMotion
+    double nowMilliseconds, bool pointerMoved, bool reducedMotion, double maximumScale = 5
 );
+
+double inputIndicatorIdleGrowthMaximumScale(double value);
 
 InputIndicatorMotionState inputIndicatorMotionState(
     InputIndicatorMotionState previous,

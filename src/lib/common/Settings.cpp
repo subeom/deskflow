@@ -378,6 +378,9 @@ QVariant Settings::defaultValue(const QString &key)
   if (key == Gui::InputIndicatorSpeedPercent)
     return 100;
 
+  if (key == Gui::InputIndicatorIdleGrowthMaxScale)
+    return 5.0;
+
   if (key == Gui::InputIndicatorTone)
     return QStringLiteral("automatic");
 

@@ -13,6 +13,7 @@
 #include "gui/widgets/ToggleSwitch.h"
 
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QSpinBox>
 #include <QTest>
 
@@ -48,6 +49,7 @@ void clearIndicatorSettings()
   Settings::setValue(Settings::Gui::InputIndicatorDwellMs);
   Settings::setValue(Settings::Gui::InputIndicatorOpacityPercent);
   Settings::setValue(Settings::Gui::InputIndicatorSpeedPercent);
+  Settings::setValue(Settings::Gui::InputIndicatorIdleGrowthMaxScale);
   Settings::setValue(Settings::Gui::InputIndicatorTone);
 }
 
@@ -75,6 +77,7 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
   auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
   auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
   auto *speed = must<QSpinBox>(pages, "sbInputIndicatorSpeed");
+  auto *idleGrowth = must<QDoubleSpinBox>(pages, "sbInputIndicatorIdleGrowthMaxScale");
   auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
   auto *note = must<InlineHint>(pages, "hintInputIndicatorSafety");
 
@@ -105,6 +108,12 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
   QCOMPARE(speed->singleStep(), 1);
   QCOMPARE(speed->value(), 100);
   QCOMPARE(speed->suffix(), QStringLiteral("%"));
+  QCOMPARE(idleGrowth->minimum(), 1.0);
+  QCOMPARE(idleGrowth->maximum(), 5.0);
+  QCOMPARE(idleGrowth->singleStep(), 0.1);
+  QCOMPARE(idleGrowth->decimals(), 1);
+  QCOMPARE(idleGrowth->value(), 5.0);
+  QCOMPARE(idleGrowth->suffix(), QStringLiteral("x"));
   QCOMPARE(tone->currentData().toString(), QStringLiteral("automatic"));
   QVERIFY(!find<QSpinBox>(pages, "sbInputIndicatorDwell"));
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorDwellMs).toInt(), 1500);
@@ -117,6 +126,8 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
   QVERIFY(Settings::validKeys().contains(
       Settings::Gui::InputIndicatorSpeedPercent
   ));
+  QCOMPARE(Settings::defaultValue(Settings::Gui::InputIndicatorIdleGrowthMaxScale).toDouble(), 5.0);
+  QVERIFY(Settings::validKeys().contains(Settings::Gui::InputIndicatorIdleGrowthMaxScale));
   QVERIFY(note->text().contains(QStringLiteral("input-source")));
   QVERIFY(note->text().contains(QStringLiteral("mouse pointer")));
   QVERIFY(note->text().contains(QStringLiteral("Accessibility")));
@@ -126,9 +137,8 @@ void InputIndicatorSettingsTests::defaultsAreSafeAndVisible()
   for (const auto &key :
        {Settings::Gui::InputIndicatorEnabled, Settings::Gui::InputIndicatorPosition,
         Settings::Gui::InputIndicatorCompanion, Settings::Gui::InputIndicatorDwellMs,
-        Settings::Gui::InputIndicatorOpacityPercent,
-        Settings::Gui::InputIndicatorSpeedPercent,
-        Settings::Gui::InputIndicatorTone}) {
+        Settings::Gui::InputIndicatorOpacityPercent, Settings::Gui::InputIndicatorSpeedPercent,
+        Settings::Gui::InputIndicatorIdleGrowthMaxScale, Settings::Gui::InputIndicatorTone}) {
     QCOMPARE(effectOf(key), std::optional<Effect>(Effect::Live));
   }
 }
@@ -143,6 +153,7 @@ void InputIndicatorSettingsTests::dependencyControlsFollowTheToggle()
   auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
   auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
   auto *speed = must<QSpinBox>(pages, "sbInputIndicatorSpeed");
+  auto *idleGrowth = must<QDoubleSpinBox>(pages, "sbInputIndicatorIdleGrowthMaxScale");
   auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
 
   QVERIFY(companion);
@@ -150,6 +161,7 @@ void InputIndicatorSettingsTests::dependencyControlsFollowTheToggle()
   QVERIFY(!position->isEnabled());
   QVERIFY(!opacity->isEnabled());
   QVERIFY(!speed->isEnabled());
+  QVERIFY(!idleGrowth->isEnabled());
   QVERIFY(!tone->isEnabled());
 
   enabled->setChecked(true);
@@ -158,6 +170,7 @@ void InputIndicatorSettingsTests::dependencyControlsFollowTheToggle()
   QVERIFY(position->isEnabled());
   QVERIFY(opacity->isEnabled());
   QVERIFY(speed->isEnabled());
+  QVERIFY(idleGrowth->isEnabled());
   QVERIFY(tone->isEnabled());
 
   const auto followApproach =
@@ -204,6 +217,12 @@ void InputIndicatorSettingsTests::dependencyControlsFollowTheToggle()
   QCOMPARE(speed->value(), 50);
   speed->setValue(999);
   QCOMPARE(speed->value(), 200);
+  idleGrowth->setValue(1.5);
+  QCOMPARE(Settings::value(Settings::Gui::InputIndicatorIdleGrowthMaxScale).toDouble(), 1.5);
+  idleGrowth->setValue(0.1);
+  QCOMPARE(idleGrowth->value(), 1.0);
+  idleGrowth->setValue(9.9);
+  QCOMPARE(idleGrowth->value(), 5.0);
 }
 
 void InputIndicatorSettingsTests::invalidStoredSpeedUsesSafeBounds()
@@ -223,6 +242,14 @@ void InputIndicatorSettingsTests::invalidStoredSpeedUsesSafeBounds()
       ).toString(),
       QStringLiteral("cat")
   );
+}
+
+void InputIndicatorSettingsTests::invalidStoredIdleGrowthMaximumUsesDefault()
+{
+  Settings::setValue(Settings::Gui::InputIndicatorIdleGrowthMaxScale, QStringLiteral("not-a-number"));
+  SettingsPages pages;
+  auto *idleGrowth = must<QDoubleSpinBox>(pages, "sbInputIndicatorIdleGrowthMaxScale");
+  QCOMPARE(idleGrowth->value(), 5.0);
 }
 
 QTEST_MAIN(InputIndicatorSettingsTests)

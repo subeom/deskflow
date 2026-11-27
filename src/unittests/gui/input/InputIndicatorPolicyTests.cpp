@@ -155,6 +155,7 @@ struct PersistentControllerHarness
   int pointerMonitorStarts = 0;
   int pointerMonitorStops = 0;
   std::vector<int> speedUpdates;
+  std::vector<double> idleGrowthMaxUpdates;
   std::vector<InputIndicatorPosition> movePositions;
   std::function<void()> pointerMoved;
 
@@ -187,6 +188,7 @@ struct PersistentControllerHarness
         [this](int percent) {
           speedUpdates.push_back(percent);
         };
+    result.panelSetIdleGrowthMaxScale = [this](double maximumScale) { idleGrowthMaxUpdates.push_back(maximumScale); };
     result.pointerMonitorStart =
         [this](std::function<void()> changed) {
           ++pointerMonitorStarts;
@@ -765,6 +767,40 @@ void InputIndicatorPolicyTests::persistentFollowSpeedUpdatesWithoutReconfigure()
             .followSpeedPercent,
         invalid.second
     );
+  }
+}
+
+void InputIndicatorPolicyTests::persistentIdleGrowthMaximumUpdatesWithoutReconfigure()
+{
+  const auto original = Settings::value(Settings::Gui::InputIndicatorIdleGrowthMaxScale);
+  const auto restore =
+      qScopeGuard([&original] { Settings::setValue(Settings::Gui::InputIndicatorIdleGrowthMaxScale, original); });
+
+  Settings::setValue(Settings::Gui::InputIndicatorIdleGrowthMaxScale, 2.5);
+  PersistentControllerHarness harness;
+  MacInputIndicatorController controller(nullptr, harness.dependencies());
+  MacInputIndicatorControllerTestAccess::arm(controller);
+  QCOMPARE(harness.presentations.size(), size_t{1});
+  QCOMPARE(harness.presentations.back().idleGrowthMaxScale, 2.5);
+
+  const auto presentations = harness.presentations.size();
+  const auto hides = harness.hides;
+  const auto moves = harness.moves;
+  Settings::setValue(Settings::Gui::InputIndicatorIdleGrowthMaxScale, 1.5);
+  QCOMPARE(harness.idleGrowthMaxUpdates.size(), size_t{1});
+  QCOMPARE(harness.idleGrowthMaxUpdates.back(), 1.5);
+  QCOMPARE(harness.presentations.size(), presentations);
+  QCOMPARE(harness.hides, hides);
+  QCOMPARE(harness.moves, moves + 1);
+
+  const auto invalidCases = {
+      std::pair<QVariant, double>{QStringLiteral("not-a-number"), 5.0},
+      std::pair<QVariant, double>{0.1, 1.0},
+      std::pair<QVariant, double>{6.0, 5.0},
+  };
+  for (const auto &invalid : invalidCases) {
+    Settings::setValue(Settings::Gui::InputIndicatorIdleGrowthMaxScale, invalid.first);
+    QCOMPARE(harness.idleGrowthMaxUpdates.back(), invalid.second);
   }
 }
 

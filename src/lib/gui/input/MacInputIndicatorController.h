@@ -39,6 +39,7 @@ public:
         InputIndicatorPosition
     )> panelMove;
     std::function<void(int)> panelSetFollowSpeed;
+    std::function<void(double)> panelSetIdleGrowthMaxScale;
     std::function<void()> panelHide;
     std::function<MacInputPointerMonitorHandle(
         std::function<void()>
@@ -92,6 +93,7 @@ private:
   InputIndicatorPosition m_position = InputIndicatorPosition::CursorBottomRight;
   int m_opacityPercent = macInputIndicatorPanelStyle().opacityPercent;
   int m_followSpeedPercent = 100;
+  double m_idleGrowthMaxScale = kInputIndicatorIdleGrowthMaximumScale;
   InputIndicatorTone m_tone = InputIndicatorTone::Automatic;
   deskflow::platform::OSXInputSourceSnapshot m_sourceSnapshot;
   std::unique_ptr<deskflow::platform::OSXInputSourceMonitor> m_sourceMonitor;
@@ -108,6 +110,7 @@ private:
       InputIndicatorPosition
   )> m_panelMove;
   std::function<void(int)> m_panelSetFollowSpeed;
+  std::function<void(double)> m_panelSetIdleGrowthMaxScale;
   std::function<void()> m_panelHide;
   std::function<MacInputPointerMonitorHandle(
       std::function<void()>

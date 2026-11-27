@@ -31,6 +31,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileInfo>
 #include <QGroupBox>
@@ -166,6 +167,7 @@ void forgetAll()
   Settings::setValue(Settings::Gui::InputIndicatorDwellMs);
   Settings::setValue(Settings::Gui::InputIndicatorOpacityPercent);
   Settings::setValue(Settings::Gui::InputIndicatorSpeedPercent);
+  Settings::setValue(Settings::Gui::InputIndicatorIdleGrowthMaxScale);
   Settings::setValue(Settings::Gui::InputIndicatorTone);
   Settings::setValue(Settings::Core::CoreMode);
 }
@@ -315,6 +317,7 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
   auto *position = must<QComboBox>(pages, "comboInputIndicatorPosition");
   auto *opacity = must<QSpinBox>(pages, "sbInputIndicatorOpacity");
   auto *speed = must<QSpinBox>(pages, "sbInputIndicatorSpeed");
+  auto *idleGrowth = must<QDoubleSpinBox>(pages, "sbInputIndicatorIdleGrowthMaxScale");
   auto *tone = must<QComboBox>(pages, "comboInputIndicatorTone");
   auto *note = must<InlineHint>(pages, "hintInputIndicatorSafety");
 
@@ -343,6 +346,12 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
   QCOMPARE(speed->singleStep(), 1);
   QCOMPARE(speed->value(), 100);
   QCOMPARE(speed->suffix(), QStringLiteral("%"));
+  QCOMPARE(idleGrowth->minimum(), 1.0);
+  QCOMPARE(idleGrowth->maximum(), 5.0);
+  QCOMPARE(idleGrowth->decimals(), 1);
+  QCOMPARE(idleGrowth->singleStep(), 0.1);
+  QCOMPARE(idleGrowth->suffix(), QStringLiteral("x"));
+  QCOMPARE(idleGrowth->value(), 5.0);
   QCOMPARE(tone->currentData().toString(), QStringLiteral("automatic"));
   QVERIFY(!find<QSpinBox>(pages, "sbInputIndicatorDwell"));
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorDwellMs).toInt(), 1500);
@@ -350,6 +359,7 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
   QVERIFY(!companion->isEnabled());
   QVERIFY(!opacity->isEnabled());
   QVERIFY(!speed->isEnabled());
+  QVERIFY(!idleGrowth->isEnabled());
   QVERIFY(!tone->isEnabled());
   QVERIFY(note->text().contains(QStringLiteral("input-source")));
   QVERIFY(note->text().contains(QStringLiteral("mouse pointer")));
@@ -360,9 +370,8 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
   for (const auto &key :
        {Settings::Gui::InputIndicatorEnabled, Settings::Gui::InputIndicatorPosition,
         Settings::Gui::InputIndicatorCompanion, Settings::Gui::InputIndicatorDwellMs,
-        Settings::Gui::InputIndicatorOpacityPercent,
-        Settings::Gui::InputIndicatorSpeedPercent,
-        Settings::Gui::InputIndicatorTone}) {
+        Settings::Gui::InputIndicatorOpacityPercent, Settings::Gui::InputIndicatorSpeedPercent,
+        Settings::Gui::InputIndicatorIdleGrowthMaxScale, Settings::Gui::InputIndicatorTone}) {
     QCOMPARE(effectOf(key), std::optional<Effect>(Effect::Live));
   }
 
@@ -371,6 +380,7 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
   QVERIFY(position->isEnabled());
   QVERIFY(opacity->isEnabled());
   QVERIFY(speed->isEnabled());
+  QVERIFY(idleGrowth->isEnabled());
   QVERIFY(tone->isEnabled());
 
   choose(companion, QStringLiteral("dog"));
@@ -389,11 +399,13 @@ void SettingsPagesTests::pages_inputIndicatorDefaultsAndDependencies()
   choose(position, QStringLiteral("cursorTopLeft"));
   opacity->setValue(90);
   speed->setValue(150);
+  idleGrowth->setValue(1.5);
   choose(tone, QStringLiteral("dark"));
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorPosition).toString(), QStringLiteral("cursorTopLeft"));
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorCompanion).toString(), QStringLiteral("cat"));
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorOpacityPercent).toInt(), 90);
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorSpeedPercent).toInt(), 150);
+  QCOMPARE(Settings::value(Settings::Gui::InputIndicatorIdleGrowthMaxScale).toDouble(), 1.5);
   QCOMPARE(Settings::value(Settings::Gui::InputIndicatorTone).toString(), QStringLiteral("dark"));
 #endif
 }

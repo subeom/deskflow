@@ -30,6 +30,7 @@ private Q_SLOTS:
   void unknownOrInvalidGeometryHides();
   void compactPanelStyleUsesApprovedMetrics();
   void catIdleGrowthWaitsThenEasesAndCapsAtFive();
+  void catIdleGrowthHonorsConfiguredMaximum();
   void catIdleGrowthReturnsSmoothlyAfterPointerMovement();
   void catIdleGrowthIsCatOnlyAndRespectsReducedMotion();
   void companionPanelScalePreservesGapAndBounds();
@@ -104,6 +105,7 @@ private Q_SLOTS:
   void catPanelLifecycleKeepsSingleTransparentBacking();
   void catPanelIdleGrowthResizesAndClearsSameBacking();
   void catPanelIdleGrowthResetKeepsAnchorEveryFrame();
+  void catPanelIdleGrowthLiveMaximumRescalesWithoutTeleport();
   void catPanelOverlapCompositesOnceWithoutDarkJoints();
   void companionSettingDefaultsToCat();
   void motionOffsetClampsAndRespectsReducedMotion();

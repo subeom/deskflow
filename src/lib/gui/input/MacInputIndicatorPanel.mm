@@ -1135,6 +1135,7 @@ struct MacInputIndicatorPanel::Impl
   InputIndicatorPoint motion;
   InputIndicatorCompanionPursuitState pursuitState;
   double followSpeedMultiplier = 1;
+  double idleGrowthMaxScale = kInputIndicatorIdleGrowthMaximumScale;
   bool approachHeadingValid = false;
   double approachHeadingRadians = 0;
   bool facesRight = true;
@@ -1235,6 +1236,7 @@ bool MacInputIndicatorPanel::show(
           options.followSpeedPercent, 50, 200
       ) /
       100.0;
+  m_impl->idleGrowthMaxScale = inputIndicatorIdleGrowthMaximumScale(options.idleGrowthMaxScale);
 
   const auto style = macInputIndicatorPanelStyle(options.companion, m_impl->idleGrowthState.scale);
   [m_impl->panel setContentSize:NSMakeSize(
@@ -1280,6 +1282,18 @@ void MacInputIndicatorPanel::setFollowSpeedPercent(
 {
   m_impl->followSpeedMultiplier =
       std::clamp(percent, 50, 200) / 100.0;
+}
+
+void MacInputIndicatorPanel::setIdleGrowthMaxScale(double maximumScale)
+{
+  const double next = inputIndicatorIdleGrowthMaximumScale(maximumScale);
+  if (m_impl->idleGrowthMaxScale == next) {
+    return;
+  }
+  m_impl->idleGrowthMaxScale = next;
+  if (m_impl->presentationInvalidated) {
+    m_impl->presentationInvalidated();
+  }
 }
 
 MacInputIndicatorPanelMoveResult
@@ -1377,7 +1391,7 @@ MacInputIndicatorPanel::move(InputIndicatorPosition position)
       std::chrono::duration<double, std::milli>(now - m_impl->animationEpoch).count();
   const auto idleGrowthStep = inputIndicatorIdleGrowthAdvance(
       m_impl->idleGrowthState, m_impl->companion, idleMilliseconds, animationMillisecondsAtStart, cursorMoved,
-      reducedMotion
+      reducedMotion, m_impl->idleGrowthMaxScale
   );
   const double idleScale = idleGrowthStep.scale;
   const bool idleScaleChanged = std::abs(idleScale - m_impl->idleGrowthState.scale) > 0.0001;

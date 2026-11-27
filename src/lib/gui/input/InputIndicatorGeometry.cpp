@@ -378,11 +378,14 @@ double inputIndicatorTransitionProgress(
 
 InputIndicatorIdleGrowthStep inputIndicatorIdleGrowthAdvance(
     const InputIndicatorIdleGrowthState &state, InputIndicatorCompanion companion, double idleMilliseconds,
-    double nowMilliseconds, bool pointerMoved, bool reducedMotion
+    double nowMilliseconds, bool pointerMoved, bool reducedMotion, double maximumScale
 )
 {
+  const double effectiveMaximumScale = inputIndicatorIdleGrowthMaximumScale(maximumScale);
   if (reducedMotion || companion != InputIndicatorCompanion::Cat) {
-    const InputIndicatorIdleGrowthState normal;
+    InputIndicatorIdleGrowthState normal;
+    normal.maximumScale = effectiveMaximumScale;
+    normal.maximumScaleInitialized = true;
     return {
         .state = normal,
         .scale = 1,
@@ -393,8 +396,24 @@ InputIndicatorIdleGrowthStep inputIndicatorIdleGrowthAdvance(
 
   auto next = state;
   next.scale = std::isfinite(next.scale) ? std::clamp(next.scale, 1.0, kInputIndicatorIdleGrowthMaximumScale) : 1.0;
+  const bool initialized = next.maximumScaleInitialized;
+  const bool maximumScaleChanged = initialized && std::abs(next.maximumScale - effectiveMaximumScale) > 0.0001;
+  next.maximumScale = effectiveMaximumScale;
+  next.maximumScaleInitialized = true;
+
+  const double growthElapsed =
+      std::max(0.0, normalizedAnimationTime(idleMilliseconds) - kInputIndicatorIdleGrowthDelayMilliseconds);
+  const double growthProgress = std::clamp(growthElapsed / kInputIndicatorIdleGrowthDurationMilliseconds, 0.0, 1.0);
+  const double growthTarget = 1.0 + (effectiveMaximumScale - 1.0) * smoothstep01(growthProgress);
+
   if (pointerMoved && !next.resetting && next.scale > 1.0) {
     next.resetOriginScale = next.scale;
+    next.resetTargetScale = 1.0;
+    next.resetStartedMilliseconds = normalizedAnimationTime(nowMilliseconds);
+    next.resetting = true;
+  } else if (maximumScaleChanged && !next.resetting && std::abs(next.scale - growthTarget) > 0.0001) {
+    next.resetOriginScale = next.scale;
+    next.resetTargetScale = growthTarget;
     next.resetStartedMilliseconds = normalizedAnimationTime(nowMilliseconds);
     next.resetting = true;
   }
@@ -402,40 +421,54 @@ InputIndicatorIdleGrowthStep inputIndicatorIdleGrowthAdvance(
     next.resetOriginScale = std::isfinite(next.resetOriginScale)
                                 ? std::clamp(next.resetOriginScale, 1.0, kInputIndicatorIdleGrowthMaximumScale)
                                 : next.scale;
+    next.resetTargetScale = std::isfinite(next.resetTargetScale)
+                                ? std::clamp(next.resetTargetScale, 1.0, kInputIndicatorIdleGrowthMaximumScale)
+                                : 1.0;
     const double resetElapsed = std::max(
         0.0, normalizedAnimationTime(nowMilliseconds) - normalizedAnimationTime(next.resetStartedMilliseconds)
     );
     const double resetProgress = std::clamp(resetElapsed / kInputIndicatorIdleGrowthResetMilliseconds, 0.0, 1.0);
     if (resetProgress >= 1.0) {
-      const InputIndicatorIdleGrowthState normal;
       return {
-          .state = normal,
-          .scale = 1,
+          .state =
+              InputIndicatorIdleGrowthState{
+                  .scale = next.resetTargetScale,
+                  .resetOriginScale = next.resetTargetScale,
+                  .resetTargetScale = next.resetTargetScale,
+                  .maximumScale = effectiveMaximumScale,
+                  .maximumScaleInitialized = true,
+              },
+          .scale = next.resetTargetScale,
           .animating = false,
           .shrinking = false,
       };
     }
-    next.scale = 1.0 + (next.resetOriginScale - 1.0) * (1.0 - smoothstep01(resetProgress));
+    next.scale = next.resetOriginScale + (next.resetTargetScale - next.resetOriginScale) * smoothstep01(resetProgress);
     next.scale = std::clamp(next.scale, 1.0, kInputIndicatorIdleGrowthMaximumScale);
     return {
         .state = next,
         .scale = next.scale,
         .animating = true,
-        .shrinking = true,
+        .shrinking = next.resetTargetScale < next.resetOriginScale,
     };
   }
 
-  const double growthElapsed =
-      std::max(0.0, normalizedAnimationTime(idleMilliseconds) - kInputIndicatorIdleGrowthDelayMilliseconds);
-  const double growthProgress = std::clamp(growthElapsed / kInputIndicatorIdleGrowthDurationMilliseconds, 0.0, 1.0);
-  next.scale = 1.0 + (kInputIndicatorIdleGrowthMaximumScale - 1.0) * smoothstep01(growthProgress);
+  next.scale = growthTarget;
   next.scale = std::clamp(next.scale, 1.0, kInputIndicatorIdleGrowthMaximumScale);
   return {
       .state = next,
       .scale = next.scale,
-      .animating = growthProgress > 0.0 && growthProgress < 1.0,
+      .animating = effectiveMaximumScale > 1.0 && growthProgress > 0.0 && growthProgress < 1.0,
       .shrinking = false,
   };
+}
+
+double inputIndicatorIdleGrowthMaximumScale(double value)
+{
+  if (!std::isfinite(value)) {
+    return kInputIndicatorIdleGrowthMaximumScale;
+  }
+  return std::clamp(value, 1.0, kInputIndicatorIdleGrowthMaximumScale);
 }
 
 InputIndicatorMotionState inputIndicatorMotionState(

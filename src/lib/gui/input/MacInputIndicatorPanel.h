@@ -674,6 +674,7 @@ struct MacInputIndicatorPanelOptions
   InputIndicatorPosition position = InputIndicatorPosition::CursorBottomRight;
   int opacityPercent = macInputIndicatorPanelStyle().opacityPercent;
   int followSpeedPercent = 100;
+  double idleGrowthMaxScale = kInputIndicatorIdleGrowthMaximumScale;
   InputIndicatorTone tone = InputIndicatorTone::Automatic;
 };
 
@@ -723,6 +724,7 @@ public:
       InputIndicatorPosition position
   );
   void setFollowSpeedPercent(int percent);
+  void setIdleGrowthMaxScale(double maximumScale);
   void hide();
 
 private:

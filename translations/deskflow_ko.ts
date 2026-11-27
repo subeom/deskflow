@@ -2920,6 +2920,10 @@ Enabling this setting will disable the server config GUI.</source>
         <translation>동반자 따라가기 속도</translation>
     </message>
     <message>
+        <source>Maximum idle scale</source>
+        <translation>유휴 시 최대 확대 배율</translation>
+    </message>
+    <message>
         <source>Badge color</source>
         <translation>배지 색상</translation>
     </message>
